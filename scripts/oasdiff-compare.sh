@@ -44,7 +44,7 @@ for name in downstream-api admin-api; do
     admin-api)
       echo "oasdiff: compare base-$name.yaml -> openapi/$name.yaml (report only)"
       out=$("$bin" breaking "$base" "$cur") || { echo "oasdiff: oasdiff failed on $name.yaml" >&2; rc=1; continue; }
-      if [ -n "$out" ]; then
+      if [ -n "$out" ] && [ "$out" != "No changes detected" ]; then
         printf '%s\n' "$out"
         summary=$(printf '%s\n' "$out" | head -n 20 | sed -e 's/%/%25/g' -e 's/\r//g' | awk 'BEGIN{ORS="%0A"} {print}')
         echo "::warning title=oasdiff admin-api breaking::breaking change in $name.yaml (report only; reviewer verifies the frontend is fixed in the same commit)%0A$summary"
