@@ -13,6 +13,7 @@ on:
       - "deploy/**"
       - "**/Containerfile"
       - "**/.dockerignore"
+      - "perf/mock-dukcapil/**"
       - ".github/workflows/compose-portability.yml"
   workflow_dispatch:
 
@@ -151,3 +152,32 @@ jobs:
           path: deploy/compose/test/logs/
           if-no-files-found: ignore
           retention-days: 14
+
+  # Bukti build image mock Dukcapil (perf/mock-dukcapil) di runner amd64. Tanpa push, tanpa secret.
+  # Pin digest per-platform (arm64) akan gagal di sini dengan "image platform does not match".
+  mock-dukcapil-image:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build image mock-dukcapil (linux/amd64, tanpa push)
+        run: |
+          set -eu
+          docker build --platform linux/amd64 \
+            -f perf/mock-dukcapil/Containerfile \
+            -t localhost/poolrouter-mock-dukcapil:ci perf/mock-dukcapil
+
+      - name: Verifikasi arsitektur dan user non-root
+        run: |
+          set -eu
+          arch="$(docker image inspect --format '{{.Architecture}}' localhost/poolrouter-mock-dukcapil:ci)"
+          user="$(docker image inspect --format '{{.Config.User}}' localhost/poolrouter-mock-dukcapil:ci)"
+          echo "arch=${arch} user=${user}"
+          [ "${arch}" = "amd64" ]
+          [ "${user}" = "10001:10001" ]
+
+      - name: Bersihkan image (selalu)
+        if: always()
+        run: docker image rm -f localhost/poolrouter-mock-dukcapil:ci >/dev/null 2>&1 || true
