@@ -13,7 +13,7 @@
 set -eu
 
 # Image CLI Docker (klien Compose saja, bukan engine). Tag dan digest di-pin.
-COMPOSE_CLI_IMAGE="docker.io/library/docker:27-cli@sha256:4a35bc2bdc2ae427c176bc3f1bbc6d696dd0d35b7c6ba4ecd6b09ddc270148c1"
+COMPOSE_CLI_IMAGE="docker.io/library/docker:27-cli@sha256:851f91d241214e7c6db86513b270d58776379aacc5eb9c4a87e5b47115e3065c"
 
 PROJECT_DIR=$(pwd -P)
 if [ -n "${PODMAN_VM_SOCKET:-}" ]; then
