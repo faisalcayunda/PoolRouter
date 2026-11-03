@@ -1,0 +1,53 @@
+/* TEMPORARY TOKEN FILE: sementara, DV-2, diganti di SHAA-187 (export Material Theme Builder asli).
+   When the real export replaces this file, map its names onto the names below here, not in components.
+   If any hex changes, Jude recomputes the contrast table before the replacement is committed. See README.md. */
+/* PoolRouter F0 - M3 color scheme (light, standard contrast)
+   Seed #5C6670; derived with @material/material-color-utilities 0.3.0 SchemeFidelity (approximation of Theme Builder "Color match").
+   Custom colors success/warning/info: harmonize OFF. NOT an export from a live Material Theme Builder session. */
+:root{
+  --md-sys-color-primary: #444e58;
+  --md-sys-color-on-primary: #ffffff;
+  --md-sys-color-primary-container: #5c6670;
+  --md-sys-color-on-primary-container: #dae4f0;
+  --md-sys-color-secondary: #5b5f63;
+  --md-sys-color-on-secondary: #ffffff;
+  --md-sys-color-secondary-container: #dde0e5;
+  --md-sys-color-on-secondary-container: #5f6367;
+  --md-sys-color-tertiary: #5c493b;
+  --md-sys-color-on-tertiary: #ffffff;
+  --md-sys-color-tertiary-container: #756152;
+  --md-sys-color-on-tertiary-container: #f9decb;
+  --md-sys-color-error: #ba1a1a;
+  --md-sys-color-on-error: #ffffff;
+  --md-sys-color-error-container: #ffdad6;
+  --md-sys-color-on-error-container: #93000a;
+  --md-sys-color-surface: #fbf9f9;
+  --md-sys-color-on-surface: #1b1b1c;
+  --md-sys-color-on-surface-variant: #44474b;
+  --md-sys-color-surface-container-lowest: #ffffff;
+  --md-sys-color-surface-container-low: #f6f3f3;
+  --md-sys-color-surface-container: #f0edee;
+  --md-sys-color-surface-container-high: #eae7e8;
+  --md-sys-color-surface-container-highest: #e4e2e2;
+  --md-sys-color-surface-dim: #dcd9da;
+  --md-sys-color-surface-bright: #fbf9f9;
+  --md-sys-color-inverse-surface: #303031;
+  --md-sys-color-inverse-on-surface: #f3f0f0;
+  --md-sys-color-inverse-primary: #bdc8d3;
+  --md-sys-color-outline: #74777b;
+  --md-sys-color-outline-variant: #c4c6cb;
+  --md-sys-color-scrim: #000000;
+  --md-sys-color-shadow: #000000;
+  --md-sys-color-success: #386a20;
+  --md-sys-color-on-success: #ffffff;
+  --md-sys-color-success-container: #b8f398;
+  --md-sys-color-on-success-container: #072100;
+  --md-sys-color-warning: #7c5800;
+  --md-sys-color-on-warning: #ffffff;
+  --md-sys-color-warning-container: #ffdea7;
+  --md-sys-color-on-warning-container: #271900;
+  --md-sys-color-info: #00639b;
+  --md-sys-color-on-info: #ffffff;
+  --md-sys-color-info-container: #cee5ff;
+  --md-sys-color-on-info-container: #001d33;
+}
