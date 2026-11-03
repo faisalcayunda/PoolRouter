@@ -36,12 +36,14 @@ IFS=$OLD_IFS
 
 # --security-opt label=disable: socket API milik user VM tidak bisa diakses
 # dari label SELinux default container (diuji 2026-11-03).
+# Batasan: daftar mount dipecah dengan IFS=:, jadi path yang mengandung `:` atau spasi tidak didukung.
+# Klien Compose hanya membaca proyek, jadi proyek dipasang read-only.
 # shellcheck disable=SC2086  # EXTRA_MOUNTS sengaja dipecah menjadi argumen -v
 exec podman run --rm -i \
   --security-opt label=disable \
   -e DOCKER_HOST=unix:///var/run/docker.sock \
   -v "$VM_SOCK:/var/run/docker.sock" \
-  -v "$PROJECT_DIR:$PROJECT_DIR" \
+  -v "$PROJECT_DIR:$PROJECT_DIR:ro" \
   $EXTRA_MOUNTS \
   -w "$PROJECT_DIR" \
   "$COMPOSE_CLI_IMAGE" compose "$@"

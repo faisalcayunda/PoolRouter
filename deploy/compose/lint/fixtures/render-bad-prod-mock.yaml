@@ -1,6 +1,7 @@
+# expect: mock-atau-seed-di-prod
 services:
   app:
-    image: ghcr.io/faisalcayunda/poolrouter-backend:sha-0123456789ab
+    image: ghcr.io/faisalcayunda/poolrouter-backend@sha256:0000000000000000000000000000000000000000000000000000000000000000
   mock-dukcapil:
-    image: ghcr.io/faisalcayunda/poolrouter-mock-dukcapil:sha-0123456789ab
+    image: ghcr.io/faisalcayunda/poolrouter-mock-dukcapil@sha256:0000000000000000000000000000000000000000000000000000000000000000
     profiles: ["mock"]

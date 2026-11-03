@@ -1,0 +1,5 @@
+# expect: user-akhir-bukan
+FROM docker.io/library/debian@sha256:1111111111111111111111111111111111111111111111111111111111111111
+COPY app /app
+USER root
+ENTRYPOINT ["/app"]

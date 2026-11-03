@@ -1,0 +1,4 @@
+# expect: image-tanpa-digest
+services:
+  app:
+    image: docker.io/library/redis:7

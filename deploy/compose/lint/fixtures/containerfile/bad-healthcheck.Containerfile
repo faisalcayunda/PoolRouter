@@ -1,8 +1,9 @@
-FROM docker.io/library/rust:1.99.1-bookworm AS build
+# expect: healthcheck
+FROM docker.io/library/rust@sha256:0000000000000000000000000000000000000000000000000000000000000000 AS build
 RUN cargo build --release
 
-FROM debian:bookworm-slim
-# syntax=docker/dockerfile:1.7
-COPY --link --from=build /src/app /app
+FROM docker.io/library/debian@sha256:1111111111111111111111111111111111111111111111111111111111111111
+COPY --from=build /src/app /app
 HEALTHCHECK CMD /app healthcheck
-USER root
+USER 10001:10001
+ENTRYPOINT ["/app"]

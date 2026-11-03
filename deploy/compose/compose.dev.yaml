@@ -1,12 +1,28 @@
 # Override dev (ADR-0001 Addendum A §3.1, §4). Build dari source lewat `make image`;
 # blok `build:` hanya mencatat konteks dan nama image. Seed dan mock hanya di dev.
+# sslmode `disable` hanya di sini (kontrak env §2).
 services:
+  migrate:
+    environment:
+      POOLROUTER_DB_SSLMODE: disable
+
   backend-webserver:
     build:
       context: ../../backend
       dockerfile: Containerfile
     environment:
+      POOLROUTER_DB_SSLMODE: disable
       POOLROUTER_SEED_SYNTHETIC: "true"
+      POOLROUTER_SEED_PASSWORD_FILE: /run/secrets/poolrouter_seed_password
+    secrets: [poolrouter_seed_password]
+
+  backend-controller:
+    environment:
+      POOLROUTER_DB_SSLMODE: disable
+
+  backend-worker:
+    environment:
+      POOLROUTER_DB_SSLMODE: disable
 
   mock-dukcapil:
     image: ${POOLROUTER_MOCK_DUKCAPIL_IMAGE:?isi POOLROUTER_MOCK_DUKCAPIL_IMAGE di file env}
@@ -17,3 +33,8 @@ services:
     tmpfs: [/tmp]
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
+
+# Secret hanya dev (kontrak §2, POOLROUTER_SEED_PASSWORD_FILE).
+secrets:
+  poolrouter_seed_password:
+    file: ${POOLROUTER_SECRETS_DIR:?isi POOLROUTER_SECRETS_DIR di file env}/poolrouter_seed_password

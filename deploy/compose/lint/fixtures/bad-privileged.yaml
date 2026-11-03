@@ -1,4 +1,4 @@
+# expect: privileged
 services:
   app:
-    image: docker.io/library/alpine:3.20
     privileged: true

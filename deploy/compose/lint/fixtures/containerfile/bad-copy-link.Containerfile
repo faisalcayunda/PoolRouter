@@ -1,0 +1,5 @@
+# expect: copy-buildkit-flag
+FROM docker.io/library/debian@sha256:1111111111111111111111111111111111111111111111111111111111111111
+COPY --chown=10001:10001 --link app /app
+USER 10001:10001
+ENTRYPOINT ["/app"]

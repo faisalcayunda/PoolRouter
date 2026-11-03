@@ -1,5 +1,7 @@
 # Override produksi (ADR-0001 Addendum A §3.1, §4, §5). Image berdasarkan digest.
 # Tidak ada build, tidak ada service mock-dukcapil (dijaga compose-lint, V1).
+# Bundled atau managed ditentukan lewat COMPOSE_PROFILES eksplisit (Makefile). Tiga service infra
+# di sini hanya berlaku jika profile bundled-infra dipilih, dengan restart dan limit yang sama dengan staging.
 x-hardened-logging: &logging
   driver: json-file
   options:
@@ -7,9 +9,36 @@ x-hardened-logging: &logging
     max-file: "5"
 
 services:
+  migrate:
+    environment:
+      POOLROUTER_DB_SSLMODE: ${POOLROUTER_DB_SSLMODE:?isi POOLROUTER_DB_SSLMODE di file env}
+
+  postgres:
+    restart: unless-stopped
+    logging: *logging
+    deploy:
+      resources:
+        limits: {cpus: "1.0", memory: 1g}
+
+  redis:
+    restart: unless-stopped
+    logging: *logging
+    deploy:
+      resources:
+        limits: {cpus: "0.5", memory: 512m}
+
+  rabbitmq:
+    restart: unless-stopped
+    logging: *logging
+    deploy:
+      resources:
+        limits: {cpus: "1.0", memory: 1g}
+
   backend-webserver:
     restart: unless-stopped
     logging: *logging
+    environment:
+      POOLROUTER_DB_SSLMODE: ${POOLROUTER_DB_SSLMODE:?isi POOLROUTER_DB_SSLMODE di file env}
     deploy:
       resources:
         limits: {cpus: "1.0", memory: 512m}
@@ -17,6 +46,8 @@ services:
   backend-controller:
     restart: unless-stopped
     logging: *logging
+    environment:
+      POOLROUTER_DB_SSLMODE: ${POOLROUTER_DB_SSLMODE:?isi POOLROUTER_DB_SSLMODE di file env}
     deploy:
       resources:
         limits: {cpus: "0.5", memory: 256m}
@@ -24,6 +55,8 @@ services:
   backend-worker:
     restart: unless-stopped
     logging: *logging
+    environment:
+      POOLROUTER_DB_SSLMODE: ${POOLROUTER_DB_SSLMODE:?isi POOLROUTER_DB_SSLMODE di file env}
     deploy:
       resources:
         limits: {cpus: "1.0", memory: 512m}

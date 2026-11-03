@@ -1,4 +1,4 @@
+# expect: container_name
 services:
   app:
-    image: docker.io/library/alpine:latest
     container_name: poolrouter-app

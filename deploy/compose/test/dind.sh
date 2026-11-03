@@ -55,8 +55,10 @@ cleanup() {
   podman network prune -f --filter "label=shaal.issue=$SHAA_ISSUE" >> "$LOG" 2>&1 || true
   rm -f -- "$OVERLAY"
   left=$(podman ps -a --filter "label=shaal.issue=$SHAA_ISSUE" -q | wc -l | tr -d ' ')
-  log "CLEANUP left_containers=$left"
-  [ "$left" = 0 ] || rc=1
+  lv=$(podman volume ls --filter "label=shaal.issue=$SHAA_ISSUE" -q | wc -l | tr -d ' ')
+  ln=$(podman network ls --filter "label=shaal.issue=$SHAA_ISSUE" -q | wc -l | tr -d ' ')
+  log "CLEANUP left_containers=$left left_volumes=$lv left_networks=$ln"
+  [ "$left" = 0 ] && [ "$lv" = 0 ] && [ "$ln" = 0 ] || rc=1
   exit "$rc"
 }
 trap cleanup EXIT
@@ -77,13 +79,16 @@ YAML
 
 log "== DinD: start daemon $NAME ($DIND_IMAGE)"
 podman rm -f -v "$NAME" >/dev/null 2>&1 || true
-podman run -d --name "$NAME" --privileged \
+if podman run -d --name "$NAME" --privileged \
   --label "shaal.issue=$SHAA_ISSUE" \
   -e DOCKER_TLS_CERTDIR= \
   -v "$SECRETS_DIR:$SECRETS_DIR:ro" \
   -v "$ENV_DIR:$ENV_DIR:ro" \
-  "$DIND_IMAGE" >> "$LOG" 2>&1
-log "run_daemon_exit=$?"
+  "$DIND_IMAGE" >> "$LOG" 2>&1; then
+  log "run_daemon_exit=0"
+else
+  log "run_daemon_exit=$?"; exit 1
+fi
 
 # Tunggu daemon siap (maks 90 detik).
 ready=0; i=0
@@ -116,20 +121,30 @@ else
   log "compose_up_exit=$?"; cli compose $COMPOSE_ARGS $PROFILE_ARGS ps >> "$LOG" 2>&1 || true; exit 1
 fi
 
-log "== V3: smoke =="
+log "== V3: smoke (sama dengan V2: psql, redis-cli, rabbitmq-diagnostics) =="
 cli docker ps --filter "label=shaal.issue=$SHAA_ISSUE" --format '{{.Names}} {{.Status}}' >> "$LOG" 2>&1
-pg=$(cli docker ps --filter "label=shaal.issue=$SHAA_ISSUE" --filter "label=com.docker.compose.service=postgres" -q)
-if [ -n "$pg" ]; then
-  cli docker exec "$pg" sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -tAc "select 1"' >> "$LOG" 2>&1
-  log "smoke_postgres_exit=$?"
-fi
+smoke() { # argumen: service, perintah
+  cid=$(cli docker ps --filter "label=shaal.issue=$SHAA_ISSUE" --filter "label=com.docker.compose.service=$1" -q)
+  if [ -z "$cid" ]; then log "smoke_$1_exit=missing"; return 1; fi
+  shift_svc=$1; shift
+  cli docker exec "$cid" sh -c "$*" >> "$LOG" 2>&1
+  rc_smoke=$?
+  log "smoke_${shift_svc}_exit=$rc_smoke"
+  return "$rc_smoke"
+}
+smoke_fail=0
+smoke postgres 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -tAc "select 1"' || smoke_fail=1
+smoke redis 'REDISCLI_AUTH="$(cat /run/secrets/redis_password)" redis-cli --no-auth-warning ping | grep -q PONG' || smoke_fail=1
+smoke rabbitmq 'rabbitmq-diagnostics -q ping' || smoke_fail=1
 healthy=$(cli docker ps --filter "label=shaal.issue=$SHAA_ISSUE" --filter "health=healthy" -q | wc -l | tr -d ' ')
-log "healthy_containers=$healthy"
+total=$(cli docker ps --filter "label=shaal.issue=$SHAA_ISSUE" -q | wc -l | tr -d ' ')
+log "healthy_containers=$healthy total_containers=$total"
 
 log "== V3: bersihkan stack di dalam DinD =="
 # shellcheck disable=SC2086
 cli compose $COMPOSE_ARGS $PROFILE_ARGS down -v >> "$LOG" 2>&1 || log "compose_down_exit=$?"
 
-# Hitung ulang untuk bukti: compose file sha256 dan image digest (V5).
-[ "$healthy" -ge 1 ] || { log "SMOKE_GAGAL: tidak ada container healthy"; exit 1; }
+# Syarat lulus: tiga service bundled-infra semua healthy, smoke ketiganya lolos.
+[ "$total" -ge 3 ] && [ "$healthy" = "$total" ] || { log "SMOKE_GAGAL: healthy=$healthy total=$total"; exit 1; }
+[ "$smoke_fail" = 0 ] || { log "SMOKE_GAGAL: smoke tidak lolos"; exit 1; }
 log "V3_OK"

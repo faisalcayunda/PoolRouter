@@ -1,0 +1,4 @@
+# expect: cap_add-di-backend-worker
+services:
+  backend-worker:
+    cap_add: [NET_ADMIN]

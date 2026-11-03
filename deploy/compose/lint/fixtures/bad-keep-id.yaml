@@ -1,8 +1,4 @@
+# expect: userns_mode
 services:
   app:
-    image: docker.io/library/alpine:3.20
     userns_mode: keep-id
-    volumes:
-      - data:/var/lib/app:U
-volumes:
-  data: {}

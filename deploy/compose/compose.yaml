@@ -1,12 +1,37 @@
-# Definisi dasar PoolRouter (ADR-0001 Addendum A §3.1, §4, §6).
+# Definisi dasar PoolRouter (ADR-0001 Addendum A §3.1, §4, §5, §6).
 # Dipakai bersama override per lingkungan: compose.dev.yaml, compose.staging.yaml,
 # compose.prod.yaml. Jalankan lewat `make compose-up ENV=<dev|staging|prod>`.
 # Tidak memakai fitur khusus satu engine (§5). Image pihak ketiga di-pin tag dan digest.
+# Kontrak variabel dan pemetaan role: kontrak-env-backend-poolrouter-v1 (§2, §3).
+#
+# Secret tidak pernah ada di `environment:`. Hanya path `/run/secrets/<nama>` yang ditulis di sini.
+# Entrypoint image pihak ketiga yang tidak mendukung *_FILE membaca secret lalu mengekspornya
+# di shell (pola tetap, KD-1). Nilai secret tidak masuk argv: config Redis lewat file tmpfs,
+# password RabbitMQ lewat variabel environment proses.
+
+x-backend-env: &backend-env
+  POOLROUTER_ENV: ${POOLROUTER_ENV:?isi POOLROUTER_ENV di file env}
+  POOLROUTER_DB_HOST: ${POOLROUTER_DB_HOST:-postgres}
+  POOLROUTER_DB_PORT: ${POOLROUTER_DB_PORT:-5432}
+  POOLROUTER_DB_NAME: ${POSTGRES_DB:?isi POSTGRES_DB di file env}
+  POOLROUTER_REDIS_HOST: ${POOLROUTER_REDIS_HOST:-redis}
+  POOLROUTER_REDIS_PORT: ${POOLROUTER_REDIS_PORT:-6379}
+  POOLROUTER_REDIS_PASSWORD_FILE: /run/secrets/redis_password
+  POOLROUTER_RABBITMQ_HOST: ${POOLROUTER_RABBITMQ_HOST:-rabbitmq}
+  POOLROUTER_RABBITMQ_PORT: ${POOLROUTER_RABBITMQ_PORT:-5672}
+  POOLROUTER_RABBITMQ_VHOST: ${POOLROUTER_RABBITMQ_VHOST:-/}
+  POOLROUTER_RABBITMQ_USER: ${RABBITMQ_USER:?isi RABBITMQ_USER di file env}
+  POOLROUTER_RABBITMQ_PASSWORD_FILE: /run/secrets/rabbitmq_password
 
 services:
   postgres:
     image: docker.io/library/postgres:17-alpine@sha256:266d3c257594e195b309ae9d1805e54c788f1d7b375f56bf6c367aac6c917e7b
     profiles: ["bundled-infra"]
+    # Entrypoint resmi mulai sebagai root lalu turun ke user postgres (pengecualian 2, §5).
+    # cap_add minimum untuk turun hak itu saja. Daftar ini diizinkan lint hanya untuk postgres dan redis.
+    cap_drop: [ALL]
+    cap_add: [CHOWN, DAC_OVERRIDE, FOWNER, SETUID, SETGID]
+    security_opt: ["no-new-privileges:true"]
     environment:
       POSTGRES_DB: ${POSTGRES_DB:?isi POSTGRES_DB di file env}
       POSTGRES_USER: ${POSTGRES_USER:?isi POSTGRES_USER di file env}
@@ -24,12 +49,28 @@ services:
   redis:
     image: docker.io/library/redis:7-alpine@sha256:8da19c7399dca900c6822a1cf30f9d2285585e2c4b457ff4095b0f4500054d3f
     profiles: ["bundled-infra"]
-    command: ["sh", "-c", "exec redis-server --appendonly yes --requirepass \"$$(cat /run/secrets/redis_password)\""]
+    # Password ditulis ke config di tmpfs (bukan argv), lalu entrypoint resmi menjalankan redis-server
+    # sebagai user redis. Kalau secret kosong, start gagal (exit non-zero).
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -eu
+        pw=$$(cat /run/secrets/redis_password)
+        [ -n "$$pw" ] || { echo "redis_password kosong" >&2; exit 1; }
+        umask 077
+        printf 'requirepass "%s"\nappendonly yes\n' "$$pw" > /tmp/redis.conf
+        chmod 0644 /tmp/redis.conf
+        exec docker-entrypoint.sh redis-server /tmp/redis.conf
+    cap_drop: [ALL]
+    cap_add: [CHOWN, DAC_OVERRIDE, FOWNER, SETUID, SETGID]
+    security_opt: ["no-new-privileges:true"]
+    tmpfs: [/tmp]
     secrets: [redis_password]
     volumes:
       - redis_data:/data
     healthcheck:
-      test: ["CMD-SHELL", "redis-cli -a \"$$(cat /run/secrets/redis_password)\" --no-auth-warning ping | grep -q PONG"]
+      # REDISCLI_AUTH lewat environment proses redis-cli, bukan argumen -a.
+      test: ["CMD-SHELL", "REDISCLI_AUTH=\"$$(cat /run/secrets/redis_password)\" redis-cli --no-auth-warning ping | grep -q PONG"]
       interval: 5s
       timeout: 3s
       retries: 20
@@ -39,14 +80,20 @@ services:
     image: docker.io/library/rabbitmq:4-management-alpine@sha256:89a52c69f937d258e8cf1e13a008131e28990c30fc0dfa8a94037a418f4415b8
     profiles: ["bundled-infra"]
     # RabbitMQ 4 menolak *_FILE (RABBITMQ_DEFAULT_PASS_FILE). Password dibaca dari secret
-    # saat start, lalu entrypoint resmi dijalankan. Lihat docs/runbook/deploy.md.
-    # Berjalan langsung sebagai user image (rabbitmq, 100:101) tanpa root, supaya tidak
-    # ada chown/su-exec. Owner volume mengikuti image saat volume dibuat.
+    # saat start lalu diekspor ke proses (pola tetap, KD-1). Secret kosong membuat start gagal.
+    # Berjalan sebagai user image (100:101) tanpa root, tanpa cap tambahan.
     user: "100:101"
     entrypoint:
       - /bin/sh
       - -c
-      - export RABBITMQ_DEFAULT_PASS="$$(cat /run/secrets/rabbitmq_password)"; exec docker-entrypoint.sh rabbitmq-server
+      - |
+        set -eu
+        p=$$(cat /run/secrets/rabbitmq_password)
+        [ -n "$$p" ] || { echo "rabbitmq_password kosong" >&2; exit 1; }
+        export RABBITMQ_DEFAULT_PASS="$$p"
+        exec docker-entrypoint.sh rabbitmq-server
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
     environment:
       RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:?isi RABBITMQ_USER di file env}
     secrets: [rabbitmq_password]
@@ -64,31 +111,43 @@ services:
     profiles: ["migrate"]
     command: ["migrate"]
     environment:
+      POOLROUTER_ENV: ${POOLROUTER_ENV:?isi POOLROUTER_ENV di file env}
       POOLROUTER_DB_HOST: ${POOLROUTER_DB_HOST:-postgres}
       POOLROUTER_DB_PORT: ${POOLROUTER_DB_PORT:-5432}
-      POOLROUTER_DB_NAME: ${POSTGRES_DB:?}
-      POOLROUTER_DB_USER: ${POOLROUTER_DB_OWNER_USER:?isi POOLROUTER_DB_OWNER_USER di file env}
-      POOLROUTER_DB_PASSWORD_FILE: /run/secrets/poolrouter_owner
+      POOLROUTER_DB_NAME: ${POSTGRES_DB:?isi POSTGRES_DB di file env}
+      # Satu-satunya service yang menerima secret poolrouter_owner (ADR-0001 §7.2, lint V1).
+      POOLROUTER_DB_OWNER_PASSWORD_FILE: /run/secrets/poolrouter_owner
     secrets: [poolrouter_owner]
     read_only: true
     tmpfs: [/tmp]
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
 
+  # Satu role database per komponen (ADR-0001 rev 11 §7.2, kontrak §3).
   backend-webserver:
     image: ${POOLROUTER_BACKEND_IMAGE:?isi POOLROUTER_BACKEND_IMAGE di file env}
     profiles: ["app"]
     command: ["webserver"]
-    environment: &backend-env
-      POOLROUTER_DB_HOST: ${POOLROUTER_DB_HOST:-postgres}
-      POOLROUTER_DB_PORT: ${POOLROUTER_DB_PORT:-5432}
-      POOLROUTER_DB_NAME: ${POSTGRES_DB:?}
-      POOLROUTER_DB_USER: ${POOLROUTER_DB_APP_USER:?isi POOLROUTER_DB_APP_USER di file env}
-      POOLROUTER_DB_PASSWORD_FILE: /run/secrets/poolrouter_db_app
-      POOLROUTER_REDIS_HOST: ${POOLROUTER_REDIS_HOST:-redis}
-      POOLROUTER_RABBITMQ_HOST: ${POOLROUTER_RABBITMQ_HOST:-rabbitmq}
+    environment:
+      <<: *backend-env
+      POOLROUTER_DB_API_PASSWORD_FILE: /run/secrets/pr_api
+      POOLROUTER_DB_ADMIN_API_PASSWORD_FILE: /run/secrets/pr_admin_api
+      POOLROUTER_TOKEN_ISSUER: ${POOLROUTER_TOKEN_ISSUER:?isi POOLROUTER_TOKEN_ISSUER di file env}
+      POOLROUTER_UI_ORIGIN: ${POOLROUTER_UI_ORIGIN:?isi POOLROUTER_UI_ORIGIN di file env}
       POOLROUTER_KEK_FILE: /run/secrets/poolrouter_kek
-    secrets: [poolrouter_db_app, poolrouter_kek]
+      POOLROUTER_JWT_SIGNING_KEY_FILE: /run/secrets/poolrouter_jwt_signing_key
+      POOLROUTER_NIK_HMAC_KEY_FILE: /run/secrets/poolrouter_nik_hmac_key
+      POOLROUTER_IDEMPOTENCY_HMAC_KEY_FILE: /run/secrets/poolrouter_idempotency_hmac_key
+    secrets:
+      - pr_api
+      - pr_admin_api
+      - redis_password
+      - rabbitmq_password
+      - poolrouter_kek
+      - poolrouter_jwt_signing_key
+      - poolrouter_nik_hmac_key
+      - poolrouter_idempotency_hmac_key
+    # TODO(SHAA-207 Bagian 2): healthcheck `poolrouter healthcheck` menunggu subcommand di SHAA-175.
     healthcheck:
       test: ["CMD", "poolrouter", "healthcheck"]
       interval: 10s
@@ -105,8 +164,12 @@ services:
     image: ${POOLROUTER_BACKEND_IMAGE:?isi POOLROUTER_BACKEND_IMAGE di file env}
     profiles: ["app"]
     command: ["controller"]
-    environment: *backend-env
-    secrets: [poolrouter_db_app, poolrouter_kek]
+    environment:
+      <<: *backend-env
+      POOLROUTER_DB_CONTROLLER_PASSWORD_FILE: /run/secrets/pr_controller
+      POOLROUTER_DB_WEBHOOK_PASSWORD_FILE: /run/secrets/pr_webhook
+      POOLROUTER_KEK_FILE: /run/secrets/poolrouter_kek
+    secrets: [pr_controller, pr_webhook, redis_password, rabbitmq_password, poolrouter_kek]
     read_only: true
     tmpfs: [/tmp]
     cap_drop: [ALL]
@@ -116,8 +179,11 @@ services:
     image: ${POOLROUTER_BACKEND_IMAGE:?isi POOLROUTER_BACKEND_IMAGE di file env}
     profiles: ["app"]
     command: ["worker"]
-    environment: *backend-env
-    secrets: [poolrouter_db_app, poolrouter_kek]
+    environment:
+      <<: *backend-env
+      POOLROUTER_DB_WORKER_PASSWORD_FILE: /run/secrets/pr_worker
+      POOLROUTER_KEK_FILE: /run/secrets/poolrouter_kek
+    secrets: [pr_worker, redis_password, rabbitmq_password, poolrouter_kek]
     read_only: true
     tmpfs: [/tmp]
     cap_drop: [ALL]
@@ -153,7 +219,21 @@ secrets:
     file: ${POOLROUTER_SECRETS_DIR:?}/rabbitmq_password
   poolrouter_owner:
     file: ${POOLROUTER_SECRETS_DIR:?}/poolrouter_owner
-  poolrouter_db_app:
-    file: ${POOLROUTER_SECRETS_DIR:?}/poolrouter_db_app
+  pr_api:
+    file: ${POOLROUTER_SECRETS_DIR:?}/pr_api
+  pr_admin_api:
+    file: ${POOLROUTER_SECRETS_DIR:?}/pr_admin_api
+  pr_controller:
+    file: ${POOLROUTER_SECRETS_DIR:?}/pr_controller
+  pr_webhook:
+    file: ${POOLROUTER_SECRETS_DIR:?}/pr_webhook
+  pr_worker:
+    file: ${POOLROUTER_SECRETS_DIR:?}/pr_worker
   poolrouter_kek:
     file: ${POOLROUTER_SECRETS_DIR:?}/poolrouter_kek
+  poolrouter_jwt_signing_key:
+    file: ${POOLROUTER_SECRETS_DIR:?}/poolrouter_jwt_signing_key
+  poolrouter_nik_hmac_key:
+    file: ${POOLROUTER_SECRETS_DIR:?}/poolrouter_nik_hmac_key
+  poolrouter_idempotency_hmac_key:
+    file: ${POOLROUTER_SECRETS_DIR:?}/poolrouter_idempotency_hmac_key

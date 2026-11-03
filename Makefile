@@ -17,7 +17,10 @@ ENV_FILE ?= $(COMPOSE_DIR)/env/$(ENV).env
 # EXTRA_COMPOSE_FILES: override tambahan, mis. label harness uji (deploy/compose/test/).
 EXTRA_COMPOSE_FILES ?=
 COMPOSE_FILES := -f $(COMPOSE_DIR)/compose.yaml -f $(COMPOSE_DIR)/compose.$(ENV).yaml $(addprefix -f ,$(EXTRA_COMPOSE_FILES))
-COMPOSE_PROFILES ?= bundled-infra
+# COMPOSE_PROFILES: dev default ke bundled-infra. Staging dan prod wajib diisi eksplisit (ADR-0001 Addendum §3.1).
+COMPOSE_PROFILES ?=
+EFF_PROFILES := $(if $(COMPOSE_PROFILES),$(COMPOSE_PROFILES),$(if $(filter dev,$(ENV)),bundled-infra,))
+PROFILE_ARGS := $(addprefix --profile ,$(EFF_PROFILES))
 # Provider P3 (Docker Compose v2 dari container). Variabel ini hanya dibaca oleh podman.
 # Provider membaca file env dan direktori secret dari luar repo lewat mount read-only.
 SECRETS_DIR := $(shell sed -n 's/^POOLROUTER_SECRETS_DIR=//p' "$(ENV_FILE)" 2>/dev/null | head -n 1)
@@ -27,27 +30,33 @@ COMPOSE := $(COMPOSE_ENV) $(CONTAINER_ENGINE) compose -p $(PROJECT) $(COMPOSE_FI
 LINT_ENV_FILES := $(COMPOSE_DIR)/env/dev.env.example
 IMAGE_TAG ?= dev
 
-.PHONY: check-env compose-up compose-down compose-ps compose-logs compose-config compose-lint compose-test-dind image
+.PHONY: check-env compose-up compose-down compose-ps compose-logs compose-config compose-migrate compose-lint compose-test-dind image
 
 check-env:
 	@case "$(ENV)" in dev|staging|prod) ;; *) echo "ENV harus dev, staging, atau prod" >&2; exit 2 ;; esac
 	@case "$(CONTAINER_ENGINE)" in podman|docker) ;; *) echo "CONTAINER_ENGINE harus podman atau docker" >&2; exit 2 ;; esac
 	@test -f "$(ENV_FILE)" || { echo "ENV_FILE $(ENV_FILE) tidak ada (lihat docs/runbook/deploy.md)" >&2; exit 2; }
+	@if [ -z "$(EFF_PROFILES)" ]; then echo "COMPOSE_PROFILES wajib diisi eksplisit untuk ENV=$(ENV) (bundled-infra atau managed; lihat docs/runbook/deploy.md)" >&2; exit 2; fi
 
+# compose-config: pemeriksaan wajib sebelum up. Merender dengan ENV_FILE yang akan dipakai.
 compose-config: check-env
 	$(COMPOSE) --profile '*' config -q
 
 compose-up: check-env
-	$(COMPOSE) $(addprefix --profile ,$(COMPOSE_PROFILES)) up -d --wait
+	$(COMPOSE) $(PROFILE_ARGS) up -d --wait
+
+# compose-migrate: jalankan setelah compose-up (bundled-infra sudah healthy). Tidak menaikkan app.
+compose-migrate: check-env
+	$(COMPOSE) $(PROFILE_ARGS) --profile migrate run --rm migrate
 
 compose-down: check-env
-	$(COMPOSE) $(addprefix --profile ,$(COMPOSE_PROFILES)) down
+	$(COMPOSE) $(PROFILE_ARGS) down
 
 compose-ps: check-env
-	$(COMPOSE) $(addprefix --profile ,$(COMPOSE_PROFILES)) ps
+	$(COMPOSE) $(PROFILE_ARGS) ps
 
 compose-logs: check-env
-	$(COMPOSE) $(addprefix --profile ,$(COMPOSE_PROFILES)) logs --tail=200
+	$(COMPOSE) $(PROFILE_ARGS) logs --tail=200
 
 # compose-lint: V1 (ADR-0001 Addendum A §5, §8). Skrip dan fixture di deploy/compose/lint/.
 compose-lint:
@@ -57,7 +66,7 @@ compose-lint:
 
 # compose-test-dind: bukti V3 di Docker Engine sementara (harness DinD, butuh SHAA_ISSUE dan ENV_FILE).
 compose-test-dind:
-	SHAA_ISSUE="$(SHAA_ISSUE)" ENV_FILE="$(ENV_FILE)" PROFILES="$(COMPOSE_PROFILES)" \
+	SHAA_ISSUE="$(SHAA_ISSUE)" ENV_FILE="$(ENV_FILE)" PROFILES="$(EFF_PROFILES)" \
 	sh $(COMPOSE_DIR)/test/dind.sh
 
 # image: membangun image dari Containerfile dengan engine terpilih (Addendum §3.2).

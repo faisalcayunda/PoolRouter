@@ -1,0 +1,4 @@
+# expect: image_latest
+services:
+  app:
+    image: docker.io/library/redis:latest@sha256:0000000000000000000000000000000000000000000000000000000000000000

@@ -7,6 +7,11 @@ x-hardened-logging: &logging
     max-file: "5"
 
 services:
+  # Sslmode dan nilainya ditetapkan bersama ADR hosting PostgreSQL (SHAA-211).
+  migrate:
+    environment:
+      POOLROUTER_DB_SSLMODE: ${POOLROUTER_DB_SSLMODE:?isi POOLROUTER_DB_SSLMODE di file env}
+
   postgres:
     restart: unless-stopped
     logging: *logging
@@ -31,6 +36,8 @@ services:
   backend-webserver:
     restart: unless-stopped
     logging: *logging
+    environment:
+      POOLROUTER_DB_SSLMODE: ${POOLROUTER_DB_SSLMODE:?isi POOLROUTER_DB_SSLMODE di file env}
     deploy:
       resources:
         limits: {cpus: "1.0", memory: 512m}
@@ -38,6 +45,8 @@ services:
   backend-controller:
     restart: unless-stopped
     logging: *logging
+    environment:
+      POOLROUTER_DB_SSLMODE: ${POOLROUTER_DB_SSLMODE:?isi POOLROUTER_DB_SSLMODE di file env}
     deploy:
       resources:
         limits: {cpus: "0.5", memory: 256m}
@@ -45,6 +54,8 @@ services:
   backend-worker:
     restart: unless-stopped
     logging: *logging
+    environment:
+      POOLROUTER_DB_SSLMODE: ${POOLROUTER_DB_SSLMODE:?isi POOLROUTER_DB_SSLMODE di file env}
     deploy:
       resources:
         limits: {cpus: "1.0", memory: 512m}

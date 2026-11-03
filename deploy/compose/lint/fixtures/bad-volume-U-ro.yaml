@@ -1,0 +1,7 @@
+# expect: volume-U-option
+services:
+  app:
+    volumes:
+      - data:/var/lib/app:U,ro
+volumes:
+  data: {}
