@@ -1,0 +1,79 @@
+[workspace]
+resolver = "3"
+members = [
+    "crates/core",
+    "crates/webserver",
+    "crates/controller",
+    "crates/worker",
+    "crates/queue-apalis",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.99"
+license = "UNLICENSED"
+publish = false
+repository = "https://github.com/faisalcayunda/PoolRouter"
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
+
+# ADR-0004 rev 4 section 4 (F0 crates). Versions are lower bounds (caret).
+# F2 crates (tonic, prost, wasmtime) are intentionally absent (K-31).
+[workspace.dependencies]
+# 4.1 Core service
+tokio = { version = "1.54", features = ["rt-multi-thread", "macros", "time", "signal", "net"] }
+tokio-util = "0.7.20"
+axum = { version = "0.8.9", features = ["json", "macros"] }
+tower = { version = "0.5.3", features = ["timeout", "limit"] }
+tower-http = { version = "0.7.1", features = ["trace", "timeout", "request-id", "limit", "sensitive-headers", "set-header"] }
+utoipa = { version = "6.0", features = ["axum_extras", "uuid", "chrono", "yaml"] }
+utoipa-axum = "0.3"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
+regex = "1.13"
+chrono = { version = "0.4.45", features = ["serde", "clock"] }
+uuid = { version = "1.29", features = ["v7", "serde"] }
+axum-extra = { version = "0.12.6", default-features = false, features = ["cookie"] }
+thiserror = "2.0"
+anyhow = "1.0"
+
+# 4.2 Data, Redis, outbound HTTP
+sqlx = { version = "0.9.0", default-features = false, features = ["postgres", "runtime-tokio", "tls-rustls-aws-lc-rs", "macros", "migrate", "uuid", "chrono", "json"] }
+redis = { version = "1.8", features = ["tokio-rustls-comp", "connection-manager", "script", "aio"] }
+reqwest = { version = "0.13.5", default-features = false, features = ["rustls", "json", "http2"] }
+rustls = { version = "0.23.46", default-features = false, features = ["aws_lc_rs", "std", "tls12", "logging"] }
+rustls-pki-types = "1.15"
+
+# 4.3 Queue (adapter queue-apalis only)
+apalis = { version = "1.0.0", default-features = false, features = ["tracing"] }
+apalis-amqp = "=1.0.0"
+lapin = { version = "4.12", default-features = false, features = ["tokio"] }
+
+# 4.4 Crypto and secrets
+aws-lc-rs = "1.19"
+argon2 = { version = "0.6", features = ["password-hash", "zeroize"] }
+jsonwebtoken = { version = "11.1", features = ["aws_lc_rs", "use_pem"] }
+secrecy = { version = "0.10.3", features = ["serde"] }
+zeroize = { version = "1.9", features = ["derive"] }
+
+# 4.5 Observability (the four OpenTelemetry crates move in lockstep)
+tracing = "0.1.44"
+tracing-subscriber = { version = "0.3.23", features = ["json", "env-filter", "fmt"] }
+opentelemetry = "0.33"
+opentelemetry_sdk = "0.33"
+opentelemetry-otlp = { version = "0.33", features = ["http-proto"] }
+tracing-opentelemetry = "0.34"
+metrics = "0.24"
+metrics-exporter-prometheus = { version = "0.18", features = ["http-listener"] }
+
+# 4.6 Test (dev-dependencies)
+proptest = "1.12"
+wiremock = "0.6.5"
+
+# Internal crates
+poolrouter-core = { path = "crates/core" }

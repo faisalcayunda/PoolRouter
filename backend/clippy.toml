@@ -1,0 +1,8 @@
+# ADR-0004 section 3 rule 5 / ADR-0002 D5: certificate verification can never
+# be turned off, not even in dev.
+disallowed-methods = [
+    { path = "reqwest::ClientBuilder::tls_danger_accept_invalid_certs", reason = "ADR-0002 D5: TLS verification must stay on" },
+    { path = "reqwest::ClientBuilder::danger_accept_invalid_certs", reason = "ADR-0002 D5: TLS verification must stay on" },
+    { path = "reqwest::ClientBuilder::tls_danger_accept_invalid_hostnames", reason = "ADR-0002 D5: TLS verification must stay on" },
+    { path = "reqwest::ClientBuilder::danger_accept_invalid_hostnames", reason = "ADR-0002 D5: TLS verification must stay on" },
+]

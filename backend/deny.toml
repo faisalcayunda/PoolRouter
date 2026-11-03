@@ -1,0 +1,66 @@
+# ADR-0004 section 3 rule 4: supply chain gate.
+
+[graph]
+all-features = true
+
+[advisories]
+version = 2
+yanked = "deny"
+
+[licenses]
+version = 2
+# MIT, Apache-2.0, BSD-2-Clause, BSD-3-Clause, ISC, Zlib, Unicode-3.0, plus
+# OpenSSL for aws-lc-rs/aws-lc-sys. Anything else goes through ADR-0004 section 3 rule 3.
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Zlib",
+    "Unicode-3.0",
+    "OpenSSL",
+]
+confidence-threshold = 0.9
+# "OpenSSL" is listed for aws-lc-rs/aws-lc-sys by ADR-0004; do not warn if a build does not hit it.
+unused-allowed-license = "allow"
+
+# Workspace crates are not published and carry no license.
+[licenses.private]
+ignore = true
+
+# Transitive dependencies of crates mandated by ADR-0004 that use licenses outside
+# the allow list. Per-crate exceptions only; the global allow list stays as the ADR
+# defines it. Needs a decision from Shu under ADR-0004 section 3 rule 3 (see SHAA-191).
+[[licenses.exceptions]]
+crate = "webpki-roots"
+allow = ["CDLA-Permissive-2.0"]
+
+[[licenses.exceptions]]
+crate = "webpki-root-certs"
+allow = ["CDLA-Permissive-2.0"]
+
+[[licenses.exceptions]]
+crate = "xxhash-rust"
+allow = ["BSL-1.0"]
+
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"
+allow-wildcard-paths = true
+deny = [
+    # TLS is rustls only (ADR-0002 D5).
+    { crate = "openssl-sys" },
+    { crate = "native-tls" },
+    # No duplicate majors of these (ADR-0004 section 3 rule 4).
+    { crate = "rustls", deny-multiple-versions = true },
+    { crate = "tokio", deny-multiple-versions = true },
+    { crate = "hyper", deny-multiple-versions = true },
+    { crate = "opentelemetry", deny-multiple-versions = true },
+]
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = []

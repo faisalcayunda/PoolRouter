@@ -74,3 +74,16 @@ compose-test-dind:
 image:
 	@test -f backend/Containerfile || { echo "backend/Containerfile belum ada (menunggu SHAA-175)" >&2; exit 2; }
 	$(CONTAINER_ENGINE) build -f backend/Containerfile -t localhost/poolrouter-backend:$(IMAGE_TAG) backend
+
+# Repo gate (ADR-0003 section 5): `make setup test lint` from the repo root.
+# Each stack keeps its own Makefile; these targets only delegate. frontend/ is
+# included once it has a Makefile, so adding it needs no change here.
+STACKS := backend $(if $(wildcard frontend/Makefile),frontend)
+
+.PHONY: setup test lint fmt clean
+
+setup test lint fmt clean:
+	@set -e; for s in $(STACKS); do \
+		echo "==> $$s: $@"; \
+		$(MAKE) -C $$s $@; \
+	done
