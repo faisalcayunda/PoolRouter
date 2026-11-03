@@ -25,6 +25,7 @@ Nothing here is a secret. Responses carry no real NIK or personal data.
 """
 
 import json
+import math
 import os
 import threading
 import time
@@ -38,6 +39,10 @@ STATE = {
     "kuota_efektif": json.loads(os.environ.get("MOCK_KUOTA_EFEKTIF", "{}") or "{}"),
 }
 COUNTS = {}  # pool -> {"attempts": int, "over_kuota": int}
+# pool -> list of actual handler latencies in ms (receive to response write). The
+# nominal MOCK_LATENCY_MS is not the same as this: time.sleep adds jitter. Overhead
+# in the report is computed against the mean of this list from a control run.
+LAT_ACTUAL = {}
 BODY_FILE = os.environ.get("MOCK_BODY_FILE", "")
 # Default body follows ADR-0002 rev 5 D3 (contract "Verify By Element"): a
 # pagination envelope whose `content` holds exactly one element, with values
@@ -66,6 +71,31 @@ def record_attempt(pool):
         quota = STATE["kuota_efektif"].get(pool)
         if quota is not None and c["attempts"] > int(quota):
             c["over_kuota"] += 1
+
+
+def record_actual_latency(pool, ms):
+    with LOCK:
+        LAT_ACTUAL.setdefault(pool, []).append(ms)
+
+
+def _summary(values):
+    if not values:
+        return {"count": 0}
+    s = sorted(values)
+
+    def pct(p):
+        # nearest-rank percentile
+        return s[min(len(s) - 1, max(0, math.ceil(p / 100.0 * len(s)) - 1))]
+
+    return {
+        "count": len(s),
+        "mean": round(sum(s) / len(s), 3),
+        "min": round(s[0], 3),
+        "p50": round(pct(50), 3),
+        "p95": round(pct(95), 3),
+        "p99": round(pct(99), 3),
+        "max": round(s[-1], 3),
+    }
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -116,13 +146,26 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(200, {"ok": True})
         if path == "/_stats":
             with LOCK:
-                pools = {k: dict(v, kuota_efektif=STATE["kuota_efektif"].get(k)) for k, v in COUNTS.items()}
+                pools = {
+                    k: dict(v, kuota_efektif=STATE["kuota_efektif"].get(k), latency_actual_ms=_summary(LAT_ACTUAL.get(k, [])))
+                    for k, v in COUNTS.items()
+                }
                 total = sum(v["over_kuota"] for v in COUNTS.values())
                 latency = STATE["latency_ms"]
-            return self._send(200, {"latency_ms": latency, "pools": pools, "m02_over_kuota_total": total})
+                all_lat = [x for vals in LAT_ACTUAL.values() for x in vals]
+            return self._send(
+                200,
+                {
+                    "latency_ms": latency,
+                    "latency_actual_ms": _summary(all_lat),
+                    "pools": pools,
+                    "m02_over_kuota_total": total,
+                },
+            )
         if path == "/_reset":
             with LOCK:
                 COUNTS.clear()
+                LAT_ACTUAL.clear()
             return self._send(200, {"reset": True})
         if path == "/_config":
             try:
@@ -144,8 +187,11 @@ class Handler(BaseHTTPRequestHandler):
             record_attempt(pool)
             with LOCK:
                 latency = STATE["latency_ms"]
+            t0 = time.perf_counter()
             if latency > 0:
                 time.sleep(latency / 1000.0)
+            actual_ms = (time.perf_counter() - t0) * 1000.0
+            record_actual_latency(pool, actual_ms)
             return self._send(200, BODY)
         return self._send(404, {"error": "tidak_ditemukan"})
 
