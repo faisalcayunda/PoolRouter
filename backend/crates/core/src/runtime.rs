@@ -39,6 +39,25 @@ async fn wait_for_signal() {
     let _ = tokio::signal::ctrl_c().await;
 }
 
+/// Entry point for the binaries: validate configuration (contract section 1),
+/// then run. Bad configuration exits non-zero and names the variables, never
+/// their values. `--check` skips the configuration load (smoke test).
+pub async fn start(
+    name: &'static str,
+    component: crate::config::Component,
+    args: &[String],
+) -> std::process::ExitCode {
+    if !args.iter().any(|a| a == "--check")
+        && let Err(err) = crate::config::Config::from_env(component)
+    {
+        init_tracing();
+        tracing::error!(component = name, error = %err, "configuration rejected");
+        return std::process::ExitCode::from(2);
+    }
+    run_skeleton(name, args).await;
+    std::process::ExitCode::SUCCESS
+}
+
 /// Skeleton entry point used by the binaries until the real services land.
 ///
 /// With `--check` it initialises logging and returns immediately (smoke test).
