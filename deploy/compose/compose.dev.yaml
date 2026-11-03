@@ -10,6 +10,9 @@ services:
     build:
       context: ../../backend
       dockerfile: Containerfile
+      args:
+        # Eksplisit: VM Podman lokal 2 CPU / 3,7 GiB (SHAA-222). Default Containerfile (2) tidak dipakai di sini.
+        JOBS: "1"
     environment:
       POOLROUTER_DB_SSLMODE: disable
       POOLROUTER_SEED_SYNTHETIC: "true"
