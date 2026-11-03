@@ -7,11 +7,17 @@ import {
 import { cx } from './cx';
 
 /** M3 list built on RAC ListBox (semantic listbox; used for settings lists and audit rows). */
-export function List<T extends object>({ className, ...props }: Omit<ListBoxProps<T>, 'className'> & { className?: string }) {
+export function List<T extends object>({
+  className,
+  ...props
+}: Omit<ListBoxProps<T>, 'className'> & { className?: string }) {
   return <RacListBox {...props} className={cx('flex flex-col py-2 outline-none', className)} />;
 }
 
-export function ListItem({ className, ...props }: Omit<ListBoxItemProps, 'className'> & { className?: string }) {
+export function ListItem({
+  className,
+  ...props
+}: Omit<ListBoxItemProps, 'className'> & { className?: string }) {
   return (
     <RacListBoxItem
       {...props}

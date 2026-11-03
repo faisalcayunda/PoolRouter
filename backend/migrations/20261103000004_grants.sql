@@ -26,7 +26,17 @@ GRANT INSERT ON request TO pr_api;
 GRANT UPDATE (status, upstream_pool_id, dispatched_at, first_attempt_at, completed_at, attempt_count, final_kode_transaksi,
   output_payload, sumber_hasil, failure_reason, cancel_reason, cancelled_by, webhook_status, not_before) ON request TO pr_api;
 GRANT SELECT, INSERT ON request_status_history TO pr_api;
-GRANT SELECT, INSERT, UPDATE ON transaction_log TO pr_api;   -- sync path; trigger R-03 limits updates
+-- 8.1: the webserver service account may WRITE the NIK and the input payload, not read them. A-01: full NIK and
+-- payload are readable only through audited SECURITY DEFINER functions, pr_worker and pr_webhook. So no `nik`,
+-- `request_payload` or `response_payload` here, and no table-level SELECT (which would grant every column).
+DO $$ BEGIN
+  EXECUTE format('GRANT SELECT (%s) ON transaction_log TO pr_api',
+                 pg_temp.kolom('transaction_log', ARRAY['nik', 'request_payload', 'response_payload']));
+END $$;
+GRANT INSERT ON transaction_log TO pr_api;
+-- Sync path: write NIK / request payload once, then the outcome. Trigger R-03 limits the update.
+GRANT UPDATE (nik, request_payload, response_payload, responded_at, duration_ms, status_akses, provider_http_status,
+  provider_response_code, error_class, response_hash) ON transaction_log TO pr_api;
 GRANT EXECUTE ON FUNCTION fn_purge_p02(uuid), fn_entitas_nonaktif_pertama(uuid) TO pr_api;
 
 -- ================================================================ pr_worker
@@ -86,7 +96,10 @@ DO $$ BEGIN
 END $$;
 GRANT SELECT, INSERT, UPDATE, DELETE ON downstream_pool_rute, client_endpoint, endpoint_metadata_field TO pr_admin_api;
 GRANT SELECT, INSERT ON provider_config_versi, endpoint_config_versi TO pr_admin_api;
--- Credentials: hash is write-only; status / dicabut_* only through fn_set_status_kredensial (EN-03)
+-- Credentials: hash is write-only; status / dicabut_* only through fn_set_status_kredensial (EN-03).
+-- fn_set_status_kredensial is NOT granted to pr_admin_api: the only sanctioned path is
+-- fn_nonaktifkan_entitas('kredensial', ...), which checks client ownership, writes audit_konfigurasi and cancels
+-- waiting requests (EN-03, EN-08, DQ-37 e-f). A direct call would skip all three, so the grant is revoked.
 GRANT SELECT (credential_id, client_id, jenis, status, dicabut_at, dicabut_oleh, kedaluwarsa_at, dibuat_at, dibuat_oleh) ON client_kredensial TO pr_admin_api;
 GRANT INSERT ON client_kredensial TO pr_admin_api;
 GRANT UPDATE (kunci_hash, kedaluwarsa_at) ON client_kredensial TO pr_admin_api;
@@ -104,6 +117,9 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON admin_session TO pr_admin_api;
 GRANT SELECT, INSERT ON audit_konfigurasi TO pr_admin_api;
 -- audit_akses: INSERT only; reading goes through fn_lihat_audit (E-06)
 GRANT INSERT ON audit_akses TO pr_admin_api;
+-- audit_login (ADR-0003 3.6): written through fn_catat_login (SECURITY DEFINER) so the id is a UUIDv7; the table
+-- itself is not writable by the role and not readable by anyone.
+GRANT EXECUTE ON FUNCTION fn_catat_login(uuid, text, text, text, text, text) TO pr_admin_api;
 GRANT SELECT ON upstream_attempt_daily TO pr_admin_api;               -- usage and quota aggregates, no NIK
 GRANT SELECT ON v_request_tersamar, v_transaction_log_tersamar TO pr_admin_api;
 GRANT EXECUTE ON FUNCTION fn_nonaktifkan_entitas(text, uuid, uuid, text),
@@ -111,5 +127,7 @@ GRANT EXECUTE ON FUNCTION fn_nonaktifkan_entitas(text, uuid, uuid, text),
   fn_webhook_log_milik_client(uuid), fn_auditor_lihat_transaksi(uuid, text, uuid, text, text),
   fn_auditor_cari_nik(uuid, text, text, timestamptz, timestamptz, text, text, text),
   fn_ekspor_log_auditor(uuid, uuid, text, text, text, timestamptz, timestamptz, uuid, text, text, text),
-  fn_lihat_audit(uuid, timestamptz, timestamptz, integer, text, text), fn_punya_peran(uuid, text),
-  fn_set_status_kredensial(uuid, text, uuid, text) TO pr_admin_api;
+  fn_lihat_audit(uuid, timestamptz, timestamptz, integer, text, text), fn_punya_peran(uuid, text)
+  TO pr_admin_api;
+-- Explicit: no direct credential-revocation path. Reached only from fn_nonaktifkan_entitas (SECURITY DEFINER).
+REVOKE ALL ON FUNCTION fn_set_status_kredensial(uuid, text, uuid, text) FROM PUBLIC;

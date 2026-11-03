@@ -10,21 +10,30 @@ import {
 } from 'react-aria-components';
 import { cx } from './cx';
 
-export function Tabs({ className, ...props }: Omit<TabsProps,'className'> & { className?: string }) {
+export function Tabs({
+  className,
+  ...props
+}: Omit<TabsProps, 'className'> & { className?: string }) {
   return <RacTabs {...props} className={cx('flex flex-col gap-2', className)} />;
 }
 
 /** Primary tabs: full-width items with the active indicator under the label. */
-export function TabList({ className, ...props }: Omit<TabListProps<object>,'className'> & { className?: string }) {
+export function TabList({
+  className,
+  ...props
+}: Omit<TabListProps<object>, 'className'> & { className?: string }) {
   return (
     <RacTabList
       {...props}
-      className={cx('flex items-stretch gap-0 overflow-x-auto border-b border-outline-variant', className)}
+      className={cx(
+        'flex items-stretch gap-0 overflow-x-auto border-b border-outline-variant',
+        className,
+      )}
     />
   );
 }
 
-export function Tab({ className, ...props }: Omit<TabProps,'className'> & { className?: string }) {
+export function Tab({ className, ...props }: Omit<TabProps, 'className'> & { className?: string }) {
   return (
     <RacTab
       {...props}
@@ -39,6 +48,14 @@ export function Tab({ className, ...props }: Omit<TabProps,'className'> & { clas
   );
 }
 
-export function TabPanel({ className, ...props }: Omit<TabPanelProps,'className'> & { className?: string }) {
-  return <RacTabPanel {...props} className={cx('typescale-body-medium py-2 text-on-surface outline-none', className)} />;
+export function TabPanel({
+  className,
+  ...props
+}: Omit<TabPanelProps, 'className'> & { className?: string }) {
+  return (
+    <RacTabPanel
+      {...props}
+      className={cx('typescale-body-medium py-2 text-on-surface outline-none', className)}
+    />
+  );
 }

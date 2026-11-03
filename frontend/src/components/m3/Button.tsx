@@ -19,7 +19,12 @@ export interface ButtonProps extends Omit<RacButtonProps, 'className'> {
 }
 
 /** M3 common button. One `filled` per area; `elevated` is not in the F0 catalog. */
-export function Button({ variant = 'filled', destructive = false, className, ...props }: ButtonProps) {
+export function Button({
+  variant = 'filled',
+  destructive = false,
+  className,
+  ...props
+}: ButtonProps) {
   const tone = destructive
     ? variant === 'filled'
       ? 'bg-error text-on-error'

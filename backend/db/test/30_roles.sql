@@ -80,7 +80,15 @@ SELECT t.gagal('SELECT * FROM audit_akses', '42501', 'pr_api: audit_akses denied
 SELECT t.gagal('DELETE FROM request', '42501', 'pr_api: no DELETE');
 SELECT t.gagal('SELECT input_payload FROM request', '42501', 'pr_api: input_payload not readable');
 SELECT t.jalan('SELECT output_payload FROM request', 'pr_api: output_payload readable (polling)');
-SELECT t.jalan('SELECT nik FROM transaction_log', 'pr_api: NIK readable for sync transaction path');
+SELECT t.gagal('SELECT nik FROM transaction_log', '42501', 'pr_api: NIK select denied (A-01)');
+SELECT t.gagal('SELECT request_payload FROM transaction_log', '42501', 'pr_api: request_payload denied (A-01)');
+SELECT t.gagal('SELECT response_payload FROM transaction_log', '42501', 'pr_api: response_payload denied (A-01)');
+SELECT t.gagal('SELECT * FROM transaction_log', '42501', 'pr_api: SELECT * on transaction_log denied');
+SELECT t.jalan('SELECT kode_transaksi, status_akses, requested_at FROM transaction_log', 'pr_api: log status columns readable (sync path)');
+SELECT t.ok(t.hitung($q$SELECT count(*) FROM information_schema.column_privileges
+   WHERE grantee = 'pr_api' AND table_name = 'transaction_log' AND privilege_type = 'SELECT'
+     AND column_name IN ('nik', 'request_payload', 'response_payload')$q$) = 0,
+  'pr_api has no column SELECT on nik / request_payload / response_payload');
 SELECT t.gagal($$UPDATE client SET aktif = false$$, '42501', 'pr_api: cannot change client status');
 RESET ROLE;
 
@@ -124,6 +132,14 @@ SELECT t.gagal('SELECT kunci_hash FROM client_kredensial', '42501', 'pr_admin_ap
 SELECT t.jalan('SELECT webhook_url, secret_versi, kek_id FROM client_webhook', 'pr_admin_api: non-secret webhook columns readable');
 SELECT t.jalan($$UPDATE client_webhook SET secret_ciphertext = '\x99', secret_versi = secret_versi WHERE false$$, 'pr_admin_api: webhook secret writable');
 SELECT t.gagal('SELECT * FROM audit_akses', '42501', 'pr_admin_api: audit_akses unreadable except via fn_lihat_audit');
+SELECT t.gagal('SELECT * FROM audit_login', '42501', 'pr_admin_api: audit_login is write-only');
+SELECT t.gagal($$INSERT INTO audit_login (audit_id, pengguna_id, aksi, hasil, sesi_id, sumber_ip)
+  VALUES (uuidv7(), '00000000-0000-7000-8000-000000000001', 'login', 'berhasil', 'sesi-r1', '10.0.0.1')$$, '42501',
+  'pr_admin_api: audit_login is not directly insertable (goes through fn_catat_login)');
+SELECT t.jalan($$SELECT fn_catat_login('00000000-0000-7000-8000-000000000001', 'login', 'berhasil', 'sesi-r1', '10.0.0.1', 'uji/1')$$,
+  'pr_admin_api: writes the login trail through fn_catat_login');
+SELECT t.gagal('UPDATE audit_login SET hasil = hasil', '42501', 'pr_admin_api: audit_login not updatable');
+SELECT t.gagal('DELETE FROM audit_login', '42501', 'pr_admin_api: audit_login not deletable');
 SELECT t.gagal('UPDATE audit_akses SET peran = peran', '42501', 'pr_admin_api: audit_akses not updatable');
 SELECT t.gagal('DELETE FROM audit_akses', '42501', 'pr_admin_api: audit_akses not deletable');
 SELECT t.gagal('DELETE FROM audit_konfigurasi', '42501', 'pr_admin_api: audit_konfigurasi not deletable');

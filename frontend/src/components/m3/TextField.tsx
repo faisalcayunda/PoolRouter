@@ -53,13 +53,7 @@ export interface TextAreaProps extends Omit<RacTextAreaProps, 'className'> {
 }
 
 /** M3 multiline text field (outlined), used for notes and long values in F0. */
-export function TextArea({
-  label,
-  description,
-  errorMessage,
-  className,
-  ...props
-}: TextAreaProps) {
+export function TextArea({ label, description, errorMessage, className, ...props }: TextAreaProps) {
   return (
     <RacTextField className={cx('flex flex-col gap-1', className)}>
       {label ? <Label>{label}</Label> : null}

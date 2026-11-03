@@ -18,8 +18,9 @@ export function Radio({ className, children, ...props }: RadioProps) {
   return (
     <RacRadio
       {...props}
-      className={cx('m3-state m3-focus m3-disabled typescale-body-medium group flex cursor-pointer items-center gap-3 rounded-full py-1 text-on-surface',
-          'data-[disabled]:text-on-surface/38',
+      className={cx(
+        'm3-state m3-focus m3-disabled typescale-body-medium group flex cursor-pointer items-center gap-3 rounded-full py-1 text-on-surface',
+        'data-[disabled]:text-on-surface/38',
         className,
       )}
     >
@@ -53,12 +54,7 @@ export interface RadioGroupProps extends Omit<RacRadioGroupProps, 'className'> {
 /** M3 radio group with an associated group label. */
 export function RadioGroup({ label, children, className, ...props }: RadioGroupProps) {
   return (
-    <RacRadioGroup
-      {...props}
-      className={cx('flex flex-col gap-2',
-        className,
-      )}
-    >
+    <RacRadioGroup {...props} className={cx('flex flex-col gap-2', className)}>
       {label ? <Label className="typescale-body-medium text-on-surface">{label}</Label> : null}
       {children}
     </RacRadioGroup>

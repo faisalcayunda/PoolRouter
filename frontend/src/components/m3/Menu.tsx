@@ -15,18 +15,13 @@ export function MenuTrigger({ children, ...props }: MenuTriggerProps & { childre
   return <RacMenuTrigger {...props}>{children}</RacMenuTrigger>;
 }
 
-export interface MenuProps<T extends object = object>
-  extends Omit<RacMenuProps<T>, 'className'> {
+export interface MenuProps<T extends object = object> extends Omit<RacMenuProps<T>, 'className'> {
   className?: string;
   children: ReactNode;
 }
 
 /** M3 menu inside a popover; keyboard: arrows navigate, Enter selects, Esc closes. */
-export function Menu<T extends object = object>({
-  children,
-  className,
-  ...props
-}: MenuProps<T>) {
+export function Menu<T extends object = object>({ children, className, ...props }: MenuProps<T>) {
   return (
     <Popover
       className={cx(
@@ -44,7 +39,10 @@ export function Menu<T extends object = object>({
   );
 }
 
-export function MenuItem({ className, ...props }: Omit<MenuItemProps, 'className'> & { className?: string }) {
+export function MenuItem({
+  className,
+  ...props
+}: Omit<MenuItemProps, 'className'> & { className?: string }) {
   return (
     <RacMenuItem
       {...props}

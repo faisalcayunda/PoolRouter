@@ -12,7 +12,10 @@ export function TooltipTrigger(props: TooltipTriggerComponentProps) {
 }
 
 /** Plain tooltip: short helper text on hover/focus (ADR-0003 7.5). */
-export function Tooltip({ className, ...props }: Omit<RacTooltipProps,'className'> & { className?: string }) {
+export function Tooltip({
+  className,
+  ...props
+}: Omit<RacTooltipProps, 'className'> & { className?: string }) {
   return (
     <RacTooltip
       {...props}

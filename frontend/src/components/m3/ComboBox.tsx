@@ -12,8 +12,7 @@ import type { ReactNode } from 'react';
 import { cx } from './cx';
 import { Icon, icons } from '../../icons';
 
-export interface ComboBoxProps<T extends object>
-  extends Omit<RacComboBoxProps<T>, 'className'> {
+export interface ComboBoxProps<T extends object> extends Omit<RacComboBoxProps<T>, 'className'> {
   className?: string;
   label?: ReactNode;
   items?: Iterable<T>;

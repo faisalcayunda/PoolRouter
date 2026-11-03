@@ -1,7 +1,4 @@
-import {
-  Switch as RacSwitch,
-  type SwitchProps as RacSwitchProps,
-} from 'react-aria-components';
+import { Switch as RacSwitch, type SwitchProps as RacSwitchProps } from 'react-aria-components';
 import type { ReactNode } from 'react';
 import { cx } from './cx';
 

@@ -17,7 +17,5 @@ export interface CardProps {
 
 /** M3 card container. Interactive behaviour is composed with Button/IconButton at usage sites. */
 export function Card({ variant = 'filled', className, children }: CardProps) {
-  return (
-    <div className={cx('rounded-medium p-4', VARIANT[variant], className)}>{children}</div>
-  );
+  return <div className={cx('rounded-medium p-4', VARIANT[variant], className)}>{children}</div>;
 }

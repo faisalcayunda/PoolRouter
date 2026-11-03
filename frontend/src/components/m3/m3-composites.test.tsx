@@ -6,7 +6,14 @@ import { Menu, MenuItem, MenuSeparator, MenuTrigger } from './Menu';
 import { Select, SelectItem } from './Select';
 import { Button } from './Button';
 import { ComboBox, ComboBoxItem } from './ComboBox';
-import { DataTable, DataTableBody, DataTableCell, DataTableColumn, DataTableHeader, DataTableRow } from './DataTable';
+import {
+  DataTable,
+  DataTableBody,
+  DataTableCell,
+  DataTableColumn,
+  DataTableHeader,
+  DataTableRow,
+} from './DataTable';
 import { Tab, TabList, TabPanel, Tabs } from './Tabs';
 
 describe('Select', () => {
@@ -59,7 +66,9 @@ describe('ComboBox', () => {
     const opt = await screen.findByRole('option', { name: 'pump-01' });
     await userEvent.click(opt);
     expect(input).toHaveValue('pump-01');
-    await waitFor(() => expect(screen.queryByRole('option', { name: 'valve-02' })).not.toBeInTheDocument());
+    await waitFor(() =>
+      expect(screen.queryByRole('option', { name: 'valve-02' })).not.toBeInTheDocument(),
+    );
   });
 });
 

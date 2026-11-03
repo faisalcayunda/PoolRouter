@@ -51,8 +51,11 @@ describe('AppShell — compact window size class', () => {
     const opener = screen.getByRole('button', { name: 'Buka menu navigasi' });
     await userEvent.click(opener);
     const dialog = await screen.findByRole('dialog', { name: 'Navigasi utama' });
-    expect(dialog).toHaveAttribute('aria-modal', 'true');
     expect(screen.getByRole('navigation', { name: 'Navigasi utama' })).toBeInTheDocument();
+    // Focus moves into the drawer; React Aria hides the rest of the app from AT
+    // instead of setting aria-modal, so assert the observable effect.
+    await waitFor(() => expect(dialog.contains(document.activeElement)).toBe(true));
+    expect(screen.queryByRole('main')).not.toBeInTheDocument();
   });
 
   it('closes the modal drawer with Escape', async () => {

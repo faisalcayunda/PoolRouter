@@ -360,6 +360,32 @@ CREATE TRIGGER audit_akses_append_only BEFORE UPDATE OR DELETE ON audit_akses
 CREATE TRIGGER audit_akses_no_truncate BEFORE TRUNCATE ON audit_akses
   FOR EACH STATEMENT EXECUTE FUNCTION tg_append_only();
 
+-- ---------------------------------------------------------------- audit_login (ADR-0003 3.6)
+-- Admin login/logout trail, deliberately separate from audit_akses: audit_akses tracks NIK data access and its
+-- pengguna_id is NOT NULL, but a failed login for an unknown username has no user. The typed username is never
+-- stored (it may hold a mistyped password or personal data); passwords are never stored. Limited, append-only,
+-- INSERT only for pr_admin_api; only an auditor reads it, through a SECURITY DEFINER function that writes an
+-- audit_akses lihat_audit row. Same retention as audit_akses.
+CREATE TABLE audit_login (
+  audit_id uuid PRIMARY KEY,
+  pengguna_id uuid,                                    -- NULL when the username is not recognised
+  aksi text NOT NULL CHECK (aksi IN ('login', 'logout')),
+  hasil text NOT NULL CHECK (hasil IN ('berhasil', 'gagal', 'terkunci')),
+  sesi_id varchar(64),
+  sumber_ip varchar(45) NOT NULL,
+  user_agent varchar(512),
+  terjadi_at timestamptz NOT NULL DEFAULT now(),
+  -- a successful login and any logout belong to a session; a failed or locked-out attempt does not
+  CONSTRAINT chk_sesi_wajib CHECK (((aksi = 'logout' OR hasil = 'berhasil') AND sesi_id IS NOT NULL)
+                                    OR (aksi = 'login' AND hasil IN ('gagal', 'terkunci') AND sesi_id IS NULL))
+);
+CREATE INDEX audit_login_terjadi_idx ON audit_login (terjadi_at);
+CREATE INDEX audit_login_pengguna_idx ON audit_login (pengguna_id, terjadi_at);
+CREATE TRIGGER audit_login_append_only BEFORE UPDATE OR DELETE ON audit_login
+  FOR EACH ROW EXECUTE FUNCTION tg_append_only();
+CREATE TRIGGER audit_login_no_truncate BEFORE TRUNCATE ON audit_login
+  FOR EACH STATEMENT EXECUTE FUNCTION tg_append_only();
+
 -- ---------------------------------------------------------------- data balikan (5, F1 jobs; tables exist so H-01/H-02 can be written)
 CREATE TABLE data_balikan_batch (
   batch_id uuid PRIMARY KEY,

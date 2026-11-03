@@ -19,8 +19,9 @@ export function Checkbox({ className, children, ...props }: CheckboxProps) {
   return (
     <RacCheckbox
       {...props}
-      className={cx('m3-state m3-focus m3-disabled typescale-body-medium group flex cursor-pointer items-center gap-3 rounded-extra-small py-1 text-on-surface',
-          'data-[disabled]:text-on-surface/38',
+      className={cx(
+        'm3-state m3-focus m3-disabled typescale-body-medium group flex cursor-pointer items-center gap-3 rounded-extra-small py-1 text-on-surface',
+        'data-[disabled]:text-on-surface/38',
         className,
       )}
     >
@@ -56,12 +57,7 @@ export interface CheckboxGroupProps extends Omit<RacCheckboxGroupProps, 'classNa
 /** M3 checkbox group with an associated group label. */
 export function CheckboxGroup({ label, children, className, ...props }: CheckboxGroupProps) {
   return (
-    <RacCheckboxGroup
-      {...props}
-      className={cx('flex flex-col gap-2',
-        className,
-      )}
-    >
+    <RacCheckboxGroup {...props} className={cx('flex flex-col gap-2', className)}>
       {label ? <Label className="typescale-body-medium text-on-surface">{label}</Label> : null}
       {children}
     </RacCheckboxGroup>
