@@ -288,7 +288,10 @@ end
 if terpakai >= a.kuota_efektif then
   return { 'kuota_habis', terpakai, antre }
 end
-if sync == '0' and terpakai + antre >= a.kuota_efektif then
+if sync == '1' and terpakai + antre >= a.kuota_efektif then
+  return { 'kuota_habis', terpakai, antre }
+end
+if terpakai + antre >= a.kuota_efektif then
   return { 'antrean_penuh', terpakai, antre }
 end
 
