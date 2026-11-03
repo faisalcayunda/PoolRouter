@@ -58,6 +58,8 @@ jobs:
             # Nilai acak per run, hanya untuk smoke test. Tidak dicetak.
             openssl rand -hex 24 > "$dir/$f"
             chmod 0444 "$dir/$f"
+            # Sensor nilai di log job, jika kebetulan tercetak oleh tool di bawahnya.
+            echo "::add-mask::$(cat "$dir/$f")"
           done
           env_file="$RUNNER_TEMP/poolrouter.env"
           sed "s|^POOLROUTER_SECRETS_DIR=.*|POOLROUTER_SECRETS_DIR=$dir|" \
@@ -69,6 +71,15 @@ jobs:
         run: |
           sudo env "PATH=$PATH" make compose-test-dind \
             CONTAINER_ENGINE=podman SHAA_ISSUE="$SHAA_ISSUE" ENV_FILE="$ENV_FILE"
+
+      - name: Cetak log harness saat V3 gagal
+        if: failure()
+        run: |
+          # Log ditulis root oleh sudo. Dibaca di sini, sebelum step pembersihan.
+          for f in deploy/compose/test/logs/*.log; do
+            echo "--- $f"
+            sudo cat "$f" || true
+          done
 
       - name: Bersihkan resource berlabel (selalu)
         if: always()

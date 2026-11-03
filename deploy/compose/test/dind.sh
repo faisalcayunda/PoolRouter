@@ -41,6 +41,15 @@ log() { echo "$*" | tee -a "$LOG"; }
 # Pembersihan: resource berlabel milik issue ini saja (shaal-playbook §6).
 cleanup() {
   rc=$?
+  if [ "$rc" != 0 ]; then
+    # Diagnostik sebelum resource dihapus: status dan log daemon DinD (tanpa nilai secret).
+    {
+      echo "== DIAG (rc=$rc): resource berlabel"
+      podman ps -a --filter "label=shaal.issue=$SHAA_ISSUE" 2>&1 || true
+      echo "== DIAG: podman logs $NAME (akhir)"
+      podman logs --tail 200 "$NAME" 2>&1 || true
+    } >> "$LOG" 2>&1
+  fi
   podman rm -f -v --filter "label=shaal.issue=$SHAA_ISSUE" >> "$LOG" 2>&1 || true
   podman volume prune -f --filter "label=shaal.issue=$SHAA_ISSUE" >> "$LOG" 2>&1 || true
   podman network prune -f --filter "label=shaal.issue=$SHAA_ISSUE" >> "$LOG" 2>&1 || true
