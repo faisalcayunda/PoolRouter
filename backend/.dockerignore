@@ -1,0 +1,15 @@
+# Konteks build backend (ADR-0001 Addendum A §3.3). Dibaca Buildah dan BuildKit.
+# Jangan kirim hasil build lokal, cache, atau berkas rahasia ke konteks.
+.git
+**/.git
+target
+**/target
+.cache
+**/.cache
+.env
+.env.*
+!.env.example
+**/*.env
+**/secrets
+**/*.pem
+**/*.key
