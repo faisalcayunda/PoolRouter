@@ -3,9 +3,18 @@
 #
 #   sh backend/db/test/fixtures/k20-load.sh
 #
-# Steps: start container -> bootstrap roles -> migrations -> 05_fixtures.sql -> k20.sql -> verify.
+# Steps: start container -> bootstrap roles -> migrations -> 05_fixtures.sql -> k20.sql -> argon2 hashes -> verify.
+# Requires POOLROUTER_TEST_PASSWORD in the environment (name only is passed to the container).
 # The container is labelled shaal.issue=SHAA-204 and removed on exit. Nothing is installed on the host.
 set -eu
+
+# Password for the synthetic K-20 admin logins (ui-null, ui-en). Passed by env NAME only; never
+# written to argv, logs, or the repo. Set it temporarily in the shell for the run.
+if [ -z "${POOLROUTER_TEST_PASSWORD:-}" ]; then
+  echo "POOLROUTER_TEST_PASSWORD is not set; refusing to load K-20 fixtures" >&2
+  exit 2
+fi
+ARGON2_APK=argon2=20190702-r5
 
 ENGINE=${CONTAINER_ENGINE:-podman}
 ISSUE=SHAA-204
@@ -59,6 +68,17 @@ echo "fixtures 05: ok"
 psql_su -d poolrouter_test -f - < "$here/k20.sql"
 echo "fixtures k20: ok"
 
+# Replace the placeholder hashes of the two K-20 UI logins with real argon2id hashes made inside
+# the throwaway container. The password comes from the env var name only (-e NAME, no value in argv).
+$ENGINE exec "$NAME" apk add --no-cache "$ARGON2_APK" >/dev/null
+hash=$($ENGINE exec -e POOLROUTER_TEST_PASSWORD "$NAME" sh -c '
+  salt=$(od -An -N16 -tx1 /dev/urandom | tr -d " \n")
+  printf "%s" "$POOLROUTER_TEST_PASSWORD" | argon2 "$salt" -id -e')
+case "$hash" in '$argon2id$'*) ;; *) echo "argon2 hash generation failed" >&2; exit 1 ;; esac
+printf "UPDATE admin_user SET password_hash = '%s' WHERE username IN ('ui-null','ui-en');\n" "$hash" \
+  | psql_su -d poolrouter_test -f -
+echo "admin hashes: ok"
+
 echo "==> verify"
 psql_su -d poolrouter_test -t -A -f - <<'SQL'
 DO $$
@@ -80,6 +100,8 @@ BEGIN
   IF n <> 0 THEN RAISE EXCEPTION 'K-20 pools with batas_percobaan <> 3: %', n; END IF;
   SELECT count(*) INTO n FROM admin_user WHERE bahasa_ui IS NULL AND username = 'ui-null';
   IF n <> 1 THEN RAISE EXCEPTION 'ui-null user missing'; END IF;
+  SELECT count(*) INTO n FROM admin_user WHERE username IN ('ui-null','ui-en') AND password_hash LIKE '$argon2id$synthetic%';
+  IF n <> 0 THEN RAISE EXCEPTION 'placeholder hash left on K-20 login users'; END IF;
   SELECT count(*) INTO n FROM client_webhook WHERE webhook_url !~ '^https://hook\.example\.test/';
   IF n <> 0 THEN RAISE EXCEPTION 'non-synthetic webhook host found: %', n; END IF;
   RAISE NOTICE 'K-20 fixture verify: ok';
