@@ -1,0 +1,20 @@
+# Konfigurasi Gitleaks (SHAA-207, keputusan Huan). Memperluas ruleset bawaan; tidak ada aturan yang dimatikan.
+# Hanya dua pengecualian sempit, keduanya dinilai sintetis oleh Ridley (nilai tidak ditulis di sini):
+# Rujukan: komentar Ridley (17:17 UTC) dan keputusan Huan (17:18 UTC) di SHAA-207, thread 01a1a26b-47a6-7a22-bf13-998b7d30f126.
+# Dilarang melebarkan ke backend/** atau ke pola JWT umum.
+title = "PoolRouter gitleaks"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Contoh sintetis yang sudah dinilai: token contoh OpenAPI/Rust dan fixture lint"
+# 1) Token contoh sintetis di dokumentasi OpenAPI dan anotasi Rust (header ES256 + payload sub=client,
+#    signature 12 karakter, bukan token nyata). Dicocokkan persis, bukan pola JWT umum.
+regexes = [
+  '''^eyJhbGciOiJFUzI1NiJ9\.eyJzdWIiOiJjbGllbnQifQ\.[A-Za-z0-9_-]{12}$''',
+]
+# 2) Fixture pelanggaran lint compose (sengaja salah; berisi digest, bukan kredensial). Satu berkas saja.
+paths = [
+  '''^deploy/compose/lint/fixtures/render-bad-prod-mock\.yaml$''',
+]
