@@ -132,6 +132,31 @@ BEGIN
   END;
 END $x$;
 
+-- T-04 positive: a correct request + history pair really COMMITs (insert, then an UPDATE transition). Without this the negative
+-- test above also passes when the trigger rejects everything (SHAA-245).
+BEGIN;
+CREATE TEMP TABLE _p AS SELECT t.buat_request('{}') AS id;
+COMMIT;
+SELECT t.jalan($$SELECT 1 FROM request r JOIN request_status_history h USING (request_id)
+  WHERE r.request_id = (SELECT id FROM _p) AND h.seq = 1 AND h.status_dari IS NULL AND h.status_ke = 'queued'$$, 'T-04: insert + history committed');
+BEGIN;
+UPDATE request SET status = 'dispatched', dispatched_at = now() WHERE request_id = (SELECT id FROM _p);
+INSERT INTO request_status_history (request_id, seq, status_dari, status_ke, aktor) SELECT id, 2, 'queued', 'dispatched', 'controller' FROM _p;
+COMMIT;
+DO $x$
+BEGIN
+  IF (SELECT status FROM request WHERE request_id = (SELECT id FROM _p)) <> 'dispatched' THEN
+    RAISE EXCEPTION 'FAIL: committed transition not visible (T-04)';
+  END IF;
+  RAISE NOTICE 'ok - T-04: UPDATE transition with matching history committed';
+END $x$;
+-- T-04 negative at COMMIT: a transition whose history row has the wrong status_dari is refused.
+BEGIN;
+UPDATE request SET status = 'in_flight', attempt_count = 1 WHERE request_id = (SELECT id FROM _p);
+INSERT INTO request_status_history (request_id, seq, status_dari, status_ke, aktor) SELECT id, 3, 'queued', 'in_flight', 'worker' FROM _p;
+SELECT t.gagal($$SET CONSTRAINTS request_history_wajib IMMEDIATE$$, '23000', 'T-04: history row with wrong status_dari is refused');
+ROLLBACK;
+
 -- ---- transaction_log rules (R-03, R-05, R-07, R-08, nik requirement)
 BEGIN;
 CREATE TEMP TABLE _q AS SELECT t.buat_request('{"status":"in_flight","attempt_count":1,"dispatched_at":"2026-11-03T00:00:00Z","upstream_pool_id":"30000000-0000-7000-8000-000000000001"}') AS id;
