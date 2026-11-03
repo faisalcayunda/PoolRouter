@@ -25,6 +25,19 @@ Yang dilakukan target `setup`:
 
 Cache per checkout ada di `backend/.cache/` (di-gitignore).
 
+CI memakai target `make -C backend setup` yang sama, tidak ada cara pasang kedua untuk `cargo-deny`.
+
+## Ukuran VM
+
+- Target: **6144 MiB RAM, 4 CPU** (disk tetap). Alasan: dua build Rust berjalan bersamaan dengan batas 3 GiB per container, ditambah service persisten (`shaal-hindsight`).
+- Resize hanya dijalankan **owner**, tidak oleh agent. Langkah siap jalan dikirim owner lewat Luca di SHAA-222 (`podman machine stop`, `set --memory 6144 --cpus 4`, `start`).
+- Verifikasi setelah resize:
+
+```sh
+podman machine inspect --format '{{.Resources.Memory}} MiB, {{.Resources.CPUs}} CPU'   # harus 6144 MiB, 4 CPU
+podman ps --filter label=shaal.service=hindsight                                       # shaal-hindsight harus Up dan sehat
+```
+
 ## Batas memori
 
 Setiap container toolchain dibatasi `--memory $(CONTAINER_MEMORY)` (default `3g`). Override bila perlu:
@@ -48,7 +61,7 @@ Container toolchain harus berlabel `shaal.issue=<ISSUE>`. Container tanpa label 
 ## Membersihkan
 
 - Container sementara dihapus otomatis (`podman run --rm`). Jika ada sisa, cek dengan `podman ps -a --filter label=shaal.issue=<ISSUE>` dan hapus hanya container dengan label issue sendiri.
-- Hapus cache checkout: `rm -rf -- backend/.cache` (akan memasang ulang `cargo-deny` dan crate saat `setup` berikutnya).
+- Hapus cache checkout dari akar repo: `rm -rf -- backend/.cache` (akan memasang ulang `cargo-deny` dan crate saat `setup` berikutnya).
 - Jangan menghentikan `podman machine` atau container yang tidak berlabel issue sendiri tanpa koordinasi dengan pemiliknya.
 
 ## Mengganti versi cargo-deny
@@ -59,5 +72,5 @@ Container toolchain harus berlabel `shaal.issue=<ISSUE>`. Container tanpa label 
 
 ## Batasan
 
-- Resize VM Podman (6 GiB, 4 CPU) belum dilakukan. Mengubah Podman machine berada di luar lingkup Tetsu dan menunggu keputusan Huan.
+- Resize VM Podman (6 GiB, 4 CPU) belum dilakukan. Itu langkah owner, dikoordinasikan lewat Luca (SHAA-222). Bagian ini dihapus setelah resize.
 - Gate penuh `make setup test lint` belum dijalankan ulang di VM 2 GiB karena build Rust berisiko membuat VM kehabisan memori.
