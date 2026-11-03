@@ -2,13 +2,14 @@
 # Satu image memuat binary webserver, controller, dan worker. Compose memilih proses lewat `command:`.
 # Build (dari akar repo): podman build -f backend/Containerfile backend   (atau docker build, konteks backend/)
 # Tanpa fitur khusus BuildKit: tanpa `# syntax=`, tanpa HEALTHCHECK/SHELL/ONBUILD, tanpa COPY --link/--parents/--exclude.
+# Pengecualian: `RUN --mount=type=cache` di stage build (didukung Buildah dan Docker 27). Deviasi dicatat di SHAA-207.
 # Healthcheck ditulis di Compose: `webserver healthcheck` (subcommand menunggu SHAA-175).
 
 # Image dasar di-pin dengan tag dan digest. Build stage sama dengan backend/Makefile dan backend.yml (ADR-0004 §2).
 ARG RUST_IMAGE=docker.io/library/rust:1.99.1-bookworm@sha256:9181b56c2a21ab1d5e73cffe04fc762426d30aa7fac3c91141dd033f49a7fc8b
 # Runtime glibc (bookworm, sama dengan build stage). Digest index multi-arch, diambil 2026-11-03.
 ARG RUNTIME_IMAGE=docker.io/library/debian:bookworm-slim@sha256:99c0b25c46d0214d5a2091092e7908907dcaecd6a962cde0ac700acee222b6f3
-# Jumlah job cargo. 2 agar muat di VM Podman kecil (SHAA-222).
+# Jumlah job cargo. Default 2 untuk runner CI. VM Podman 3,7 GiB memakai JOBS=1 (SHAA-222), diteruskan lewat `make image JOBS=1`.
 ARG JOBS=2
 # Metadata OCI, diisi lewat --build-arg oleh pemanggil (commit hash, waktu build, versi).
 ARG VERSION=0.1.0

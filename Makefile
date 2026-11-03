@@ -11,6 +11,8 @@
 
 ENV ?= dev
 CONTAINER_ENGINE ?= podman
+# JOBS diteruskan ke build-arg image backend. Default 1 cocok untuk VM Podman 2 CPU / 3,7 GiB (SHAA-222). CI memberi JOBS=2 eksplisit.
+JOBS ?= 1
 PROJECT ?= poolrouter-$(ENV)
 COMPOSE_DIR := deploy/compose
 ENV_FILE ?= $(COMPOSE_DIR)/env/$(ENV).env
@@ -73,7 +75,7 @@ compose-test-dind:
 # Compose tidak dipakai untuk build di staging dan produksi.
 image:
 	@test -f backend/Containerfile || { echo "backend/Containerfile belum ada (menunggu SHAA-175)" >&2; exit 2; }
-	$(CONTAINER_ENGINE) build -f backend/Containerfile -t localhost/poolrouter-backend:$(IMAGE_TAG) backend
+	$(CONTAINER_ENGINE) build -f backend/Containerfile --build-arg JOBS=$(JOBS) -t localhost/poolrouter-backend:$(IMAGE_TAG) backend
 
 # Repo gate (ADR-0003 section 5): `make setup test lint` from the repo root.
 # Each stack keeps its own Makefile; these targets only delegate. frontend/ is
