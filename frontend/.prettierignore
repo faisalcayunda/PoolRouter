@@ -4,6 +4,7 @@ coverage
 pnpm-lock.yaml
 src/api/schema.gen.ts
 src/i18n/i18next.d.ts
+src/i18n/resources.d.ts
 src/i18n/messages
 src/i18n/status-ignore-keys.json
 src/styles/m3/theme.json

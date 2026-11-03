@@ -4,7 +4,7 @@
 /* PoolRouter F0 - M3 color scheme (light, standard contrast)
    Seed #5C6670; derived with @material/material-color-utilities 0.3.0 SchemeFidelity (approximation of Theme Builder "Color match").
    Custom colors success/warning/info: harmonize OFF. NOT an export from a live Material Theme Builder session. */
-:root{
+:root {
   --md-sys-color-primary: #444e58;
   --md-sys-color-on-primary: #ffffff;
   --md-sys-color-primary-container: #5c6670;

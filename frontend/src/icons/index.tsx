@@ -33,5 +33,14 @@ export const icons = {
 } satisfies Record<string, IconComponent>;
 
 export function Icon({ icon: Svg, className }: { icon: IconComponent; className?: string }) {
-  return <Svg aria-hidden="true" focusable="false" width={24} height={24} fill="currentColor" className={className} />;
+  return (
+    <Svg
+      aria-hidden="true"
+      focusable="false"
+      width={24}
+      height={24}
+      fill="currentColor"
+      className={className}
+    />
+  );
 }

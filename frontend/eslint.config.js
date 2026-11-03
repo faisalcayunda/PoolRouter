@@ -5,7 +5,16 @@ import jsxA11y from 'eslint-plugin-jsx-a11y';
 import reactHooks from 'eslint-plugin-react-hooks';
 
 export default tseslint.config(
-  { ignores: ['dist', 'coverage', 'node_modules', 'src/api/schema.gen.ts', 'src/i18n/i18next.d.ts', '.cache'] },
+  {
+    ignores: [
+      'dist',
+      'coverage',
+      'node_modules',
+      'src/api/schema.gen.ts',
+      'src/i18n/i18next.d.ts',
+      '.cache',
+    ],
+  },
   js.configs.recommended,
   ...tseslint.configs.recommended,
   jsxA11y.flatConfigs.recommended,

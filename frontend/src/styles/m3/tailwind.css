@@ -1,8 +1,8 @@
 /* Tailwind 4 theme: maps utilities onto the M3 tokens only (ADR-0003 3.5). Default colour, radius and breakpoint scales are removed. */
-@import "tailwindcss";
-@import "./color.css";
-@import "./tokens.css";
-@import "./components.css";
+@import 'tailwindcss';
+@import './color.css';
+@import './tokens.css';
+@import './components.css';
 
 @theme inline {
   --color-*: initial;
@@ -71,11 +71,21 @@
   --radius-extra-large: var(--md-sys-shape-corner-extra-large);
   --radius-full: var(--md-sys-shape-corner-full);
   --shadow-level0: none;
-  --shadow-level1: 0 1px 2px 0 color-mix(in srgb, var(--md-sys-color-shadow) 30%, transparent), 0 1px 3px 1px color-mix(in srgb, var(--md-sys-color-shadow) 15%, transparent);
-  --shadow-level2: 0 1px 2px 0 color-mix(in srgb, var(--md-sys-color-shadow) 30%, transparent), 0 2px 6px 2px color-mix(in srgb, var(--md-sys-color-shadow) 15%, transparent);
-  --shadow-level3: 0 1px 3px 0 color-mix(in srgb, var(--md-sys-color-shadow) 30%, transparent), 0 4px 8px 3px color-mix(in srgb, var(--md-sys-color-shadow) 15%, transparent);
-  --shadow-level4: 0 2px 3px 0 color-mix(in srgb, var(--md-sys-color-shadow) 30%, transparent), 0 6px 10px 4px color-mix(in srgb, var(--md-sys-color-shadow) 15%, transparent);
-  --shadow-level5: 0 4px 4px 0 color-mix(in srgb, var(--md-sys-color-shadow) 30%, transparent), 0 8px 12px 6px color-mix(in srgb, var(--md-sys-color-shadow) 15%, transparent);
+  --shadow-level1:
+    0 1px 2px 0 color-mix(in srgb, var(--md-sys-color-shadow) 30%, transparent),
+    0 1px 3px 1px color-mix(in srgb, var(--md-sys-color-shadow) 15%, transparent);
+  --shadow-level2:
+    0 1px 2px 0 color-mix(in srgb, var(--md-sys-color-shadow) 30%, transparent),
+    0 2px 6px 2px color-mix(in srgb, var(--md-sys-color-shadow) 15%, transparent);
+  --shadow-level3:
+    0 1px 3px 0 color-mix(in srgb, var(--md-sys-color-shadow) 30%, transparent),
+    0 4px 8px 3px color-mix(in srgb, var(--md-sys-color-shadow) 15%, transparent);
+  --shadow-level4:
+    0 2px 3px 0 color-mix(in srgb, var(--md-sys-color-shadow) 30%, transparent),
+    0 6px 10px 4px color-mix(in srgb, var(--md-sys-color-shadow) 15%, transparent);
+  --shadow-level5:
+    0 4px 4px 0 color-mix(in srgb, var(--md-sys-color-shadow) 30%, transparent),
+    0 8px 12px 6px color-mix(in srgb, var(--md-sys-color-shadow) 15%, transparent);
 }
 
 @utility typescale-headline-large {
@@ -175,6 +185,13 @@
 }
 
 @layer base {
-  html { font-family: var(--md-ref-typeface-plain); background: var(--md-sys-color-surface); color: var(--md-sys-color-on-surface); }
-  :focus-visible { outline: var(--md-sys-state-focus-indicator-thickness) solid var(--md-sys-color-secondary); outline-offset: var(--md-sys-state-focus-indicator-outer-offset); }
+  html {
+    font-family: var(--md-ref-typeface-plain);
+    background: var(--md-sys-color-surface);
+    color: var(--md-sys-color-on-surface);
+  }
+  :focus-visible {
+    outline: var(--md-sys-state-focus-indicator-thickness) solid var(--md-sys-color-secondary);
+    outline-offset: var(--md-sys-state-focus-indicator-outer-offset);
+  }
 }

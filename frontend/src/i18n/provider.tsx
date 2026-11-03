@@ -15,7 +15,13 @@ function LangSync({ children }: { children: ReactNode }) {
 }
 
 /** I18nextProvider + React Aria I18nProvider + <html lang> (Addendum A section 4). */
-export function AppI18nProvider({ i18n = appI18n, children }: { i18n?: i18n; children: ReactNode }) {
+export function AppI18nProvider({
+  i18n = appI18n,
+  children,
+}: {
+  i18n?: i18n;
+  children: ReactNode;
+}) {
   return (
     <I18nextProvider i18n={i18n}>
       <LangSync>{children}</LangSync>

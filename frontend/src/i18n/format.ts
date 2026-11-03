@@ -39,7 +39,7 @@ export function createFormatter(lng: BahasaUi, t: TFunction): Formatter {
   const numFmt = new Intl.NumberFormat(locale);
   const two = new Intl.NumberFormat(locale, { minimumIntegerDigits: 2, useGrouping: false });
   const rel = new Intl.RelativeTimeFormat(locale, { numeric: 'auto' });
-  const normalize = (s: string) => s.replace(/ | /g, ' ');
+  const normalize = (s: string) => s.replace(/\u202f|\u00a0/g, ' ');
 
   const tanggal = (v: DateInput) => normalize(dateFmt.format(toDate(v)));
   const jam = (v: DateInput) => normalize(timeFmt.format(toDate(v)));

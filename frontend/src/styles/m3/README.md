@@ -2,11 +2,11 @@
 
 Single token source for the Web UI (ADR-0003 rev 4 sections 3.5, 7.2, 7.3). Components read `var(--md-sys-*)` only and never contain hex literals; ESLint (`no-restricted-syntax`) enforces that outside this folder.
 
-| File | Content |
-|---|---|
-| `color.css` | Light scheme, standard contrast, `--md-sys-color-*` including the extended roles `success`, `warning`, `info` (`on-*`, `*-container`, `on-*-container`) |
-| `tokens.css` | Typescale, shape, elevation, state-layer, focus-indicator and motion tokens |
-| `theme.json` | Seed `#5C6670` and custom colours (reference copy, not read at runtime) |
+| File           | Content                                                                                                                                                                                                                                                                   |
+| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `color.css`    | Light scheme, standard contrast, `--md-sys-color-*` including the extended roles `success`, `warning`, `info` (`on-*`, `*-container`, `on-*-container`)                                                                                                                   |
+| `tokens.css`   | Typescale, shape, elevation, state-layer, focus-indicator and motion tokens                                                                                                                                                                                               |
+| `theme.json`   | Seed `#5C6670` and custom colours (reference copy, not read at runtime)                                                                                                                                                                                                   |
 | `tailwind.css` | Tailwind 4 `@theme inline` mapping: colour roles, `rounded-*`, `shadow-level*`, window size class breakpoints (`medium` 600, `expanded` 840, `large` 1200, `xlarge` 1600) and `typescale-*` utilities. Tailwind default colour, radius and breakpoint scales are disabled |
 
 ## Status

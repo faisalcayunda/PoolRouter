@@ -5,19 +5,21 @@ export type ButtonVariant = 'filled' | 'filled-tonal' | 'outlined' | 'text';
 
 const VARIANT: Record<ButtonVariant, string> = {
   filled: 'bg-primary text-on-primary data-[disabled]:bg-on-surface/12',
-  'filled-tonal': 'bg-secondary-container text-on-secondary-container data-[disabled]:bg-on-surface/12',
+  'filled-tonal':
+    'bg-secondary-container text-on-secondary-container data-[disabled]:bg-on-surface/12',
   outlined: 'border border-outline text-primary data-[disabled]:border-on-surface/12',
   text: 'text-primary px-3',
 };
 
 export interface ButtonProps extends Omit<RacButtonProps, 'className'> {
+  className?: string;
   variant?: ButtonVariant;
   /** Use the `error` role for destructive confirmations (ADR-0003 7.2). */
   destructive?: boolean;
 }
 
 /** M3 common button. One `filled` per area; `elevated` is not in the F0 catalog. */
-export function Button({ variant = 'filled', destructive = false, ...props }: ButtonProps) {
+export function Button({ variant = 'filled', destructive = false, className, ...props }: ButtonProps) {
   const tone = destructive
     ? variant === 'filled'
       ? 'bg-error text-on-error'
@@ -34,6 +36,7 @@ export function Button({ variant = 'filled', destructive = false, ...props }: Bu
         variant === 'text' ? 'px-3' : null,
         tone,
         destructive && variant === 'outlined' && 'border border-error',
+        className,
       )}
     />
   );
