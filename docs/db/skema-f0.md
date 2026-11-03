@@ -82,8 +82,12 @@ Diuji di `backend/db/test/20_constraints.sql`: NULL diterima pada `validasi_gaga
 
 Hak diberikan per kolom pada `request`, `transaction_log`, `client`, `client_kredensial`, dan `client_webhook`. Fungsi `SECURITY DEFINER` mengunci `search_path`, dan `EXECUTE` dicabut dari `PUBLIC`.
 
+- `pr_api` memiliki akses SELECT `nik` pada `transaction_log` untuk jalur sync; ini adalah kesesuaian kontrak §8.1, bukan akses admin/webhook.
 - `pr_controller`: tanpa SELECT `nik`, `input_payload`, `output_payload`, `metadata`, `request_payload`, `response_payload`; menutup log `tidak_diketahui` hanya lewat `fn_tutup_log_tidak_diketahui`; purge lewat fungsi.
 - `pr_worker`: membaca `input_payload`; kolom status entitas saja (tanpa hash kredensial); `EXECUTE fn_purge_p02` (jalur gerbang, §8.1b).
 - `pr_webhook`: 8 kolom `client_webhook`, allowlist, `output_payload` hanya lewat view `v_request_webhook` (baris terminal async); tidak punya hak atas `transaction_log`, `provider_secret`, `client`.
 - `pr_admin_api`: tidak ada SELECT `nik`/payload; secret write-only; `aktif` entitas dan `status` kredensial hanya lewat fungsi (audit + pembatalan massal); view tersamar `v_request_tersamar`, `v_transaction_log_tersamar`; client owner lewat `fn_request_milik_client`.
 - Uji: `30_roles.sql` (U-23, U-55, A-01, DQ-24 (a)(d), DQ-37 (f)), `40_functions.sql` (U-54, EN-08/DQ-37 (e), P-02/P-03/H-01, ekspor E-01..E-06, DQ-35).
+
+
+Migrasi membuat grant kolom berdasarkan snapshot `information_schema` saat migrasi berjalan. Kolom yang ditambahkan migrasi berikutnya tidak otomatis mendapat grant; setiap grant baru harus eksplisit dan diuji.

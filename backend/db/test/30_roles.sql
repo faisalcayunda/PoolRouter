@@ -21,6 +21,7 @@ COMMIT;
 SET ROLE pr_controller;
 SELECT t.gagal('SELECT nik FROM transaction_log', '42501', 'pr_controller: SELECT nik denied');
 SELECT t.gagal('SELECT request_payload FROM transaction_log', '42501', 'pr_controller: SELECT request_payload denied');
+SELECT t.jalan($$SELECT fn_ditahan_data_balikan('a0000000-0000-7000-8000-000000000001')$$, 'pr_controller: hold function executable without table SELECT');
 SELECT t.gagal('SELECT response_payload FROM transaction_log', '42501', 'pr_controller: SELECT response_payload denied');
 SELECT t.gagal('SELECT * FROM transaction_log', '42501', 'pr_controller: SELECT * on transaction_log denied');
 SELECT t.gagal('SELECT output_payload FROM request', '42501', 'pr_controller: SELECT output_payload denied');
@@ -80,6 +81,7 @@ SELECT t.gagal('SELECT * FROM audit_akses', '42501', 'pr_api: audit_akses denied
 SELECT t.gagal('DELETE FROM request', '42501', 'pr_api: no DELETE');
 SELECT t.gagal('SELECT input_payload FROM request', '42501', 'pr_api: input_payload not readable');
 SELECT t.jalan('SELECT output_payload FROM request', 'pr_api: output_payload readable (polling)');
+SELECT t.jalan('SELECT nik FROM transaction_log', 'pr_api: NIK readable for sync transaction path');
 SELECT t.gagal($$UPDATE client SET aktif = false$$, '42501', 'pr_api: cannot change client status');
 RESET ROLE;
 

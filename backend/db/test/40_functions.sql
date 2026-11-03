@@ -155,6 +155,7 @@ INSERT INTO transaction_log (kode_transaksi, request_id, attempt_no, provider_id
          '50000000-0000-7000-8000-000000000001', 1, 1, '0000000000000031', now() - interval '10 minutes', 'metadata_only', 'w1' FROM _r;
 GRANT SELECT ON _r TO pr_controller;
 SET ROLE pr_controller;
+SELECT t.gagal($$SELECT fn_tutup_log_tidak_diketahui((SELECT kode FROM _r), 0)$$, '23514', 'R-02: zero threshold rejected');
 SELECT t.ok(NOT (SELECT fn_tutup_log_tidak_diketahui(kode, 3600) FROM _r), 'R-02: not closed before the threshold');
 SELECT t.ok((SELECT fn_tutup_log_tidak_diketahui(kode, 60) FROM _r), 'R-02: closed as tidak_diketahui past the threshold');
 SELECT t.ok(NOT (SELECT fn_tutup_log_tidak_diketahui(kode, 60) FROM _r), 'R-02: a completed row is not closed again');

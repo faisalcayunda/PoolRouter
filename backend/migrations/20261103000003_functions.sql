@@ -59,7 +59,7 @@ END $$;
 
 -- H-01/H-02: a done request of a provider with data balikan stays on line until its batch is "diterima".
 CREATE FUNCTION fn_ditahan_data_balikan(p_request_id uuid) RETURNS boolean
-LANGUAGE sql STABLE SET search_path = pg_catalog, public AS $$
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public AS $$
   SELECT EXISTS (
     SELECT 1 FROM request r JOIN provider p ON p.provider_id = r.provider_id
      WHERE r.request_id = p_request_id AND p.data_balikan_aktif AND r.status = 'done' AND r.sumber_hasil = 'provider'
@@ -422,6 +422,9 @@ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public AS $$
 DECLARE
   v_n integer;
 BEGIN
+  IF p_ambang_detik < 1 THEN
+    RAISE EXCEPTION 'ambang detik harus positif' USING ERRCODE = 'check_violation';
+  END IF;
   UPDATE transaction_log SET status_akses = 'tidak_diketahui'
    WHERE kode_transaksi = p_kode_transaksi AND status_akses IS NULL
      AND requested_at <= now() - make_interval(secs => p_ambang_detik);

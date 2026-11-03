@@ -291,7 +291,8 @@ CREATE TABLE konfigurasi_platform (
   diubah_at timestamptz NOT NULL DEFAULT now(),
   diubah_oleh uuid REFERENCES admin_user (pengguna_id)
 );
-INSERT INTO konfigurasi_platform (kunci, nilai) VALUES ('ekspor_batas_baris', '10000'::jsonb);   -- contract E-03
+INSERT INTO konfigurasi_platform (kunci, nilai) VALUES ('ekspor_batas_baris', '10000'::jsonb),
+  ('rekonsiliasi_ambang_detik', '60'::jsonb);   -- contract E-03
 
 -- ADR-0001 section 7 / EN-07 / EN-08: who, when, entity, old -> new, reason. terjadi_at is the transaction time,
 -- so every row written by one mass-cancel transaction shares it.
