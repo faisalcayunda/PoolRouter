@@ -1,0 +1,14 @@
+# Mock upstream Dukcapil untuk uji beban SHAA-205. Hanya data sintetis.
+# Image dipin ke tag dan digest; jangan ganti ke `latest`.
+FROM docker.io/library/python:3.12-slim-bookworm@sha256:e0b3f8d16a5ccfbe602d5c94297e5dbcda2ec256edca2b80fcd44e39e1ff6feb
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    MOCK_PORT=8080
+
+WORKDIR /app
+COPY server.py /app/server.py
+
+USER 10001:10001
+EXPOSE 8080
+CMD ["python", "-I", "/app/server.py"]
