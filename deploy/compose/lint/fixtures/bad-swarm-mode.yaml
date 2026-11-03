@@ -1,0 +1,5 @@
+services:
+  app:
+    image: ghcr.io/faisalcayunda/poolrouter-backend@sha256:0000000000000000000000000000000000000000000000000000000000000000
+    deploy:
+      mode: replicated

@@ -1,0 +1,6 @@
+services:
+  app:
+    image: ghcr.io/faisalcayunda/poolrouter-backend:sha-0123456789ab
+  mock-dukcapil:
+    image: ghcr.io/faisalcayunda/poolrouter-mock-dukcapil:sha-0123456789ab
+    profiles: ["mock"]
