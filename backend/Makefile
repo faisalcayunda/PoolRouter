@@ -32,15 +32,20 @@ JOBS ?= 2
 export CARGO_HOME := $(CURDIR)/.cache/cargo
 export CARGO_TERM_COLOR ?= never
 
+include ../scripts/build-lock.mk
+
 ifeq ($(RUNNER),podman)
-RUN = podman run --rm --memory $(CONTAINER_MEMORY) $(if $(CONTAINER_LABEL),--label $(CONTAINER_LABEL)) \
+RUN_OPTS = podman run --rm --memory $(CONTAINER_MEMORY) $(if $(CONTAINER_LABEL),--label $(CONTAINER_LABEL)) \
 	-v "$(CURDIR)":/work -v "$(CURDIR)/../":/repo:ro -w /work \
 	-e CARGO_HOME=/work/.cache/cargo -e RUSTUP_HOME=/work/.cache/rustup -e CARGO_TERM_COLOR=$(CARGO_TERM_COLOR) \
 	-e CARGO_BUILD_JOBS=$(JOBS) -e SQLX_OFFLINE=true -e POOLROUTER_REPO_ROOT=/repo \
-	-e PATH=/work/.cache/cargo/bin:/usr/local/cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
-	$(RUST_IMAGE)
+	-e PATH=/work/.cache/cargo/bin:/usr/local/cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+RUN = $(RUN_OPTS) $(RUST_IMAGE)
+# Build berat (compile) lewat kunci bersama; satu build per host (K-41).
+HEAVY = $(BUILD_LOCK_SH) run -- $(RUN_OPTS) $(BUILD_LOCK_OPTS) $(RUST_IMAGE)
 else
 RUN =
+HEAVY = $(RUN)
 export CARGO_BUILD_JOBS := $(JOBS)
 export SQLX_OFFLINE := true
 endif
@@ -56,7 +61,7 @@ check-label:
 endif
 
 help:
-	@echo "targets: setup test test-rust db-test lint fmt clean openapi openapi-check (RUNNER=podman|native)"
+	@echo "targets: setup test test-rust db-test lint fmt clean openapi openapi-check build-lock-status build-lock-clean (RUNNER=podman|native)"
 
 # Fetch the locked dependency set and install the pinned cargo-deny.
 setup: check-label
@@ -82,7 +87,7 @@ setup: check-label
 test: test-rust db-test
 
 test-rust: check-label
-	$(RUN) cargo test --workspace --all-targets --locked
+	$(HEAVY) cargo test --workspace --all-targets --locked
 
 # Schema tests (SHAA-193): roles bootstrap, migrations from empty, grant matrix, constraints, functions.
 # Starts a throwaway PostgreSQL 17 container labelled shaal.issue=<n> (from CONTAINER_LABEL) and removes it afterwards.
@@ -93,7 +98,7 @@ db-test: check-label
 
 lint: check-label
 	$(RUN) cargo fmt --all --check
-	$(RUN) cargo clippy --workspace --all-targets --locked -- -D warnings
+	$(HEAVY) cargo clippy --workspace --all-targets --locked -- -D warnings
 	$(RUN) cargo deny --locked check
 
 fmt: check-label
@@ -106,7 +111,7 @@ clean: check-label
 # OpenAPI is generated from code (ADR-0004 section 4.1, utoipa code-first).
 openapi: check-label
 	mkdir -p openapi
-	$(RUN) cargo run --locked -q -p poolrouter-webserver --bin openapi-gen -- openapi
+	$(HEAVY) cargo run --locked -q -p poolrouter-webserver --bin openapi-gen -- openapi
 
 # Fails when the committed YAML differs from what the code generates, and when
 # the working-tree contracts break the ones committed on main (oasdiff, SHAA-192).
