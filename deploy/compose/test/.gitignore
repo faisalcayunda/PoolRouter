@@ -1,0 +1,3 @@
+# Override label dan log hasil harness. Berisi id issue run; tidak di-commit.
+generated/
+logs/

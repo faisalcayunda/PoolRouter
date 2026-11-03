@@ -27,7 +27,7 @@ COMPOSE := $(COMPOSE_ENV) $(CONTAINER_ENGINE) compose -p $(PROJECT) $(COMPOSE_FI
 LINT_ENV_FILES := $(COMPOSE_DIR)/env/dev.env.example
 IMAGE_TAG ?= dev
 
-.PHONY: check-env compose-up compose-down compose-ps compose-logs compose-config compose-lint image
+.PHONY: check-env compose-up compose-down compose-ps compose-logs compose-config compose-lint compose-test-dind image
 
 check-env:
 	@case "$(ENV)" in dev|staging|prod) ;; *) echo "ENV harus dev, staging, atau prod" >&2; exit 2 ;; esac
@@ -54,6 +54,11 @@ compose-lint:
 	COMPOSE_CMD="$(COMPOSE_ENV) $(CONTAINER_ENGINE) compose" \
 	COMPOSE_DIR="$(COMPOSE_DIR)" \
 	sh $(COMPOSE_DIR)/lint/compose-lint.sh
+
+# compose-test-dind: bukti V3 di Docker Engine sementara (harness DinD, butuh SHAA_ISSUE dan ENV_FILE).
+compose-test-dind:
+	SHAA_ISSUE="$(SHAA_ISSUE)" ENV_FILE="$(ENV_FILE)" PROFILES="$(COMPOSE_PROFILES)" \
+	sh $(COMPOSE_DIR)/test/dind.sh
 
 # image: membangun image dari Containerfile dengan engine terpilih (Addendum §3.2).
 # Compose tidak dipakai untuk build di staging dan produksi.
