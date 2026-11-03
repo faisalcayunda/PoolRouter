@@ -101,6 +101,7 @@ jobs:
             --output "type=image,name=${IMAGE},push-by-digest=true,name-canonical=true,push=true" \
             --metadata-file meta-amd64.json
           digest="$(jq -r '."containerimage.digest"' meta-amd64.json)"
+          printf '%s' "$digest" | grep -Eq '^sha256:[0-9a-f]{64}$' || { echo "digest amd64 tidak valid: ${digest}" >&2; exit 1; }
           echo "digest=${digest}" >> "$GITHUB_OUTPUT"
           echo "amd64 digest: ${digest}" >> "$GITHUB_STEP_SUMMARY"
 
@@ -153,13 +154,14 @@ jobs:
             --output "type=image,name=${IMAGE},push-by-digest=true,name-canonical=true,push=true" \
             --metadata-file meta-arm64.json
           digest="$(jq -r '."containerimage.digest"' meta-arm64.json)"
+          printf '%s' "$digest" | grep -Eq '^sha256:[0-9a-f]{64}$' || { echo "digest arm64 tidak valid: ${digest}" >&2; exit 1; }
           echo "digest=${digest}" >> "$GITHUB_OUTPUT"
           echo "arm64 digest: ${digest}" >> "$GITHUB_STEP_SUMMARY"
 
   index:
     # Selalu membuat tag sha-<12 hex> dari digest amd64. Kalau arm64 aktif, index memuat kedua digest.
     needs: [amd64, arm64]
-    if: always() && needs.amd64.result == 'success' && (needs.arm64.result == 'success' || needs.arm64.result == 'skipped')
+    if: always() && needs.amd64.result == 'success' && needs.amd64.outputs.digest != '' && (needs.arm64.result == 'success' || needs.arm64.result == 'skipped')
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
