@@ -14,6 +14,13 @@ CARGO_DENY_VERSION ?= 0.19.0
 # cargo-deny is installed as this prebuilt binary, never compiled from source (SHAA-222).
 CARGO_DENY_SHA256_aarch64 := 2b3567a60b7491c159d1cef8b7d8479d1ad2a31e29ef49462634ad4552fcc77d
 CARGO_DENY_SHA256_x86_64 := 0e8c2aa59128612c90d9e09c02204e912f29a5b8d9a64671b94608cbe09e064f
+# oasdiff breaking-change gate (SHAA-192). Pinned release of oasdiff/oasdiff; the
+# upstream 1.9.x line NIA referenced no longer exists in releases (current line
+# 1.2x-1.3x), so we pin the latest stable at adoption time. Installed as a prebuilt
+# binary with a pinned SHA-256, never compiled from source (pattern of SHAA-222).
+OASDIFF_VERSION ?= 1.35.0
+OASDIFF_SHA256_arm64 := 1f8b5aa033cd0240ae6c53460268bcd6e578526666a4487a781ece8cef39fbdd
+OASDIFF_SHA256_amd64 := a8023002fcb2eaa7f5758148a9303cb63d33b939886df312268bc0fc7b939140
 # Podman label, required when RUNNER=podman: CONTAINER_LABEL=shaal.issue=SHAA-<n> (checked by check-label).
 # RUNNER=native is only for Linux/CI jobs that already have Rust 1.99.1; never use it on the owner's Mac.
 CONTAINER_LABEL ?=
@@ -27,9 +34,9 @@ export CARGO_TERM_COLOR ?= never
 
 ifeq ($(RUNNER),podman)
 RUN = podman run --rm --memory $(CONTAINER_MEMORY) $(if $(CONTAINER_LABEL),--label $(CONTAINER_LABEL)) \
-	-v "$(CURDIR)":/work -w /work \
+	-v "$(CURDIR)":/work -v "$(CURDIR)/../":/repo:ro -w /work \
 	-e CARGO_HOME=/work/.cache/cargo -e RUSTUP_HOME=/work/.cache/rustup -e CARGO_TERM_COLOR=$(CARGO_TERM_COLOR) \
-	-e CARGO_BUILD_JOBS=$(JOBS) -e SQLX_OFFLINE=true \
+	-e CARGO_BUILD_JOBS=$(JOBS) -e SQLX_OFFLINE=true -e POOLROUTER_REPO_ROOT=/repo \
 	-e PATH=/work/.cache/cargo/bin:/usr/local/cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
 	$(RUST_IMAGE)
 else
@@ -97,10 +104,48 @@ clean: check-label
 	rm -rf -- .cache/cargo/registry/cache
 
 # OpenAPI is generated from code (ADR-0004 section 4.1, utoipa code-first).
-openapi:
+openapi: check-label
 	mkdir -p openapi
 	$(RUN) cargo run --locked -q -p poolrouter-webserver --bin openapi-gen -- openapi
 
-# Fails when the committed YAML differs from what the code generates.
-openapi-check: openapi
+# Fails when the committed YAML differs from what the code generates, and when
+# the working-tree contracts break the ones committed on main (oasdiff, SHAA-192).
+openapi-check: check-label openapi oasdiff-breaking
+	@test -z "$$(git status --porcelain -- openapi)" || { echo "openapi: generated files are uncommitted or modified" >&2; git status --short -- openapi; exit 1; }
 	git diff --exit-code -- openapi
+
+# oasdiff `breaking` against the contracts on main. Skipped until main carries
+# both YAML files (first merge of SHAA-192), after that every contract change
+# is diffed and a breaking change fails the gate (ADR-0001 rev 15 section 5a.7).
+oasdiff-breaking: check-label
+	@set -eu; \
+	if ! git cat-file -e "main:backend/openapi/downstream-api.yaml" 2>/dev/null || ! git cat-file -e "main:backend/openapi/admin-api.yaml" 2>/dev/null; then \
+	  echo "oasdiff: baseline belum ada di main (pertama kali); dilewati"; exit 0; \
+	fi; \
+	mkdir -p .cache/oasdiff; \
+	git show main:backend/openapi/downstream-api.yaml > .cache/oasdiff/base-downstream.yaml; \
+	git show main:backend/openapi/admin-api.yaml > .cache/oasdiff/base-admin.yaml; \
+	$(RUN) sh -c 'set -eu; \
+	if [ ! -x /work/.cache/oasdiff/oasdiff ] || ! /work/.cache/oasdiff/oasdiff --version 2>/dev/null | grep -q "$(OASDIFF_VERSION)"; then \
+	  arch=$$(uname -m); \
+	  case "$$arch" in \
+	    aarch64) urlarch=arm64; sha="$(OASDIFF_SHA256_arm64)" ;; \
+	    x86_64) urlarch=amd64; sha="$(OASDIFF_SHA256_amd64)" ;; \
+	    *) echo "oasdiff: unsupported arch $$arch" >&2; exit 1 ;; \
+	  esac; \
+	  t=$$(mktemp -d); trap "rm -rf \"$$t\"" EXIT; \
+	  url="https://github.com/oasdiff/oasdiff/releases/download/v$(OASDIFF_VERSION)/oasdiff_$(OASDIFF_VERSION)_linux_$${urlarch}.tar.gz"; \
+	  curl -fsSL -o "$$t/o.tar.gz" "$$url"; \
+	  echo "$$sha  $$t/o.tar.gz" | sha256sum -c -; \
+	  tar -xzf "$$t/o.tar.gz" -C "$$t" oasdiff; \
+	  mv "$$t/oasdiff" /work/.cache/oasdiff/oasdiff; \
+	fi; \
+	rc=0; \
+	for pair in "base-downstream.yaml downstream-api.yaml" "base-admin.yaml admin-api.yaml"; do \
+	  set -- $$pair; \
+	  if ! /work/.cache/oasdiff/oasdiff breaking --fail-on ERR "/work/.cache/oasdiff/$$1" "/work/openapi/$$2"; then \
+	    echo "oasdiff: perubahan breaking pada $$2 terhadap main" >&2; \
+	    rc=1; \
+	  fi; \
+	done; \
+	exit $$rc'

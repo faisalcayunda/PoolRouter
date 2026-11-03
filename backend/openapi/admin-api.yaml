@@ -1,0 +1,3857 @@
+openapi: 3.1.0
+info:
+  title: PoolRouter Admin API
+  description: 'Kontrak admin PoolRouter F0 (SHAA-175): sesi cookie, konfigurasi, K-20, kuota, log/audit. Error memakai RFC 9457 problem+json dengan kode tertutup (Addendum A); rincian tiap kode ada di docs/masalah.md. Tulis hanya dari Origin yang sah; setiap tulis tercatat di audit konfigurasi.'
+  license:
+    name: UNLICENSED
+    identifier: UNLICENSED
+  version: 0.1.0
+paths:
+  /admin/v1/auditor/audit-akses/cari:
+    post:
+      tags:
+      - admin
+      summary: |-
+        Auditor search of `audit_akses` (who did what, when, how long; without
+        `nik_hmac`). Range max 31 days.
+      operationId: searchAuditAkses
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AuditCariRequest'
+        required: true
+      responses:
+        '200':
+          description: Halaman baris audit akses
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+              description: Selalu no-store (R-16)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuditAksesPage'
+        '401':
+          $ref: '#/components/responses/Problem401Admin'
+        '403':
+          $ref: '#/components/responses/Problem403Admin'
+        '422':
+          $ref: '#/components/responses/Problem422Admin'
+      security:
+      - sessionCookie: []
+  /admin/v1/auditor/log/cari-nik:
+    post:
+      tags:
+      - admin
+      summary: |-
+        Auditor-only NIK search (exact 16 digits; no wildcard, prefix or partial
+        NIK). Every call gets an `audit_akses` `cari_nik` row, including page
+        turns and empty results.
+      operationId: searchLogByNik
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NikCariRequest'
+        required: true
+      responses:
+        '200':
+          description: Baris log dengan NIK utuh
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+              description: Selalu no-store (R-16)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LogPage'
+        '401':
+          $ref: '#/components/responses/Problem401Admin'
+        '403':
+          $ref: '#/components/responses/Problem403Admin'
+        '422':
+          $ref: '#/components/responses/Problem422Admin'
+      security:
+      - sessionCookie: []
+  /admin/v1/auditor/log/ekspor:
+    post:
+      tags:
+      - admin
+      summary: |-
+        Auditor CSV export (R-18): `Content-Disposition: attachment`,
+        `Cache-Control: no-store`, `Repr-Digest: sha-256=...`,
+        `Accept-Ranges: none`. Above 10,000 rows: 422 `ekspor_terlalu_besar`,
+        no file, `ditolak` audit row.
+      operationId: exportLogAuditor
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EksporRequest'
+        required: true
+      responses:
+        '200':
+          description: Berkas CSV
+          headers:
+            Accept-Ranges:
+              schema:
+                type: string
+              description: Selalu none
+            Cache-Control:
+              schema:
+                type: string
+              description: Selalu no-store (R-16)
+            Content-Disposition:
+              schema:
+                type: string
+              description: attachment; filename=...
+            Repr-Digest:
+              schema:
+                type: string
+              description: sha-256=<digest base64>
+          content:
+            text/csv:
+              schema:
+                type: string
+              examples:
+                csv:
+                  summary: Dua baris contoh
+                  value: |
+                    nik,requested_at,status_akses,kode_transaksi,queue_id,client_id
+                    3175000000000001,2026-11-03T01:02:03Z,diizinkan,PRQ-20261103-000001,0b19c3b4-7c5f-4e2f-9b3a-1a2b3c4d5e6f,c1d2e3f4-0000-0000-0000-000000000001
+        '401':
+          $ref: '#/components/responses/Problem401Admin'
+        '403':
+          $ref: '#/components/responses/Problem403Admin'
+        '422':
+          $ref: '#/components/responses/Problem422Admin'
+      security:
+      - sessionCookie: []
+  /admin/v1/auditor/payload:
+    post:
+      tags:
+      - admin
+      summary: |-
+        Open a payload view (auditor only). One `audit_akses` `lihat_payload` row
+        per opening.
+      operationId: openPayload
+      requestBody:
+        description: Tepat satu dari request_id atau kode_transaksi; alasan wajib
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PayloadOpenRequest'
+        required: true
+      responses:
+        '200':
+          description: Payload permintaan (tanpa rahasia)
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+              description: Selalu no-store (R-16)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PayloadView'
+        '401':
+          $ref: '#/components/responses/Problem401Admin'
+        '403':
+          $ref: '#/components/responses/Problem403Admin'
+        '404':
+          $ref: '#/components/responses/Problem404Admin'
+        '422':
+          $ref: '#/components/responses/Problem422Admin'
+      security:
+      - sessionCookie: []
+  /admin/v1/auth/login:
+    post:
+      tags:
+      - admin
+      summary: Login (ADR-0003 section 3.6). Success sets `__Host-pr_session` cookie.
+      operationId: login
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+        required: true
+      responses:
+        '204':
+          description: Login berhasil; cookie sesi diterbitkan
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+              description: Selalu no-store (R-16)
+            Set-Cookie:
+              schema:
+                type: string
+              description: __Host-pr_session=...; HttpOnly; Secure; SameSite=Strict; Path=/
+        '401':
+          $ref: '#/components/responses/Problem401Admin'
+        '422':
+          $ref: '#/components/responses/Problem422Admin'
+        '429':
+          $ref: '#/components/responses/Problem429Admin'
+      security:
+      - {}
+  /admin/v1/auth/logout:
+    post:
+      tags:
+      - admin
+      summary: 'Logout: cookie expired.'
+      operationId: logout
+      responses:
+        '204':
+          description: Sesi diakhiri; cookie kedaluwarsa
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+              description: Selalu no-store (R-16)
+            Set-Cookie:
+              schema:
+                type: string
+              description: __Host-pr_session=; Max-Age=0; HttpOnly; Secure; SameSite=Strict; Path=/
+        '401':
+          $ref: '#/components/responses/Problem401Admin'
+      security:
+      - sessionCookie: []
+  /admin/v1/auth/me:
+    get:
+      tags:
+      - admin
+      summary: Current identity (U-1).
+      operationId: getMe
+      responses:
+        '200':
+          description: Identitas sesi saat ini
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+              description: Selalu no-store (R-16)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Me'
+        '401':
+          $ref: '#/components/responses/Problem401Admin'
+      security:
+      - sessionCookie: []
+  /admin/v1/auth/me/preferensi:
+    patch:
+      tags:
+      - admin
+      summary: UI preference update (Addendum A section 7.2).
+      operationId: updatePreferensi
+      requestBody:
+        description: Tanpa id pengguna; hanya bahasa UI sendiri
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PreferensiUpdate'
+        required: true
+      responses:
+        '200':
+          description: Preferensi tersimpan
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+              description: Selalu no-store (R-16)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PreferensiUpdate'
+        '401':
+          $ref: '#/components/responses/Problem401Admin'
+        '403':
+          $ref: '#/components/responses/Problem403Admin'
+        '422':
+          $ref: '#/components/responses/Problem422Admin'
+      security:
+      - sessionCookie: []
+  /admin/v1/auth/sesi:
+    get:
+      tags:
+      - admin
+      summary: Session state; does not shift the idle window (rev 5 section 3.6f).
+      operationId: getSesi
+      responses:
+        '200':
+          description: Status sesi; idle tidak digeser
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+              description: Selalu no-store (R-16)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SesiStatus'
+        '401':
+          $ref: '#/components/responses/Problem401Admin'
+      security:
+      - sessionCookie: []
+  /admin/v1/auth/sesi/perpanjang:
+    post:
+      tags:
+      - admin
+      summary: |-
+        Extend the session: resets idle, never shifts the absolute limit, no
+        Set-Cookie (rev 5 section 3.6f).
+      operationId: perpanjangSesi
+      responses:
+        '200':
+          description: Idle di-reset; batas absolut tetap; tanpa Set-Cookie
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+              description: Selalu no-store (R-16)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SesiStatus'
+        '401':
+          $ref: '#/components/responses/Problem401Admin'
+        '403':
+          $ref: '#/components/responses/Problem403Admin'
+      security:
+      - sessionCookie: []
+  /admin/v1/clients:
+    get:
+      tags:
+      - admin
+      summary: List clients (PA; CO sees only its own client).
+      operationId: listClients
+      responses:
+        '200':
+          description: Daftar client (CO hanya clientnya)
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+              description: Selalu no-store (R-16)
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Client'
+        '401':
+          $ref: '#/components/responses/Problem401Admin'
+        '403':
+          $ref: '#/components/responses/Problem403Admin'
+      security:
+      - sessionCookie: []
+    post:
+      tags:
+      - admin
+      summary: Create client (PA; L-04 limiter ranges).
+      operationId: createClient
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ClientConfig'
+        required: true
+      responses:
+        '201':
+          description: Client dibuat
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+              description: Selalu no-store (R-16)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Client'
+        '401':
+          $ref: '#/components/responses/Problem401Admin'
+        '403':
+          $ref: '#/components/responses/Problem403Admin'
+        '422':
+          $ref: '#/components/responses/Problem422Admin'
+      security:
+      - sessionCookie: []
+  /admin/v1/clients/{id}:
+    get:
+      tags:
+      - admin
+      summary: Get one client (PA; CO only its own).
+      operationId: getClient
+      parameters:
+      - name: id
+        in: path
+        description: client_id
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: Detail client
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+              description: Selalu no-store (R-16)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Client'
+        '401':
+          $ref: '#/components/responses/Problem401Admin'
+        '403':
+          $ref: '#/components/responses/Problem403Admin'
+        '404':
+          $ref: '#/components/responses/Problem404Admin'
+      security:
+      - sessionCookie: []
+    put:
+      tags:
+      - admin
+      summary: Update client (PA). `alasan` wajib saat mengubah limiter.
+      operationId: updateClient
+      parameters:
+      - name: id
+        in: path
+        description: client_id
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        description: alasan wajib saat ubah limiter
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ClientConfig'
+        required: true
+      responses:
+        '200':
+          description: Client diperbarui
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+              description: Selalu no-store (R-16)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Client'
+        '401':
+          $ref: '#/components/responses/Problem401Admin'
+        '403':
+          $ref: '#/components/responses/Problem403Admin'
+        '404':
+          $ref: '#/components/responses/Problem404Admin'
+        '422':
+          $ref: '#/components/responses/Problem422Admin'
+      security:
+      - sessionCookie: []
+  /admin/v1/clients/{id}/aktifkan:
+    post:
+      tags:
+      - admin
+      summary: Activate a client; mode = free without re-verification (K-20).
+      operationId: aktifkanClient
+      parameters:
+      - name: id
+        in: path
+        description: client_id
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: Client aktif
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+              description: Selalu no-store (R-16)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Client'
+        '401':
+          $ref: '#/components/responses/Problem401Admin'
+        '403':
+          $ref: '#/components/responses/Problem403Admin'
+        '404':
+          $ref: '#/components/responses/Problem404Admin'
+      security:
+      - sessionCookie: []
+  /admin/v1/clients/{id}/credentials:
+    get:
+      tags:
+      - admin
+      summary: List client credentials (PA; CO its own client). No hashes.
+      operationId: listCredentials
+      parameters:
+      - name: id
+        in: path
+        description: client_id
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: Kredensial client tanpa hash
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+              description: Selalu no-store (R-16)
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Credential'
+        '401':
+          $ref: '#/components/responses/Problem401Admin'
+        '403':
+          $ref: '#/components/responses/Problem403Admin'
+      security:
+      - sessionCookie: []
+    post:
+      tags:
+      - admin
+      summary: |-
+        Create a client credential (PA; CO its own client). Secret returned
+        exactly once, 256-bit base64url; max two active per client.
+      operationId: createCredential
+      parameters:
+      - name: id
+        in: path
+        description: client_id
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        description: Default dan maksimum kedaluwarsa 365 hari
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CredentialCreate'
+        required: true
+      responses:
+        '201':
+          description: Kredensial dibuat; secret tampil sekali
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+              description: no-store; secret tidak boleh tersimpan (R-16)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CredentialSecret'
+        '401':
+          $ref: '#/components/responses/Problem401Admin'
+        '403':
+          $ref: '#/components/responses/Problem403Admin'
+        '409':
+          $ref: '#/components/responses/Problem409Admin'
+        '422':
+          $ref: '#/components/responses/Problem422Admin'
+      security:
+      - sessionCookie: []
+  /admin/v1/clients/{id}/endpoints:
+    put:
+      tags:
+      - admin
+      summary: Replace the client-endpoint assignment (PA; U-7 shape).
+      operationId: setClientEndpoints
+      parameters:
+      - name: id
+        in: path
+        description: client_id
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        description: Penugasan lengkap menggantikan penugasan sebelumnya (U-7)
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ClientEndpoints'
+        required: true
+      responses:
+        '200':
+          description: Penugasan tersimpan
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+              description: Selalu no-store (R-16)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Client'
+        '401':
+          $ref: '#/components/responses/Problem401Admin'
+        '403':
+          $ref: '#/components/responses/Problem403Admin'
+        '422':
+          $ref: '#/components/responses/Problem422Admin'
+      security:
+      - sessionCookie: []
+  /admin/v1/clients/{id}/nonaktifkan:
+    post:
+      tags:
+      - admin
+      summary: |-
+        Deactivate a client (K-20): cancel queued, fail waiting-for-retry, expire
+        the rest. Same numbers go to the config audit.
+      operationId: nonaktifkanClient
+      parameters:
+      - name: id
+        in: path
+        description: client_id
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AlasanK20'
+        required: true
+      responses:
+        '200':
+          description: Eksekusi selesai; jumlah cancel/fail dicatat di audit konfigurasi
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+              description: Selalu no-store (R-16)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HasilK20'
+        '401':
+          $ref: '#/components/responses/Problem401Admin'
+        '403':
+          $ref: '#/components/responses/Problem403Admin'
+        '404':
+          $ref: '#/components/responses/Problem404Admin'
+        '422':
+          $ref: '#/components/responses/Problem422Admin'
+      security:
+      - sessionCookie: []
+  /admin/v1/clients/{id}/pratinjau-nonaktif:
+    get:
+      tags:
+      - admin
+      summary: |-
+        Preview client deactivation: cancels `queued`/`processing` requests of the
+        client, fails the rest (waiting for retry with attempt_count > 0, expired
+        with remaining TTL). No request_id, NIK or payload.
+      operationId: pratinjauNonaktifkanClient
+      parameters:
+      - name: id
+        in: path
+        description: client_id
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: Pratinjau dampak per status
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+              description: Selalu no-store (R-16)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PratinjauK20'
+        '401':
+          $ref: '#/components/responses/Problem401Admin'
+        '403':
+          $ref: '#/components/responses/Problem403Admin'
+        '404':
+          $ref: '#/components/responses/Problem404Admin'
+      security:
+      - sessionCookie: []
+  /admin/v1/clients/{id}/webhook:
+    get:
+      tags:
+      - admin
+      summary: |-
+        Webhook configuration of one client (PA; CO its own client). 404 when
+        never configured.
+      operationId: getWebhookConfig
+      parameters:
+      - name: id
+        in: path
+        description: client_id
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: Konfigurasi webhook; secret tidak pernah dikembalikan
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+              description: Selalu no-store (R-16)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WebhookConfig'
+        '401':
+          $ref: '#/components/responses/Problem401Admin'
+        '403':
+          $ref: '#/components/responses/Problem403Admin'
+        '404':
+          $ref: '#/components/responses/Problem404Admin'
+      security:
+      - sessionCookie: []
+    put:
+      tags:
+      - admin
+      summary: |-
+        Save webhook configuration (US-06). URL must be https and its host in the
+        allowlist; checked on save and on send.
+      operationId: putWebhookConfig
+      parameters:
+      - name: id
+        in: path
+        description: client_id
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WebhookConfigPut'
+        required: true
+      responses:
+        '200':
+          description: Konfigurasi tersimpan
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+              description: Selalu no-store (R-16)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WebhookConfig'
+        '401':
+          $ref: '#/components/responses/Problem401Admin'
+        '403':
+          $ref: '#/components/responses/Problem403Admin'
+        '422':
+          $ref: '#/components/responses/Problem422Admin'
+      security:
+      - sessionCookie: []
+  /admin/v1/clients/{id}/webhook/log:
+    get:
+      tags:
+      - admin
+      summary: 'Webhook delivery log (US-06): time range, result filter, kursor.'
+      operationId: listWebhookLog
+      parameters:
+      - name: id
+        in: path
+        description: client_id
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: dari
+        in: query
+        description: ISO 8601 UTC, inklusif
+        required: false
+        schema:
+          type: string
+      - name: sampai
+        in: query
+        description: ISO 8601 UTC, inklusif
+        required: false
+        schema:
+          type: string
+      - name: hasil
+        in: query
+        description: terkirim | gagal
+        required: false
+        schema:
+          type: string
+      - name: kursor
+        in: query
+        description: Kursor halaman berikutnya
+        required: false
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Riwayat pengiriman
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+              description: Selalu no-store (R-16)
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/WebhookLog'
+        '401':
+          $ref: '#/components/responses/Problem401Admin'
+        '403':
+          $ref: '#/components/responses/Problem403Admin'
+      security:
+      - sessionCookie: []
+  /admin/v1/clients/{id}/webhook/rotasi-secret:
+    post:
+      tags:
+      - admin
+      summary: |-
+        Rotate the webhook secret (US-06; F-5). Old secret stays active only as
+        long as needed for in-flight deliveries; rotation history is stored.
+      operationId: rotateWebhookSecret
+      parameters:
+      - name: id
+        in: path
+        description: client_id
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: Secret baru; `whsec_` + 32-byte base64, tampil sekali
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+              description: no-store; secret tidak boleh tersimpan (R-16)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WebhookSecret'
+        '401':
+          $ref: '#/components/responses/Problem401Admin'
+        '403':
+          $ref: '#/components/responses/Problem403Admin'
+      security:
+      - sessionCookie: []
+  /admin/v1/credentials/{id}/aktifkan:
+    post:
+      tags:
+      - admin
+      summary: 'Re-activate a credential: always 409 for revoked credentials (U-54b).'
+      operationId: aktifkanCredential
+      parameters:
+      - name: id
+        in: path
+        description: credential_id
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '401':
+          $ref: '#/components/responses/Problem401Admin'
+        '403':
+          $ref: '#/components/responses/Problem403Admin'
+        '404':
+          $ref: '#/components/responses/Problem404Admin'
+        '409':
+          $ref: '#/components/responses/Problem409Admin'
+      security:
+      - sessionCookie: []
+  /admin/v1/credentials/{id}/cabut:
+    post:
+      tags:
+      - admin
+      summary: |-
+        Revoke a credential (K-20): cancel queued, fail waiting for retry, expire
+        the rest.
+      operationId: cabutCredential
+      parameters:
+      - name: id
+        in: path
+        description: credential_id
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AlasanK20'
+        required: true
+      responses:
+        '200':
+          description: Eksekusi selesai; status kredensial jadi dicabut
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+              description: Selalu no-store (R-16)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Credential'
+        '401':
+          $ref: '#/components/responses/Problem401Admin'
+        '403':
+          $ref: '#/components/responses/Problem403Admin'
+        '404':
+          $ref: '#/components/responses/Problem404Admin'
+        '422':
+          $ref: '#/components/responses/Problem422Admin'
+      security:
+      - sessionCookie: []
+  /admin/v1/credentials/{id}/pratinjau-cabut:
+    get:
+      tags:
+      - admin
+      summary: |-
+        Preview credential revocation (K-20): cancels queued, fails waiting for
+        retry, expires the rest of that client.
+      operationId: pratinjauCabutCredential
+      parameters:
+      - name: id
+        in: path
+        description: credential_id
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: Pratinjau dampak per status
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+              description: Selalu no-store (R-16)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PratinjauK20'
+        '401':
+          $ref: '#/components/responses/Problem401Admin'
+        '403':
+          $ref: '#/components/responses/Problem403Admin'
+        '404':
+          $ref: '#/components/responses/Problem404Admin'
+      security:
+      - sessionCookie: []
+  /admin/v1/downstream-pools:
+    get:
+      tags:
+      - admin
+      summary: List downstream pools (PA).
+      operationId: listDownstreamPools
+      responses:
+        '200':
+          description: Daftar downstream pool
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+              description: Selalu no-store (R-16)
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/DownstreamPool'
+        '401':
+          $ref: '#/components/responses/Problem401Admin'
+        '403':
+          $ref: '#/components/responses/Problem403Admin'
+      security:
+      - sessionCookie: []
+    post:
+      tags:
+      - admin
+      summary: 'Create downstream pool (PA; F-1: single upstream allocation).'
+      operationId: createDownstreamPool
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DownstreamPoolConfig'
+        required: true
+      responses:
+        '201':
+          description: Downstream pool dibuat
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+              description: Selalu no-store (R-16)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DownstreamPool'
+        '401':
+          $ref: '#/components/responses/Problem401Admin'
+        '403':
+          $ref: '#/components/responses/Problem403Admin'
+        '422':
+          $ref: '#/components/responses/Problem422Admin'
+      security:
+      - sessionCookie: []
+  /admin/v1/downstream-pools/{id}:
+    get:
+      tags:
+      - admin
+      summary: Get one downstream pool (PA).
+      operationId: getDownstreamPool
+      parameters:
+      - name: id
+        in: path
+        description: downstream_pool_id
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: Detail downstream pool
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+              description: Selalu no-store (R-16)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DownstreamPool'
+        '401':
+          $ref: '#/components/responses/Problem401Admin'
+        '403':
+          $ref: '#/components/responses/Problem403Admin'
+        '404':
+          $ref: '#/components/responses/Problem404Admin'
+      security:
+      - sessionCookie: []
+    put:
+      tags:
+      - admin
+      summary: 'Update downstream pool (PA; F-1: `prioritas` read-only, tidak di body).'
+      operationId: updateDownstreamPool
+      parameters:
+      - name: id
+        in: path
+        description: downstream_pool_id
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        description: alasan wajib (10..500)
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DownstreamPoolConfig'
+        required: true
+      responses:
+        '200':
+          description: Downstream pool diperbarui
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+              description: Selalu no-store (R-16)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DownstreamPool'
+        '401':
+          $ref: '#/components/responses/Problem401Admin'
+        '403':
+          $ref: '#/components/responses/Problem403Admin'
+        '404':
+          $ref: '#/components/responses/Problem404Admin'
+        '422':
+          $ref: '#/components/responses/Problem422Admin'
+      security:
+      - sessionCookie: []
+  /admin/v1/downstream-pools/{id}/aktifkan:
+    post:
+      tags:
+      - admin
+      summary: Activate a downstream pool; mode = free (K-20).
+      operationId: aktifkanDownstreamPool
+      parameters:
+      - name: id
+        in: path
+        description: downstream_pool_id
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: Downstream pool aktif
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+              description: Selalu no-store (R-16)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DownstreamPool'
+        '401':
+          $ref: '#/components/responses/Problem401Admin'
+        '403':
+          $ref: '#/components/responses/Problem403Admin'
+        '404':
+          $ref: '#/components/responses/Problem404Admin'
+      security:
+      - sessionCookie: []
+  /admin/v1/downstream-pools/{id}/nonaktifkan:
+    post:
+      tags:
+      - admin
+      summary: Deactivate a downstream pool (K-20).
+      operationId: nonaktifkanDownstreamPool
+      parameters:
+      - name: id
+        in: path
+        description: downstream_pool_id
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AlasanK20'
+        required: true
+      responses:
+        '200':
+          description: Eksekusi selesai
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+              description: Selalu no-store (R-16)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HasilK20'
+        '401':
+          $ref: '#/components/responses/Problem401Admin'
+        '403':
+          $ref: '#/components/responses/Problem403Admin'
+        '404':
+          $ref: '#/components/responses/Problem404Admin'
+        '422':
+          $ref: '#/components/responses/Problem422Admin'
+      security:
+      - sessionCookie: []
+  /admin/v1/downstream-pools/{id}/pratinjau-nonaktif:
+    get:
+      tags:
+      - admin
+      summary: Preview downstream pool deactivation (K-20).
+      operationId: pratinjauNonaktifkanDownstreamPool
+      parameters:
+      - name: id
+        in: path
+        description: downstream_pool_id
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: Pratinjau dampak per status
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+              description: Selalu no-store (R-16)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PratinjauK20'
+        '401':
+          $ref: '#/components/responses/Problem401Admin'
+        '403':
+          $ref: '#/components/responses/Problem403Admin'
+        '404':
+          $ref: '#/components/responses/Problem404Admin'
+      security:
+      - sessionCookie: []
+  /admin/v1/endpoints:
+    get:
+      tags:
+      - admin
+      summary: List endpoints (PA).
+      operationId: listEndpoints
+      responses:
+        '200':
+          description: Daftar endpoint
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+              description: Selalu no-store (R-16)
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Endpoint'
+        '401':
+          $ref: '#/components/responses/Problem401Admin'
+        '403':
+          $ref: '#/components/responses/Problem403Admin'
+      security:
+      - sessionCookie: []
+    post:
+      tags:
+      - admin
+      summary: |-
+        Create endpoint (PA; US-15, M-R1: Dukcapil endpoints must include
+        `status_penerima_manfaat` in metadata_fields).
+      operationId: createEndpoint
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EndpointConfig'
+        required: true
+      responses:
+        '201':
+          description: Endpoint dibuat; endpoint_config_version = 1
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+              description: Selalu no-store (R-16)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Endpoint'
+        '401':
+          $ref: '#/components/responses/Problem401Admin'
+        '403':
+          $ref: '#/components/responses/Problem403Admin'
+        '422':
+          $ref: '#/components/responses/Problem422Admin'
+      security:
+      - sessionCookie: []
+  /admin/v1/endpoints/{id}:
+    get:
+      tags:
+      - admin
+      summary: Get one endpoint (PA).
+      operationId: getEndpoint
+      parameters:
+      - name: id
+        in: path
+        description: endpoint_id
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: Detail endpoint
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+              description: Selalu no-store (R-16)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Endpoint'
+        '401':
+          $ref: '#/components/responses/Problem401Admin'
+        '403':
+          $ref: '#/components/responses/Problem403Admin'
+        '404':
+          $ref: '#/components/responses/Problem404Admin'
+      security:
+      - sessionCookie: []
+    put:
+      tags:
+      - admin
+      summary: Update endpoint (PA; M-R1).
+      operationId: updateEndpoint
+      parameters:
+      - name: id
+        in: path
+        description: endpoint_id
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        description: alasan wajib (10..500)
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EndpointConfig'
+        required: true
+      responses:
+        '200':
+          description: Versi baru; versi lama tetap utuh (V-03)
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+              description: Selalu no-store (R-16)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Endpoint'
+        '401':
+          $ref: '#/components/responses/Problem401Admin'
+        '403':
+          $ref: '#/components/responses/Problem403Admin'
+        '404':
+          $ref: '#/components/responses/Problem404Admin'
+        '422':
+          $ref: '#/components/responses/Problem422Admin'
+      security:
+      - sessionCookie: []
+  /admin/v1/endpoints/{id}/aktifkan:
+    post:
+      tags:
+      - admin
+      summary: Activate an endpoint; mode = free (K-20).
+      operationId: aktifkanEndpoint
+      parameters:
+      - name: id
+        in: path
+        description: endpoint_id
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: Endpoint aktif
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+              description: Selalu no-store (R-16)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Endpoint'
+        '401':
+          $ref: '#/components/responses/Problem401Admin'
+        '403':
+          $ref: '#/components/responses/Problem403Admin'
+        '404':
+          $ref: '#/components/responses/Problem404Admin'
+      security:
+      - sessionCookie: []
+  /admin/v1/endpoints/{id}/nonaktifkan:
+    post:
+      tags:
+      - admin
+      summary: Deactivate an endpoint (K-20).
+      operationId: nonaktifkanEndpoint
+      parameters:
+      - name: id
+        in: path
+        description: endpoint_id
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AlasanK20'
+        required: true
+      responses:
+        '200':
+          description: Eksekusi selesai
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+              description: Selalu no-store (R-16)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HasilK20'
+        '401':
+          $ref: '#/components/responses/Problem401Admin'
+        '403':
+          $ref: '#/components/responses/Problem403Admin'
+        '404':
+          $ref: '#/components/responses/Problem404Admin'
+        '422':
+          $ref: '#/components/responses/Problem422Admin'
+      security:
+      - sessionCookie: []
+  /admin/v1/endpoints/{id}/pratinjau-nonaktif:
+    get:
+      tags:
+      - admin
+      summary: Preview endpoint deactivation (K-20).
+      operationId: pratinjauNonaktifkanEndpoint
+      parameters:
+      - name: id
+        in: path
+        description: endpoint_id
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: Pratinjau dampak per status
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+              description: Selalu no-store (R-16)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PratinjauK20'
+        '401':
+          $ref: '#/components/responses/Problem401Admin'
+        '403':
+          $ref: '#/components/responses/Problem403Admin'
+        '404':
+          $ref: '#/components/responses/Problem404Admin'
+      security:
+      - sessionCookie: []
+  /admin/v1/kuota:
+    get:
+      tags:
+      - admin
+      summary: 'Quota tracker (US-12; KP-07): numbers from the DB, not Redis.'
+      operationId: getQuotaTracker
+      parameters:
+      - name: upstream_pool_id
+        in: query
+        description: Filter satu upstream pool
+        required: false
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: Baris pelacak kuota per pool/periode
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+              description: Selalu no-store (R-16)
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/KuotaTracker'
+        '401':
+          $ref: '#/components/responses/Problem401Admin'
+        '403':
+          $ref: '#/components/responses/Problem403Admin'
+        '404':
+          $ref: '#/components/responses/Problem404Admin'
+      security:
+      - sessionCookie: []
+  /admin/v1/log/cari:
+    post:
+      tags:
+      - admin
+      summary: |-
+        Search the request log (US-14). Every parameter is checked for NIK or NIK
+        fragments (403 `pencarian_nik_dilarang`); the search itself is logged.
+      operationId: searchLog
+      requestBody:
+        description: Rentang waktu wajib; POST agar filter tidak masuk log akses
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LogCariRequest'
+        required: true
+      responses:
+        '200':
+          description: Halaman baris log; nik tersamar untuk OP
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+              description: Selalu no-store (R-16)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LogPage'
+        '401':
+          $ref: '#/components/responses/Problem401Admin'
+        '403':
+          $ref: '#/components/responses/Problem403Admin'
+        '422':
+          $ref: '#/components/responses/Problem422Admin'
+      security:
+      - sessionCookie: []
+  /admin/v1/log/{kode_transaksi}:
+    get:
+      tags:
+      - admin
+      summary: One log row by transaction code (US-14); masked for OP.
+      operationId: getLogEntry
+      parameters:
+      - name: kode_transaksi
+        in: path
+        description: Kode transaksi poolrouter
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Baris log lengkap; tersamar untuk OP
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+              description: Selalu no-store (R-16)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LogEntry'
+        '401':
+          $ref: '#/components/responses/Problem401Admin'
+        '403':
+          $ref: '#/components/responses/Problem403Admin'
+        '404':
+          $ref: '#/components/responses/Problem404Admin'
+      security:
+      - sessionCookie: []
+  /admin/v1/providers:
+    get:
+      tags:
+      - admin
+      summary: List providers (PA).
+      operationId: listProviders
+      responses:
+        '200':
+          description: Daftar provider
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+              description: Selalu no-store (R-16)
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Provider'
+        '401':
+          $ref: '#/components/responses/Problem401Admin'
+        '403':
+          $ref: '#/components/responses/Problem403Admin'
+      security:
+      - sessionCookie: []
+    post:
+      tags:
+      - admin
+      summary: |-
+        Create provider (PA). Template errors carry `posisi` (U-9); unknown
+        `{{secret.X}}` puts the missing secret name in `errors`.
+      operationId: createProvider
+      requestBody:
+        description: Kunci template tersimpan persis (USER_ID, TRESHOLD, NAMA_LGKP)
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProviderConfig'
+        required: true
+      responses:
+        '201':
+          description: Provider dibuat; provider_config_version naik
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+              description: Selalu no-store (R-16)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Provider'
+        '401':
+          $ref: '#/components/responses/Problem401Admin'
+        '403':
+          $ref: '#/components/responses/Problem403Admin'
+        '422':
+          $ref: '#/components/responses/Problem422Admin'
+      security:
+      - sessionCookie: []
+  /admin/v1/providers/{id}:
+    get:
+      tags:
+      - admin
+      summary: Get one provider (PA).
+      operationId: getProvider
+      parameters:
+      - name: id
+        in: path
+        description: provider_id
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: Detail provider
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+              description: Selalu no-store (R-16)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Provider'
+        '401':
+          $ref: '#/components/responses/Problem401Admin'
+        '403':
+          $ref: '#/components/responses/Problem403Admin'
+        '404':
+          $ref: '#/components/responses/Problem404Admin'
+      security:
+      - sessionCookie: []
+    put:
+      tags:
+      - admin
+      summary: Update provider (PA); old versions stay intact (V-03).
+      operationId: updateProvider
+      parameters:
+      - name: id
+        in: path
+        description: provider_id
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        description: alasan wajib (10..500) untuk audit konfigurasi
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProviderConfig'
+        required: true
+      responses:
+        '200':
+          description: Versi baru; versi lama tetap utuh (V-03)
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+              description: Selalu no-store (R-16)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Provider'
+        '401':
+          $ref: '#/components/responses/Problem401Admin'
+        '403':
+          $ref: '#/components/responses/Problem403Admin'
+        '404':
+          $ref: '#/components/responses/Problem404Admin'
+        '422':
+          $ref: '#/components/responses/Problem422Admin'
+      security:
+      - sessionCookie: []
+  /admin/v1/providers/{id}/aktifkan:
+    post:
+      tags:
+      - admin
+      summary: Activate a provider; mode = free (K-20).
+      operationId: aktifkanProvider
+      parameters:
+      - name: id
+        in: path
+        description: provider_id
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: Provider aktif
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+              description: Selalu no-store (R-16)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Provider'
+        '401':
+          $ref: '#/components/responses/Problem401Admin'
+        '403':
+          $ref: '#/components/responses/Problem403Admin'
+        '404':
+          $ref: '#/components/responses/Problem404Admin'
+      security:
+      - sessionCookie: []
+  /admin/v1/providers/{id}/nonaktifkan:
+    post:
+      tags:
+      - admin
+      summary: Deactivate a provider (K-20).
+      operationId: nonaktifkanProvider
+      parameters:
+      - name: id
+        in: path
+        description: provider_id
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AlasanK20'
+        required: true
+      responses:
+        '200':
+          description: Eksekusi selesai
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+              description: Selalu no-store (R-16)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HasilK20'
+        '401':
+          $ref: '#/components/responses/Problem401Admin'
+        '403':
+          $ref: '#/components/responses/Problem403Admin'
+        '404':
+          $ref: '#/components/responses/Problem404Admin'
+        '422':
+          $ref: '#/components/responses/Problem422Admin'
+      security:
+      - sessionCookie: []
+  /admin/v1/providers/{id}/pratinjau-nonaktif:
+    get:
+      tags:
+      - admin
+      summary: Preview provider deactivation (K-20).
+      operationId: pratinjauNonaktifkanProvider
+      parameters:
+      - name: id
+        in: path
+        description: provider_id
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: Pratinjau dampak per status
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+              description: Selalu no-store (R-16)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PratinjauK20'
+        '401':
+          $ref: '#/components/responses/Problem401Admin'
+        '403':
+          $ref: '#/components/responses/Problem403Admin'
+        '404':
+          $ref: '#/components/responses/Problem404Admin'
+      security:
+      - sessionCookie: []
+  /admin/v1/secrets:
+    get:
+      tags:
+      - admin
+      summary: List secret names (PA). Values are never returned.
+      operationId: listSecrets
+      responses:
+        '200':
+          description: Nama secret, tersamar, dan jumlah provider pemakai
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+              description: Selalu no-store (R-16)
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/SecretRingkas'
+        '401':
+          $ref: '#/components/responses/Problem401Admin'
+        '403':
+          $ref: '#/components/responses/Problem403Admin'
+      security:
+      - sessionCookie: []
+  /admin/v1/secrets/{nama}:
+    put:
+      tags:
+      - admin
+      summary: Store a secret value (PA); write-only, never echoed (US-02).
+      operationId: putSecret
+      parameters:
+      - name: nama
+        in: path
+        description: Nama secret; tersimpan persis
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SecretNilai'
+        required: true
+      responses:
+        '204':
+          description: Secret tersimpan
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+              description: Selalu no-store (R-16)
+        '401':
+          $ref: '#/components/responses/Problem401Admin'
+        '403':
+          $ref: '#/components/responses/Problem403Admin'
+        '422':
+          $ref: '#/components/responses/Problem422Admin'
+      security:
+      - sessionCookie: []
+    delete:
+      tags:
+      - admin
+      summary: |-
+        Delete a secret (PA). 409 while an active provider references it (US-02
+        AC4; the detail lists those providers).
+      operationId: deleteSecret
+      parameters:
+      - name: nama
+        in: path
+        description: Nama secret
+        required: true
+        schema:
+          type: string
+      responses:
+        '204':
+          description: Secret dihapus
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+              description: Selalu no-store (R-16)
+        '401':
+          $ref: '#/components/responses/Problem401Admin'
+        '403':
+          $ref: '#/components/responses/Problem403Admin'
+        '404':
+          $ref: '#/components/responses/Problem404Admin'
+        '409':
+          $ref: '#/components/responses/Problem409Admin'
+      security:
+      - sessionCookie: []
+  /admin/v1/upstream-pools:
+    get:
+      tags:
+      - admin
+      summary: List upstream pools (PA).
+      operationId: listUpstreamPools
+      responses:
+        '200':
+          description: Daftar upstream pool
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+              description: Selalu no-store (R-16)
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/UpstreamPool'
+        '401':
+          $ref: '#/components/responses/Problem401Admin'
+        '403':
+          $ref: '#/components/responses/Problem403Admin'
+      security:
+      - sessionCookie: []
+    post:
+      tags:
+      - admin
+      summary: |-
+        Create upstream pool (PA). Out-of-range KP-01 values are 422; `kalender`
+        without a source of certainty in `alasan` is 422 (KP-02).
+      operationId: createUpstreamPool
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpstreamPoolConfig'
+        required: true
+      responses:
+        '201':
+          description: Upstream pool dibuat
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+              description: Selalu no-store (R-16)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UpstreamPool'
+        '401':
+          $ref: '#/components/responses/Problem401Admin'
+        '403':
+          $ref: '#/components/responses/Problem403Admin'
+        '422':
+          $ref: '#/components/responses/Problem422Admin'
+      security:
+      - sessionCookie: []
+  /admin/v1/upstream-pools/{id}:
+    get:
+      tags:
+      - admin
+      summary: Get one upstream pool (PA).
+      operationId: getUpstreamPool
+      parameters:
+      - name: id
+        in: path
+        description: upstream_pool_id
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: Detail upstream pool
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+              description: Selalu no-store (R-16)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UpstreamPool'
+        '401':
+          $ref: '#/components/responses/Problem401Admin'
+        '403':
+          $ref: '#/components/responses/Problem403Admin'
+        '404':
+          $ref: '#/components/responses/Problem404Admin'
+      security:
+      - sessionCookie: []
+    put:
+      tags:
+      - admin
+      summary: |-
+        Update upstream pool (PA). `alasan` wajib; `reset_kuota_*` applies from
+        the next period (KP-02).
+      operationId: updateUpstreamPool
+      parameters:
+      - name: id
+        in: path
+        description: upstream_pool_id
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        description: alasan wajib (10..500)
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpstreamPoolConfig'
+        required: true
+      responses:
+        '200':
+          description: Upstream pool diperbarui
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+              description: Selalu no-store (R-16)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UpstreamPool'
+        '401':
+          $ref: '#/components/responses/Problem401Admin'
+        '403':
+          $ref: '#/components/responses/Problem403Admin'
+        '404':
+          $ref: '#/components/responses/Problem404Admin'
+        '422':
+          $ref: '#/components/responses/Problem422Admin'
+      security:
+      - sessionCookie: []
+  /admin/v1/upstream-pools/{id}/aktifkan:
+    post:
+      tags:
+      - admin
+      summary: Activate an upstream pool; mode = free (K-20).
+      operationId: aktifkanUpstreamPool
+      parameters:
+      - name: id
+        in: path
+        description: upstream_pool_id
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: Upstream pool aktif
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+              description: Selalu no-store (R-16)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UpstreamPool'
+        '401':
+          $ref: '#/components/responses/Problem401Admin'
+        '403':
+          $ref: '#/components/responses/Problem403Admin'
+        '404':
+          $ref: '#/components/responses/Problem404Admin'
+      security:
+      - sessionCookie: []
+  /admin/v1/upstream-pools/{id}/nonaktifkan:
+    post:
+      tags:
+      - admin
+      summary: |-
+        Deactivate an upstream pool (K-20): cancel queued, fail waiting for retry,
+        expire the rest across allocated downstream pools.
+      operationId: nonaktifkanUpstreamPool
+      parameters:
+      - name: id
+        in: path
+        description: upstream_pool_id
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AlasanK20'
+        required: true
+      responses:
+        '200':
+          description: Eksekusi selesai
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+              description: Selalu no-store (R-16)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HasilK20'
+        '401':
+          $ref: '#/components/responses/Problem401Admin'
+        '403':
+          $ref: '#/components/responses/Problem403Admin'
+        '404':
+          $ref: '#/components/responses/Problem404Admin'
+        '422':
+          $ref: '#/components/responses/Problem422Admin'
+      security:
+      - sessionCookie: []
+  /admin/v1/upstream-pools/{id}/pratinjau-nonaktif:
+    get:
+      tags:
+      - admin
+      summary: |-
+        Preview upstream pool deactivation (K-20; section 3a.10): cancels/fails
+        requests across allocated pools, and shows where this pool is the last
+        active upstream.
+      operationId: pratinjauNonaktifkanUpstreamPool
+      parameters:
+      - name: id
+        in: path
+        description: upstream_pool_id
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: Pratinjau plus upstream_aktif_terakhir_untuk dan dipakai_oleh_downstream_pool_count
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+              description: Selalu no-store (R-16)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PratinjauK20'
+        '401':
+          $ref: '#/components/responses/Problem401Admin'
+        '403':
+          $ref: '#/components/responses/Problem403Admin'
+        '404':
+          $ref: '#/components/responses/Problem404Admin'
+      security:
+      - sessionCookie: []
+  /admin/v1/webhook-allowlist:
+    get:
+      tags:
+      - admin
+      summary: List webhook allowlist entries (PA).
+      operationId: listWebhookAllowlist
+      responses:
+        '200':
+          description: Domain diizinkan dan statusnya
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+              description: Selalu no-store (R-16)
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/AllowlistEntry'
+        '401':
+          $ref: '#/components/responses/Problem401Admin'
+        '403':
+          $ref: '#/components/responses/Problem403Admin'
+      security:
+      - sessionCookie: []
+  /admin/v1/webhook-allowlist/{domain}:
+    put:
+      tags:
+      - admin
+      summary: Add or update an allowlist entry (PA).
+      operationId: putWebhookAllowlistEntry
+      parameters:
+      - name: domain
+        in: path
+        description: Domain, misal mpm.example.go.id
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AllowlistPut'
+        required: true
+      responses:
+        '200':
+          description: Entri tersimpan
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+              description: Selalu no-store (R-16)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AllowlistEntry'
+        '401':
+          $ref: '#/components/responses/Problem401Admin'
+        '403':
+          $ref: '#/components/responses/Problem403Admin'
+        '422':
+          $ref: '#/components/responses/Problem422Admin'
+      security:
+      - sessionCookie: []
+    delete:
+      tags:
+      - admin
+      summary: Remove an allowlist entry (PA).
+      operationId: deleteWebhookAllowlistEntry
+      parameters:
+      - name: domain
+        in: path
+        description: Domain
+        required: true
+        schema:
+          type: string
+      responses:
+        '204':
+          description: Entri dihapus
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+              description: Selalu no-store (R-16)
+        '401':
+          $ref: '#/components/responses/Problem401Admin'
+        '403':
+          $ref: '#/components/responses/Problem403Admin'
+      security:
+      - sessionCookie: []
+components:
+  schemas:
+    AlasanK20:
+      type: object
+      description: Reason body for deactivate/revoke (K-20).
+      required:
+      - alasan
+      properties:
+        alasan:
+          type: string
+          example: Kontrak client berakhir.
+          maxLength: 500
+          minLength: 10
+      additionalProperties: false
+    AllowlistEntry:
+      type: object
+      description: One allowlist entry (US-06).
+      required:
+      - domain
+      - aktif
+      properties:
+        aktif:
+          type: boolean
+        domain:
+          type: string
+          example: mpm.example.go.id
+    AllowlistPut:
+      type: object
+      description: '`putWebhookAllowlistEntry` body.'
+      required:
+      - aktif
+      properties:
+        aktif:
+          type: boolean
+      additionalProperties: false
+    ApiStatus:
+      type: string
+      description: Status exposed by polling and webhook (ADR-0001 section 4.1). Never goes backwards.
+      enum:
+      - queued
+      - processing
+      - done
+      - failed
+      - expired
+      - cancelled
+    AuditAksesBaris:
+      type: object
+      description: One `audit_akses` row (no `nik_hmac`).
+      required:
+      - audit_id
+      - dilakukan_pada
+      - pengguna_id
+      - aksi
+      - hasil
+      properties:
+        aksi:
+          type: string
+          example: lihat_payload
+        alasan:
+          type:
+          - string
+          - 'null'
+        audit_id:
+          type: string
+          format: uuid
+        dilakukan_pada:
+          type: string
+          format: date-time
+        hasil:
+          type: string
+          description: '`berhasil` | `ditolak`.'
+        pengguna_id:
+          type: string
+          format: uuid
+    AuditAksesPage:
+      type: object
+      description: Paginated audit akses result.
+      required:
+      - baris
+      properties:
+        baris:
+          type: array
+          items:
+            $ref: '#/components/schemas/AuditAksesBaris'
+        kursor:
+          type:
+          - string
+          - 'null'
+    AuditCariRequest:
+      type: object
+      description: |-
+        `searchAuditAkses` body (auditor only; range max 31 days). Rows carry no
+        `nik_hmac`.
+      required:
+      - dari
+      - sampai
+      properties:
+        aksi:
+          type:
+          - string
+          - 'null'
+          description: Action filter (`login`, `cari_log`, `lihat_payload`, ...).
+        dari:
+          type: string
+          format: date-time
+        hasil:
+          type:
+          - string
+          - 'null'
+          description: '`berhasil` | `ditolak`.'
+        kursor:
+          type:
+          - string
+          - 'null'
+        pengguna_id:
+          type:
+          - string
+          - 'null'
+          format: uuid
+        sampai:
+          type: string
+          format: date-time
+      additionalProperties: false
+    BahasaUi:
+      type: string
+      description: Interface language (ADR-0003 Addendum A).
+      enum:
+      - id
+      - en
+    Client:
+      type: object
+      description: Client entity.
+      required:
+      - client_id
+      - nama
+      - limiter_penolakan_burst
+      - limiter_penolakan_isi_ulang_per_detik
+      - aktif
+      properties:
+        aktif:
+          type: boolean
+        client_id:
+          type: string
+          format: uuid
+        limiter_penolakan_burst:
+          type: integer
+          format: int64
+        limiter_penolakan_isi_ulang_per_detik:
+          type: number
+          format: double
+        nama:
+          type: string
+          example: BGN MPM Production
+    ClientConfig:
+      type: object
+      description: Client configuration body (US-02; L-04 limiter ranges).
+      required:
+      - nama
+      properties:
+        alasan:
+          type:
+          - string
+          - 'null'
+          description: Reason; required when changing the limiter.
+          maxLength: 500
+          minLength: 10
+        limiter_penolakan_burst:
+          type:
+          - integer
+          - 'null'
+          format: int64
+          description: 1..=1000, default 20 (L-04).
+          example: 20
+          maximum: 1000
+          minimum: 1
+        limiter_penolakan_isi_ulang_per_detik:
+          type:
+          - number
+          - 'null'
+          format: double
+          description: 0.10..=100.00 per second, default 1.00 (L-04).
+          example: 1.0
+          maximum: 100
+          minimum: 0.1
+        nama:
+          type: string
+          example: BGN MPM Production
+      additionalProperties: false
+    ClientEndpoints:
+      type: object
+      description: '`setClientEndpoints` body (U-7 shape).'
+      required:
+      - endpoint_ids
+      properties:
+        endpoint_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+          description: |-
+            Complete assignment; replaces the previous set. Empty means the client
+            has no endpoints (downstream then answers 404).
+          minItems: 1
+      additionalProperties: false
+    Credential:
+      type: object
+      description: Credential entity (list response; no hash is ever returned).
+      required:
+      - credential_id
+      - jenis
+      - status
+      properties:
+        credential_id:
+          type: string
+          format: uuid
+        dicabut_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        jenis:
+          $ref: '#/components/schemas/JenisKredensial'
+        kedaluwarsa_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        status:
+          type: string
+          description: '`aktif` | `kedaluwarsa` | `dicabut`.'
+          example: aktif
+    CredentialCreate:
+      type: object
+      description: |-
+        `createCredential` body (contract section 3.1b). Default and maximum
+        expiry 365 days.
+      required:
+      - jenis
+      properties:
+        jenis:
+          $ref: '#/components/schemas/JenisKredensial'
+        kedaluwarsa_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+      additionalProperties: false
+    CredentialSecret:
+      type: object
+      description: Secret response; returned exactly once, `no-store`.
+      required:
+      - credential_id
+      - client_id
+      - secret
+      properties:
+        client_id:
+          type: string
+          format: uuid
+        credential_id:
+          type: string
+          format: uuid
+        kedaluwarsa_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        secret:
+          type: string
+          description: 256-bit base64url secret; never returned again (contract 3.1b).
+          example: 2fJ8N0qk0e6h7h0F1D2J3k4L5m6N7o8P9Q0r1S2t3U4v
+    DownstreamPool:
+      type: object
+      description: |-
+        Downstream pool entity (F-1: `prioritas` is read-only and derived from the
+        allocation; it is not part of create/update bodies).
+      required:
+      - downstream_pool_id
+      - mode
+      - ttl_antrean
+      - upstream_pool_id
+      - aktif
+      properties:
+        aktif:
+          type: boolean
+        downstream_pool_id:
+          type: string
+          format: uuid
+        mode:
+          $ref: '#/components/schemas/Mode'
+        ttl_antrean:
+          type: integer
+          format: int64
+        upstream_pool_id:
+          type: string
+          format: uuid
+    DownstreamPoolConfig:
+      type: object
+      description: |-
+        Downstream pool configuration body (US-06; F-1: single upstream
+        allocation, no reserved/shareable/prioritas in the body).
+      required:
+      - mode
+      - upstream_pool_id
+      properties:
+        alasan:
+          type:
+          - string
+          - 'null'
+          description: Reason; required on update.
+          maxLength: 500
+          minLength: 10
+        mode:
+          $ref: '#/components/schemas/Mode'
+          description: 'sync|async (F-1: the mode lives here, not on the endpoint).'
+        ttl_antrean:
+          type:
+          - integer
+          - 'null'
+          format: int64
+          description: Queue TTL in seconds; default 86_400 (24 hours).
+          example: 86400
+          minimum: 60
+        upstream_pool_id:
+          type: string
+          format: uuid
+          description: The one upstream pool serving this downstream pool.
+      additionalProperties: false
+    EksporRequest:
+      type: object
+      description: |-
+        `exportLogAuditor` body (R-18). Above 10,000 rows: 422
+        `ekspor_terlalu_besar` without a file and with a `ditolak` audit row.
+      required:
+      - nik
+      - dari
+      - sampai
+      - alasan
+      properties:
+        alasan:
+          type: string
+          example: Ekspor audit Q4 2026.
+          maxLength: 500
+          minLength: 10
+        dari:
+          type: string
+          format: date-time
+        nik:
+          type: string
+          example: '3175000000000001'
+          pattern: ^[0-9]{16}$
+        sampai:
+          type: string
+          format: date-time
+      additionalProperties: false
+    Endpoint:
+      type: object
+      description: Endpoint entity.
+      required:
+      - endpoint_id
+      - provider_id
+      - downstream_pool_id
+      - log_mode
+      - endpoint_config_version
+      - aktif
+      properties:
+        aktif:
+          type: boolean
+        downstream_pool_id:
+          type: string
+          format: uuid
+        endpoint_config_version:
+          type: integer
+          format: int64
+          example: 3
+        endpoint_id:
+          type: string
+          format: uuid
+        log_mode:
+          type: string
+          example: ringkas
+        provider_id:
+          type: string
+          format: uuid
+    EndpointConfig:
+      type: object
+      description: Endpoint configuration body (US-15; M-R1).
+      required:
+      - provider_id
+      - downstream_pool_id
+      - parameter_literal
+      - log_mode
+      - metadata_fields
+      - config_schema_version
+      properties:
+        alasan:
+          type:
+          - string
+          - 'null'
+          description: Reason; required on update.
+          maxLength: 500
+          minLength: 10
+        config_schema_version:
+          type: integer
+          format: int64
+          description: Fixed 1 in F0.
+          example: 1
+          maximum: 1
+          minimum: 1
+        downstream_pool_id:
+          type: string
+          format: uuid
+        log_mode:
+          type: string
+          example: ringkas
+        metadata_fields:
+          type: array
+          items:
+            $ref: '#/components/schemas/MetadataFieldDef'
+          description: |-
+            Metadata field definitions; Dukcapil endpoints must include
+            `status_penerima_manfaat` (M-R1).
+        parameter_literal:
+          type: object
+          description: Literal parameters, including `TRESHOLD` (BGN mandate).
+          additionalProperties:
+            type: string
+          propertyNames:
+            type: string
+        provider_id:
+          type: string
+          format: uuid
+      additionalProperties: false
+    HasilK20:
+      type: object
+      description: K-20 execution result; the same numbers go to the config audit.
+      required:
+      - jumlah_cancelled
+      - jumlah_failed
+      - dilakukan_pada
+      properties:
+        dilakukan_pada:
+          type: string
+          format: date-time
+        jumlah_cancelled:
+          type: integer
+          format: int64
+        jumlah_failed:
+          type: integer
+          format: int64
+    JendelaKuota:
+      type: string
+      description: Periode kuota upstream pool (ADR-0001 section 3a.5).
+      enum:
+      - bergulir24j
+      - kalender
+    JenisKredensial:
+      type: string
+      description: Jenis kredensial downstream (contract section 3.1b).
+      enum:
+      - oauth2
+      - api_key
+    JenisObjek:
+      type: string
+      description: |-
+        Jenis objek yang bisa dinonaktifkan (ADR-0001 section 4.1). Dikirim di
+        `jenis_objek` pada 403/503 `objek_nonaktif`.
+      enum:
+      - endpoint
+      - downstream_pool
+      - upstream_pool
+      - provider
+    KuotaTracker:
+      type: object
+      description: 'One quota tracker row (US-12; KP-07: numbers from the DB, not Redis).'
+      required:
+      - upstream_pool_id
+      - periode_mulai
+      - periode_selesai
+      - kuota_harian
+      - kuota_efektif
+      - terpakai_periode
+      - sisa_periode
+      - porsi_sync_maks
+      - terpakai_sync_jam_berjalan
+      - terpakai_jam_berjalan
+      - rate_limit_per_jam
+      - dihitung_pada
+      properties:
+        dihitung_pada:
+          type: string
+          format: date-time
+        kuota_efektif:
+          type: integer
+          format: int64
+        kuota_harian:
+          type: integer
+          format: int64
+        periode_mulai:
+          type: string
+          format: date-time
+        periode_selesai:
+          type: string
+          format: date-time
+        porsi_sync_maks:
+          type: integer
+          format: int64
+        rate_limit_per_jam:
+          type: integer
+          format: int64
+        sisa_periode:
+          type: integer
+          format: int64
+        terpakai_jam_berjalan:
+          type: integer
+          format: int64
+        terpakai_periode:
+          type: integer
+          format: int64
+        terpakai_sync_jam_berjalan:
+          type: integer
+          format: int64
+        upstream_pool_id:
+          type: string
+          format: uuid
+    LogBaris:
+      type: object
+      description: |-
+        One log row (US-14). `nik` is masked by the server for OP; never the
+        client (U-1).
+      required:
+      - nik
+      - requested_at
+      - status_akses
+      - kode_transaksi
+      - queue_id
+      - client_id
+      - client_nama
+      properties:
+        client_id:
+          type: string
+          format: uuid
+        client_nama:
+          type: string
+          description: Client name joined by the server (F-4); UI needs it for pagination.
+          example: BGN MPM Production
+        kode_transaksi:
+          type: string
+        nik:
+          type: string
+          description: 'Masked for OP: `************1234`; full for auditor searches.'
+          example: '************1234'
+        queue_id:
+          type: string
+          format: uuid
+        requested_at:
+          type: string
+          format: date-time
+        status_akses:
+          type: string
+          description: '`diizinkan` | `ditolak`.'
+    LogCariRequest:
+      type: object
+      description: |-
+        `searchLog` body (POST so filters stay out of the access log). Time range
+        required. NIK or NIK fragments in any parameter are 403
+        `pencarian_nik_dilarang` (US-16).
+      required:
+      - dari
+      - sampai
+      properties:
+        client_id:
+          type:
+          - string
+          - 'null'
+          format: uuid
+        dari:
+          type: string
+          format: date-time
+        kode_transaksi:
+          type:
+          - string
+          - 'null'
+        kursor:
+          type:
+          - string
+          - 'null'
+        queue_id:
+          type:
+          - string
+          - 'null'
+          format: uuid
+        sampai:
+          type: string
+          format: date-time
+        status_akses:
+          type:
+          - string
+          - 'null'
+          description: '`diizinkan` | `ditolak`.'
+      additionalProperties: false
+    LogEntry:
+      type: object
+      description: Full one-entry log row (US-14). Masked for OP.
+      required:
+      - nik
+      - requested_at
+      - status_akses
+      - kode_transaksi
+      - queue_id
+      - client_id
+      - client_nama
+      properties:
+        client_id:
+          type: string
+          format: uuid
+        client_nama:
+          type: string
+          example: BGN MPM Production
+        kode_transaksi:
+          type: string
+        nik:
+          type: string
+          example: '************1234'
+        queue_id:
+          type: string
+          format: uuid
+        requested_at:
+          type: string
+          format: date-time
+        status_akses:
+          type: string
+    LogPage:
+      type: object
+      description: Paginated log result (F-4, F-2).
+      required:
+      - baris
+      - di_luar_retensi_online
+      properties:
+        baris:
+          type: array
+          items:
+            $ref: '#/components/schemas/LogBaris'
+        di_luar_retensi_online:
+          type: boolean
+          description: 'true: older rows live in cold storage and are not in this page (F-2).'
+        kursor:
+          type:
+          - string
+          - 'null'
+    LoginRequest:
+      type: object
+      description: |-
+        Login body. Two consecutive failures count against the limiter (5 per 15
+        minutes per username).
+      required:
+      - username
+      - password
+      properties:
+        password:
+          type: string
+        username:
+          type: string
+          example: auditor_01
+      additionalProperties: false
+    Me:
+      type: object
+      description: 'Current identity (U-1: "identitas, peran, client_id").'
+      required:
+      - pengguna_id
+      - username
+      - peran
+      properties:
+        bahasa_ui:
+          oneOf:
+          - $ref: '#/components/schemas/BahasaUi'
+          - type: 'null'
+        client_id:
+          type:
+          - string
+          - 'null'
+          format: uuid
+          description: Set only for `client_owner` sessions.
+        pengguna_id:
+          type: string
+          format: uuid
+        peran:
+          type: array
+          items:
+            type: string
+          description: Role names from contract section 8.1.
+        username:
+          type: string
+          example: auditor_01
+    MetadataFieldDef:
+      type: object
+      description: Metadata field definition (US-15).
+      required:
+      - nama_field
+      - tipe
+      - wajib
+      - klasifikasi
+      - kirim_ke_data_balikan
+      - deskripsi
+      properties:
+        aturan_validasi:
+          type:
+          - string
+          - 'null'
+          description: Validation rule reference, if any.
+        deskripsi:
+          type: string
+        kirim_ke_data_balikan:
+          type: boolean
+          description: Whether the field is sent to the data-balikan callback.
+        klasifikasi:
+          type: string
+          description: Classification (`rahasia` fields are never logged or sent to callbacks).
+          example: internal
+        nama_field:
+          type: string
+          example: status_penerima_manfaat
+        nilai_diizinkan:
+          type:
+          - array
+          - 'null'
+          items:
+            type: string
+        tipe:
+          type: string
+          example: string
+        wajib:
+          type: boolean
+    Mode:
+      type: string
+      description: Path mode of a downstream endpoint (U-4). Not writable in request bodies.
+      enum:
+      - sync
+      - async
+    NikCariRequest:
+      type: object
+      description: |-
+        `searchLogByNik` body (auditor only; exact 16-digit NIK, no wildcard or
+        prefix). One `audit_akses` `cari_nik` row per call, including page turns
+        and empty results.
+      required:
+      - nik
+      - dari
+      - sampai
+      - alasan
+      properties:
+        alasan:
+          type: string
+          example: Audit aduan W-2026-07.
+          maxLength: 500
+          minLength: 10
+        dari:
+          type: string
+          format: date-time
+        kursor:
+          type:
+          - string
+          - 'null'
+        nik:
+          type: string
+          example: '3175000000000001'
+          pattern: ^[0-9]{16}$
+        sampai:
+          type: string
+          format: date-time
+      additionalProperties: false
+    ParameterRule:
+      type: object
+      description: One provider parameter with an optional validation rule (US-03).
+      required:
+      - nama
+      properties:
+        nama:
+          type: string
+          description: Parameter name stored verbatim (`USER_ID`, `TRESHOLD`, `NAMA_LGKP`).
+          example: USER_ID
+        nilai:
+          type:
+          - string
+          - 'null'
+        rule:
+          oneOf:
+          - $ref: '#/components/schemas/RuleValidasi'
+          - type: 'null'
+    PayloadOpenRequest:
+      type: object
+      description: |-
+        `openPayload` body (auditor only; exactly one of `request_id` or
+        `kode_transaksi`).
+      required:
+      - alasan
+      properties:
+        alasan:
+          type: string
+          example: Riset banding aduan W-2026-07.
+          maxLength: 500
+          minLength: 10
+        kode_transaksi:
+          type:
+          - string
+          - 'null'
+        request_id:
+          type:
+          - string
+          - 'null'
+          format: uuid
+      additionalProperties: false
+    PayloadView:
+      type: object
+      description: |-
+        Payload view opened by an auditor (US-16). One `lihat_payload` row per
+        opening; no cache.
+      required:
+      - request_id
+      - kode_transaksi
+      - status_akses
+      - requested_at
+      properties:
+        hasil: {}
+        input: {}
+        kode_transaksi:
+          type: string
+        metadata: {}
+        request_id:
+          type: string
+          format: uuid
+        requested_at:
+          type: string
+          format: date-time
+        status_akses:
+          type: string
+    Posisi:
+      type: object
+      description: |-
+        Position inside the provider body template (U-9). Admin API only,
+        validation of the template only.
+      required:
+      - baris
+      - kolom
+      properties:
+        baris:
+          type: integer
+          format: int64
+          description: 1-based line in the body template.
+          minimum: 1
+        kolom:
+          type: integer
+          format: int64
+          description: 1-based column in the body template.
+          minimum: 1
+    PratinjauK20:
+      type: object
+      description: |-
+        K-20 preview (section 3a; no request_id, NIK or payload). Upstream pool
+        previews add the last-active-upstream detail (section 3a.10).
+      required:
+      - akan_cancelled
+      - akan_failed
+      - dihitung_pada
+      properties:
+        akan_cancelled:
+          type: integer
+          format: int64
+        akan_failed:
+          type: integer
+          format: int64
+        dihitung_pada:
+          type: string
+          format: date-time
+        dipakai_oleh_downstream_pool_count:
+          type:
+          - integer
+          - 'null'
+          format: int64
+          description: 'Upstream pool previews only: number of downstream pools allocated.'
+        upstream_aktif_terakhir_untuk:
+          type:
+          - array
+          - 'null'
+          items:
+            $ref: '#/components/schemas/UpstreamAktifTerakhir'
+          description: |-
+            Upstream pool previews only: downstream pools whose last active
+            upstream is this pool.
+    PreferensiUpdate:
+      type: object
+      description: Preference update (Addendum A section 7.2). No user id is accepted.
+      required:
+      - bahasa_ui
+      properties:
+        bahasa_ui:
+          $ref: '#/components/schemas/BahasaUi'
+      additionalProperties: false
+    Problem:
+      type: object
+      description: |-
+        RFC 9457 problem body shared by every 4xx/5xx. `detail` never contains
+        input values, NIK or secrets (R-16). Field names follow the contract:
+        Indonesian on the wire except the fixed RFC members.
+      required:
+      - type
+      - title
+      - status
+      - kode
+      properties:
+        detail:
+          type:
+          - string
+          - 'null'
+          description: Human explanation without sensitive values; absent when unneeded.
+        error:
+          type:
+          - string
+          - 'null'
+          description: |-
+            RFC 6749 section 5.2 error for the token endpoint (U-3). Never sent
+            with a 429.
+        errors:
+          type:
+          - array
+          - 'null'
+          items:
+            $ref: '#/components/schemas/ValidasiError'
+          description: Failing fields; only on 422 `validasi_gagal` bodies.
+        jenis_objek:
+          oneOf:
+          - $ref: '#/components/schemas/JenisObjek'
+            description: Kind of the inactive object; only on `objek_nonaktif`.
+          - type: 'null'
+        kode:
+          $ref: '#/components/schemas/ProblemKode'
+        request_id:
+          type:
+          - string
+          - 'null'
+          format: uuid
+          description: '`queue_id` of the request the failure belongs to (502/504 bodies).'
+        status:
+          type: integer
+          format: int32
+          minimum: 0
+        status_api:
+          oneOf:
+          - $ref: '#/components/schemas/ApiStatus'
+            description: Current API status; only on 409 `tidak_bisa_dibatalkan`.
+          - type: 'null'
+        title:
+          type: string
+        type:
+          type: string
+          description: Stable anchor `https://github.com/faisalcayunda/PoolRouter/blob/main/docs/masalah.md#<kode>`.
+    ProblemKode:
+      type: string
+      description: |-
+        Closed machine-readable code. One anchor in `docs/masalah.md` per value;
+        `type` and `kode` are 1:1 (ADR-0001 section 5a.7).
+      enum:
+      - tidak_terautentikasi
+      - token_dibatasi
+      - validasi_gagal
+      - metadata_tidak_valid
+      - idempotency_key_tidak_didukung
+      - idempotency_key_konflik
+      - kuota_habis
+      - porsi_sync_habis
+      - penolakan_berlebih
+      - objek_nonaktif
+      - tidak_bisa_dibatalkan
+      - layanan_tidak_tersedia
+      - retry_habis
+      - provider_error_permanen
+      - timeout_sync
+      - tidak_ditemukan
+      - kredensial_salah
+      - login_dibatasi
+      - origin_tidak_valid
+      - akses_ditolak
+      - pencarian_nik_dilarang
+      - secret_dipakai
+      - kredensial_dicabut
+      - batas_kredensial
+      - webhook_domain_tidak_diizinkan
+      - webhook_tidak_https
+      - metadata_wajib_hilang
+      - ekspor_terlalu_besar
+    Provider:
+      type: object
+      description: Provider entity (list/get/update/activate responses).
+      required:
+      - provider_id
+      - base_url
+      - log_mode
+      - provider_config_version
+      - aktif
+      properties:
+        aktif:
+          type: boolean
+        base_url:
+          type: string
+          example: https://provider.example.go.id/api
+        log_mode:
+          type: string
+          example: ringkas
+        provider_config_version:
+          type: integer
+          format: int64
+          example: 2
+        provider_id:
+          type: string
+          format: uuid
+    ProviderConfig:
+      type: object
+      description: Provider configuration body (`createProvider`/`updateProvider`, US-01/04).
+      required:
+      - base_url
+      - body_template
+      - parameters
+      - respons_skema
+      - tls_trust
+      - log_mode
+      - config_schema_version
+      properties:
+        alasan:
+          type:
+          - string
+          - 'null'
+          description: Reason; required on update (written to the config audit).
+          maxLength: 500
+          minLength: 10
+        base_url:
+          type: string
+          description: Provider base URL (https).
+          example: https://provider.example.go.id/api
+        body_template:
+          type: string
+          description: |-
+            Body template. Placeholders `{{secret.X}}` must reference an existing
+            secret; `{{endpoint.*}}` must have a literal in the endpoint config.
+          example: '{"NIK":"{{input.NIK}}","UID":"{{endpoint.USER_ID}}"}'
+        config_schema_version:
+          type: integer
+          format: int64
+          description: Fixed 1 in F0; any other value is 422.
+          example: 1
+          maximum: 1
+          minimum: 1
+        log_mode:
+          type: string
+          example: ringkas
+        parameters:
+          type: array
+          items:
+            $ref: '#/components/schemas/ParameterRule'
+          description: Provider parameters plus their validation rules.
+        respons_skema:
+          type: object
+          description: Response schema used to map elements (US-05).
+        tls_trust:
+          type: string
+          description: TLS trust setting for the provider call.
+          example: sistem
+      additionalProperties: false
+    RuleJenis:
+      type: string
+      description: |-
+        Jenis rule validasi pada konfigurasi provider (BRD US-03). F0 tidak
+        menyediakan rule kustom; nilai di luar enum ini ditolak 422.
+      enum:
+      - regex
+      - enum
+      - panjang
+      - format_tanggal
+    RuleValidasi:
+      type: object
+      description: Validation rule for a provider parameter (BRD US-03; closed `jenis`).
+      required:
+      - jenis
+      properties:
+        format_tanggal:
+          type:
+          - string
+          - 'null'
+          description: Date format for `jenis = format_tanggal`, e.g. `yyyy-MM-dd`.
+        jenis:
+          $ref: '#/components/schemas/RuleJenis'
+        nilai_diizinkan:
+          type:
+          - array
+          - 'null'
+          items:
+            type: string
+          description: Allowed values for `jenis = enum`.
+        panjang_maks:
+          type:
+          - integer
+          - 'null'
+          format: int64
+        panjang_min:
+          type:
+          - integer
+          - 'null'
+          format: int64
+        pola:
+          type:
+          - string
+          - 'null'
+          description: Regex pattern for `jenis = regex`.
+    SecretNilai:
+      type: object
+      description: '`putSecret` body; write-only value.'
+      required:
+      - nilai
+      properties:
+        nilai:
+          type: string
+          description: Secret value; never echoed back, never logged (R-16).
+      additionalProperties: false
+    SecretRingkas:
+      type: object
+      description: Secret list item. The value itself is never returned.
+      required:
+      - nama
+      - tersamar
+      - dipakai_oleh_provider_count
+      properties:
+        dipakai_oleh_provider_count:
+          type: integer
+          format: int64
+        nama:
+          type: string
+          example: DUKCAPIL_PASSWORD
+        tersamar:
+          type: boolean
+          description: 'true: masked in UI.'
+    SesiStatus:
+      type: object
+      description: Session state (rev 5 section 3.6f). All fields required, UTC date-time.
+      required:
+      - idle_berakhir_pada
+      - absolut_berakhir_pada
+      - waktu_server
+      properties:
+        absolut_berakhir_pada:
+          type: string
+          format: date-time
+        idle_berakhir_pada:
+          type: string
+          format: date-time
+        waktu_server:
+          type: string
+          format: date-time
+    UpstreamAktifTerakhir:
+      type: object
+      description: Last-active-upstream detail in a preview (section 3a.10).
+      required:
+      - downstream_pool_id
+      - nama
+      properties:
+        downstream_pool_id:
+          type: string
+          format: uuid
+        nama:
+          type: string
+    UpstreamPool:
+      type: object
+      description: Upstream pool entity.
+      required:
+      - upstream_pool_id
+      - provider_id
+      - jendela_kuota
+      - aktif
+      properties:
+        aktif:
+          type: boolean
+        jendela_kuota:
+          $ref: '#/components/schemas/JendelaKuota'
+        provider_id:
+          type: string
+          format: uuid
+        upstream_pool_id:
+          type: string
+          format: uuid
+    UpstreamPoolConfig:
+      type: object
+      description: |-
+        Upstream pool configuration body (US-04/05; KP-01/KP-02 ranges enforced
+        server-side with 422).
+      required:
+      - provider_id
+      - kuota_harian
+      - rate_limit_per_jam
+      - porsi_sync
+      - margin_kuota
+      - batas_percobaan
+      - retry_backoff_base_detik
+      - retry_backoff_cap_detik
+      - retry_rasio
+      - retry_min_per_jam
+      - jendela_kuota
+      - reset_kuota_jam
+      - reset_kuota_zona
+      - jeda_min
+      - jeda_maks
+      - ambang_berdampingan
+      properties:
+        alasan:
+          type:
+          - string
+          - 'null'
+          description: |-
+            Reason; required on update, and required with `kalender` (source of
+            certainty of the calendar window).
+          maxLength: 500
+          minLength: 10
+        ambang_berdampingan:
+          type: integer
+          format: int64
+          description: Concurrency threshold (`ambang berdampingan`).
+          example: 4
+        batas_percobaan:
+          type: integer
+          format: int64
+          description: 1..5 attempts (KP-01).
+          example: 3
+          maximum: 5
+          minimum: 1
+        jeda_maks:
+          type: integer
+          format: int64
+          description: Maximum inter-request delay in milliseconds.
+          example: 800
+        jeda_min:
+          type: integer
+          format: int64
+          description: Minimum inter-request delay in milliseconds.
+          example: 200
+        jendela_kuota:
+          $ref: '#/components/schemas/JendelaKuota'
+        kuota_harian:
+          type: integer
+          format: int64
+          example: 500
+          minimum: 1
+        margin_kuota:
+          type: number
+          format: double
+          description: 0.001..0.200 (KP-01).
+          example: 0.05
+          maximum: 0.2
+          minimum: 0.001
+        porsi_sync:
+          type: number
+          format: double
+          description: Sync portion of the pool, 0.0..1.0.
+          example: 0.1
+        provider_id:
+          type: string
+          format: uuid
+        rate_limit_per_jam:
+          type: integer
+          format: int64
+          example: 60
+          minimum: 1
+        reset_kuota_jam:
+          type: integer
+          format: int64
+          description: Hour of the period reset (0..23), interpreted in `reset_kuota_zona`.
+          example: 0
+          maximum: 23
+          minimum: 0
+        reset_kuota_zona:
+          type: string
+          description: IANA time zone; the offset is pinned to this zone (KP-02).
+          example: Asia/Jakarta
+        retry_backoff_base_detik:
+          type: integer
+          format: int64
+          example: 2
+        retry_backoff_cap_detik:
+          type: integer
+          format: int64
+          example: 60
+        retry_min_per_jam:
+          type: integer
+          format: int64
+          example: 10
+        retry_rasio:
+          type: number
+          format: double
+          example: 0.5
+      additionalProperties: false
+    ValidasiError:
+      type: object
+      description: |-
+        One failing input field. `errors[].kode` is a per-field validation code
+        from Addendum A section 6.1; `batas` carries only the numeric rule
+        parameter (never the rejected value). Template errors carry `posisi`.
+      required:
+      - field
+      - kode
+      properties:
+        batas:
+          description: Numeric rule parameter of the violated rule, if any.
+        field:
+          type: string
+          description: Field name, or a JSON pointer for template errors.
+        kode:
+          type: string
+        posisi:
+          oneOf:
+          - $ref: '#/components/schemas/Posisi'
+            description: Template position (U-9). Admin API and template errors only.
+          - type: 'null'
+    WebhookConfig:
+      type: object
+      description: Webhook configuration view; the secret itself is never returned.
+      required:
+      - aktif
+      properties:
+        aktif:
+          type: boolean
+        secret_versi:
+          type:
+          - integer
+          - 'null'
+          format: int64
+        webhook_url:
+          type:
+          - string
+          - 'null'
+    WebhookConfigPut:
+      type: object
+      description: |-
+        `putWebhookConfig` body (US-06). Domain must be allowlisted and https;
+        checked on save and on send.
+      required:
+      - webhook_url
+      - aktif
+      properties:
+        aktif:
+          type: boolean
+        webhook_url:
+          type: string
+          example: https://mpm.example.go.id/webhook/poolrouter
+      additionalProperties: false
+    WebhookLog:
+      type: object
+      description: One webhook delivery (US-06).
+      required:
+      - request_id
+      - sent_at
+      - hasil
+      properties:
+        error_class:
+          type:
+          - string
+          - 'null'
+        hasil:
+          type: string
+          description: '`terkirim` (2xx) | `gagal` (anything else; no retry in F0).'
+        http_status:
+          type:
+          - integer
+          - 'null'
+          format: int64
+        request_id:
+          type: string
+          format: uuid
+        secret_versi:
+          type:
+          - integer
+          - 'null'
+          format: int64
+        sent_at:
+          type: string
+          format: date-time
+    WebhookSecret:
+      type: object
+      description: |-
+        Rotated webhook secret; returned exactly once (F-5). Creating the first
+        secret sets `secret_versi: 1`.
+      required:
+      - secret_versi
+      - secret
+      properties:
+        secret:
+          type: string
+          description: '`whsec_` + 32-byte base64 (Standard Webhooks).'
+          example: whsec_2fJ8N0qk0e6h7h0F1D2J3k4L5m6N7o8P9Q0r1S2t3U4v
+        secret_versi:
+          type: integer
+          format: int64
+  responses:
+    Problem400Admin:
+      description: Body bukan JSON yang sah
+      headers:
+        Cache-Control:
+          schema:
+            type: string
+          description: Selalu no-store (R-16)
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          examples:
+            validasi_gagal:
+              summary: JSON tidak dapat diurai
+              value:
+                kode: validasi_gagal
+                status: 400
+                title: Validasi gagal
+                type: https://github.com/faisalcayunda/PoolRouter/blob/main/docs/masalah.md#validasi_gagal
+    Problem401Admin:
+      description: Tanpa sesi (401) atau kredensial login salah; penyebab tidak dibedakan (U-1)
+      headers:
+        Cache-Control:
+          schema:
+            type: string
+          description: Selalu no-store (R-16)
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          examples:
+            kredensial_salah:
+              summary: Username atau password salah (tidak dibedakan)
+              value:
+                kode: kredensial_salah
+                status: 401
+                title: Kredensial salah
+                type: https://github.com/faisalcayunda/PoolRouter/blob/main/docs/masalah.md#kredensial_salah
+            tidak_terautentikasi:
+              summary: Tanpa sesi atau sesi kedaluwarsa
+              value:
+                kode: tidak_terautentikasi
+                status: 401
+                title: Tidak terautentikasi
+                type: https://github.com/faisalcayunda/PoolRouter/blob/main/docs/masalah.md#tidak_terautentikasi
+    Problem403Admin:
+      description: Peran di luar kolom (akses_ditolak), Origin tidak sah pada tulis (origin_tidak_valid), atau pencarian NIK di luar jalur auditor (pencarian_nik_dilarang)
+      headers:
+        Cache-Control:
+          schema:
+            type: string
+          description: Selalu no-store (R-16)
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          examples:
+            akses_ditolak:
+              summary: Peran tidak termasuk kolom Peran operasi
+              value:
+                kode: akses_ditolak
+                status: 403
+                title: Akses ditolak
+                type: https://github.com/faisalcayunda/PoolRouter/blob/main/docs/masalah.md#akses_ditolak
+            origin_tidak_valid:
+              summary: Tulis tanpa Origin yang sah
+              value:
+                kode: origin_tidak_valid
+                status: 403
+                title: Origin tidak valid
+                type: https://github.com/faisalcayunda/PoolRouter/blob/main/docs/masalah.md#origin_tidak_valid
+            pencarian_nik_dilarang:
+              summary: Parameter memuat NIK atau potongannya
+              value:
+                kode: pencarian_nik_dilarang
+                status: 403
+                title: Pencarian NIK dilarang
+                type: https://github.com/faisalcayunda/PoolRouter/blob/main/docs/masalah.md#pencarian_nik_dilarang
+    Problem404Admin:
+      description: Objek tidak ditemukan
+      headers:
+        Cache-Control:
+          schema:
+            type: string
+          description: Selalu no-store (R-16)
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          examples:
+            tidak_ditemukan:
+              summary: Id atau kode transaksi tidak dikenal
+              value:
+                kode: tidak_ditemukan
+                status: 404
+                title: Tidak ditemukan
+                type: https://github.com/faisalcayunda/PoolRouter/blob/main/docs/masalah.md#tidak_ditemukan
+    Problem409Admin:
+      description: Secret masih dipakai provider aktif (secret_dipakai), kredensial masih dipakai endpoint (kredensial_dicabut), atau batas dua kredensial aktif per client (batas_kredensial)
+      headers:
+        Cache-Control:
+          schema:
+            type: string
+          description: Selalu no-store (R-16)
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          examples:
+            batas_kredensial:
+              summary: Sudah ada dua kredensial aktif
+              value:
+                kode: batas_kredensial
+                status: 409
+                title: Batas kredensial tercapai
+                type: https://github.com/faisalcayunda/PoolRouter/blob/main/docs/masalah.md#batas_kredensial
+            kredensial_dicabut:
+              summary: 'Kredensial masih dipakai endpoint aktif; U-54b: aktifkan ulang selalu 409'
+              value:
+                kode: kredensial_dicabut
+                status: 409
+                title: Kredensial masih dipakai
+                type: https://github.com/faisalcayunda/PoolRouter/blob/main/docs/masalah.md#kredensial_dicabut
+            secret_dipakai:
+              summary: Daftar provider aktif yang memakai secret ada di detail
+              value:
+                detail: Masih dipakai 1 provider aktif.
+                kode: secret_dipakai
+                status: 409
+                title: Secret masih dipakai
+                type: https://github.com/faisalcayunda/PoolRouter/blob/main/docs/masalah.md#secret_dipakai
+    Problem422Admin:
+      description: Validasi gagal; termasuk template tidak seimbang (dengan posisi), {{secret.X}} tidak ada (nama secret di errors), config_schema_version salah, webhook tidak https / di luar allowlist, metadata wajib hilang (M-R1), atau ekspor di atas 10.000 baris
+      headers:
+        Cache-Control:
+          schema:
+            type: string
+          description: Selalu no-store (R-16)
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          examples:
+            ekspor_terlalu_besar:
+              summary: Lebih dari 10.000 baris; tanpa berkas, baris audit ditolak (R-18)
+              value:
+                kode: ekspor_terlalu_besar
+                status: 422
+                title: Ekspor terlalu besar
+                type: https://github.com/faisalcayunda/PoolRouter/blob/main/docs/masalah.md#ekspor_terlalu_besar
+            metadata_wajib_hilang:
+              summary: Endpoint Dukcapil tanpa status_penerima_manfaat (M-R1)
+              value:
+                errors:
+                - field: /metadata_fields
+                  kode: wajib_hilang
+                kode: metadata_wajib_hilang
+                status: 422
+                title: Metadata wajib hilang
+                type: https://github.com/faisalcayunda/PoolRouter/blob/main/docs/masalah.md#metadata_wajib_hilang
+            validasi_gagal:
+              summary: Template body tidak seimbang; posisi menunjuk baris/kolom (U-9)
+              value:
+                errors:
+                - field: /body_template
+                  kode: template_tidak_seimbang
+                  posisi:
+                    baris: 2
+                    kolom: 18
+                kode: validasi_gagal
+                status: 422
+                title: Validasi gagal
+                type: https://github.com/faisalcayunda/PoolRouter/blob/main/docs/masalah.md#validasi_gagal
+            webhook_domain_tidak_diizinkan:
+              summary: Domain di luar allowlist
+              value:
+                kode: webhook_domain_tidak_diizinkan
+                status: 422
+                title: Domain webhook tidak diizinkan
+                type: https://github.com/faisalcayunda/PoolRouter/blob/main/docs/masalah.md#webhook_domain_tidak_diizinkan
+            webhook_tidak_https:
+              summary: URL webhook bukan https
+              value:
+                kode: webhook_tidak_https
+                status: 422
+                title: Webhook bukan https
+                type: https://github.com/faisalcayunda/PoolRouter/blob/main/docs/masalah.md#webhook_tidak_https
+    Problem429Admin:
+      description: Limiter login aktif
+      headers:
+        Cache-Control:
+          schema:
+            type: string
+          description: Selalu no-store (R-16)
+        Retry-After:
+          schema:
+            type: string
+          description: Detik hingga percobaan berikutnya (GCRA)
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          examples:
+            login_dibatasi:
+              summary: 5 kali gagal dalam 15 menit
+              value:
+                kode: login_dibatasi
+                status: 429
+                title: Login dibatasi
+                type: https://github.com/faisalcayunda/PoolRouter/blob/main/docs/masalah.md#login_dibatasi
+  securitySchemes:
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: __Host-pr_session
+      description: Cookie sesi admin; HttpOnly, Secure, SameSite=Strict (ADR-0003 section 3.6)
+tags:
+- name: admin
+  description: Backend Web UI admin (kontrak review SHAA-175)

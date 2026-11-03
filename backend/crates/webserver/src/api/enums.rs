@@ -62,3 +62,49 @@ pub enum BahasaUi {
     Id,
     En,
 }
+
+/// Jenis objek yang bisa dinonaktifkan (ADR-0001 section 4.1). Dikirim di
+/// `jenis_objek` pada 403/503 `objek_nonaktif`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum JenisObjek {
+    Endpoint,
+    DownstreamPool,
+    UpstreamPool,
+    Provider,
+}
+
+/// Jenis rule validasi pada konfigurasi provider (BRD US-03). F0 tidak
+/// menyediakan rule kustom; nilai di luar enum ini ditolak 422.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum RuleJenis {
+    Regex,
+    Enum,
+    Panjang,
+    FormatTanggal,
+}
+
+/// Jenis kredensial downstream (contract section 3.1b).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum JenisKredensial {
+    Oauth2,
+    ApiKey,
+}
+
+/// Periode kuota upstream pool (ADR-0001 section 3a.5).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum JendelaKuota {
+    Bergulir24j,
+    Kalender,
+}
+
+/// Status per elemen pada `hasil` (contract section 3.2.2).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum StatusHasil {
+    Sesuai,
+    TidakSesuai,
+}

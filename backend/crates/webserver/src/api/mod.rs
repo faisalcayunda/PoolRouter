@@ -1,7 +1,9 @@
-//! Code-first API contract (SHAA-175). Handlers are 501 stubs until the
-//! contract is reviewed; the real handlers replace the stub bodies without
-//! changing signatures or annotations.
+//! API modules: shared enums, problem+json, downstream and admin contracts
+//! (SHAA-175), plus the generation tests.
 
+pub mod admin;
 pub mod downstream;
 pub mod enums;
 pub mod problem;
+#[cfg(test)]
+mod tests;

@@ -1,0 +1,1287 @@
+openapi: 3.1.0
+info:
+  title: PoolRouter Downstream API
+  description: Kontrak downstream PoolRouter F0 (SHAA-175). Error memakai RFC 9457 problem+json dengan kode tertutup; rincian tiap kode ada di docs/masalah.md. Semua respons no-store (R-16).
+  license:
+    name: UNLICENSED
+    identifier: UNLICENSED
+  version: 0.1.0
+paths:
+  /v1/endpoints/{endpoint_id}/async:
+    post:
+      tags:
+      - downstream
+      summary: |-
+        Asynchronous submit (US-07). Optional `Idempotency-Key` header (U-2):
+        identical key+fingerprint replays 200 with the current status; same key,
+        different fingerprint is 422 `idempotency_key_konflik`.
+      operationId: enqueueAsync
+      parameters:
+      - name: endpoint_id
+        in: path
+        description: 'Endpoint asinkron (U-4: mode ditentukan path)'
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: Idempotency-Key
+        in: header
+        description: Opsional; ASCII printable, maksimal 128 byte (U-2). Kunci sama + sidik sama → 200 replay; kunci sama + sidik beda → 422
+        required: false
+        schema:
+          type:
+          - string
+          - 'null'
+      requestBody:
+        description: Amplop input + metadata; additionalProperties false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SubmitRequest'
+        required: true
+      responses:
+        '200':
+          description: Replay kunci idempoten yang sudah ada; tidak ada request baru (U-5)
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+              description: Selalu no-store (R-16)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnqueueResponse'
+              examples:
+                replay:
+                  summary: Kunci dan sidik sama
+                  value:
+                    queue_id: 0b19c3b4-7c5f-4e2f-9b3a-1a2b3c4d5e6f
+                    status: done
+        '202':
+          description: Request baru masuk antrean (U-5)
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+              description: Selalu no-store (R-16)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnqueueResponse'
+              examples:
+                queued:
+                  summary: Request baru
+                  value:
+                    queue_id: 0b19c3b4-7c5f-4e2f-9b3a-1a2b3c4d5e6f
+                    status: queued
+        '400':
+          $ref: '#/components/responses/Problem400Down'
+        '401':
+          $ref: '#/components/responses/Problem401Down'
+        '403':
+          $ref: '#/components/responses/Problem403ObjekNonaktif'
+        '404':
+          $ref: '#/components/responses/Problem404Down'
+        '422':
+          description: Field tak dikenal, metadata tidak valid, atau kunci idempoten dengan sidik berbeda
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+              description: Selalu no-store (R-16)
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+              examples:
+                idempotency_key_konflik:
+                  summary: Kunci sama, isi berbeda
+                  value:
+                    kode: idempotency_key_konflik
+                    status: 422
+                    title: Konflik idempotency key
+                    type: https://github.com/faisalcayunda/PoolRouter/blob/main/docs/masalah.md#idempotency_key_konflik
+                metadata_tidak_valid:
+                  summary: Kunci metadata tidak ada di kontrak endpoint
+                  value:
+                    errors:
+                    - field: metadata
+                      kode: field_tak_dikenal
+                    kode: metadata_tidak_valid
+                    status: 422
+                    title: Metadata tidak valid
+                    type: https://github.com/faisalcayunda/PoolRouter/blob/main/docs/masalah.md#metadata_tidak_valid
+                validasi_gagal:
+                  summary: Field input tak dikenal
+                  value:
+                    errors:
+                    - field: input
+                      kode: field_tak_dikenal
+                    kode: validasi_gagal
+                    status: 422
+                    title: Validasi gagal
+                    type: https://github.com/faisalcayunda/PoolRouter/blob/main/docs/masalah.md#validasi_gagal
+        '429':
+          description: Kuota periode habis atau limiter penolakan aktif; dengan Retry-After
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+              description: Selalu no-store (R-16)
+            Retry-After:
+              schema:
+                type: string
+              description: Detik hingga percobaan berikutnya (GCRA)
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+              examples:
+                kuota_habis:
+                  summary: Kuota periode upstream pool habis
+                  value:
+                    kode: kuota_habis
+                    status: 429
+                    title: Kuota habis
+                    type: https://github.com/faisalcayunda/PoolRouter/blob/main/docs/masalah.md#kuota_habis
+                penolakan_berlebih:
+                  summary: Limiter penolakan client aktif; hanya empat field (R-10)
+                  value:
+                    kode: penolakan_berlebih
+                    status: 429
+                    title: Penolakan berlebih
+                    type: https://github.com/faisalcayunda/PoolRouter/blob/main/docs/masalah.md#penolakan_berlebih
+        '503':
+          description: 'Pool/provider nonaktif (objek_nonaktif, tanpa Retry-After) atau Redis fail-closed (layanan_tidak_tersedia, Retry-After: 5)'
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+              description: Selalu no-store (R-16)
+            Retry-After:
+              schema:
+                type: string
+              description: Hanya ada pada layanan_tidak_tersedia (5 detik); tidak ada pada objek_nonaktif (R-10)
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+              examples:
+                layanan_tidak_tersedia:
+                  summary: Redis tidak siap (fail-closed)
+                  value:
+                    kode: layanan_tidak_tersedia
+                    status: 503
+                    title: Layanan tidak tersedia
+                    type: https://github.com/faisalcayunda/PoolRouter/blob/main/docs/masalah.md#layanan_tidak_tersedia
+                objek_nonaktif:
+                  summary: Upstream pool atau provider dinonaktifkan
+                  value:
+                    jenis_objek: provider
+                    kode: objek_nonaktif
+                    status: 503
+                    title: Objek nonaktif
+                    type: https://github.com/faisalcayunda/PoolRouter/blob/main/docs/masalah.md#objek_nonaktif
+      security:
+      - oauth2: []
+      - apiKey: []
+  /v1/endpoints/{endpoint_id}/kontrak:
+    get:
+      tags:
+      - downstream
+      summary: 'Contract of one endpoint: inputs, metadata, allowed mode (US-15).'
+      operationId: getEndpointKontrak
+      parameters:
+      - name: endpoint_id
+        in: path
+        description: Endpoint yang ditugaskan kepada client pemanggil
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: Kontrak endpoint aktif
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+              description: Selalu no-store (R-16)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EndpointKontrak'
+        '401':
+          $ref: '#/components/responses/Problem401Down'
+        '404':
+          description: Endpoint tidak dikenal atau bukan milik client (tidak dibedakan)
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+              description: Selalu no-store (R-16)
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+              examples:
+                tidak_ditemukan:
+                  summary: Bukan milik client atau tidak ada
+                  value:
+                    kode: tidak_ditemukan
+                    status: 404
+                    title: Tidak ditemukan
+                    type: https://github.com/faisalcayunda/PoolRouter/blob/main/docs/masalah.md#tidak_ditemukan
+        '503':
+          $ref: '#/components/responses/Problem503Layanan'
+      security:
+      - oauth2: []
+      - apiKey: []
+  /v1/endpoints/{endpoint_id}/sync:
+    post:
+      tags:
+      - downstream
+      summary: |-
+        Synchronous submit (US-03, 07, 08, 09). `Idempotency-Key` must NOT be
+        present (400 `idempotency_key_tidak_didukung` when it is).
+      operationId: submitSync
+      parameters:
+      - name: endpoint_id
+        in: path
+        description: 'Endpoint sinkron (U-4: mode ditentukan path)'
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        description: Amplop input + metadata; additionalProperties false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SubmitRequest'
+        required: true
+      responses:
+        '200':
+          description: Jawaban provider lengkap (status done)
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+              description: Selalu no-store (R-16)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SyncResult'
+              examples:
+                done:
+                  summary: Semua elemen sesuai
+                  value:
+                    hasil:
+                      status_penerima_manfaat:
+                        skor: null
+                        status: sesuai
+                    request_id: 0b19c3b4-7c5f-4e2f-9b3a-1a2b3c4d5e6f
+                    status: done
+        '400':
+          description: JSON tidak valid/kunci ganda (validasi_gagal) atau Idempotency-Key pada sync (idempotency_key_tidak_didukung)
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+              description: Selalu no-store (R-16)
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+              examples:
+                idempotency_key_tidak_didukung:
+                  summary: Header Idempotency-Key dikirim ke path sync
+                  value:
+                    kode: idempotency_key_tidak_didukung
+                    status: 400
+                    title: Idempotency key tidak didukung
+                    type: https://github.com/faisalcayunda/PoolRouter/blob/main/docs/masalah.md#idempotency_key_tidak_didukung
+                validasi_gagal:
+                  summary: Body bukan JSON yang sah
+                  value:
+                    detail: Body bukan JSON yang sah.
+                    kode: validasi_gagal
+                    status: 400
+                    title: Validasi gagal
+                    type: https://github.com/faisalcayunda/PoolRouter/blob/main/docs/masalah.md#validasi_gagal
+        '401':
+          $ref: '#/components/responses/Problem401Down'
+        '403':
+          description: 'Endpoint nonaktif (U-7: penugasan menentukan akses)'
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+              description: Selalu no-store (R-16)
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+              examples:
+                objek_nonaktif:
+                  summary: Endpoint dinonaktifkan
+                  value:
+                    jenis_objek: endpoint
+                    kode: objek_nonaktif
+                    status: 403
+                    title: Objek nonaktif
+                    type: https://github.com/faisalcayunda/PoolRouter/blob/main/docs/masalah.md#objek_nonaktif
+        '404':
+          $ref: '#/components/responses/Problem404Down'
+        '422':
+          description: Field input/metadata tidak sesuai kontrak; nilai tidak di-echo (R-16)
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+              description: Selalu no-store (R-16)
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+              examples:
+                metadata_tidak_valid:
+                  summary: Kunci metadata tidak ada di kontrak endpoint
+                  value:
+                    errors:
+                    - field: metadata
+                      kode: field_tak_dikenal
+                    kode: metadata_tidak_valid
+                    status: 422
+                    title: Metadata tidak valid
+                    type: https://github.com/faisalcayunda/PoolRouter/blob/main/docs/masalah.md#metadata_tidak_valid
+                validasi_gagal:
+                  summary: Field input tak dikenal (termasuk TRESHOLD, USER_ID, PASSWORD, IP_USER, transactionId)
+                  value:
+                    errors:
+                    - field: input
+                      kode: field_tak_dikenal
+                    kode: validasi_gagal
+                    status: 422
+                    title: Validasi gagal
+                    type: https://github.com/faisalcayunda/PoolRouter/blob/main/docs/masalah.md#validasi_gagal
+        '429':
+          description: Kuota periode habis, porsi sync/jam berjalan penuh, atau limiter penolakan aktif; semua dengan Retry-After (U-8)
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+              description: Selalu no-store (R-16)
+            Retry-After:
+              schema:
+                type: string
+              description: Detik hingga percobaan berikutnya (GCRA)
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+              examples:
+                kuota_habis:
+                  summary: Kuota periode upstream pool habis
+                  value:
+                    kode: kuota_habis
+                    status: 429
+                    title: Kuota habis
+                    type: https://github.com/faisalcayunda/PoolRouter/blob/main/docs/masalah.md#kuota_habis
+                penolakan_berlebih:
+                  summary: Limiter penolakan client aktif; hanya empat field (R-10)
+                  value:
+                    kode: penolakan_berlebih
+                    status: 429
+                    title: Penolakan berlebih
+                    type: https://github.com/faisalcayunda/PoolRouter/blob/main/docs/masalah.md#penolakan_berlebih
+                porsi_sync_habis:
+                  summary: Porsi sync atau rate limit jam berjalan penuh (satu kode, U-8)
+                  value:
+                    kode: porsi_sync_habis
+                    status: 429
+                    title: Porsi sync habis
+                    type: https://github.com/faisalcayunda/PoolRouter/blob/main/docs/masalah.md#porsi_sync_habis
+        '502':
+          description: retry_habis atau provider_error_permanen, dengan request_id, tanpa Retry-After
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+              description: Selalu no-store (R-16)
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+              examples:
+                provider_error_permanen:
+                  summary: Kelas kegagalan tidak diulang (auth/kuota provider/kode tak dipetakan/respons invalid/TLS)
+                  value:
+                    kode: provider_error_permanen
+                    request_id: 0b19c3b4-7c5f-4e2f-9b3a-1a2b3c4d5e6f
+                    status: 502
+                    title: Kesalahan provider permanen
+                    type: https://github.com/faisalcayunda/PoolRouter/blob/main/docs/masalah.md#provider_error_permanen
+                retry_habis:
+                  summary: Jendela retry habis (attempt efektif 1 di F0, contract v0.7.10)
+                  value:
+                    kode: retry_habis
+                    request_id: 0b19c3b4-7c5f-4e2f-9b3a-1a2b3c4d5e6f
+                    status: 502
+                    title: Retry habis
+                    type: https://github.com/faisalcayunda/PoolRouter/blob/main/docs/masalah.md#retry_habis
+        '503':
+          description: 'Pool/provider nonaktif setelah enqueue (objek_nonaktif, tanpa Retry-After) atau Redis fail-closed (layanan_tidak_tersedia, Retry-After: 5)'
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+              description: Selalu no-store (R-16)
+            Retry-After:
+              schema:
+                type: string
+              description: Hanya ada pada layanan_tidak_tersedia (5 detik); tidak ada pada objek_nonaktif (R-10)
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+              examples:
+                layanan_tidak_tersedia:
+                  summary: Redis tidak siap (fail-closed)
+                  value:
+                    kode: layanan_tidak_tersedia
+                    status: 503
+                    title: Layanan tidak tersedia
+                    type: https://github.com/faisalcayunda/PoolRouter/blob/main/docs/masalah.md#layanan_tidak_tersedia
+                objek_nonaktif:
+                  summary: Upstream pool atau provider dinonaktifkan
+                  value:
+                    jenis_objek: provider
+                    kode: objek_nonaktif
+                    status: 503
+                    title: Objek nonaktif
+                    type: https://github.com/faisalcayunda/PoolRouter/blob/main/docs/masalah.md#objek_nonaktif
+        '504':
+          description: Panggilan sync tidak selesai dalam batas waktu
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+              description: Selalu no-store (R-16)
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+              examples:
+                timeout_sync:
+                  summary: Waktu tunggu provider habis
+                  value:
+                    kode: timeout_sync
+                    request_id: 0b19c3b4-7c5f-4e2f-9b3a-1a2b3c4d5e6f
+                    status: 504
+                    title: Timeout sync
+                    type: https://github.com/faisalcayunda/PoolRouter/blob/main/docs/masalah.md#timeout_sync
+      security:
+      - oauth2: []
+      - apiKey: []
+  /v1/oauth/token:
+    post:
+      tags:
+      - downstream
+      summary: |-
+        Issue a downstream access token (R-05, US-14). Credentials via HTTP Basic
+        or body (U-3); 4xx bodies are problem+json with the RFC 6749 `error` field
+        (U-3), except 429.
+      operationId: issueToken
+      requestBody:
+        description: grant_type=client_credentials; kredensial juga boleh lewat HTTP Basic (U-3)
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/TokenRequest'
+        required: true
+      responses:
+        '200':
+          description: Token baru (R-05); tanpa refresh_token
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+              description: Selalu no-store (R-16)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenResponse'
+              examples:
+                token:
+                  summary: Token bearer 900 detik
+                  value:
+                    access_token: bearer eyJhbGciOiJFUzI1NiJ9.example.example
+                    expires_in: 900
+                    token_type: Bearer
+        '400':
+          description: JSON tidak valid, grant tidak didukung, atau kredensial tidak lengkap
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+              description: Selalu no-store (R-16)
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+              examples:
+                validasi_gagal:
+                  summary: grant tidak didukung (U-3)
+                  value:
+                    error: unsupported_grant_type
+                    kode: validasi_gagal
+                    status: 400
+                    title: Validasi gagal
+                    type: https://github.com/faisalcayunda/PoolRouter/blob/main/docs/masalah.md#validasi_gagal
+        '401':
+          description: Kredensial salah; penyebab tidak dibedakan (U-1)
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+              description: Selalu no-store (R-16)
+            WWW-Authenticate:
+              schema:
+                type: string
+              description: Basic untuk endpoint token
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+              examples:
+                tidak_terautentikasi:
+                  summary: client_id/client_secret salah
+                  value:
+                    error: invalid_client
+                    kode: tidak_terautentikasi
+                    status: 401
+                    title: Tidak terautentikasi
+                    type: https://github.com/faisalcayunda/PoolRouter/blob/main/docs/masalah.md#tidak_terautentikasi
+        '429':
+          description: Limiter GCRA per client_id (60/menit, burst 10) atau per IP (120/menit) habis (R-05)
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+              description: Selalu no-store (R-16)
+            Retry-After:
+              schema:
+                type: string
+              description: Detik hingga token berikutnya (GCRA)
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+              examples:
+                token_dibatasi:
+                  summary: Limiter token habis; tanpa field error (U-3)
+                  value:
+                    kode: token_dibatasi
+                    status: 429
+                    title: Token dibatasi
+                    type: https://github.com/faisalcayunda/PoolRouter/blob/main/docs/masalah.md#token_dibatasi
+      security:
+      - {}
+  /v1/requests/{queue_id}:
+    get:
+      tags:
+      - downstream
+      summary: |-
+        Poll a request (US-17). Does not consume quota; `done` stays readable at
+        least for the downstream pool TTL since `completed_at` (S-05).
+      operationId: getRequest
+      parameters:
+      - name: queue_id
+        in: path
+        description: queue_id dari enqueueAsync
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: Status terkini; tidak pernah mundur
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+              description: Selalu no-store (R-16)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RequestStatus'
+              examples:
+                done:
+                  summary: Request selesai
+                  value:
+                    hasil:
+                      status_penerima_manfaat:
+                        skor: 40
+                        status: tidak_sesuai
+                    queue_id: 0b19c3b4-7c5f-4e2f-9b3a-1a2b3c4d5e6f
+                    status: done
+        '401':
+          $ref: '#/components/responses/Problem401Down'
+        '404':
+          $ref: '#/components/responses/Problem404Down'
+        '503':
+          $ref: '#/components/responses/Problem503Layanan'
+      security:
+      - oauth2: []
+      - apiKey: []
+  /v1/requests/{queue_id}/cancel:
+    post:
+      tags:
+      - downstream
+      summary: |-
+        Cancel a queued request (US-19). Terminal requests answer 409
+        `tidak_bisa_dibatalkan` with the current status in the body.
+      operationId: cancelRequest
+      parameters:
+      - name: queue_id
+        in: path
+        description: queue_id dari enqueueAsync
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: Request dibatalkan
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+              description: Selalu no-store (R-16)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RequestStatus'
+              examples:
+                cancelled:
+                  summary: Dibatalkan sebelum diproses
+                  value:
+                    cancel_reason: dibatalkan_client
+                    queue_id: 0b19c3b4-7c5f-4e2f-9b3a-1a2b3c4d5e6f
+                    status: cancelled
+        '401':
+          $ref: '#/components/responses/Problem401Down'
+        '404':
+          $ref: '#/components/responses/Problem404Down'
+        '409':
+          description: Request sudah terminal; body memuat status API saat ini
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+              description: Selalu no-store (R-16)
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+              examples:
+                tidak_bisa_dibatalkan:
+                  summary: Status sudah done/failed/expired/cancelled
+                  value:
+                    kode: tidak_bisa_dibatalkan
+                    status: 409
+                    status_api: done
+                    title: Tidak bisa dibatalkan
+                    type: https://github.com/faisalcayunda/PoolRouter/blob/main/docs/masalah.md#tidak_bisa_dibatalkan
+        '503':
+          $ref: '#/components/responses/Problem503Layanan'
+      security:
+      - oauth2: []
+      - apiKey: []
+webhooks:
+  requestTerminal:
+    post:
+      tags:
+      - downstream
+      summary: |-
+        Webhook registration handler: kept for the spec only; never routed.
+        Body is the same shape as `RequestStatus` (same mapping function,
+        ADR-0001 section 3a.6).
+      operationId: requestTerminal
+      parameters:
+      - name: webhook-id
+        in: header
+        description: request_id (= queue_id); tetap sama saat retry di F1
+        required: true
+        schema:
+          type: string
+      - name: webhook-timestamp
+        in: header
+        description: Detik Unix; client menolak selisih > 5 menit
+        required: true
+        schema:
+          type: string
+      - name: webhook-signature
+        in: header
+        description: v1,<base64(HMAC-SHA256(kunci, "{webhook-id}.{webhook-timestamp}.{body}"))>; kunci = byte hasil decode secret whsec_ (Standard Webhooks)
+        required: true
+        schema:
+          type: string
+      - name: poolrouter-secret-versi
+        in: header
+        description: secret_versi yang dipakai; informatif, tidak ikut ditandatangani (contract W-08)
+        required: true
+        schema:
+          type: integer
+          format: int64
+      requestBody:
+        description: 'Status terminal: done, failed, expired, atau cancelled. Tanpa payload dan tanpa NIK'
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RequestStatus'
+        required: true
+      responses:
+        '200':
+          description: 2xx apa pun dari client berarti terkirim; selain itu gagal dan tidak diulang di F0
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+              description: Respons client; contoh no-store
+      security:
+      - {}
+components:
+  schemas:
+    ApiStatus:
+      type: string
+      description: Status exposed by polling and webhook (ADR-0001 section 4.1). Never goes backwards.
+      enum:
+      - queued
+      - processing
+      - done
+      - failed
+      - expired
+      - cancelled
+    CancelReason:
+      type: string
+      description: |-
+        `cancel_reason` of a `cancelled` request (contract section 3.2.3). One value
+        per entity kind; both pool kinds share `pool_nonaktif`.
+      enum:
+      - dibatalkan_client
+      - client_nonaktif
+      - kredensial_nonaktif
+      - endpoint_nonaktif
+      - pool_nonaktif
+      - provider_nonaktif
+    EndpointKontrak:
+      type: object
+      description: Response of `getEndpointKontrak` (US-15; U-4 path shape).
+      required:
+      - endpoint_id
+      - mode_diizinkan
+      - field_input
+      - field_metadata
+      - endpoint_config_version
+      properties:
+        endpoint_config_version:
+          type: integer
+          format: int64
+          example: 1
+        endpoint_id:
+          type: string
+          format: uuid
+        field_input:
+          type: array
+          items:
+            $ref: '#/components/schemas/FieldInput'
+        field_metadata:
+          type: array
+          items:
+            $ref: '#/components/schemas/FieldMetadata'
+        mode_diizinkan:
+          type: array
+          items:
+            $ref: '#/components/schemas/Mode'
+          description: 'Path modes this endpoint serves (U-4: the path decides the mode).'
+    EnqueueResponse:
+      type: object
+      description: |-
+        202: new async request. 200 with the same shape: replay of an identical
+        `Idempotency-Key` fingerprint, no new request (U-5).
+      required:
+      - queue_id
+      - status
+      properties:
+        queue_id:
+          type: string
+          format: uuid
+        status:
+          $ref: '#/components/schemas/ApiStatus'
+          description: '`queued` on 202; the current status on 200 replay.'
+    FailureReason:
+      type: string
+      description: |-
+        `failure_reason` of a `failed` request (contract section 3.2.5). Closed set,
+        shown to clients; the `kode` of a sync 502/504 body equals this value.
+      enum:
+      - retry_habis
+      - provider_error_permanen
+      - timeout_sync
+      - objek_nonaktif
+    FieldInput:
+      type: object
+      description: One input field of the endpoint contract (US-15).
+      required:
+      - nama
+      - tipe
+      - wajib
+      properties:
+        nama:
+          type: string
+        tipe:
+          type: string
+          description: Logical type of the field, e.g. `string` or `number`.
+        wajib:
+          type: boolean
+    FieldMetadata:
+      type: object
+      description: One metadata field of the endpoint contract (US-15).
+      required:
+      - nama_field
+      - tipe
+      - wajib
+      - deskripsi
+      - versi
+      properties:
+        deskripsi:
+          type: string
+        nama_field:
+          type: string
+        nilai_diizinkan:
+          type:
+          - array
+          - 'null'
+          items:
+            type: string
+          description: Closed value list when the field is restricted.
+        tipe:
+          type: string
+        versi:
+          type: integer
+          format: int64
+          description: Contract version of this metadata field.
+          example: 1
+        wajib:
+          type: boolean
+    HasilElemen:
+      type: object
+      description: Result for one checked element (contract section 3.2.2, O-01/O-02).
+      required:
+      - status
+      properties:
+        skor:
+          type:
+          - integer
+          - 'null'
+          format: int64
+          description: 0..=100 or `null` when the provider gives no score.
+          maximum: 100
+          minimum: 0
+        status:
+          $ref: '#/components/schemas/StatusHasil'
+    JenisObjek:
+      type: string
+      description: |-
+        Jenis objek yang bisa dinonaktifkan (ADR-0001 section 4.1). Dikirim di
+        `jenis_objek` pada 403/503 `objek_nonaktif`.
+      enum:
+      - endpoint
+      - downstream_pool
+      - upstream_pool
+      - provider
+    Mode:
+      type: string
+      description: Path mode of a downstream endpoint (U-4). Not writable in request bodies.
+      enum:
+      - sync
+      - async
+    Posisi:
+      type: object
+      description: |-
+        Position inside the provider body template (U-9). Admin API only,
+        validation of the template only.
+      required:
+      - baris
+      - kolom
+      properties:
+        baris:
+          type: integer
+          format: int64
+          description: 1-based line in the body template.
+          minimum: 1
+        kolom:
+          type: integer
+          format: int64
+          description: 1-based column in the body template.
+          minimum: 1
+    Problem:
+      type: object
+      description: |-
+        RFC 9457 problem body shared by every 4xx/5xx. `detail` never contains
+        input values, NIK or secrets (R-16). Field names follow the contract:
+        Indonesian on the wire except the fixed RFC members.
+      required:
+      - type
+      - title
+      - status
+      - kode
+      properties:
+        detail:
+          type:
+          - string
+          - 'null'
+          description: Human explanation without sensitive values; absent when unneeded.
+        error:
+          type:
+          - string
+          - 'null'
+          description: |-
+            RFC 6749 section 5.2 error for the token endpoint (U-3). Never sent
+            with a 429.
+        errors:
+          type:
+          - array
+          - 'null'
+          items:
+            $ref: '#/components/schemas/ValidasiError'
+          description: Failing fields; only on 422 `validasi_gagal` bodies.
+        jenis_objek:
+          oneOf:
+          - $ref: '#/components/schemas/JenisObjek'
+            description: Kind of the inactive object; only on `objek_nonaktif`.
+          - type: 'null'
+        kode:
+          $ref: '#/components/schemas/ProblemKode'
+        request_id:
+          type:
+          - string
+          - 'null'
+          format: uuid
+          description: '`queue_id` of the request the failure belongs to (502/504 bodies).'
+        status:
+          type: integer
+          format: int32
+          minimum: 0
+        status_api:
+          oneOf:
+          - $ref: '#/components/schemas/ApiStatus'
+            description: Current API status; only on 409 `tidak_bisa_dibatalkan`.
+          - type: 'null'
+        title:
+          type: string
+        type:
+          type: string
+          description: Stable anchor `https://github.com/faisalcayunda/PoolRouter/blob/main/docs/masalah.md#<kode>`.
+    ProblemKode:
+      type: string
+      description: |-
+        Closed machine-readable code. One anchor in `docs/masalah.md` per value;
+        `type` and `kode` are 1:1 (ADR-0001 section 5a.7).
+      enum:
+      - tidak_terautentikasi
+      - token_dibatasi
+      - validasi_gagal
+      - metadata_tidak_valid
+      - idempotency_key_tidak_didukung
+      - idempotency_key_konflik
+      - kuota_habis
+      - porsi_sync_habis
+      - penolakan_berlebih
+      - objek_nonaktif
+      - tidak_bisa_dibatalkan
+      - layanan_tidak_tersedia
+      - retry_habis
+      - provider_error_permanen
+      - timeout_sync
+      - tidak_ditemukan
+      - kredensial_salah
+      - login_dibatasi
+      - origin_tidak_valid
+      - akses_ditolak
+      - pencarian_nik_dilarang
+      - secret_dipakai
+      - kredensial_dicabut
+      - batas_kredensial
+      - webhook_domain_tidak_diizinkan
+      - webhook_tidak_https
+      - metadata_wajib_hilang
+      - ekspor_terlalu_besar
+    RequestStatus:
+      type: object
+      description: |-
+        Polling response (S-01..S-05) and webhook body (section 2.1). Status never
+        goes backwards; `hasil` only when `done`, `failure_reason` only when
+        `failed`, `cancel_reason` only when `cancelled`.
+      required:
+      - queue_id
+      - status
+      properties:
+        cancel_reason:
+          oneOf:
+          - $ref: '#/components/schemas/CancelReason'
+          - type: 'null'
+        failure_reason:
+          oneOf:
+          - $ref: '#/components/schemas/FailureReason'
+          - type: 'null'
+        hasil:
+          type:
+          - object
+          - 'null'
+          additionalProperties:
+            $ref: '#/components/schemas/HasilElemen'
+          propertyNames:
+            type: string
+        queue_id:
+          type: string
+          format: uuid
+        status:
+          $ref: '#/components/schemas/ApiStatus'
+    StatusHasil:
+      type: string
+      description: Status per elemen pada `hasil` (contract section 3.2.2).
+      enum:
+      - sesuai
+      - tidak_sesuai
+    SubmitRequest:
+      type: object
+      description: |-
+        Envelope for both submit paths; `additionalProperties: false` at the
+        envelope level. Unknown `metadata` keys are rejected 422 (US-09).
+      required:
+      - input
+      - metadata
+      properties:
+        input:
+          type: object
+          description: |-
+            Provider input fields; unknown fields (including `TRESHOLD`,
+            `USER_ID`, `PASSWORD`, `IP_USER`, `transactionId`) are rejected 422
+            without echoing values (R-16).
+        metadata:
+          type: object
+          description: Metadata per endpoint contract; unknown keys rejected 422.
+      additionalProperties: false
+    SyncResult:
+      type: object
+      description: |-
+        Synchronous response: the provider answer is already complete (ADR-0001
+        section 4.1). `Cache-Control: no-store`.
+      required:
+      - request_id
+      - status
+      - hasil
+      properties:
+        hasil:
+          type: object
+          description: Only the elements the client sent, keyed by element name (U-6).
+          additionalProperties:
+            $ref: '#/components/schemas/HasilElemen'
+          propertyNames:
+            type: string
+        request_id:
+          type: string
+          format: uuid
+        status:
+          $ref: '#/components/schemas/ApiStatus'
+          description: Always `done` on 200.
+    TokenRequest:
+      type: object
+      description: |-
+        `application/x-www-form-urlencoded` body (R-05). Credentials may arrive via
+        HTTP Basic instead (U-3); neither value is ever echoed back.
+      required:
+      - grant_type
+      properties:
+        client_id:
+          type:
+          - string
+          - 'null'
+          description: Alternative to HTTP Basic; secret must not appear in URLs.
+          example: bgn-mpm-prod
+        client_secret:
+          type:
+          - string
+          - 'null'
+        grant_type:
+          type: string
+          description: Fixed value `client_credentials` (R-05).
+      additionalProperties: false
+    TokenResponse:
+      type: object
+      description: |-
+        Bearer token (R-05). No `refresh_token`; the client repeats
+        `issueToken` after expiry. Response carries `Cache-Control: no-store`.
+      required:
+      - access_token
+      - token_type
+      - expires_in
+      properties:
+        access_token:
+          type: string
+          description: Literal `Bearer` prefix token, 900 s lifetime (R-05).
+        expires_in:
+          type: integer
+          format: int64
+          description: Lifetime in seconds; default 900 (R-05, configurable).
+          example: 900
+          maximum: 3600
+          minimum: 60
+        token_type:
+          type: string
+          description: Fixed `Bearer`.
+    ValidasiError:
+      type: object
+      description: |-
+        One failing input field. `errors[].kode` is a per-field validation code
+        from Addendum A section 6.1; `batas` carries only the numeric rule
+        parameter (never the rejected value). Template errors carry `posisi`.
+      required:
+      - field
+      - kode
+      properties:
+        batas:
+          description: Numeric rule parameter of the violated rule, if any.
+        field:
+          type: string
+          description: Field name, or a JSON pointer for template errors.
+        kode:
+          type: string
+        posisi:
+          oneOf:
+          - $ref: '#/components/schemas/Posisi'
+            description: Template position (U-9). Admin API and template errors only.
+          - type: 'null'
+  responses:
+    Problem400Down:
+      description: Body bukan JSON yang sah
+      headers:
+        Cache-Control:
+          schema:
+            type: string
+          description: Selalu no-store (R-16)
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          examples:
+            validasi_gagal:
+              summary: JSON tidak dapat diurai
+              value:
+                kode: validasi_gagal
+                status: 400
+                title: Validasi gagal
+                type: https://github.com/faisalcayunda/PoolRouter/blob/main/docs/masalah.md#validasi_gagal
+    Problem401Down:
+      description: Token atau API key tidak valid atau kedaluwarsa; tidak disimpan
+      headers:
+        Cache-Control:
+          schema:
+            type: string
+          description: Selalu no-store (R-16)
+        WWW-Authenticate:
+          schema:
+            type: string
+          description: Bearer untuk endpoint resource
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          examples:
+            tidak_terautentikasi:
+              summary: Token kedaluwarsa atau salah
+              value:
+                kode: tidak_terautentikasi
+                status: 401
+                title: Tidak terautentikasi
+                type: https://github.com/faisalcayunda/PoolRouter/blob/main/docs/masalah.md#tidak_terautentikasi
+    Problem403ObjekNonaktif:
+      description: Endpoint nonaktif
+      headers:
+        Cache-Control:
+          schema:
+            type: string
+          description: Selalu no-store (R-16)
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          examples:
+            objek_nonaktif:
+              summary: Endpoint dinonaktifkan
+              value:
+                jenis_objek: endpoint
+                kode: objek_nonaktif
+                status: 403
+                title: Objek nonaktif
+                type: https://github.com/faisalcayunda/PoolRouter/blob/main/docs/masalah.md#objek_nonaktif
+    Problem404Down:
+      description: Tidak ditemukan atau bukan milik client (tidak dibedakan)
+      headers:
+        Cache-Control:
+          schema:
+            type: string
+          description: Selalu no-store (R-16)
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          examples:
+            tidak_ditemukan:
+              summary: queue_id/endpoint_id tidak dikenal
+              value:
+                kode: tidak_ditemukan
+                status: 404
+                title: Tidak ditemukan
+                type: https://github.com/faisalcayunda/PoolRouter/blob/main/docs/masalah.md#tidak_ditemukan
+    Problem503Layanan:
+      description: Redis fail-closed atau komponen tidak siap
+      headers:
+        Cache-Control:
+          schema:
+            type: string
+          description: Selalu no-store (R-16)
+        Retry-After:
+          schema:
+            type: string
+          description: Selalu 5 detik
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          examples:
+            layanan_tidak_tersedia:
+              summary: Redis tidak siap
+              value:
+                kode: layanan_tidak_tersedia
+                status: 503
+                title: Layanan tidak tersedia
+                type: https://github.com/faisalcayunda/PoolRouter/blob/main/docs/masalah.md#layanan_tidak_tersedia
+  securitySchemes:
+    apiKey:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: API key downstream (contract section 3.1b); token oauth2 adalah pilihan pertama
+    oauth2:
+      type: oauth2
+      flows:
+        clientCredentials:
+          tokenUrl: /v1/oauth/token
+          scopes: {}
+tags:
+- name: downstream
+  description: Endpoint yang dipanggil aplikasi BGN (MPM/LKS/SIPHR)

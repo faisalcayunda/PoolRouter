@@ -127,7 +127,7 @@ Sumber umum: peran PA (hak ubah), audit konfigurasi di setiap tulis (siapa, kapa
 | `createCredential` | `POST /admin/v1/clients/{id}/credentials` | PA; CO clientnya | `{jenis: "oauth2"\|"api_key", kedaluwarsa_at?}` (default dan maksimum 365 hari) | 201 `CredentialSecret{credential_id, client_id, secret, kedaluwarsa_at}` dengan `secret` **sekali** (256 bit, base64url), `no-store`; 409 `batas_kredensial` (>2 aktif); 422 |
 | `getWebhookConfig` | `GET /admin/v1/clients/{id}/webhook` | PA; CO clientnya | — | 200 `{webhook_url, aktif, secret_versi}`; tanpa secret; 404 |
 | `putWebhookConfig` | `PUT /admin/v1/clients/{id}/webhook` | PA; CO clientnya | `{webhook_url, aktif}` | 200; 422 `webhook_tidak_https`, 422 `webhook_domain_tidak_diizinkan` (allowlist dicek saat simpan dan saat kirim) |
-| `rotateWebhookSecret` | `POST /admin/v1/clients/{id}/webhook/rotasi-secret` | PA; CO clientnya | tanpa body | 200 `WebhookSecret{secret_versi, secret}`; `secret` = `whsec_` + base64 32 byte, **sekali**, `no-store`; berlaku untuk pengiriman berikutnya |
+| `rotateWebhookSecret` | `POST /admin/v1/clients/{id}/webhook/rotasi-secret` | PA; CO clientnya | tanpa body | 200 `WebhookSecret{secret_versi, secret}`; `secret` = `whsec_` + base64 32 byte, **sekali**, `no-store`; bila belum ada secret, operasi ini membuat secret pertama dengan `secret_versi: 1`; berlaku untuk pengiriman berikutnya |
 | `listWebhookLog` | `GET /admin/v1/clients/{id}/webhook/log` | CO clientnya; PA | Query: rentang waktu, `hasil`, kursor | 200 `[{request_id, sent_at, hasil, http_status?, error_class?, secret_versi?}]`; kegagalan pengiriman milik client terlihat (US-06) |
 | `listWebhookAllowlist` / `putWebhookAllowlistEntry` / `deleteWebhookAllowlistEntry` | `GET`, `PUT`, `DELETE /admin/v1/webhook-allowlist[/{domain}]` | PA | `{aktif}` | 200/204; 422 |
 | `listEndpoints` / `getEndpoint` | `GET /admin/v1/endpoints`, `…/{id}` | PA | — | 200; 404 |
@@ -147,7 +147,7 @@ Pola sama untuk enam entitas. Pratinjau memakai `GET` tanpa body dan hanya menge
 | Provider | `previewDeactivateProvider` | `deactivateProvider` | `activateProvider` |
 
 - Peran: PA. Body nonaktifkan/cabut: `{alasan}`. 404 untuk id tidak dikenal.
-- Pratinjau 200 `PratinjauK20{akan_cancelled, akan_failed, dihitung_pada}`, tanpa `request_id`, NIK, atau payload, dan tidak disimpan. **Pratinjau upstream pool** menambah `upstream_aktif_terakhir_untuk[]` (`downstream_pool_id`, `nama`) bila pool itu upstream pool aktif terakhir bagi minimal satu downstream pool (ADR-0001 §3a.10); dua angka tidak berubah.
+- Pratinjau 200 `PratinjauK20{akan_cancelled, akan_failed, dihitung_pada}`, tanpa `request_id`, NIK, atau payload, dan tidak disimpan. **Pratinjau upstream pool** menambah `upstream_aktif_terakhir_untuk[]` (`downstream_pool_id`, `nama`) bila pool itu upstream pool aktif terakhir bagi minimal satu downstream pool (ADR-0001 §3a.10), serta `dipakai_oleh_downstream_pool_count` (integer); dua angka tidak berubah.
 - Nonaktifkan 200 `HasilK20{jumlah_cancelled, jumlah_failed, dilakukan_pada}`. Angka yang sama masuk audit konfigurasi. `in_flight` tidak dihitung.
 - Aktifkan 200 entitas; hanya berlaku untuk request yang masuk sesudahnya. Tanpa dialog K-20.
 - Cache entitas ≤30 s: copy dan deskripsi operasi tidak boleh menulis "seketika" (§3a.4).
@@ -156,7 +156,7 @@ Pola sama untuk enam entitas. Pratinjau memakai `GET` tanpa body dan hanya menge
 
 | operationId | Method dan path | Peran | Respons |
 |---|---|---|---|
-| `getQuotaTracker` | `GET /admin/v1/kuota?upstream_pool_id=` | PA | 200 `[{upstream_pool_id, periode_mulai, periode_selesai, kuota_harian, kuota_efektif, terpakai_periode, sisa_periode, terpakai_jam_berjalan, rate_limit_per_jam}]`; tanpa NIK; 404 |
+| `getQuotaTracker` | `GET /admin/v1/kuota?upstream_pool_id=` | PA, OP (read-only) | 200 `[{upstream_pool_id, periode_mulai, periode_selesai, kuota_harian, kuota_efektif, terpakai_periode, sisa_periode, porsi_sync_maks, terpakai_sync_jam_berjalan, terpakai_jam_berjalan, rate_limit_per_jam, dihitung_pada}]`; tanpa NIK; 404 |
 
 Sumber angka: `upstream_attempt_daily` / `transaction_log` (bukan counter Redis; KP-07). Nama field U.
 

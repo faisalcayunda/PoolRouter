@@ -1,5 +1,7 @@
-# Kontrak API (ADR-0003 section 4.2, SHAA-194). Saat ini hanya `openapi-check` yang ada, karena spec belum dibuat.
-# `gen-api-check`, `tsc`, dan `oasdiff breaking` belum dipasang: menunggu sub-issue kontrak API (ADR-0004 section 4.1).
+# Kontrak API (ADR-0003 section 4.2, SHAA-194). `openapi-check` sejak SHAA-192
+# juga menjalankan `oasdiff breaking --fail-on ERR` terhadap kontrak di main
+# (oasdiff ter-pin, backend/Makefile). `gen-api-check` dan `tsc` belum dipasang:
+# menunggu sub-issue frontend (ADR-0004 section 4.1).
 name: contract
 
 on:
