@@ -4,7 +4,7 @@ Runbook ini menjelaskan cara menyalakan, memeriksa, mengupgrade, dan membersihka
 
 - **Pemilik:** Tetsu (Platform & SRE), reviewer Huan
 - **Tanggal:** 2026-11-03
-- **Status:** draft, menunggu review Huan. Bagian staging dan prod masih bergantung pada target host.
+- **Status:** Bagian 1 disetujui Huan @ `6ee9bb7`; staging dan prod belum final dan bergantung pada target host.
 
 ## Prasyarat
 
@@ -45,7 +45,7 @@ Semua perintah dijalankan dari akar repo. Variabel:
 - `ENV_FILE`: path file env. Default `deploy/compose/env/<ENV>.env`. Untuk staging dan prod wajib diisi path di luar repo.
 - `COMPOSE_PROFILES`: aturan per lingkungan:
   - `dev`: default `bundled-infra`.
-  - `staging` dan `prod`: **wajib diisi eksplisit** (`bundled-infra` untuk database bundled, atau kosong jika memakai endpoint managed lalu dicek ulang dengan `ENV_FILE`). `make` gagal di `check-env` bila kosong.
+  - `staging` dan `prod`: **wajib diisi eksplisit**. Untuk database bundled isi `bundled-infra`. Untuk endpoint managed isi profile yang benar-benar dipakai (tanpa `bundled-infra`), misalnya `app` setelah Bagian 2. `make` gagal di `check-env` bila nilainya kosong.
   - Tambahkan `migrate` lewat `compose-migrate`, bukan lewat `COMPOSE_PROFILES`.
 - `EXTRA_COMPOSE_FILES`: override tambahan, misalnya label harness uji.
 
@@ -84,7 +84,7 @@ Healthcheck bawaan:
 - `postgres`: `pg_isready` terhadap `POSTGRES_USER` dan `POSTGRES_DB`
 - `redis`: `redis-cli ping` dengan `REDISCLI_AUTH` dari secret (tidak lewat argumen)
 - `rabbitmq`: `rabbitmq-diagnostics -q ping`
-- `backend-webserver`: `poolrouter healthcheck`. Subcommand ini ada di lingkup SHAA-175 (Flik). Sampai ada di image, service ini tidak akan `healthy`. Probe TCP sementara tidak dipakai: image backend belum ada sehingga alat probe yang tersedia di image belum bisa diuji. Keputusan ini dicatat untuk ditinjau di Bagian 2.
+- `backend-webserver`: `webserver healthcheck` (probe lokal lewat subcommand binary, ADR-0001 §11.2). Subcommand ini ada di lingkup SHAA-175 (Flik). Sampai ada di image, service ini tidak akan `healthy`. Probe TCP tidak dipakai: image runtime tidak punya shell atau `nc`, dan probe TCP akan memasukkan alat yang harus dicabut lagi. `backend-controller` dan `backend-worker` belum punya healthcheck; ditambahkan di Bagian 2.
 - `frontend`: `wget` ke port 8080 di dalam container. Verifikasi pada Bagian 2 bahwa image nginx-unprivileged memiliki `wget`.
 
 ### Upgrade (staging dan prod)
@@ -204,8 +204,8 @@ Bagian ini belum final. Keputusan berikut menunggu owner dan ADR infrastruktur t
 ## Batasan saat ini
 
 - Service backend, frontend, dan mock Dukcapil sudah didefinisikan, tetapi image-nya dibangun di Bagian 2 (SHAA-207 Containerfile). Sampai itu, profile `app` dan `mock` tidak bisa dinyalakan.
-- **Deviasi dari Addendum §3.1:** profile `app` pada backend dan frontend tidak ada di daftar profile Addendum (`bundled-infra`, `migrate`, `mock`). Dibiarkan untuk Bagian 1 karena image belum ada. Sebelum Bagian 2 selesai, profile itu dicabut atau dicatat sebagai deviasi di issue, supaya `compose-up` biasa tidak menaikkan aplikasi tanpa disengaja.
-- Subcommand `poolrouter healthcheck` dan konvensi `*_FILE` ada di lingkup backend SHAA-175 (Flik). Sampai ada, healthcheck backend tidak akan `healthy`.
+- **Profile `app` (sementara, Bagian 1 saja):** diterima Shu (D-1) karena image backend dan frontend belum ada. Wajib dicabut di Bagian 2 pada commit yang memasang digest image backend dan frontend di env. Setelah itu `compose-up` biasa menaikkan stack penuh (Addendum §8 V2). Dependensi app ke service infra harus tetap valid saat `bundled-infra` mati (managed).
+- Subcommand `webserver healthcheck` dan konvensi `*_FILE` ada di lingkup backend SHAA-175 (Flik). Sampai ada, healthcheck backend tidak akan `healthy`.
 - Role database `pr_*` dan `poolrouter_owner` belum dibuat oleh stack bundled. Stack hanya membuat `POSTGRES_USER`. Pembuatan role dan password dari file secret ada di SHAA-193.
 - Service `backend-cli` (ADR-0003 §3.6c, role `ADMIN_API`) belum didefinisikan. Menunggu image di Bagian 2.
 - Nama variabel `POOLROUTER_DB_*`, `POOLROUTER_REDIS_*`, dan `POOLROUTER_RABBITMQ_*` mengikuti kontrak env backend v1 (final, Shu). Perubahannya hanya lewat revisi kontrak.
