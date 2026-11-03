@@ -45,6 +45,26 @@ describe('admin API client', () => {
     expect(new Headers(init.headers).get('Cache-Control')).toBe('no-store');
   });
 
+  it('opens a payload with no-store and the reason in a header (section 18.3)', async () => {
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValue(jsonResponse({ input: {}, metadata: {}, hasil: {} }));
+    await client(fetchImpl).bukaPayload(
+      { kode_transaksi: 'TRX-2026-0042', alasan: 'Tindak lanjut aduan W-2026-09' },
+      { alasan: 'Tindak lanjut aduan W-2026-09' },
+    );
+
+    const [url, init] = firstCall(fetchImpl);
+    expect(url).toBe('/admin/v1/auditor/payload');
+    expect(url).not.toContain('TRX-2026-0042');
+    expect(url).not.toContain('Tindak');
+    expect(init.method).toBe('POST');
+    // The payload must never be reused from a cache, by us or by an intermediary.
+    expect(init.cache).toBe('no-store');
+    expect(new Headers(init.headers).get('Cache-Control')).toBe('no-store');
+    expect(new Headers(init.headers).get('X-Alasan')).toBe('Tindak lanjut aduan W-2026-09');
+  });
+
   it('carries the auditor reason in a header, never in the URL', async () => {
     const fetchImpl = vi.fn().mockResolvedValue(jsonResponse({ baris: [] }));
     await client(fetchImpl).cariLogNik(
