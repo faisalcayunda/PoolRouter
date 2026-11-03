@@ -42,6 +42,6 @@ jobs:
         if: steps.guard.outputs.skip != 'true'
         run: make -C frontend setup test lint
 
-      - name: pnpm audit --prod (ambang: high)
+      - name: "pnpm audit --prod (ambang: high)"
         if: steps.guard.outputs.skip != 'true'
         run: cd frontend && npx --yes pnpm@9 audit --prod --audit-level high

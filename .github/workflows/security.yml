@@ -66,7 +66,7 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Semgrep 1.113.0 (ambang: ERROR)
+      - name: "Semgrep 1.113.0 (ambang: ERROR)"
         run: |
           docker run --rm -v "$PWD":/src -w /src \
             docker.io/semgrep/semgrep:1.113.0@sha256:136c094630123be54d7f832217fd0a217d148a8bfea08c7c366ce17f94cfdb22 \
@@ -75,7 +75,6 @@ jobs:
   image-scan:
     # Ambang: gagal pada CVE HIGH atau CRITICAL yang punya perbaikan (--ignore-unfixed --exit-code 1).
     # Hanya berjalan jika backend/Containerfile sudah ada (milik SHAA-207). Build dan push tetap di SHAA-207.
-    if: hashFiles('backend/Containerfile') != ''
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -84,10 +83,20 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Lewati jika backend/Containerfile belum ada
+        id: guard
+        run: |
+          if [ ! -f backend/Containerfile ]; then
+            echo "backend/Containerfile belum ada: job di-skip."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Build image backend (lokal, tidak di-push)
+        if: steps.guard.outputs.skip != 'true'
         run: docker build -f backend/Containerfile -t localhost/poolrouter-backend:ci backend
 
-      - name: Trivy 0.58.2 (ambang: HIGH, CRITICAL)
+      - name: "Trivy 0.58.2 (ambang: HIGH, CRITICAL)"
+        if: steps.guard.outputs.skip != 'true'
         run: |
           docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
             docker.io/aquasec/trivy:0.58.2@sha256:665030f4d33a82c1e8d9d5e0453365842236723c1ee5cc3becca698268e66a56 \
