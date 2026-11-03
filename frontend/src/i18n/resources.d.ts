@@ -30,11 +30,20 @@ export default interface Resources {
         "body": "Ubah rentang waktu atau hapus filter.",
         "title": "Tidak ada catatan yang cocok"
       },
+      "error": {
+        "action": "Coba lagi",
+        "body": "Data audit akses belum bisa dimuat. Coba lagi.",
+        "range": "Rentang waktu tidak valid.",
+        "title": "Audit akses belum bisa dimuat"
+      },
       "filter": {
         "action": "Aksi",
         "nik_range": "NIK + rentang {{rentang}}",
         "nik_search": "Pencarian per NIK",
+        "note": "Filter diterapkan pada catatan audit akses.",
         "open_logs": "Buka log transaksi",
+        "range": "Rentang waktu",
+        "range_help": "Pilih rentang waktu untuk menampilkan catatan audit.",
         "range_only": "Rentang {{rentang}}",
         "user": "Pengguna"
       },
@@ -158,7 +167,12 @@ export default interface Resources {
       "aksi_audit": {
         "cari_nik": "Cari",
         "ditolak": "Ditolak",
-        "ekspor": "Ekspor"
+        "ekspor": "Ekspor",
+        "lihat_payload": "Lihat payload"
+      },
+      "hasil": {
+        "diizinkan": "Diizinkan",
+        "ditolak": "Ditolak"
       },
       "peran": {
         "admin": "Platform admin",
@@ -191,6 +205,14 @@ export default interface Resources {
         "load": "Data belum bisa dimuat. Periksa koneksi, lalu coba lagi."
       }
     },
+    "export": {
+      "error": {
+        "action": "Coba lagi",
+        "body": "Hasil ekspor belum bisa dibuat. Coba lagi.",
+        "title": "Ekspor tidak bisa dilakukan",
+        "too_large": "Hasil terlalu besar. Persempit rentang waktu hingga paling banyak 10.000 record."
+      }
+    },
     "log": {
       "chip": {
         "client": "Client: {{nama}}"
@@ -200,17 +222,47 @@ export default interface Resources {
         "client": "Client",
         "code": "Kode transaksi",
         "nik": "NIK",
+        "request_id": "ID permintaan",
+        "requested_at": "Diminta pada",
         "time": "Waktu"
+      },
+      "error": {
+        "action": "Coba lagi",
+        "body": "Data log belum bisa dimuat. Coba lagi.",
+        "title": "Log belum bisa dimuat"
       },
       "filter": {
         "client": "Client",
         "code": "Kode transaksi",
+        "code_help": "Cari rekaman menggunakan kode transaksi.",
+        "queue": "Queue ID",
+        "queue_help": "Masukkan queue_id untuk mencari transaksi.",
         "range": "Rentang waktu"
       },
       "page": {
         "nik_hint": "Pencarian per NIK hanya tersedia untuk auditor. Butuh NIK lengkap? Minta auditor.",
         "subtitle": "Telusuri transaksi lewat kode transaksi, queue_id, client, atau waktu. NIK tampil 4 digit akhir.",
         "title": "Log transaksi"
+      },
+      "payload": {
+        "dialog_title": "Payload transaksi",
+        "error_purged": "Payload sudah dihapus.",
+        "hasil": "Hasil",
+        "input": "Input",
+        "metadata": "Metadata",
+        "not_available": "Tidak tersedia.",
+        "open": "Lihat payload",
+        "readonly": "Hanya baca",
+        "reason": {
+          "error": "Alasan wajib diisi dengan 10–500 karakter.",
+          "supporting": "Wajib diisi. Pembukaan payload tercatat di audit."
+        },
+        "rejected_no_input": "Ditolak tanpa input.",
+        "snackbar": {
+          "opened": "Payload dibuka. Akses ini tercatat di audit."
+        },
+        "summary": "Ringkasan transaksi",
+        "title": "Payload transaksi"
       },
       "row": {
         "aria": "Detail transaksi {{kode}}"
@@ -280,6 +332,11 @@ export default interface Resources {
     "nik": {
       "empty": {
         "title": "Belum ada hasil untuk pencarian ini"
+      },
+      "error": {
+        "action": "Coba lagi",
+        "body": "Hasil pencarian belum bisa dimuat. Coba lagi.",
+        "title": "Pencarian belum bisa dilakukan"
       },
       "page": {
         "error": "Masukkan NIK 16 digit.",
@@ -400,6 +457,11 @@ export default interface Resources {
       }
     },
     "quota": {
+      "error": {
+        "action": "Coba lagi",
+        "body": "Data kuota belum bisa dimuat. Coba lagi.",
+        "title": "Kuota belum bisa dimuat"
+      },
       "level": {
         "low": "Hampir habis",
         "ok": "Aman",

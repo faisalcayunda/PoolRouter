@@ -120,10 +120,10 @@ export function PayloadDialog({
     <>
       <ReasonDialog
         isOpen={isOpen && phase === 'reason'}
-        title={t('nik.payload.title')}
-        body={t('nik.payload.body')}
+        title={t('log.payload.dialog_title')}
+        body={t('log.payload.reason.supporting')}
         initialReason={reasonDraft ?? initialReason}
-        confirmLabel={t('nik.payload.open')}
+        confirmLabel={t('log.payload.open')}
         isSubmitting={submitting}
         onConfirm={(next) => void open(next)}
         onCancel={() => {
@@ -160,7 +160,7 @@ export function PayloadDialog({
         {phase === 'error' ? (
           <InlineAlert tone="error" live="polite">
             {purged
-              ? t('nik.page.retention') // GAP: log.payload.error_purged
+              ? t('log.payload.error_purged')
               : errorKode === 'jaringan'
                 ? t('error.network.load')
                 : t('risk.common.action_failed')}
@@ -171,8 +171,7 @@ export function PayloadDialog({
           <div className="flex flex-col gap-4">
             <p className="typescale-body-small text-on-surface-variant">{t('nik.payload.body')}</p>
             <section className="flex flex-col gap-1">
-              {/* GAP: log.payload.summary — no catalog line yet; `log.page.title` names the block. */}
-              <h3 className="typescale-title-small">{t('log.page.title')}</h3>
+              <h3 className="typescale-title-small">{t('log.payload.summary')}</h3>
               {/* The summary is composed from the identifying fields, not a free-form block. */}
               <dl className="typescale-body-medium grid grid-cols-[auto_1fr] gap-x-4 gap-y-1">
                 <dt className="text-on-surface-variant">{t('log.col.code')}</dt>
@@ -194,13 +193,9 @@ export function PayloadDialog({
             {BLOCKS.map((block) => (
               <JsonBlock
                 key={block}
-                // GAP: log.payload.{input,metadata,hasil} — the whole block is absent from the
-                // v0.13 catalog. The data-contract field name is the honest fallback.
-                label={block}
+                label={t(`log.payload.${block}`)}
                 value={payload[block]}
-                // GAP: log.payload.not_available — an em dash carries "no value" without inventing
-                // a sentence; replace with the catalog line once Fitcher adds it.
-                emptyLabel="—"
+                emptyLabel={t('log.payload.not_available')}
               />
             ))}
           </div>

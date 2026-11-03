@@ -222,8 +222,7 @@ export function NikSearchScreen({ client = api }: NikSearchScreenProps): ReactNo
 
       {exportNotice === 'too_large' ? (
         <InlineAlert tone="warning" live="polite" heading={t('nik.page.error')}>
-          {/* GAP: no dedicated `ekspor_terlalu_besar` line in the catalog yet. */}
-          {t('nik.page.retention')}
+          {t('export.error.too_large')}
         </InlineAlert>
       ) : null}
       {exportNotice === 'error' ? (

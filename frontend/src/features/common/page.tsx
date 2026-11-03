@@ -23,8 +23,7 @@ export function errorMessage(
   if (error instanceof ApiError && error.status === 403) {
     return { message: t('error.http.403.title'), kode };
   }
-  // The v0.13 catalog has no per-screen error block yet (see the GAP note in SHAA-203), so every
-  // other failure reads as the generic load line rather than inventing copy here.
+  // A catalogued `error.<kode>` line wins when one exists; otherwise the generic load line.
   const message = labelOr(instance, `error.${kode}`, t('error.network.load'));
   return { message, kode };
 }

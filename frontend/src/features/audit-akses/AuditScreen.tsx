@@ -79,8 +79,7 @@ export function AuditScreen({ client = api }: AuditScreenProps): ReactNode {
 
   function submit() {
     if (!range || !withinDays(range, MAX_RANGE_DAYS)) {
-      // GAP: audit.filter.range_help — no catalog line yet; the range legend states the rule.
-      setRangeError(t('log.filter.range'));
+      setRangeError(t('audit.error.range'));
       return;
     }
     setRangeError(null);
@@ -128,9 +127,8 @@ export function AuditScreen({ client = api }: AuditScreenProps): ReactNode {
               ))}
             </Select>
             <DateRangeField
-              legend={t('log.filter.range')}
-              // GAP: audit.filter.range_help — "Paling panjang 31 hari" is not in the catalog yet.
-              description={t('log.filter.range')}
+              legend={t('audit.filter.range')}
+              description={t('audit.filter.range_help')}
               value={range}
               onChange={(next) => {
                 setRange(next);
@@ -196,7 +194,7 @@ export function AuditScreen({ client = api }: AuditScreenProps): ReactNode {
                       </td>
                       <td className="typescale-body-medium px-4">
                         <StatusLabel tone={row.hasil === 'berhasil' ? 'success' : 'error'}>
-                          {labelOr(instance, `audit.result.${row.hasil}`, row.hasil)}
+                          {labelOr(instance, `enum.hasil.${row.hasil}`, row.hasil)}
                         </StatusLabel>
                       </td>
                       <td className="typescale-body-medium px-4">{row.alasan ?? '—'}</td>

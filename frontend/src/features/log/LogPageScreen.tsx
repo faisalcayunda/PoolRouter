@@ -135,16 +135,13 @@ export function LogPageScreen({
           <div className="flex flex-wrap items-start gap-3">
             <TextField
               label={t('log.filter.code')}
-              description={t('log.filter.code')}
+              description={t('log.filter.code_help')}
               value={code}
               onChange={setCode}
             />
-            {/* GAP: log.filter.queue / .queue_help — absent from the catalog. The field keeps its
-                own accessible name ("queue_id", the API parameter) instead of wearing the code
-                filter's label, which would make both fields indistinguishable to a screen reader. */}
             <TextField
-              label="queue_id"
-              description={t('log.filter.code')}
+              label={t('log.filter.queue')}
+              description={t('log.filter.queue_help')}
               value={queue}
               onChange={setQueue}
             />

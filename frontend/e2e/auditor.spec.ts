@@ -108,12 +108,12 @@ test.describe('auditor flow', () => {
     await page.getByRole('button', { name: 'Payload' }).click();
     const payloadDialog = page.getByRole('dialog');
     await expect(payloadDialog).toBeVisible();
-    await payloadDialog.getByRole('button', { name: 'Buka payload' }).click();
+    await payloadDialog.getByRole('button', { name: 'Lihat payload' }).click();
     // The three data-contract blocks render read-only; `metadata` is empty in the stub.
-    await expect(payloadDialog.getByRole('heading', { name: 'input' })).toBeVisible();
+    await expect(payloadDialog.getByRole('heading', { name: 'Input' })).toBeVisible();
     await expect(payloadDialog.getByText(/3175000000000001/)).toBeVisible();
-    await expect(payloadDialog.getByRole('heading', { name: 'metadata' })).toBeVisible();
-    await expect(payloadDialog.getByText('—')).toBeVisible();
+    await expect(payloadDialog.getByRole('heading', { name: 'Metadata' })).toBeVisible();
+    await expect(payloadDialog.getByText('Tidak tersedia.')).toBeVisible();
     await expectNoAxeViolations(page);
     // The M3 dialog offers "Tutup" twice (header close and footer action); either closes it.
     await payloadDialog.getByRole('button', { name: 'Tutup' }).first().click();

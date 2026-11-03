@@ -130,12 +130,11 @@ describe('payload dialog', () => {
       within(dialog).getByLabelText('Alasan (minimal 10 karakter)'),
       'Cek aduan W-2026-07',
     );
-    await userEvent.click(within(dialog).getByRole('button', { name: 'Buka payload' }));
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Lihat payload' }));
 
-    // GAP: log.payload.summary / .not_available are absent from the catalog; the block heading is
-    // the screen title and an empty value renders as an em dash.
-    expect(await screen.findByText('Log transaksi')).toBeInTheDocument();
-    expect(screen.getByText('—')).toBeInTheDocument(); // empty `metadata`
+    // Catalog v0.14 supplies the §18.3 payload block copy (SHAA-285).
+    expect(await screen.findByText('Ringkasan transaksi')).toBeInTheDocument();
+    expect(screen.getByText('Tidak tersedia.')).toBeInTheDocument(); // empty `metadata`
     expect(screen.queryByRole('button', { name: /salin|unduh/i })).not.toBeInTheDocument();
     expect(vi.mocked(client.bukaPayload).mock.calls[0]![0]).toEqual({
       kode_transaksi: 'TRX-2026-0042',
@@ -162,10 +161,10 @@ describe('payload dialog', () => {
       within(dialog).getByLabelText('Alasan (minimal 10 karakter)'),
       'Cek aduan W-2026-07',
     );
-    await userEvent.click(within(dialog).getByRole('button', { name: 'Buka payload' }));
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Lihat payload' }));
 
     // The NIK did render inside the Input JSON block, so the assertions below are not vacuous.
-    expect(await screen.findByText('Log transaksi')).toBeInTheDocument();
+    expect(await screen.findByText('Ringkasan transaksi')).toBeInTheDocument();
     expect(screen.getByRole('dialog').textContent).toContain(NIK);
 
     expect(localStorage.length).toBe(0);
@@ -197,12 +196,9 @@ describe('payload dialog', () => {
     );
 
     const dialog = await screen.findByRole('dialog');
-    await userEvent.click(within(dialog).getByRole('button', { name: 'Buka payload' }));
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Lihat payload' }));
 
-    expect(
-      // GAP: log.payload.error_purged — the retention line is the closest catalog copy.
-      await screen.findByText(/Data di luar retensi online belum bisa dicari/),
-    ).toBeInTheDocument();
+    expect(await screen.findByText('Payload sudah dihapus.')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /coba lagi/i })).not.toBeInTheDocument();
   });
 });

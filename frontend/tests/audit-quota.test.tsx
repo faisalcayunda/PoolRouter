@@ -52,9 +52,9 @@ describe('S13 audit akses', () => {
     // Scope to the table: the result filter also renders "Ditolak" as an option.
     const table = within(screen.getByRole('table'));
     expect(table.getByText('Cek aduan W-2026-07')).toBeInTheDocument();
-    // `ditolak` is in the catalog; the unknown `lihat_payload` action falls back to its raw code.
-    expect(table.getByText('ditolak')).toBeInTheDocument();
-    expect(table.getByText('lihat_payload')).toBeInTheDocument();
+    // Catalog v0.14 carries both the result and the payload action (SHAA-285).
+    expect(table.getByText('Ditolak')).toBeInTheDocument();
+    expect(table.getByText('Lihat payload')).toBeInTheDocument();
     // A missing reason is shown as an em dash, never the string "null".
     expect(table.getByText('—')).toBeInTheDocument();
 

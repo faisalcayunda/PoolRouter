@@ -38,7 +38,10 @@
       "upstream.page.provider",
       "upstream.page.status",
       "webhook.page.title",
-      "webhook.reason.http"
+      "webhook.reason.http",
+      "log.payload.input",
+      "log.payload.metadata",
+      "log.filter.queue"
     ]
   }
 }

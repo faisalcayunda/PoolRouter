@@ -119,7 +119,7 @@ test.describe('S11 log transaksi (auditor)', () => {
     await expectNoAxeViolations(page);
 
     // The confirm stays disabled until the minimum reason length is met: the dialog is the guard.
-    const confirm = dialog.getByRole('button', { name: 'Buka payload' });
+    const confirm = dialog.getByRole('button', { name: 'Lihat payload' });
     await expect(confirm).toBeDisabled();
     expect(calls.filter((c) => c.url.includes('/auditor/payload'))).toHaveLength(0);
 
@@ -152,7 +152,7 @@ test.describe('S11 log transaksi (auditor)', () => {
 
     const dialog = page.getByRole('dialog');
     await dialog.getByLabel('Alasan (minimal 10 karakter)').fill('Tindak lanjut aduan W-2026-09');
-    await dialog.getByRole('button', { name: 'Buka payload' }).click();
+    await dialog.getByRole('button', { name: 'Lihat payload' }).click();
     await expect(dialog.getByText('3175000000000001')).toBeVisible();
 
     const stored = await page.evaluate(async () => {
