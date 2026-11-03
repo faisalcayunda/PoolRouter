@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: PoolRouter Downstream API
-  description: API publik PoolRouter F0 untuk klien BGN. Error memakai RFC 9457 problem+json dengan daftar `kode` tertutup; rincian tiap kode, termasuk `batas`, ada di docs/masalah.md. Semua respons selalu `no-store`; respons tidak boleh disimpan cache.
+  description: API publik PoolRouter untuk klien BGN. Error memakai RFC 9457 problem+json dengan daftar `kode` tertutup; rincian tiap kode, termasuk `batas`, ada di docs/masalah.md. Semua respons selalu `no-store`; respons tidak boleh disimpan cache.
   license:
     name: UNLICENSED
     identifier: UNLICENSED
@@ -452,7 +452,7 @@ paths:
                     title: Kesalahan provider permanen
                     type: https://github.com/faisalcayunda/PoolRouter/blob/main/docs/masalah.md#provider_error_permanen
                 retry_habis:
-                  summary: Jendela retry habis (di F0 hanya ada satu percobaan efektif)
+                  summary: Jendela retry habis (saat ini hanya ada satu percobaan efektif)
                   value:
                     kode: retry_habis
                     request_id: 0b19c3b4-7c5f-4e2f-9b3a-1a2b3c4d5e6f
@@ -829,7 +829,7 @@ webhooks:
         required: true
       responses:
         '200':
-          description: 2xx apa pun dari client berarti terkirim; selain itu gagal dan tidak diulang di F0
+          description: 2xx apa pun dari client berarti terkirim; selain itu gagal dan tidak diulang
           headers:
             Cache-Control:
               schema:

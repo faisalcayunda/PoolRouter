@@ -269,7 +269,7 @@ async fn get_endpoint_kontrak(
         (status = 502, description = "retry_habis atau provider_error_permanen, dengan request_id, tanpa Retry-After", body = Problem, content_type = "application/problem+json", headers(
             ("Cache-Control" = String, description = "Selalu `no-store`; respons tidak boleh disimpan cache")
         ),
-            examples(("retry_habis" = (summary = "Jendela retry habis (di F0 hanya ada satu percobaan efektif)", value = json!({"type": "https://github.com/faisalcayunda/PoolRouter/blob/main/docs/masalah.md#retry_habis", "title": "Retry habis", "status": 502, "kode": "retry_habis", "request_id": "0b19c3b4-7c5f-4e2f-9b3a-1a2b3c4d5e6f"}))), ("provider_error_permanen" = (summary = "Kelas kegagalan tidak diulang (auth/kuota provider/kode tak dipetakan/respons invalid/TLS)", value = json!({"type": "https://github.com/faisalcayunda/PoolRouter/blob/main/docs/masalah.md#provider_error_permanen", "title": "Kesalahan provider permanen", "status": 502, "kode": "provider_error_permanen", "request_id": "0b19c3b4-7c5f-4e2f-9b3a-1a2b3c4d5e6f"}))))
+            examples(("retry_habis" = (summary = "Jendela retry habis (saat ini hanya ada satu percobaan efektif)", value = json!({"type": "https://github.com/faisalcayunda/PoolRouter/blob/main/docs/masalah.md#retry_habis", "title": "Retry habis", "status": 502, "kode": "retry_habis", "request_id": "0b19c3b4-7c5f-4e2f-9b3a-1a2b3c4d5e6f"}))), ("provider_error_permanen" = (summary = "Kelas kegagalan tidak diulang (auth/kuota provider/kode tak dipetakan/respons invalid/TLS)", value = json!({"type": "https://github.com/faisalcayunda/PoolRouter/blob/main/docs/masalah.md#provider_error_permanen", "title": "Kesalahan provider permanen", "status": 502, "kode": "provider_error_permanen", "request_id": "0b19c3b4-7c5f-4e2f-9b3a-1a2b3c4d5e6f"}))))
         ),
         (status = 503, description = "Pool/provider nonaktif (objek_nonaktif, tanpa Retry-After) atau Redis fail-closed (layanan_tidak_tersedia, Retry-After: 5)", body = Problem, content_type = "application/problem+json", headers(
             ("Retry-After" = i64, description = "Hanya ada pada layanan_tidak_tersedia, selalu 5 detik; tidak ada pada objek_nonaktif"),
@@ -429,7 +429,7 @@ async fn cancel_request(
         ("cancelled" = (summary = "Dibatalkan client; memuat cancel_reason", value = json!({"queue_id": "0b19c3b4-7c5f-4e2f-9b3a-1a2b3c4d5e6f", "status": "cancelled", "cancel_reason": "client"})))
     )),
     responses(
-        (status = 200, description = "2xx apa pun dari client berarti terkirim; selain itu gagal dan tidak diulang di F0", headers(
+        (status = 200, description = "2xx apa pun dari client berarti terkirim; selain itu gagal dan tidak diulang", headers(
             ("Cache-Control" = String, description = "Respons client; contoh no-store")
         )
         )
@@ -576,7 +576,7 @@ pub fn rapi_retry_after(openapi: &mut utoipa::openapi::OpenApi) {
 
 #[derive(OpenApi)]
 #[openapi(
-    info(title = "PoolRouter Downstream API", description = "API publik PoolRouter F0 untuk klien BGN. Error memakai RFC 9457 problem+json dengan daftar `kode` tertutup; rincian tiap kode, termasuk `batas`, ada di docs/masalah.md. Semua respons selalu `no-store`; respons tidak boleh disimpan cache."),
+    info(title = "PoolRouter Downstream API", description = "API publik PoolRouter untuk klien BGN. Error memakai RFC 9457 problem+json dengan daftar `kode` tertutup; rincian tiap kode, termasuk `batas`, ada di docs/masalah.md. Semua respons selalu `no-store`; respons tidak boleh disimpan cache."),
     paths(issue_token, get_endpoint_kontrak, submit_sync, enqueue_async, get_request, cancel_request),
     components(schemas(
         TokenRequest, TokenResponse, EndpointKontrak, FieldInput, FieldMetadata,

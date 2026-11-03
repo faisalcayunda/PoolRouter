@@ -94,7 +94,7 @@ dengan `Retry-After: 5`.
 
 # retry_habis
 
-502. Jendela retry habis; di F0 hanya ada satu percobaan efektif, jadi jendela
+502. Jendela retry habis; saat ini hanya ada satu percobaan efektif, jadi jendela
 ini langsung berakhir. Body memuat `request_id`; tanpa `Retry-After`.
 
 # provider_error_permanen

@@ -596,6 +596,12 @@ fn temuan_rujukan_dokumen_kerja(baris: &str) -> Option<String> {
             }
         }
 
+        // `F0`: penanda tahap internal, jangan dipakai di teks klien. "F0" dicari
+        // sebagai kata utuh agar tidak menabrak potongan id atau payload.
+        if ekor.starts_with(b"F0") && kata_utuh(byte, awal, awal + 2) {
+            return Some("F0".to_string());
+        }
+
         // `\b[A-Z]{1,2}-\d+\b`: R-16, U-3, S-05, W-08, K-20, L-04, dan sejenisnya.
         let awalan = ekor.iter().take_while(|c| c.is_ascii_uppercase()).count();
         if (1..=2).contains(&awalan)
@@ -666,6 +672,7 @@ fn penjaga_rujukan_menangkap_dan_meloloskan_contoh() {
         "Ini data contract internal.",
         "Ini data Contract internal.",
         "Rujuk §3a.7.",
+        "Jendela retry habis di F0.",
     ];
     for baris in ditolak {
         assert!(
