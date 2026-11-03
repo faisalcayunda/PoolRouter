@@ -39,9 +39,14 @@ STATE = {
 }
 COUNTS = {}  # pool -> {"attempts": int, "over_kuota": int}
 BODY_FILE = os.environ.get("MOCK_BODY_FILE", "")
-# Placeholder body. Replace with the synthetic envelope from the Dukcapil
-# "Verify By Element" contract (ADR-0002) before the run; do not use real data.
-DEFAULT_BODY = {"response": {"status": "Sesuai", "skor": 1.0}, "synthetic": True}
+# Default body follows ADR-0002 rev 5 D3 (contract "Verify By Element"): a
+# pagination envelope whose `content` holds exactly one element, with values
+# "Sesuai" / "Tidak Sesuai" optionally followed by " (skor)". Only the parts the
+# adapter parses are shaped here. The pagination keys outside `content` are not
+# specified in ADR-0002 yet (open question P-3 / Dukcapil docs), so they are left
+# out. Replace with the synthetic envelope from the contract via MOCK_BODY_FILE
+# when it is confirmed; never use real data.
+DEFAULT_BODY = {"content": [{"NAMA_LGKP": "Sesuai (100)"}]}
 
 
 def load_body():
