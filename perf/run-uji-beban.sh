@@ -12,7 +12,8 @@
 # Yang tidak disentuh: resource tanpa label ini, termasuk gateway dan layanan lain.
 #
 # Keluaran di <workdir>/logs/perf-shaa205/<RUN_NAME>/: summary k6 (JSON) dan
-# statistik mock (JSON). Exit code 1 jika M-02 (m02_over_kuota_total) > 0.
+# statistik mock (JSON). Exit code 1 jika M-02 (m02_over_kuota_total) > 0;
+# exit code 2 jika run tidak valid (KUOTA_EFEKTIF kosong, mock tidak dipanggil, atau nama pool tidak cocok).
 # Secret hanya dibaca dari environment; tidak ditulis ke file atau log.
 
 set -eu
@@ -25,7 +26,8 @@ MODE=${MODE:-sync}
 LAT_MS=${LAT_MS:-500}
 RATE=${RATE:-11.6}
 DURATION=${DURATION:-10m}
-KUOTA_EFEKTIF=${KUOTA_EFEKTIF:-'{}'}
+KUOTA_EFEKTIF=${KUOTA_EFEKTIF:?isi KUOTA_EFEKTIF dengan kuota per pool}
+case "$KUOTA_EFEKTIF" in '{}'|'') echo "KUOTA_EFEKTIF tidak boleh kosong: M-02 tidak bisa dibuktikan" >&2; exit 2 ;; esac
 MOCK_IMAGE=localhost/perf-mock-dukcapil:shaa205
 MOCK_NAME=perf-mock-shaa205
 NET=perf-shaa205-net
@@ -42,6 +44,8 @@ cleanup() {
   podman rm -f -v --filter label="$LABEL" >/dev/null 2>&1 || true
   podman volume prune -f --filter label="$LABEL" >/dev/null 2>&1 || true
   podman network prune -f --filter label="$LABEL" >/dev/null 2>&1 || true
+  # Image mock dibangun ulang setiap run; hapus di akhir run (nama image tepat, bukan pola).
+  podman rmi -f "$MOCK_IMAGE" >/dev/null 2>&1 || true
 }
 trap cleanup EXIT
 
@@ -81,9 +85,40 @@ podman run --rm --label "$LABEL" $JOIN_ARGS \
 K6_RC=$?
 set -e
 
-# Statistik mock: percobaan per pool dan M-02. Parsing dilakukan di dalam container mock (tanpa python host).
-podman exec "$MOCK_NAME" python -I -c "import urllib.request as u; print(u.urlopen('http://127.0.0.1:8080/_stats', timeout=5).read().decode())" >"$OUT/mock-stats.json"
-OVER=$(podman exec -i "$MOCK_NAME" python -I -c "import json,sys; print(json.loads(sys.stdin.read())['m02_over_kuota_total'])" <"$OUT/mock-stats.json")
+# Statistik mock dan validasi run. Parsing dilakukan di dalam container mock (tanpa python host).
+# Run tidak valid (exit 2), sehingga tidak bisa lolos palsu, bila:
+#   - statistik mock tidak bisa diambil;
+#   - total percobaan 0 (mock tidak pernah dipanggil);
+#   - ada pool tanpa kuota_efektif (nama pool salah ketik atau KUOTA_EFEKTIF tidak lengkap);
+#   - pool di KUOTA_EFEKTIF tidak pernah dipanggil.
+if ! podman exec "$MOCK_NAME" python -I -c "import urllib.request as u; print(u.urlopen('http://127.0.0.1:8080/_stats', timeout=5).read().decode())" >"$OUT/mock-stats.json"; then
+  echo "RUN TIDAK VALID: statistik mock tidak bisa diambil" >&2
+  exit 2
+fi
+if ! OVER=$(podman exec -i -e KUOTA_EFEKTIF="$KUOTA_EFEKTIF" "$MOCK_NAME" python -I -c '
+import json, os, sys
+s = json.loads(sys.stdin.read())
+q = json.loads(os.environ["KUOTA_EFEKTIF"])
+pools = s.get("pools", {})
+err = []
+if not q:
+    err.append("KUOTA_EFEKTIF kosong")
+if sum(p.get("attempts", 0) for p in pools.values()) == 0:
+    err.append("total percobaan 0: mock tidak pernah dipanggil")
+for k, p in pools.items():
+    if p.get("kuota_efektif") is None:
+        err.append("pool tanpa kuota_efektif: " + k)
+for k in q:
+    if pools.get(k, {}).get("attempts", 0) == 0:
+        err.append("pool di KUOTA_EFEKTIF tidak pernah dipanggil: " + k)
+if err:
+    sys.stderr.write("; ".join(err) + "\n")
+    sys.exit(2)
+print(s["m02_over_kuota_total"])
+' <"$OUT/mock-stats.json"); then
+  echo "RUN TIDAK VALID: lihat pesan di atas (exit 2)" >&2
+  exit 2
+fi
 echo "RUN=$RUN_NAME K6_RC=$K6_RC M02_OVER_KUOTA=$OVER OUT=$OUT"
 
 if [ "$OVER" -ne 0 ]; then
