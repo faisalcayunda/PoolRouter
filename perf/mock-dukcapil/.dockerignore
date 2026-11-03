@@ -1,0 +1,13 @@
+# Konteks build mock Dukcapil (SHAA-205). Hanya server.py yang di-COPY.
+# Jangan kirim git, cache, berkas env, atau rahasia ke konteks.
+.git
+**/.git
+**/__pycache__
+**/*.pyc
+.env
+.env.*
+!.env.example
+**/*.env
+**/secrets
+**/*.pem
+**/*.key
