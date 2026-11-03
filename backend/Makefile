@@ -8,7 +8,9 @@ SHELL := /bin/sh
 
 RUNNER ?= podman
 # Must match rust-toolchain.toml and [workspace.package] rust-version (ADR-0004 section 2). Never `latest`.
-RUST_IMAGE ?= docker.io/library/rust:1.99.1-bookworm
+# Pinned by tag and digest, same literal as backend/Containerfile line 17, .github/workflows/backend.yml line 30,
+# and .github/workflows/contract.yml line 29. Changing one means changing all four (SHAA-207).
+RUST_IMAGE ?= docker.io/library/rust:1.99.1-bookworm@sha256:9181b56c2a21ab1d5e73cffe04fc762426d30aa7fac3c91141dd033f49a7fc8b
 CARGO_DENY_VERSION ?= 0.19.0
 # SHA-256 of the official release tarballs (EmbarkStudios/cargo-deny $(CARGO_DENY_VERSION)), pinned here.
 # cargo-deny is installed as this prebuilt binary, never compiled from source (SHAA-222).
