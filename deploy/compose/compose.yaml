@@ -147,9 +147,10 @@ services:
       - poolrouter_jwt_signing_key
       - poolrouter_nik_hmac_key
       - poolrouter_idempotency_hmac_key
-    # TODO(SHAA-207 Bagian 2): healthcheck `poolrouter healthcheck` menunggu subcommand di SHAA-175.
+    # Subcommand per binary (ADR-0001 §2, keputusan Shu 2026-11-03). Implementasinya ada di sub-issue server HTTP;
+    # sampai image memuatnya, service ini tidak akan `healthy`.
     healthcheck:
-      test: ["CMD", "poolrouter", "healthcheck"]
+      test: ["CMD", "webserver", "healthcheck"]
       interval: 10s
       timeout: 3s
       retries: 5
