@@ -37,7 +37,7 @@ export CARGO_BUILD_JOBS := $(JOBS)
 export SQLX_OFFLINE := true
 endif
 
-.PHONY: help check-label setup test lint fmt clean openapi openapi-check
+.PHONY: help check-label setup test test-rust db-test lint fmt clean openapi openapi-check
 
 # Podman toolchain containers must carry the owning issue label, so untracked containers cannot appear (SHAA-222).
 ifeq ($(RUNNER),podman)
@@ -48,7 +48,7 @@ check-label:
 endif
 
 help:
-	@echo "targets: setup test lint fmt clean openapi openapi-check (RUNNER=podman|native)"
+	@echo "targets: setup test test-rust db-test lint fmt clean openapi openapi-check (RUNNER=podman|native)"
 
 # Fetch the locked dependency set and install the pinned cargo-deny.
 setup: check-label
@@ -71,8 +71,17 @@ setup: check-label
 	install -m 0755 "$$t/cargo-deny-$(CARGO_DENY_VERSION)-$$arch-unknown-linux-musl/cargo-deny" "$$CARGO_HOME/bin/cargo-deny"; \
 	cargo deny --version'
 
-test: check-label
+test: test-rust db-test
+
+test-rust: check-label
 	$(RUN) cargo test --workspace --all-targets --locked
+
+# Schema tests (SHAA-193): roles bootstrap, migrations from empty, grant matrix, constraints, functions.
+# Starts a throwaway PostgreSQL 17 container labelled shaal.issue=<n> (from CONTAINER_LABEL) and removes it afterwards.
+# It needs a container engine on the host, so it is independent of RUNNER.
+DB_ENGINE ?= podman
+db-test: check-label
+	CONTAINER_ENGINE=$(DB_ENGINE) SHAA_ISSUE=$(patsubst shaal.issue=%,%,$(CONTAINER_LABEL)) sh db/test/run.sh
 
 lint: check-label
 	$(RUN) cargo fmt --all --check
