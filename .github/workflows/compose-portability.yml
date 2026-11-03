@@ -54,7 +54,11 @@ jobs:
           # ini saat dibind-mount lewat Podman rootful. Isi tetap acak per run, file 0444,
           # dan induknya ($RUNNER_TEMP) hanya milik user runner.
           chmod 0755 "$dir"
-          for f in db_password redis_password rabbitmq_password poolrouter_owner poolrouter_db_app poolrouter_kek; do
+          # Daftar harus sama dengan blok `secrets:` di deploy/compose/compose.yaml.
+          for f in db_password redis_password rabbitmq_password poolrouter_owner \
+                   pr_api pr_admin_api pr_controller pr_webhook pr_worker \
+                   poolrouter_kek poolrouter_jwt_signing_key poolrouter_nik_hmac_key \
+                   poolrouter_idempotency_hmac_key; do
             # Nilai acak per run, hanya untuk smoke test. Tidak dicetak.
             openssl rand -hex 24 > "$dir/$f"
             chmod 0444 "$dir/$f"
