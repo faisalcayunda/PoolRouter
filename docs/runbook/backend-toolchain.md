@@ -78,5 +78,5 @@ Container toolchain harus berlabel `shaal.issue=<ISSUE>`. Container tanpa label 
 
 ## Batasan
 
-- Resize VM Podman (6 GiB, 4 CPU) belum dilakukan. Itu langkah owner, dikoordinasikan lewat Luca (SHAA-222). Bagian ini dihapus setelah resize.
-- Gate penuh `make setup test lint` belum dijalankan ulang di VM 2 GiB karena build Rust berisiko membuat VM kehabisan memori.
+- VM Podman dipakai pada 2 CPU / 3814 MiB, bukan 4 CPU / 6144 MiB yang direkomendasikan. Keputusan owner (SHAA-222, 2026-11-03): resize tidak dilanjutkan, gate dijalankan dengan `JOBS=1`. Risiko OOM tetap ada; jika gate gagal dengan SIGKILL atau exit 137, jangan diulang dengan `CONTAINER_MEMORY` lebih besar tanpa keputusan owner.
+- Gate penuh `make setup test lint` dengan `CONTAINER_LABEL=shaal.issue=SHAA-222 JOBS=1` di `main` `065aba7` lolos (exit 0, sekitar 371 detik) di kondisi VM di atas.
