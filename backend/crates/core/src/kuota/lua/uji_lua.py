@@ -407,8 +407,8 @@ class Uji:
         h4 = self.intake(kuota=kuota)
         self.periksa("intake keempat antrean_penuh",
                      h4[0] == "antrean_penuh", str(h4))
-        self.periksa("sync tidak menaikkan antre",
-                     self.intake(kuota=kuota, sync=True)[0] == "lolos"
+        self.periksa("sync ditolak saat antre menghabiskan kuota",
+                     self.intake(kuota=kuota, sync=True)[0] == "kuota_habis"
                      and self.r.cmd("GET", self.k_antre()) == "3")
 
         self.token(kuota=kuota)
