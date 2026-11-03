@@ -1,0 +1,191 @@
+# Image backend di CI (SHAA-207, jalur cadangan ADR-0001 Addendum A, keputusan Shu 14:10 UTC).
+# Dibangun dari backend/Containerfile di commit yang sama, lalu didorong ke GHCR dengan tag sha-<12 hex>.
+# Tanpa tag latest. Tidak memakai secret repo: login GHCR memakai GITHUB_TOKEN dengan izin packages: write.
+#
+# Isi jalur ini:
+#   - amd64 (ubuntu-latest): podman build (Buildah) sebagai bukti kompatibilitas, lalu BuildKit push by digest.
+#   - arm64 (ubuntu-24.04-arm): BuildKit push by digest, runner native tanpa QEMU.
+#   - index: satu index manifest linux/amd64 + linux/arm64 di tag sha-<12 hex>, dicatat digest-nya.
+#
+# Gerbang: job hanya berjalan jika backend/Containerfile ada di commit ini. Sebelum Containerfile masuk main,
+# semua job dilewati (tidak merah). Build-arg dan commit dicatat di ringkasan job.
+name: backend-image
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "backend/**"
+      - ".github/workflows/backend-image.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: backend-image-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  IMAGE: ghcr.io/faisalcayunda/poolrouter-backend
+
+jobs:
+  amd64:
+    runs-on: ubuntu-latest
+    # Build Rust dari nol (tanpa cache) bisa lama. Batas ini sengaja longgar.
+    timeout-minutes: 150
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      digest: ${{ steps.push.outputs.digest }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Gerbang Containerfile
+        id: gate
+        run: |
+          if [ -f backend/Containerfile ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "backend/Containerfile belum ada di commit ini; job dilewati."
+          fi
+
+      - name: Catat input build (commit, Containerfile, build-arg)
+        if: steps.gate.outputs.present == 'true'
+        run: |
+          {
+            echo "### Input build amd64"
+            echo "- commit: ${GITHUB_SHA}"
+            echo "- sha256 backend/Containerfile: $(sha256sum backend/Containerfile | cut -d' ' -f1)"
+            echo "- sha256 backend/.dockerignore: $(sha256sum backend/.dockerignore | cut -d' ' -f1)"
+            echo "- build-arg: JOBS=2 VERSION=0.1.0 REVISION=${GITHUB_SHA} CREATED=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Login GHCR
+        if: steps.gate.outputs.present == 'true'
+        env:
+          REGISTRY_USER: ${{ github.actor }}
+          REGISTRY_TOKEN: ${{ github.token }}
+        run: printf '%s' "$REGISTRY_TOKEN" | docker login ghcr.io -u "$REGISTRY_USER" --password-stdin
+
+      - name: Verifikasi Buildah (podman build, linux/amd64, tanpa push)
+        if: steps.gate.outputs.present == 'true'
+        run: |
+          set -eu
+          command -v podman >/dev/null 2>&1 || { sudo apt-get update -qq && sudo apt-get install -y -qq podman >/dev/null; }
+          podman --version
+          sudo podman build --platform linux/amd64 \
+            --build-arg JOBS=2 --build-arg VERSION=0.1.0 \
+            --build-arg REVISION="${GITHUB_SHA}" \
+            --build-arg CREATED="$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            -f backend/Containerfile -t localhost/poolrouter-backend:buildah-verify backend
+          sudo podman image rm -f localhost/poolrouter-backend:buildah-verify >/dev/null 2>&1 || true
+
+      - name: Build dan push BuildKit (linux/amd64, by digest)
+        id: push
+        if: steps.gate.outputs.present == 'true'
+        run: |
+          set -eu
+          docker buildx create --name shaal --driver docker-container --use
+          docker buildx build --platform linux/amd64 \
+            -f backend/Containerfile backend \
+            --build-arg JOBS=2 --build-arg VERSION=0.1.0 \
+            --build-arg REVISION="${GITHUB_SHA}" \
+            --build-arg CREATED="$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --provenance=false --sbom=false \
+            --output "type=image,name=${IMAGE},push-by-digest=true,name-canonical=true,push=true" \
+            --metadata-file meta-amd64.json
+          digest="$(jq -r '."containerimage.digest"' meta-amd64.json)"
+          echo "digest=${digest}" >> "$GITHUB_OUTPUT"
+          echo "amd64 digest: ${digest}" >> "$GITHUB_STEP_SUMMARY"
+
+  arm64:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 150
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      digest: ${{ steps.push.outputs.digest }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Gerbang Containerfile
+        id: gate
+        run: |
+          if [ -f backend/Containerfile ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "backend/Containerfile belum ada di commit ini; job dilewati."
+          fi
+
+      - name: Login GHCR
+        if: steps.gate.outputs.present == 'true'
+        env:
+          REGISTRY_USER: ${{ github.actor }}
+          REGISTRY_TOKEN: ${{ github.token }}
+        run: printf '%s' "$REGISTRY_TOKEN" | docker login ghcr.io -u "$REGISTRY_USER" --password-stdin
+
+      - name: Build dan push BuildKit (linux/arm64, native, by digest)
+        id: push
+        if: steps.gate.outputs.present == 'true'
+        run: |
+          set -eu
+          docker buildx create --name shaal --driver docker-container --use
+          docker buildx build --platform linux/arm64 \
+            -f backend/Containerfile backend \
+            --build-arg JOBS=2 --build-arg VERSION=0.1.0 \
+            --build-arg REVISION="${GITHUB_SHA}" \
+            --build-arg CREATED="$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --provenance=false --sbom=false \
+            --output "type=image,name=${IMAGE},push-by-digest=true,name-canonical=true,push=true" \
+            --metadata-file meta-arm64.json
+          digest="$(jq -r '."containerimage.digest"' meta-arm64.json)"
+          echo "digest=${digest}" >> "$GITHUB_OUTPUT"
+          echo "arm64 digest: ${digest}" >> "$GITHUB_STEP_SUMMARY"
+
+  index:
+    needs: [amd64, arm64]
+    if: needs.amd64.outputs.digest != '' && needs.arm64.outputs.digest != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Login GHCR
+        env:
+          REGISTRY_USER: ${{ github.actor }}
+          REGISTRY_TOKEN: ${{ github.token }}
+        run: printf '%s' "$REGISTRY_TOKEN" | docker login ghcr.io -u "$REGISTRY_USER" --password-stdin
+
+      - name: Buat index manifest sha-<12 hex> (tanpa latest)
+        env:
+          AMD64_DIGEST: ${{ needs.amd64.outputs.digest }}
+          ARM64_DIGEST: ${{ needs.arm64.outputs.digest }}
+        run: |
+          set -eu
+          tag="sha-${GITHUB_SHA:0:12}"
+          docker buildx create --name shaal --driver docker-container --use
+          docker buildx imagetools create -t "${IMAGE}:${tag}" \
+            "${IMAGE}@${AMD64_DIGEST}" "${IMAGE}@${ARM64_DIGEST}"
+          index_digest="$(docker buildx imagetools inspect --format '{{.Manifest.Digest}}' "${IMAGE}:${tag}")"
+          media_type="$(docker buildx imagetools inspect --format '{{.Manifest.MediaType}}' "${IMAGE}:${tag}")"
+          {
+            echo "### Index manifest backend"
+            echo "- image: ${IMAGE}:${tag}"
+            echo "- commit: ${GITHUB_SHA}"
+            echo "- digest index: ${index_digest}"
+            echo "- media type: ${media_type}"
+            echo "- amd64: ${AMD64_DIGEST}"
+            echo "- arm64: ${ARM64_DIGEST}"
+          } | tee -a "$GITHUB_STEP_SUMMARY"
