@@ -11,34 +11,24 @@ Dokumen ini untuk review desain data (Klaus) dan review kode (Ridley). Acuan: da
 
 ## 2. Daftar kolom NULL untuk body yang tidak bisa di-parse (AC SHAA-193)
 
-Aturan (contract §3.2.2 `validasi_gagal`): kolom Wajib §3.1 yang nilainya hanya bisa diperoleh dari body boleh NULL **hanya** pada baris `status = 'rejected'`, `reject_reason = 'validasi_gagal'`, `reject_http_status = 400`.
+Aturan (contract §3.2.2 `validasi_gagal`, keputusan review desain Klaus — putaran 1, komentar 2026-11-03): kolom yang nilainya hanya bisa diperoleh dari body boleh NULL **hanya** pada baris `status = 'rejected'`, `reject_reason = 'validasi_gagal'`, `reject_http_status = 400`.
 
-**Daftar final yang boleh NULL (4 kolom):**
+**Daftar final yang boleh NULL (kosong):** tidak ada kolom yang boleh NULL pada baris `validasi_gagal`/400. Alasan Klaus: body F0 hanya memuat field `{{input.*}}` dan metadata; field lain ditolak `validasi_gagal`/422 (contract §3.2.2, ADR-0002 D6), jadi pemilih pool di body tidak mungkin ada. Pool diambil dari konfigurasi (`downstream_endpoint.downstream_pool_id NOT NULL`); `prioritas`, `prioritas_efektif`, dan `ttl_expires_at` turun dari pool itu, dan `mode` turun dari path. Konsekuensinya `ttl_expires_at` tetap mengikuti `mode` di setiap baris, termasuk baris `rejected` async.
 
-| Kolom | Alasan boleh NULL |
-|---|---|
-| `downstream_pool_id` | Pool "dipilih manual atau otomatis" (§3.1). Pilihan manual berasal dari input client |
-| `prioritas` | Diturunkan dari downstream pool |
-| `prioritas_efektif` | Diturunkan dari `prioritas` (K-11) |
-| `ttl_expires_at` | `received_at` + TTL downstream pool, jadi ikut pool |
-
-**Tetap wajib (NOT NULL), karena berasal dari autentikasi, path, atau konfigurasi:** `request_id`, `client_id`, `credential_id`, `downstream_endpoint_id`, `provider_id`, `provider_config_version`, `endpoint_config_version`, `mode`, `status`, `metadata` (= `{}`), `received_at`, `completed_at` (baris `rejected` terminal), `attempt_count` (= 0). `input_payload` NULL pada setiap baris `rejected` (P-01).
+**Tetap wajib (NOT NULL), karena berasal dari autentikasi, path, atau konfigurasi:** `request_id`, `client_id`, `credential_id`, `downstream_endpoint_id`, `downstream_pool_id`, `prioritas`, `prioritas_efektif`, `provider_id`, `provider_config_version`, `endpoint_config_version`, `mode`, `status`, `metadata` (= `{}`), `received_at`, `completed_at` (baris `rejected` terminal), `attempt_count` (= 0), dan `ttl_expires_at` (mengikuti `mode`). `input_payload` NULL pada setiap baris `rejected` (P-01).
 
 **Constraint (kata demi kata dari migrasi):**
 
 ```sql
-CONSTRAINT chk_pool_kolom_serempak CHECK (
-  (downstream_pool_id IS NULL) = (prioritas IS NULL) AND (downstream_pool_id IS NULL) = (prioritas_efektif IS NULL)),
+CONSTRAINT chk_pool_kolom_not_null CHECK (downstream_pool_id IS NOT NULL AND prioritas IS NOT NULL AND prioritas_efektif IS NOT NULL),
 CONSTRAINT chk_null_body_tak_terbaca CHECK (
-  (downstream_pool_id IS NOT NULL AND (mode = 'sync' OR ttl_expires_at IS NOT NULL))
-  OR (status = 'rejected' AND reject_reason = 'validasi_gagal' AND reject_http_status = 400
-      AND metadata = '{}'::jsonb AND input_payload IS NULL AND ttl_expires_at IS NULL)
-)
+  NOT (reject_reason = 'validasi_gagal' AND reject_http_status = 400) OR metadata = '{}'::jsonb),
+CONSTRAINT chk_ttl_async CHECK ((mode = 'async') = (ttl_expires_at IS NOT NULL))
 ```
 
-Diuji di `backend/db/test/20_constraints.sql`: NULL diterima pada `validasi_gagal`/400; ditolak pada `validasi_gagal`/422, `kuota_habis`, baris `queued`, `metadata` tidak kosong, dan `input_payload` terisi; `credential_id`, `received_at`, dan versi konfigurasi tetap ditolak NULL.
+Diuji di `backend/db/test/20_constraints.sql`: `validasi_gagal`/400 diterima dengan kolom pool terisi dan `metadata = {}`; NULL pool ditolak pada `validasi_gagal`/400, `validasi_gagal`/422, `kuota_habis`, dan baris `queued`; `metadata` tidak kosong dan `input_payload` terisi ditolak; `ttl_expires_at` wajib pada baris `rejected` async dan dilarang pada baris `rejected` sync; `credential_id`, `received_at`, dan versi konfigurasi tetap ditolak NULL.
 
-**Pertanyaan terbuka untuk Klaus (asumsi yang saya ambil):** tidak ada sumber (contract, ADR-0001 §4.1) yang menyatakan bagaimana client memilih pool "manual". Saya mengasumsikan pilihan itu bisa berada di body, maka empat kolom di atas dibolehkan NULL. Bila pilihan pool ternyata lewat path atau header (selalu diketahui), daftar menyusut menjadi kosong: hapus cabang kedua `chk_null_body_tak_terbaca` dan `chk_pool_kolom_serempak`, tanpa migrasi data. `mode` saya anggap diturunkan dari path (`POST` sync/async terpisah, ADR-0001 §4), jadi wajib. Mohon dikonfirmasi lalu dimasukkan ke contract v0.7.x.
+**Pertanyaan terbuka pada putaran 1 sudah terjawab:** pemilihan pool "manual" tidak lewat body — tidak ada sumber (contract, ADR-0001 §4.1) yang mengizinkan client memilih pool lewat body, dan pool diambil dari konfigurasi (`downstream_endpoint.downstream_pool_id NOT NULL`). Klaus mengonfirmasi pada putaran 1 (komentar 2026-11-03) bahwa daftar final yang boleh NULL adalah **kosong**, sehingga cabang NULL pada constraint lama dihapus tanpa migrasi data. `mode` diturunkan dari path (`POST` sync/async terpisah, ADR-0001 §4), jadi wajib.
 
 ## 3. Pemetaan contract §3 ke tabel
 

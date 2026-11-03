@@ -8,7 +8,9 @@ CREATE TABLE request (
   client_id uuid NOT NULL REFERENCES client (client_id),
   credential_id uuid NOT NULL REFERENCES client_kredensial (credential_id),
   downstream_endpoint_id uuid NOT NULL REFERENCES downstream_endpoint (downstream_endpoint_id),
-  -- Nullable ONLY on rejected / validasi_gagal / 400 rows (see chk_null_body_tak_terbaca and docs/db/daftar-kolom-null.md).
+  -- NULL list for unparseable bodies is empty (design review round 1, SHAA-193): downstream_pool_id,
+  -- prioritas, prioritas_efektif derive from endpoint/pool configuration, never from the body, and are
+  -- always NOT NULL via chk_pool_kolom_not_null. See docs/db/skema-f0.md section 2.
   downstream_pool_id uuid REFERENCES downstream_pool (downstream_pool_id),
   provider_id uuid NOT NULL REFERENCES provider (provider_id),
   upstream_pool_id uuid REFERENCES upstream_pool (upstream_pool_id),
@@ -94,8 +96,10 @@ CREATE TABLE request (
   CONSTRAINT chk_dispatch_key CHECK (mode = 'async' OR dispatch_key IS NULL),
   CONSTRAINT chk_metadata_obj CHECK (jsonb_typeof(metadata) = 'object'),
 
-  -- NULL list for bodies that cannot be parsed (AC SHAA-193, contract 3.2.2 validasi_gagal):
-  -- these columns derive from the body / pool choice, nothing else does.
+  -- NULL list for bodies that cannot be parsed is empty (AC SHAA-193, design review round 1):
+  -- downstream_pool_id, prioritas, prioritas_efektif and ttl_expires_at derive from endpoint/pool
+  -- configuration, not from the body, so the pool columns are always NOT NULL; ttl follows mode
+  -- (also on rejected async rows); metadata must be {} exactly on validasi_gagal/400 rows.
   CONSTRAINT chk_pool_kolom_not_null CHECK (downstream_pool_id IS NOT NULL AND prioritas IS NOT NULL AND prioritas_efektif IS NOT NULL),
   CONSTRAINT chk_null_body_tak_terbaca CHECK (
     NOT (reject_reason = 'validasi_gagal' AND reject_http_status = 400) OR metadata = '{}'::jsonb),

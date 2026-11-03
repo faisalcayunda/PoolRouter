@@ -1,32 +1,45 @@
 -- request constraints, the NULL list for unparseable bodies, transitions, T-04, log rules, counters.
 \set ON_ERROR_STOP on
 
--- ---- NULL list (AC SHAA-193): downstream_pool_id / prioritas / prioritas_efektif / ttl_expires_at only on rejected validasi_gagal 400
+-- ---- NULL list for unparseable bodies is EMPTY (Klaus, SHAA-193 design round 1): downstream_pool_id,
+-- prioritas and prioritas_efektif come from endpoint/pool configuration, never from the body, so they
+-- are always NOT NULL (chk_pool_kolom_not_null); ttl_expires_at follows mode on every row including
+-- rejected async ones (chk_ttl_async); metadata must be {} exactly on validasi_gagal/400 rows
+-- (chk_null_body_tak_terbaca).
 BEGIN;
 SELECT t.jalan($$SELECT t.buat_request('{"status":"rejected","reject_reason":"validasi_gagal","reject_http_status":400,
-  "completed_at":"2026-11-03T00:00:00Z","downstream_pool_id":null,"prioritas":null,"prioritas_efektif":null,"ttl_expires_at":null}')$$,
-  'unparseable body: pool, priority and ttl may be NULL on rejected/validasi_gagal/400');
+  "completed_at":"2026-11-03T00:00:00Z"}')$$,
+  'unparseable body: validasi_gagal/400 accepted with metadata = {} and pool columns filled');
 SAVEPOINT s;
+SELECT t.gagal($$SELECT t.buat_request('{"status":"rejected","reject_reason":"validasi_gagal","reject_http_status":400,
+  "completed_at":"2026-11-03T00:00:00Z","downstream_pool_id":null,"prioritas":null,"prioritas_efektif":null,"ttl_expires_at":null}')$$,
+  '23514', 'pool and priorities are always NOT NULL (validasi_gagal/400)');
+ROLLBACK TO s;
 SELECT t.gagal($$SELECT t.buat_request('{"status":"rejected","reject_reason":"validasi_gagal","reject_http_status":422,
   "completed_at":"2026-11-03T00:00:00Z","downstream_pool_id":null,"prioritas":null,"prioritas_efektif":null,"ttl_expires_at":null}')$$,
-  '23514', 'NULL pool refused for validasi_gagal 422');
+  '23514', 'pool and priorities are always NOT NULL (validasi_gagal/422)');
 ROLLBACK TO s;
 SELECT t.gagal($$SELECT t.buat_request('{"status":"rejected","reject_reason":"kuota_habis","reject_http_status":429,
   "completed_at":"2026-11-03T00:00:00Z","downstream_pool_id":null,"prioritas":null,"prioritas_efektif":null,"ttl_expires_at":null}')$$,
-  '23514', 'NULL pool refused for kuota_habis');
+  '23514', 'pool and priorities are always NOT NULL (kuota_habis)');
 ROLLBACK TO s;
 SELECT t.gagal($$SELECT t.buat_request('{"downstream_pool_id":null,"prioritas":null,"prioritas_efektif":null}')$$,
-  '23514', 'NULL pool refused for a queued request');
+  '23514', 'pool and priorities are always NOT NULL (queued)');
 ROLLBACK TO s;
 SELECT t.gagal($$SELECT t.buat_request('{"status":"rejected","reject_reason":"validasi_gagal","reject_http_status":400,
-  "completed_at":"2026-11-03T00:00:00Z","downstream_pool_id":null,"prioritas":null,"prioritas_efektif":null,"ttl_expires_at":null,
-  "metadata":{"a":1}}')$$, '23514', 'NULL list requires metadata = {}');
+  "completed_at":"2026-11-03T00:00:00Z","metadata":{"a":1}}')$$, '23514', 'validasi_gagal/400 requires metadata = {}');
 ROLLBACK TO s;
 SELECT t.gagal($$SELECT t.buat_request('{"status":"rejected","reject_reason":"validasi_gagal","reject_http_status":400,
-  "completed_at":"2026-11-03T00:00:00Z","downstream_pool_id":null,"prioritas":null,"prioritas_efektif":null,"ttl_expires_at":null,
-  "input_payload":{"NIK":"0000000000000001"}}')$$, '23514', 'rejected rows never keep input_payload (P-01)');
+  "completed_at":"2026-11-03T00:00:00Z","input_payload":{"NIK":"0000000000000001"}}')$$, '23514', 'rejected rows never keep input_payload (P-01)');
 ROLLBACK TO s;
--- columns derived from auth / path / config stay NOT NULL even on that row
+SELECT t.gagal($$SELECT t.buat_request('{"status":"rejected","reject_reason":"validasi_gagal","reject_http_status":400,
+  "completed_at":"2026-11-03T00:00:00Z","ttl_expires_at":null}')$$, '23514', 'rejected async still needs ttl_expires_at');
+ROLLBACK TO s;
+SELECT t.gagal($$SELECT t.buat_request('{"mode":"sync","status":"rejected","reject_reason":"validasi_gagal","reject_http_status":400,
+  "completed_at":"2026-11-03T00:00:00Z","dispatch_key":null,"ttl_expires_at":"2026-11-04T00:00:00Z"}')$$,
+  '23514', 'rejected sync must not carry ttl_expires_at');
+ROLLBACK TO s;
+-- columns derived from auth / path / config stay NOT NULL even on rejected/validasi_gagal/400 rows
 SELECT t.gagal($$SELECT t.buat_request('{"status":"rejected","reject_reason":"validasi_gagal","reject_http_status":400,
   "completed_at":"2026-11-03T00:00:00Z","credential_id":null}')$$, '23502', 'credential_id stays NOT NULL');
 ROLLBACK TO s;
@@ -36,9 +49,9 @@ ROLLBACK TO s;
 SELECT t.gagal($$SELECT t.buat_request('{"status":"rejected","reject_reason":"validasi_gagal","reject_http_status":400,
   "completed_at":"2026-11-03T00:00:00Z","provider_config_version":null}')$$, '23502', 'config version stays NOT NULL');
 ROLLBACK TO s;
--- pair must be consistent: pool NULL implies priorities NULL
+-- pool is refused even when priorities are filled: none of the pool columns may be NULL
 SELECT t.gagal($$SELECT t.buat_request('{"status":"rejected","reject_reason":"validasi_gagal","reject_http_status":400,
-  "completed_at":"2026-11-03T00:00:00Z","downstream_pool_id":null}')$$, '23514', 'pool and priorities go NULL together');
+  "completed_at":"2026-11-03T00:00:00Z","downstream_pool_id":null}')$$, '23514', 'pool stays NOT NULL even with priorities filled');
 ROLLBACK TO s;
 ROLLBACK;
 
