@@ -132,7 +132,7 @@ openapi-check: check-label openapi oasdiff-breaking
 # OASDIFF_BASE_SOURCE only labels the log line (push.before | dispatch | default).
 # Unresolvable base rev -> exit 1. A contract missing in the baseline -> ::warning:: for that file only.
 # downstream-api.yaml breaking -> exit 1; admin-api.yaml breaking -> ::warning:: only (ADR-0003 section 4.2 item 3).
-OASDIFF_BASE_SOURCE ?= $(if $(filter undefined,$(origin OASDIFF_BASE)),default,explicit)
+OASDIFF_BASE_SOURCE := $(if $(filter undefined,$(origin OASDIFF_BASE)),default,explicit)
 OASDIFF_BASE ?= $(if $(filter true,$(CI)),,origin/main)
 oasdiff-breaking: check-label
 	@set -eu; \
