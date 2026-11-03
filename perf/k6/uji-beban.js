@@ -43,6 +43,7 @@ const asyncEnqueueLatency = new Trend('async_enqueue_ms', true);
 const asyncEndToEnd = new Trend('async_end_to_end_ms', true);
 const asyncTerminal = new Counter('async_terminal_total');
 const asyncTimeout = new Counter('async_poll_timeout_total');
+const asyncPollError = new Counter('async_poll_error_total');
 const http5xx = new Counter('http_5xx_total');
 const http429 = new Counter('http_429_total');
 
@@ -90,13 +91,28 @@ function doAsync() {
   check(res, { 'async: enqueue diterima': (r) => r.status === 200 || r.status === 202 });
   if (Math.random() >= POLL_SAMPLE || res.status >= 300) return;
 
-  const queueId = res.json('queue_id') || res.json('request_id');
+  let queueId = null;
+  try {
+    queueId = res.json('queue_id') || res.json('request_id');
+  } catch (e) {
+    queueId = null; // respons enqueue bukan JSON: tidak ada id untuk di-poll
+  }
   if (!queueId) return;
   const start = Date.now();
   while ((Date.now() - start) / 1000 < POLL_TIMEOUT_S) {
     const st = http.get(`${BASE_URL}/v1/requests/${queueId}`, { headers: headers(), tags: { mode: 'poll' } });
     countStatus(st);
-    const status = st.json('status');
+    if (st.status !== 200) {
+      asyncPollError.add(1, { status: String(st.status) });
+      return;
+    }
+    let status = null;
+    try {
+      status = st.json('status');
+    } catch (e) {
+      asyncPollError.add(1, { status: 'non_json' });
+      return;
+    }
     if (TERMINAL.includes(status)) {
       asyncEndToEnd.add(Date.now() - start);
       asyncTerminal.add(1, { status });
@@ -107,11 +123,20 @@ function doAsync() {
   asyncTimeout.add(1);
 }
 
+// Laju dinyatakan sebagai bilangan bulat per 100 s (laju/s x 100), supaya 11,6/s, 2,32/s
+// (sync 20%), dan 9,28/s (async 80%) tetap tepat tanpa pembulatan. Laju yang tidak tepat
+// sampai 2 desimal dilempar error, bukan dibulatkan diam-diam.
+const RATE_SCALE = 100;
+
 function arrival(name, exec, rate) {
+  const scaled = rate * RATE_SCALE;
+  if (Math.abs(scaled - Math.round(scaled)) > 1e-6) {
+    throw new Error(`laju ${rate}/s tidak tepat sampai 2 desimal; ubah RATE atau SYNC_SHARE`);
+  }
   return {
     executor: 'constant-arrival-rate',
-    rate: Math.max(1, Math.round(rate)),
-    timeUnit: '1s',
+    rate: Math.max(1, Math.round(scaled)),
+    timeUnit: `${RATE_SCALE}s`,
     duration: DURATION,
     preAllocatedVUs: Math.max(10, Math.ceil(rate * 2)),
     maxVUs: Math.max(200, Math.ceil(rate * 40)),

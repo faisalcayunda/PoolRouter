@@ -84,8 +84,13 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def _drain(self):
-        length = int(self.headers.get("Content-Length") or 0)
-        if length:
+        try:
+            length = int(self.headers.get("Content-Length") or 0)
+        except ValueError:
+            # Content-Length tidak valid: body tidak bisa dibaca, jadi koneksi ditutup.
+            self.close_connection = True
+            return b""
+        if length > 0:
             return self.rfile.read(length)
         return b""
 

@@ -79,11 +79,13 @@ Setiap skenario dijalankan dengan `perf/run-uji-beban.sh` (satu run per kombinas
 | S4-2s | stres sync dan async, langkah 1×, 2×, 4× (dilaporkan terpisah) | 2 s (dan 5 s bila perlu) | 11,6 / 23,2 / 46,4/s | 5 menit per langkah | 1 |
 | W | warm-up, dibuang dari hasil | tiap nilai latensi | 11,6/s | 2 menit | 1 per nilai latensi |
 
+Laju dikirim sebagai bilangan bulat per 100 s (11,6/s = 1.160 per 100 s), jadi tepat tanpa pembulatan. Pada S3 sync 2,32/s dan async 9,28/s juga tepat, sehingga porsi 20% tidak bergeser. Laju yang tidak tepat sampai 2 desimal menggagalkan init k6 (diuji: 11,605/s gagal). Tidak ada penyimpangan dari profil K-22.
+
 Jumlah run utama: 21 (S1 9, S2 9, S3 3), 630 menit. Ditambah warm-up dan stres, satu eksekusi penuh kira-kira 11 jam di mesin lokal, tanpa waktu start-stop.
 
 Setiap skenario mengukur:
 - Sync: `http_req_duration` p50, p95, p99, max; overhead dan throughput efektif (sukses per detik); `dropped_iterations`.
-- Async: `async_enqueue_ms` p50, p95, p99; `async_end_to_end_ms` pada sampel 10%.
+- Async: `async_enqueue_ms` p50, p95, p99; `async_end_to_end_ms` pada sampel 10%; `async_poll_error_total` (poll non-200 atau respons bukan JSON).
 - Error: 429 (dipisah dari 5xx), 5xx, dan timeout. Untuk sync, 502 (`provider_error_permanen`, `retry_habis`) dan 504 (`timeout_sync`) harus dipisah per kode. Harness saat ini hanya menghitung `http5xx`; pemisahan per kode ditambahkan sebelum eksekusi.
 - M-02: `m02_over_kuota_total` dari mock.
 - Kuota gateway: `terpakai` awal dan akhir run dari Redis.
@@ -102,10 +104,13 @@ Setiap skenario mengukur:
 - Body respons: default mengikuti ADR-0002 rev 5 D3. Ada envelope dengan `content` berisi tepat satu elemen, dan nilainya `Sesuai (100)`. Kunci pagination di luar `content` belum ditentukan di ADR-0002, jadi belum dibentuk. Body asli bisa diganti lewat `MOCK_BODY_FILE` bila kontrak sudah dikonfirmasi.
 - Penghitung per pool: base URL setiap pool dibuat sebagai `http://perf-mock:8080/p/<pool>`, dan mock menghitung per `<pool>`. Ini asumsi desain. Konfirmasi saat SHAA-198/199 membangun adapter, karena base URL adalah konfigurasi provider (ADR-0002).
 - M-02 = jumlah percobaan dengan nomor di atas `kuota_efektif` untuk pool itu. Mock tetap menjawab panggilan seperti itu, jadi pelanggaran terlihat dalam angka, bukan disembunyikan.
-- Untuk run latensi, `MOCK_KUOTA_EFEKTIF` diisi `kuota_efektif` yang berlaku di gateway (990.000). Dengan begitu AC "percobaan tidak pernah melebihi `kuota_efektif`" diuji terhadap nilai yang sebenarnya.
+- `KUOTA_EFEKTIF` untuk run latensi = sisa kuota di awal run, yaitu `kuota_efektif` (990.000) dikurangi `terpakai` awal dari Redis. Jika `terpakai` awal 0, nilainya 990.000. Alasan: ADR-0001 rev 15 §5a.1 (rev 8) menegakkan kuota pada jendela bergulir 24 jam, dan counter mock mulai dari 0 di tiap run. Tanpa pengurangan itu, percobaan dari run sebelumnya di hari yang sama tidak terhitung dan pelanggaran jendela bisa lolos. Bila ada slot yang kedaluwarsa selama run, percobaan yang sebenarnya masih dalam jendela bisa tercatat sebagai pelanggaran. Arah kesalahannya aman: melaporkan lebih, bukan kurang.
+- Run tidak valid (exit 2, bukan lulus): `KUOTA_EFEKTIF` kosong atau `{}`, total percobaan 0, ada pool di mock tanpa `kuota_efektif`, atau pool di `KUOTA_EFEKTIF` tidak pernah dipanggil (nama pool salah ketik).
 - Pembuktian M-02: kuota pool di gateway dan mock diset ke nilai yang lebih kecil dari beban (misalnya 1.000 untuk run 10 menit dengan ±6.960 demand). Gateway harus berhenti di ±1.000, dan `m02_over_kuota_total` harus 0.
 - Catatan kebijakan: ADR-0001 rev 15 §5a.1 butir 7 mengizinkan `kuota_efektif + slot_kedaluwarsa`. Acceptance criteria SHAA-205 lebih ketat (≤ `kuota_efektif`). Laporan memakai acceptance criteria. Bila ada pelanggaran, pembandingnya `poolrouter_slot_kedaluwarsa_total` dicatat sebagai diagnosis.
-- Verifikasi harness: negative control (kuota 50, demand 240) menghasilkan `m02_over_kuota_total = 190` dan exit 1. Positive control (kuota 100.000, latensi 2 s) menghasilkan 0 dan exit 0. Kedua control diulang 2026-11-03 setelah body mock diganti, dengan hasil yang sama.
+- Verifikasi harness: negative control (kuota 50, demand 240) menghasilkan `m02_over_kuota_total = 190` dan exit 1. Positive control (kuota 100.000, latensi 2 s) menghasilkan 0 dan exit 0. Kedua control diulang 2026-11-03 setelah body mock diganti, dengan hasil yang sama, dan diulang lagi setelah perbaikan review (validasi run dan laju k6), dengan hasil yang sama.
+- Validasi run (2026-11-03, setelah perbaikan review): `KUOTA_EFEKTIF='{}'` → exit 2 sebelum mock dibangun. Nama pool salah (`pool-salah`) → exit 2. Mock tidak pernah dipanggil (BASE_URL tanpa `/p/<pool>`) → exit 2 dengan total percobaan 0.
+- Laju k6 (`k6 inspect`, mix RATE 11,6, SYNC_SHARE 0,2): sync 232 dan async 928 per 1m40s, yaitu 2,32/s dan 9,28/s. RATE 11,605 gagal di init.
 
 ## Dampak gerbang T-01 (`EXISTS`) pada throughput worker
 
@@ -129,7 +134,7 @@ Gerbang T-01 menambah satu predikat `EXISTS` ke transaksi compare-and-set `dispa
 
 ## Keamanan lingkungan (shaal-eng-standards §8)
 
-- Setiap container, network, dan image yang dibangun diberi label `shaal.issue=SHAA-205`. Pembersihan di akhir run memakai tiga perintah berfilter label (`shaal-playbook` bagian 6).
+- Setiap container, network, dan image yang dibangun diberi label `shaal.issue=SHAA-205`. Pembersihan di akhir run memakai tiga perintah berfilter label (`shaal-playbook` bagian 6). Image mock (`localhost/perf-mock-dukcapil:shaa205`) juga dihapus dengan `podman rmi` di akhir run, karena dibangun ulang setiap run. Image k6 dan base image Python dipin dan tetap di cache lokal; keduanya bukan resource run.
 - Resource milik issue lain tidak disentuh. Di mesin saat ini ada `shaal-hindsight` (`shaal.service=hindsight`) dan container SHAA-195; keduanya tidak dihentikan.
 - Tidak ada instalasi native. `k6` dan `python` dijalankan sebagai container dengan image dipin.
 
@@ -140,6 +145,7 @@ Prasyarat: syarat gating terpenuhi, gateway berjalan di network `<GATEWAY_NET>`,
 ```sh
 # dari akar repo PoolRouter
 export POOLROUTER_API_KEY=...          # dari environment, bukan file
+# KUOTA_EFEKTIF: 990000 hanya bila terpakai awal = 0; isi sisa kuota bila tidak (lihat bagian Mock).
 RUN_NAME=sync-lat2s-r1 MODE=sync LAT_MS=2000 RATE=11.6 DURATION=30m \
 KUOTA_EFEKTIF='{"<pool>":990000}' \
 BASE_URL=http://poolrouter-gateway:8080/ ENDPOINT_ID=<uuid-sync> \
