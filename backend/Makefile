@@ -54,6 +54,8 @@ endif
 
 # Path backend di sisi eksekusi: /work di dalam container Podman, direktori checkout untuk RUNNER=native (CI).
 WORK_DIR := $(if $(filter podman,$(RUNNER)),/work,$(CURDIR))
+# Repo root on the execution side (/repo is the read-only mount in the podman container).
+REPO_DIR := $(if $(filter podman,$(RUNNER)),/repo,$(CURDIR)/..)
 
 .PHONY: help check-label setup test test-rust db-test lint fmt clean openapi openapi-check
 
@@ -119,43 +121,32 @@ openapi: check-label
 	$(HEAVY) cargo run --locked -q -p poolrouter-webserver --bin openapi-gen -- openapi
 
 # Fails when the committed YAML differs from what the code generates, and when
-# the working-tree contracts break the ones committed on main (oasdiff, SHAA-192).
+# the working-tree contracts break the baseline OASDIFF_BASE (oasdiff, SHAA-192, SHAA-278).
 openapi-check: check-label openapi oasdiff-breaking
 	@test -z "$$(git status --porcelain -- openapi)" || { echo "openapi: generated files are uncommitted or modified" >&2; git status --short -- openapi; exit 1; }
 	git diff --exit-code -- openapi
 
-# oasdiff `breaking` against the contracts on main. Skipped until main carries
-# both YAML files (first merge of SHAA-192), after that every contract change
-# is diffed and a breaking change fails the gate (ADR-0001 rev 15 section 5a.7).
+# oasdiff `breaking` against an explicit baseline (SHAA-278 D1-D6, SHAA-279).
+# OASDIFF_BASE is a git rev. Locally it defaults to origin/main; in CI (CI=true) it must be
+# set explicitly by the workflow (a shallow detached checkout has no `main`), otherwise exit 1.
+# OASDIFF_BASE_SOURCE only labels the log line (push.before | dispatch | default).
+# Unresolvable base rev -> exit 1. A contract missing in the baseline -> ::warning:: for that file only.
+# downstream-api.yaml breaking -> exit 1; admin-api.yaml breaking -> ::warning:: only (ADR-0003 section 4.2 item 3).
+OASDIFF_BASE_SOURCE ?= $(if $(filter undefined,$(origin OASDIFF_BASE)),default,explicit)
+OASDIFF_BASE ?= $(if $(filter true,$(CI)),,origin/main)
 oasdiff-breaking: check-label
 	@set -eu; \
-	if ! git cat-file -e "main:backend/openapi/downstream-api.yaml" 2>/dev/null || ! git cat-file -e "main:backend/openapi/admin-api.yaml" 2>/dev/null; then \
-	  echo "oasdiff: baseline belum ada di main (pertama kali); dilewati"; exit 0; \
-	fi; \
+	base="$(OASDIFF_BASE)"; \
+	if [ -z "$$base" ]; then echo "oasdiff: OASDIFF_BASE must be set explicitly when CI=true" >&2; exit 1; fi; \
+	sha=$$(git rev-parse --verify --quiet "$$base^{commit}") || { echo "oasdiff: baseline ref '$$base' cannot be resolved" >&2; exit 1; }; \
+	echo "oasdiff: baseline $$sha ($(OASDIFF_BASE_SOURCE))"; \
 	mkdir -p .cache/oasdiff; \
-	git show main:backend/openapi/downstream-api.yaml > .cache/oasdiff/base-downstream.yaml; \
-	git show main:backend/openapi/admin-api.yaml > .cache/oasdiff/base-admin.yaml; \
-	$(RUN) sh -c 'set -eu; \
-	if [ ! -x $(WORK_DIR)/.cache/oasdiff/oasdiff ] || ! $(WORK_DIR)/.cache/oasdiff/oasdiff --version 2>/dev/null | grep -q "$(OASDIFF_VERSION)"; then \
-	  arch=$$(uname -m); \
-	  case "$$arch" in \
-	    aarch64) urlarch=arm64; sha="$(OASDIFF_SHA256_arm64)" ;; \
-	    x86_64) urlarch=amd64; sha="$(OASDIFF_SHA256_amd64)" ;; \
-	    *) echo "oasdiff: unsupported arch $$arch" >&2; exit 1 ;; \
-	  esac; \
-	  t=$$(mktemp -d); trap "rm -rf \"$$t\"" EXIT; \
-	  url="https://github.com/oasdiff/oasdiff/releases/download/v$(OASDIFF_VERSION)/oasdiff_$(OASDIFF_VERSION)_linux_$${urlarch}.tar.gz"; \
-	  curl -fsSL -o "$$t/o.tar.gz" "$$url"; \
-	  echo "$$sha  $$t/o.tar.gz" | sha256sum -c -; \
-	  tar -xzf "$$t/o.tar.gz" -C "$$t" oasdiff; \
-	  mv "$$t/oasdiff" $(WORK_DIR)/.cache/oasdiff/oasdiff; \
-	fi; \
-	rc=0; \
-	for pair in "base-downstream.yaml downstream-api.yaml" "base-admin.yaml admin-api.yaml"; do \
-	  set -- $$pair; \
-	  if ! $(WORK_DIR)/.cache/oasdiff/oasdiff breaking --fail-on ERR "$(WORK_DIR)/.cache/oasdiff/$$1" "$(WORK_DIR)/openapi/$$2"; then \
-	    echo "oasdiff: perubahan breaking pada $$2 terhadap main" >&2; \
-	    rc=1; \
+	for name in downstream-api admin-api; do \
+	  rm -f ".cache/oasdiff/base-$$name.yaml"; \
+	  if git cat-file -e "$$sha:backend/openapi/$$name.yaml" 2>/dev/null; then \
+	    git show "$$sha:backend/openapi/$$name.yaml" > ".cache/oasdiff/base-$$name.yaml"; \
+	  else \
+	    echo "::warning title=oasdiff baseline::$$name.yaml not present in baseline $$sha; breaking check skipped for this file"; \
 	  fi; \
 	done; \
-	exit $$rc'
+	$(RUN) sh $(REPO_DIR)/scripts/oasdiff-compare.sh "$(WORK_DIR)" "$(OASDIFF_VERSION)" "$(OASDIFF_SHA256_arm64)" "$(OASDIFF_SHA256_amd64)"

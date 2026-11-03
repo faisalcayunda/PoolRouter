@@ -1,7 +1,10 @@
 # Kontrak API (ADR-0003 section 4.2, SHAA-194). `openapi-check` sejak SHAA-192
-# juga menjalankan `oasdiff breaking --fail-on ERR` terhadap kontrak di main
-# (oasdiff ter-pin, backend/Makefile). `gen-api-check` dan `tsc` belum dipasang:
-# menunggu sub-issue frontend (ADR-0004 section 4.1).
+# juga menjalankan `oasdiff breaking` terhadap baseline eksplisit OASDIFF_BASE
+# (SHAA-278 D1-D6, SHAA-279; oasdiff ter-pin, backend/Makefile): downstream-api
+# gagal jika breaking, admin-api hanya ::warning::. `gen-api-check` dan `tsc`
+# belum dipasang: menunggu sub-issue frontend (ADR-0004 section 4.1).
+# Trigger pull_request belum ada. Kalau ditambahkan nanti, baseline-nya
+# `github.event.pull_request.base.sha`.
 name: contract
 
 on:
@@ -12,6 +15,11 @@ on:
       - "frontend/**"
       - ".github/workflows/contract.yml"
   workflow_dispatch:
+    inputs:
+      oasdiff_base:
+        description: "Git rev baseline untuk oasdiff breaking"
+        required: false
+        default: "HEAD~1"
 
 permissions:
   contents: read
@@ -34,6 +42,7 @@ jobs:
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           persist-credentials: false
+          fetch-depth: 0 # commit baseline (OASDIFF_BASE) harus tersedia
 
       # DIAGNOSTIK SEMENTARA (SHAA-275): dihapus setelah akar exit 2 terbukti.
       # Tanpa env/printenv/set -x; hanya ekor ~20 baris output make.
@@ -47,6 +56,9 @@ jobs:
 
       - name: openapi-check
         shell: bash
+        env:
+          OASDIFF_BASE: ${{ github.event_name == 'workflow_dispatch' && inputs.oasdiff_base || github.event.before }}
+          OASDIFF_BASE_SOURCE: ${{ github.event_name == 'workflow_dispatch' && 'dispatch' || 'push.before' }}
         run: |
           set -o pipefail
           rc=0
