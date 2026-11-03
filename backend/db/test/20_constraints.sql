@@ -132,6 +132,31 @@ BEGIN
   END;
 END $x$;
 
+-- T-04 positive: a correct request + history COMMITs, then a transition UPDATE + history COMMITs (SHAA-245)
+BEGIN;
+CREATE TEMP TABLE _p AS SELECT t.buat_request('{}') AS id;
+COMMIT;
+SELECT t.ok(t.hitung($$SELECT count(*) FROM request WHERE request_id = (SELECT id FROM _p)$$) = 1, 'T-04: request with initial history commits');
+BEGIN;
+UPDATE request SET status = 'dispatched', dispatched_at = now() WHERE request_id = (SELECT id FROM _p);
+INSERT INTO request_status_history (request_id, seq, status_dari, status_ke, aktor) SELECT id, 2, 'queued', 'dispatched', 'controller' FROM _p;
+COMMIT;
+SELECT t.ok(t.hitung($$SELECT count(*) FROM request WHERE status = 'dispatched' AND request_id = (SELECT id FROM _p)$$) = 1, 'T-04: transition with history commits');
+-- T-04 negative: transition UPDATE whose history row has the wrong status_dari is still rejected at commit
+DO $x$
+DECLARE v uuid := (SELECT id FROM _p);
+BEGIN
+  BEGIN
+    UPDATE request SET status = 'in_flight' WHERE request_id = v;
+    INSERT INTO request_status_history (request_id, seq, status_dari, status_ke, aktor) VALUES (v, 3, 'queued', 'in_flight', 'worker');
+    SET CONSTRAINTS request_history_wajib IMMEDIATE;
+    RAISE EXCEPTION 'FAIL: wrong status_dari accepted (T-04)';
+  EXCEPTION WHEN integrity_constraint_violation THEN
+    RAISE NOTICE 'ok - history with wrong status_dari is rejected (T-04)';
+  END;
+END $x$;
+DROP TABLE _p;
+
 -- ---- transaction_log rules (R-03, R-05, R-07, R-08, nik requirement)
 BEGIN;
 CREATE TEMP TABLE _q AS SELECT t.buat_request('{"status":"in_flight","attempt_count":1,"dispatched_at":"2026-11-03T00:00:00Z","upstream_pool_id":"30000000-0000-7000-8000-000000000001"}') AS id;

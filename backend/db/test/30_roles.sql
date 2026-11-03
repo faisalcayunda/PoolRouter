@@ -13,8 +13,7 @@ VALUES ('b0000000-0000-7000-8000-000000000001', 'a0000000-0000-7000-8000-0000000
 UPDATE request SET status = 'done', completed_at = now(), output_payload = '{"NAMA_LGKP":{"status":"sesuai","skor":90}}',
   final_kode_transaksi = 'b0000000-0000-7000-8000-000000000001', sumber_hasil = 'provider', webhook_status = 'menunggu'
   WHERE request_id = 'a0000000-0000-7000-8000-000000000001';
-INSERT INTO request_status_history (request_id, seq, status_dari, status_ke, aktor) VALUES ('a0000000-0000-7000-8000-000000000001', 2, 'queued', 'done', 'worker');
--- history above skips in_flight: fix order for realism
+INSERT INTO request_status_history (request_id, seq, status_dari, status_ke, aktor) VALUES ('a0000000-0000-7000-8000-000000000001', 2, 'in_flight', 'done', 'worker');
 COMMIT;
 
 -- ============ pr_controller: no NIK, no payload (ADR-0001 7.2 mandatory test)
