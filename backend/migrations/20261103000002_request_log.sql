@@ -182,11 +182,15 @@ CREATE TRIGGER request_status_history_append_only BEFORE UPDATE OR DELETE ON req
   FOR EACH ROW EXECUTE FUNCTION tg_append_only();
 
 -- T-04: every status written to request has a history row in the same transaction (checked at commit).
+-- Deferred AFTER triggers see the committed-state table, so the match must use the event's own row images:
+-- INSERT -> first row (seq = 1, status_dari NULL); UPDATE -> status_dari = OLD.status. (SHAA-245)
 CREATE FUNCTION tg_request_punya_history() RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public AS $$
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM request_status_history h
-                   WHERE h.request_id = NEW.request_id AND h.status_ke = NEW.status
-                     AND h.terjadi_at >= transaction_timestamp()) THEN
+                   WHERE h.request_id = NEW.request_id
+                     AND CASE WHEN TG_OP = 'INSERT' THEN h.seq = 1 AND h.status_dari IS NULL
+                              ELSE h.status_dari = OLD.status END
+                     AND h.status_ke = NEW.status AND h.terjadi_at >= transaction_timestamp()) THEN
     RAISE EXCEPTION 'request % berstatus % tanpa baris request_status_history yang cocok (T-04)', NEW.request_id, NEW.status
       USING ERRCODE = 'integrity_constraint_violation';
   END IF;
