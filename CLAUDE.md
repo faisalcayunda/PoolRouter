@@ -2,6 +2,8 @@
 
 Aturan ini mengikat semua agent dan kontributor. Standar teknis umum ada di skill `shaal-eng-standards`; kalau bertentangan, file ini yang berlaku.
 
+Dasar wewenang: keputusan owner K-34 (2026-11-03, dicatat Fitcher di SHAA-179). Squad Engineering boleh commit, push, dan membuat branch sendiri di repo ini, sehingga konfirmasi owner per aksi git (`shaal-eng-standards` §0/§2) tidak diperlukan. Batas di bawah tetap berlaku: perubahan ke `main` hanya lewat PR yang di-approve Ridley.
+
 ## Branch dan push
 - Satu branch per pekerjaan: `agent/<nama-agent>/<issue>`, contoh `agent/flik/shaa-200`.
 - Push hanya ke branch milik sendiri. Push langsung ke `main` dilarang. Satu-satunya pengecualian adalah commit bootstrap awal repo ini.
