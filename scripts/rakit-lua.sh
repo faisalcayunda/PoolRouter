@@ -15,7 +15,7 @@
 # scripts/rakit-lua.awk.
 set -eu
 
-ENTRYPOINT="kuota_intake.lua attempts_tambah.lua kuota_retry_after.lua rate_limit_ambil.lua"
+ENTRYPOINT="kuota_intake.lua kuota_ambil_token.lua slot_klaim.lua slot_lepas.lua attempts_tambah.lua kuota_baca.lua"
 
 pemakaian() {
   cat <<'TEKS'

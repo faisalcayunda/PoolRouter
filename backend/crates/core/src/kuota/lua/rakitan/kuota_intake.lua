@@ -3,28 +3,55 @@
 -- Bentuk inilah yang dimuat ke Redis; berkas sumber tidak boleh dimuat langsung.
 -- Buat ulang: make -C backend lua-rakit. Gate: make -C backend lua-rakit-check.
 
--- Gerbang intake: cek kuota + antrean dalam skrip yang sama.
--- ADR-0001 rev 15 §5a.1 butir 1a, 1b, dan §5.
+-- Gerbang intake: kontrol penerimaan + `INCR antre` dalam satu EVAL.
+-- ADR-0001 rev 15 §5a.1 butir 2 (K-12) dan §5.
 --
--- Web UI memanggil ini sebelum menerima permintaan sync. Skrip ini ATOMIK
--- sebatas pembacaannya sendiri, bukan terhadap `attempts_tambah.lua`: intake
--- membaca `terpakai`, lalu `attempts_tambah.lua` menaikkannya di langkah
--- terpisah setelah baris log percobaan ter-commit (§5). Dua permintaan yang
--- bersamaan karena itu bisa sama-sama melihat sisa kuota dan sama-sama lolos;
--- uji konkurensi 8 koneksi di `uji_lua.py` mengukur kelebihannya. Penutupnya
--- harus pemesanan slot atomik (di sini atau di Rust); pilihannya keputusan
--- desain Fitcher/Shu, jadi skrip ini belum menjanjikan M-02 = 0 pelanggaran
--- kuota sendiri (review 778f9fd).
+-- Ini BUKAN gerbang M-02. Intake hanya memutuskan apakah sebuah permintaan
+-- diterima; permintaan yang diterima belum tentu dipanggil, dan retry masuk
+-- lagi ke antrean. Bukti M-02 ada di `kuota_ambil_token.lua`, yang memeriksa
+-- `terpakai + slot_aktif` lalu memesan slot dalam satu EVAL (keputusan Shu
+-- SHAA-195 butir 1, opsi C). `uji_lua.py` dulu memakai intake sebagai gerbang
+-- M-02, dan itu yang melaporkan 41–42 percobaan pada kuota 37.
 --
--- Ketiga penolakan di bawah DILAPORKAN, bukan diputuskan, di sini: skrip hanya
--- membandingkan angka. Pemetaan ke problem code tetap satu tempat di Rust.
+-- KEYS (D1.7, urutannya tetap):
+--   1 pr:siap                          gerbang kesiapan
+--   2 pr:attempts:{<pool>}:<periode>   counter percobaan periode ini
+--   3 pr:ember:{<pool>}                hash ember 10 menit (mode bergulir)
+--   4 pr:antre:{<pool>}                jumlah permintaan async yang diterima,
+--                                      belum dipanggil
 --
--- Fail-closed: `belum_siap` dan argumen tidak sah tidak pernah menjadi "lolos".
+-- ARGV:
+--   1 run_id              dari `INFO server`, dicocokkan dengan KEYS[1]
+--   2 mode                `bergulir` | `kalender`
+--   3 sync                `1` permintaan sync, `0` async. Sync tidak masuk
+--                         antrean, jadi ia juga tidak menaikkan counter.
+--   4 client_id           hanya untuk telemetri, tidak memengaruhi keputusan
+--   5 kuota_efektif       `floor(kuota_harian × (1 − margin))`
+--   6 jumlah_ember        `JUMLAH_EMBER` (145)
+--   7 no_ember            `floor(requested_at_unix / 600)`, dihitung di Rust
+--
+-- Kembalian (indeks 1 = kode):
+--   {'belum_siap'}                          Redis belum siap untuk run_id
+--   {'kunci_tidak_sah'} / {<kode galat>}    argumen tidak sah
+--   {'kuota_habis', terpakai, antre}        `terpakai >= kuota_efektif`
+--   {'antrean_penuh', terpakai, antre}      `terpakai + antre >= kuota_efektif`
+--   {'lolos', terpakai, antre}              diterima; async sudah di-INCR
+--
+-- Cek antrean memakai `terpakai + antre`, bukan `antre` saja: yang perlu
+-- dijaga adalah jumlah percobaan yang akan terjadi, bukan panjang antrean.
+-- Dengan begitu `INCR antre` tidak bisa membuat antrean melampaui
+-- `kuota_efektif − terpakai` (D1.6).
+--
+-- Permintaan SYNC tidak diperiksa terhadap antrean: ia tidak masuk antrean
+-- sama sekali, jadi panjang antrean tidak mengatakan apa pun tentang
+-- kapasitas yang tersisa untuknya. Yang membatasinya kelak adalah slot di
+-- `kuota_ambil_token.lua`, yang menghitung `terpakai + slot_aktif`.
+--
+-- Kedua penolakan tetap dijawab 429 oleh pemanggil, tetapi kodenya dibedakan
+-- supaya metrik dan jalur retry bisa membedakan "kuota habis" dari "antrean
+-- penuh" (§5a.1 butir 2).
 
--- Potongan bersama disisipkan di sini oleh `scripts/rakit-lua.sh`; yang
--- dimuat ke Redis adalah `rakitan/kuota_intake.lua`, bukan berkas ini. Sandbox Redis
--- tidak punya `dofile` (review 778f9fd, temuan blocking 2).
-local siap_mod = (function()
+local siap = (function()
 -- Potongan bersama: gerbang kesiapan Redis (ADR-0001 rev 15 §5a.2 butir 2).
 --
 -- BERKAS POTONGAN, bukan skrip. `scripts/rakit-lua.sh` menyisipkannya apa
@@ -41,30 +68,34 @@ local siap_mod = (function()
 -- tentu mencerminkan PostgreSQL. Pemanggil memperlakukan `belum_siap` sebagai
 -- "Redis tidak tersedia" (fail-closed, §5), bukan sebagai "kuota tersedia".
 --
+-- Kuncinya lewat `KEYS`, bukan konstanta di sini: aturan D1.7 menaruh
+-- `pr:siap` sebagai `KEYS[1]` di setiap skrip, sehingga hash tag pool (bila
+-- kelak dipakai) tetap satu jalur dengan kunci lain di skrip yang sama.
+--
 -- Karena disisipkan, isi berkas ini hanya boleh berisi fungsi dan konstanta,
 -- tanpa efek samping dan tanpa bergantung pada ARGV global.
 
-local KUNCI_SIAP = 'pr:siap'
-
 -- Mengembalikan `true` bila Redis siap untuk run_id ini, `false` bila belum.
-local function siap(run_id)
+local function siap(kunci, run_id)
+  if kunci == nil or kunci == '' then
+    return false
+  end
   if run_id == nil or run_id == '' then
     return false
   end
-  local nilai = redis.call('GET', KUNCI_SIAP)
+  local nilai = redis.call('GET', kunci)
   if not nilai then
     return false
   end
   return nilai == run_id
 end
 
-return {
-  KUNCI_SIAP = KUNCI_SIAP,
-  siap = siap
-}
+-- Potongan ini disisipkan sebagai `local siap = (function() … end)()`, jadi
+-- yang dikembalikan adalah fungsinya sendiri, bukan tabel.
+return siap
 end)()
 local bersama = (function()
--- Potongan bersama: invarian ARGV dan jendela bergulir skrip kuota
+-- Potongan bersama: validasi argumen, jam Redis, dan jendela bergulir
 -- (ADR-0001 rev 15 §5a.1 butir 1d).
 --
 -- BERKAS POTONGAN, bukan skrip. `scripts/rakit-lua.sh` menyisipkannya apa
@@ -73,52 +104,62 @@ local bersama = (function()
 -- `dofile`, jadi berkas ini tidak pernah dimuat sendiri (review 778f9fd,
 -- temuan blocking 2).
 --
+-- KUNCI LEWAT `KEYS`, bukan ARGV (D1.7). Setiap skrip menetapkan urutan
+-- KEYS-nya di kepala berkas; potongan ini hanya menerima kunci yang sudah
+-- dipilih pemanggil, sehingga tidak ada lagi `geser` ARGV yang harus dijaga
+-- saat prefiks berubah.
+--
 -- §5a.1 butir 1d: periode dan nomor ember 10 menit dihitung SEKALI di Rust
 -- dari `requested_at`, lalu dikirim sebagai argumen. Skrip tidak boleh
--- membaca jam (`TIME`) untuk menentukan kunci. Kalau skrip yang menentukan
--- kunci, percobaan dengan `requested_at` 23:59:59,9 yang di-INCR pada
--- 00:00:00,1 masuk ke periode berbeda dengan baris lognya, dan DQ-05 menjadi
--- salah positif di sekitar jam reset.
+-- membaca jam untuk menentukan kunci. Kalau skrip yang menentukan kunci,
+-- percobaan dengan `requested_at` 23:59:59,9 yang di-INCR pada 00:00:00,1
+-- masuk ke periode berbeda dengan baris lognya, dan DQ-05 menjadi salah
+-- positif di sekitar jam reset.
 --
--- Argumen ini dipakai keempat skrip keadaan (`kuota_intake.lua`,
--- `rate_limit_ambil.lua`, `attempts_tambah.lua`, `kuota_retry_after.lua`),
--- supaya tidak ada satu jalur pun yang menyimpang. Komentar `ARGV` di setiap
--- berkas menyebut prefiks yang ditetapkan di sini lalu posisi lokalnya.
+-- SATUAN `no_ember`. `no_ember` adalah NOMOR ember (`floor(unix/600)`), bukan
+-- detik epoch dan bukan indeks cincin `nomor mod jumlah_ember` (D2.8). Jendela
+-- bergulir adalah `no_ember - (jumlah_ember - 1) ..= no_ember`, yaitu
+-- `jumlah_ember` ember dihitung dalam satuan ember. Mencampur satuan di sini
+-- pernah membuat jendela menyempit dari 145 ember menjadi 145 detik (review
+-- 778f9fd, temuan blocking 1). `batas_jendela` dan `di_jendela` di bawah
+-- satu-satunya tempat aturan itu ditulis; skrip tidak boleh mengurangkan
+-- sendiri.
 --
--- Prefiks boleh berbeda per skrip karena `run_id` (dan `client_id` pada
--- intake) tidak selalu di ARGV[1]. Nilainya tetap urutan yang sama, jadi tiap
--- skrip membaca `geser` = posisi `kunci_attempts`.
---
--- `run_id` TIDAK termasuk blok bersama: `siap.lua` sudah membacanya dari posisi
--- prefiks masing-masing skrip (`ARGV[1]` atau `ARGV[2]`), dan tidak ada skrip
--- yang memakai salinannya. Menyertakannya di sini membuat blok bersama menjadi
--- tujuh argumen, sehingga argumen pertama bergeser satu dan argumen terakhir
--- menjadi nil.
---
--- SATUAN `no_ember`. `no_ember` adalah NOMOR ember (`epoch / 600`), bukan detik
--- epoch dan bukan indeks cincin `nomor mod jumlah_ember`. Jendela bergulir
--- adalah `no_ember - (jumlah_ember - 1) ..= no_ember`, yaitu `jumlah_ember`
--- ember dihitung dalam satuan ember. Mencampur satuan di sini pernah membuat
--- jendela menyempit dari 145 ember menjadi 145 detik (review 778f9fd, temuan
--- blocking 1). `batas_jendela` dan `di_jendela` di bawah satu-satunya tempat
--- aturan itu ditulis; skrip tidak boleh mengurangkan sendiri.
+-- JAM. Skrip memakai `redis.call('TIME')` untuk semua keputusan yang
+-- bergantung pada waktu berjalan (skor slot, TAT GCRA), karena semuanya
+-- dibandingkan dengan struktur data Redis yang sama dan Redis hanya punya satu
+-- jam per instans. Asumsinya host disinkronkan NTP (addendum D3).
 
-local ARGV_PREFIKS = 4
+-- Bilangan bulat tanpa awalan nol (`-0` ditolak, `0` diterima).
+local POLA_BULAT = '^%-?%d+$'
 
--- Membaca argumen bersama tanpa validasi tipe. Skrip yang membutuhkannya
--- memvalidasi lebih dulu lewat `periksa`. `geser` = indeks ARGV elemen pertama
--- blok bersama (`kunci_attempts`); tanpa `geser`, blok bersama mulai sesudah
--- prefiks terpanjang.
-local function baca(ARGV, geser)
-  local p = geser or (ARGV_PREFIKS + 1)
-  local a = {}
-  a.kunci_attempts = ARGV[p]
-  a.kunci_antre = ARGV[p + 1]
-  a.kuota_efektif = ARGV[p + 2]
-  a.hash_ember = ARGV[p + 3]
-  a.jumlah_ember = ARGV[p + 4]
-  a.no_ember = ARGV[p + 5]
-  return a
+-- Nama field ember: `b<nomor ember>`.
+local POLA_FIELD_EMBER = '^b(%d+)$'
+
+local MODE = { bergulir = true, kalender = true }
+
+-- Jam Redis dalam mikrodetik, satuan yang dipakai semua skor dan TAT.
+local function mikro()
+  -- `redis.call` mengembalikan SATU tabel, bukan beberapa nilai, jadi hasilnya
+  -- dibaca per indeks.
+  local t = redis.call('TIME')
+  return tonumber(t[1]) * 1000000 + tonumber(t[2])
+end
+
+-- Bilangan bulat dari string, atau nil. `tonumber` tidak dipakai langsung
+-- karena menerima `1.5`, `1e3`, dan spasi; semuanya harus ditolak.
+local function bulat(nilai)
+  if type(nilai) ~= 'string' then
+    return nil
+  end
+  if not string.match(nilai, POLA_BULAT) then
+    return nil
+  end
+  local n = tonumber(nilai)
+  if n == nil or n ~= math.floor(n) then
+    return nil
+  end
+  return n
 end
 
 -- Validasi bersama. Pemanggil Rust bergantung pada himpunan kode galat, bukan
@@ -127,32 +168,13 @@ end
 -- tidak sah berarti bug konfigurasi, bukan kuota habis, jadi dilaporkan
 -- sebagai galat, bukan penolakan.
 --
--- `tonumber` di bawah mengubah field; jangan sampai dipakai untuk validasi,
--- karena hasilnya selalu angka (atau nil). Validasi tipe lewat GSUB + pola.
-
--- Bilangan bulat tanpa awalan nol (`-0` ditolak, `0` diterima).
-local POLA_BULAT = '^%-?%d+$'
-local POLA_BULAT_POSITIF = '^%d+$'
-
-local function bulat(nilai)
-  if type(nilai) ~= 'string' then
-    return nil
-  end
-  local teks = tostring(nilai)
-  if not string.match(teks, POLA_BULAT) then
-    return nil
-  end
-  local n = tonumber(teks)
-  if n == nil or n ~= math.floor(n) then
-    return nil
-  end
-  return n
-end
-
--- Nama field ember: `b<nomor ember>`.
-local POLA_FIELD_EMBER = '^b(%d+)$'
-
+-- `a` diisi pemanggil: `mode`, `kuota_efektif`, `jumlah_ember`, `no_ember`.
+-- Field yang sah ditulis balik sebagai angka.
 local function periksa(a)
+  if MODE[a.mode] == nil then
+    return 'mode_tidak_sah'
+  end
+
   local kuota = bulat(a.kuota_efektif)
   if kuota == nil or kuota <= 0 then
     return 'kuota_efektif_tidak_sah'
@@ -171,16 +193,22 @@ local function periksa(a)
   end
   a.no_ember = nomor
 
-  if type(a.kunci_attempts) ~= 'string' or a.kunci_attempts == '' then
-    return 'kunci_attempts_tidak_sah'
-  end
-  if type(a.kunci_antre) ~= 'string' or a.kunci_antre == '' then
-    return 'kunci_antre_tidak_sah'
-  end
-  if type(a.hash_ember) ~= 'string' or a.hash_ember == '' then
-    return 'hash_ember_tidak_sah'
-  end
   return nil
+end
+
+-- Benar bila setiap kunci yang dikirim ada dan berbentuk string tidak kosong.
+local function kunci_sah(...)
+  local n = select('#', ...)
+  if n == 0 then
+    return false
+  end
+  for i = 1, n do
+    local k = select(i, ...)
+    if type(k) ~= 'string' or k == '' then
+      return false
+    end
+  end
+  return true
 end
 
 -- Batas bawah jendela bergulir dalam satuan ember: `jumlah_ember` ember
@@ -198,75 +226,74 @@ local function di_jendela(a, n)
   return n >= batas_jendela(a) and n <= a.no_ember
 end
 
+-- `terpakai` menurut §5a.1 butir 1b. `kalender`: counter per periode.
+-- `bergulir`: jumlah ember di jendela. Keduanya angka, tidak pernah negatif.
+local function terpakai(kunci_attempts, kunci_ember, a)
+  if a.mode == 'kalender' then
+    return tonumber(redis.call('GET', kunci_attempts) or '0')
+  end
+  local semua = redis.call('HGETALL', kunci_ember)
+  local jumlah = 0
+  for i = 1, #semua, 2 do
+    local n = tonumber(string.match(semua[i], POLA_FIELD_EMBER))
+    if n ~= nil and di_jendela(a, n) then
+      jumlah = jumlah + tonumber(semua[i + 1])
+    end
+  end
+  return jumlah
+end
+
 return {
-  ARGV_PREFIKS = ARGV_PREFIKS,
   POLA_FIELD_EMBER = POLA_FIELD_EMBER,
-  baca = baca,
+  bulat = bulat,
+  mikro = mikro,
   periksa = periksa,
+  kunci_sah = kunci_sah,
   batas_jendela = batas_jendela,
-  di_jendela = di_jendela
+  di_jendela = di_jendela,
+  terpakai = terpakai
 }
 end)()
 
-local MODE_GULIR = 'bergulir'
-local MODE_KALENDER = 'kalender'
-
--- ARGV[1] = client_id           (hanya untuk logging di pemanggil; tidak dipakai di sini)
--- ARGV[2] = run_id
--- ARGV[3] = mode jendela saat ini: 'bergulir' | 'kalender'
--- ARGV[4] = kuota_sync: '1' bila permintaan ini memakai porsi sync, '0' bila async
--- ARGV[5.. ] = argumen bersama `bersama.lua`, mulai dari kunci_attempts
---              (`no_ember` = nomor ember epoch/600, bukan detik epoch)
-if not siap_mod.siap(ARGV[2]) then
+local run_id = ARGV[1]
+if not siap(KEYS[1], run_id) then
   return { 'belum_siap' }
 end
-
-local mode = ARGV[3]
-if mode ~= MODE_GULIR and mode ~= MODE_KALENDER then
-  return { 'mode_tidak_sah' }
+if not bersama.kunci_sah(KEYS[1], KEYS[2], KEYS[3], KEYS[4]) then
+  return { 'kunci_tidak_sah' }
 end
 
-local sync = ARGV[4]
-if sync ~= '0' and sync ~= '1' then
-  return { 'sync_tidak_sah' }
-end
-sync = sync == '1'
-
-local a = bersama.baca(ARGV, 5)
+local a = {
+  mode = ARGV[2],
+  kuota_efektif = ARGV[5],
+  jumlah_ember = ARGV[6],
+  no_ember = ARGV[7]
+}
 local galat = bersama.periksa(a)
 if galat then
   return { galat }
 end
 
--- 1) `terpakai` (§5a.1 butir 1a, KP-07).
-local terpakai
-if mode == MODE_KALENDER then
-  terpakai = tonumber(redis.call('GET', a.kunci_attempts) or '0')
-else
-  terpakai = 0
-  local semua = redis.call('HGETALL', a.hash_ember)
-  for i = 1, #semua, 2 do
-    local n = tonumber(string.match(semua[i], bersama.POLA_FIELD_EMBER))
-    -- Satu tempat menulis aturan jendela: `jumlah_ember` ember terakhir dalam
-    -- satuan ember (potongan/bersama.lua), bukan `jumlah_ember` detik.
-    if n ~= nil and bersama.di_jendela(a, n) then
-      terpakai = terpakai + tonumber(semua[i + 1])
-    end
-  end
+local sync = ARGV[3]
+if sync ~= '0' and sync ~= '1' then
+  return { 'sync_tidak_sah' }
 end
 
--- 2) Kuota habis: `terpakai >= kuota_efektif`, kedua mode (§5a.1 butir 1b).
---    `terpakai` tidak boleh SAMA DENGAN, bukan hanya melebihi.
+local terpakai = bersama.terpakai(KEYS[2], KEYS[3], a)
+local antre = tonumber(redis.call('GET', KEYS[4]) or '0')
+if antre < 0 then
+  antre = 0
+end
+
 if terpakai >= a.kuota_efektif then
-  return { 'kuota_habis', terpakai, a.kuota_efektif }
+  return { 'kuota_habis', terpakai, antre }
+end
+if sync == '0' and terpakai + antre >= a.kuota_efektif then
+  return { 'antrean_penuh', terpakai, antre }
 end
 
--- 3) Kapasitas antre (mode async saja; sync tidak melewati antrean, §4.1).
-if not sync then
-  local antre = tonumber(redis.call('GET', a.kunci_antre) or '0')
-  if antre >= a.kuota_efektif then
-    return { 'antrean_penuh', antre, a.kuota_efektif }
-  end
+if sync == '0' then
+  antre = redis.call('INCR', KEYS[4])
 end
 
-return { 'lolos', terpakai, a.kuota_efektif }
+return { 'lolos', terpakai, antre }

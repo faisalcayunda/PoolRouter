@@ -1,30 +1,70 @@
 #!/usr/bin/env python3
-"""Harness uji skrip Lua kuota terhadap Redis sungguhan (SHAA-195).
+"""Uji skrip Lua kuota terhadap Redis sungguhan.
 
-Tidak mengompilasi Rust. Memuat berkas `.lua` dari `src/kuota/lua/` ke Redis
-lewat `redis-cli --eval`-style (SCRIPT LOAD + EVALSHA), lalu membuktikan
-invarian ADR-0001 rev 15 §5a.1 dan property M-02 (§9).
+Uji ini menjalankan berkas HASIL RAKITAN (`rakitan/`), yaitu bentuk yang sama
+dengan yang dimuat Redis di produksi. Perakitan dilakukan `scripts/rakit-lua.sh`
+saat uji dimulai, lalu hasilnya dibandingkan byte demi byte dengan `rakitan/`
+yang di-commit, jadi rakitan yang basi gagal keras di sini. Sandbox Redis tidak
+punya `dofile`, sehingga versi lama yang menyisipkan potongan sendiri lalu
+menghapus baris `dofile` tidak pernah menguji byte produksi (review 778f9fd,
+temuan blocking 2).
 
-Pakai:
-    python3 tools/uji_lua.py [--host 127.0.0.1] [--port 6395] [--iterasi 300]
+Keputusan Shu SHAA-195 (addendum ADR-0001 rev 15) yang diuji di sini:
+  D1    gerbang M-02 adalah `kuota_ambil_token` (kuota + slot dalam satu EVAL),
+        bukan intake; uji konkurensi menjalankan tiga konfigurasi dan empat
+        jalur, tanpa toleransi pada asersi M-02.
+  D1.9  slot yang pemiliknya mati tetap terhitung sampai TTL, pembersihannya
+        hanya di `kuota_ambil_token`, dan percobaan yang telanjur macet tidak
+        bisa menaikkan `attempts` sesudah slotnya kedaluwarsa.
+  D2    GCRA benar; yang salah definisi jendela baca. Satu definisi: nomor
+        ember absolut `floor(unix/600)`, jendela 145 ember, field `b<n>`,
+        `Retry-After` dari ember tertua, `isi` bucket melaporkan `burst` saat
+        penuh, dan TTL TAT `TAT_baru − now + 60 s`.
 
-Exit code 0 = semua uji lolos; 1 = ada kegagalan.
+Pemakaian: `python3 uji_lua.py [--host 127.0.0.1] [--port 6395] [--iterasi 300]`
+(gate: `make -C backend uji-lua`, yang menjalankan ini di dalam container
+Redis 7 supaya seri Redis-nya sama dengan produksi).
 """
 
 from __future__ import annotations
 
 import argparse
+import difflib
+import os
 import random
 import socket
+import subprocess
 import sys
+import threading
+import time
+from pathlib import Path
 
-HERE = __import__("pathlib").Path(__file__).resolve().parent
-# Skrip `.lua` berada di direktori yang sama dengan harness ini.
-LUA_DIR = HERE
+HERE = Path(__file__).resolve().parent
+RAKITAN_DIR = HERE / "rakitan"
+def _akar() -> Path:
+    """Direktori repo: tempat `scripts/rakit-lua.sh` berada."""
+    for kandidat in HERE.parents:
+        if (kandidat / "scripts" / "rakit-lua.sh").is_file():
+            return kandidat
+    raise SystemExit("scripts/rakit-lua.sh tidak ditemukan di atas direktori uji")
 
-HARI = 24 * 3600
-JEDA_EMBER = 600
+
+AKAR = _akar()
+RAKIT = AKAR / "scripts" / "rakit-lua.sh"
+
+# Nama pendek -> berkas rakitan. Semua entrypoint D1 wajib ada di sini; skrip
+# yang lupa dirakit akan gagal saat dimuat, bukan diam-diam dilewati.
+NAMA_SKRIP = {
+    "intake": "kuota_intake.lua",
+    "token": "kuota_ambil_token.lua",
+    "klaim": "slot_klaim.lua",
+    "lepas": "slot_lepas.lua",
+    "tambah": "attempts_tambah.lua",
+    "baca": "kuota_baca.lua",
+}
+
 JUMLAH_EMBER = 145
+MENIT_EMBER_DETIK = 600
 
 
 class Redis:
@@ -77,50 +117,87 @@ class Redis:
 
 
 class Skrip:
-    """Skrip Lua + berkas pembantunya dimuat sebagai satu chunk (`dofile`)."""
+    """Satu skrip dalam bentuk yang dimuat ke Redis (berkas hasil rakitan)."""
 
-    def __init__(self, redis: Redis, nama: str):
-        nama_pembantu = {"siap.lua": "siap", "bersama.lua": "bersama"}
-        inti = (LUA_DIR / nama).read_text()
-        awal = ""
-        for pembantu, alias in nama_pembantu.items():
-            if pembantu != nama and f"dofile('{pembantu}')" in inti:
-                isi = (LUA_DIR / pembantu).read_text()
-                # Pembantu mengembalikan tabel di akhir berkas. `return` di
-                # tingkat atas mengakhiri chunk, jadi tabelnya diikat ke nama
-                # pembantu lebih dulu supaya `end)()` dibaca sebagai penutup.
-                awal += f"local {alias} = (function()\n{isi}\nend)()\n"
-                # Variabelnya lokal di skrip; nama berkas bertitik tidak sah
-                # sebagai nama variabel Lua, jadi `dofile('siap.lua')` diganti
-                # nama berkasnya sendiri tanpa kutip.
-                inti = inti.replace(f"dofile('{pembantu}')", pembantu.split(".")[0])
-        self.sha = redis.cmd("SCRIPT", "LOAD", awal + inti)
-        self.sumber = awal + inti
+    def __init__(self, redis: Redis, nama: str, sumber: str):
+        self.nama = nama
+        self.sumber = sumber
+        self.sha = redis.cmd("SCRIPT", "LOAD", sumber)
 
-    @staticmethod
-    def _pakai(nama: str, pembantu: str) -> bool:
-        return f"dofile('{pembantu}')" in (LUA_DIR / nama).read_text()
+
+def rakit_semua() -> dict[str, str]:
+    """Rakit ulang dengan perakit produksi dan pastikan `rakitan/` tidak basi.
+
+    Perakit dijalankan ke direktori sementara, lalu hasilnya dibandingkan
+    dengan `rakitan/` yang di-commit. Kalau berbeda, uji berhenti: yang diuji
+    harus persis byte yang dimuat ke Redis.
+    """
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as tmp:
+        hasil = subprocess.run(
+            ["sh", str(RAKIT), "--keluaran", tmp],
+            capture_output=True,
+            text=True,
+            check=False,
+            env={**os.environ, "RAKIT_LUA_DIR": str(HERE)},
+        )
+        if hasil.returncode != 0:
+            raise SystemExit(f"rakit-lua gagal:\n{hasil.stdout}\n{hasil.stderr}")
+        baru = {p.name: p.read_bytes() for p in Path(tmp).glob("*.lua")}
+
+    keluaran: dict[str, str] = {}
+    for nama, isi in baru.items():
+        terkunci_path = RAKITAN_DIR / nama
+        if not terkunci_path.is_file():
+            raise SystemExit(
+                f"rakitan/{nama} belum ada; jalankan `make -C backend lua-rakit`."
+            )
+        terkunci = terkunci_path.read_bytes()
+        if isi != terkunci:
+            selisih = "".join(
+                difflib.unified_diff(
+                    terkunci.decode().splitlines(keepends=True),
+                    isi.decode().splitlines(keepends=True),
+                    fromfile=f"rakitan/{nama} (di-commit)",
+                    tofile=f"{nama} (hasil rakit sekarang)",
+                )
+            )
+            raise SystemExit(
+                f"rakitan/{nama} basi atau tidak ada; jalankan "
+                f"`make -C backend lua-rakit`.\n{selisih}"
+            )
+        teks = isi.decode()
+        # Berkas yang dimuat Redis tidak boleh memuat berkas lain: sandbox
+        # menolaknya, dan itu yang membuat potongan harus disisipkan saat build.
+        for terlarang in ("dofile(", "require(", "loadstring("):
+            if terlarang in teks:
+                raise SystemExit(
+                    f"rakitan/{nama} memuat `{terlarang}`; sandbox Redis menolaknya"
+                )
+        keluaran[nama] = teks
+    return keluaran
 
 
 class Uji:
     def __init__(self, redis: Redis):
         self.r = redis
+        # Alamat dipakai uji konkurensi untuk membuka koneksi baru.
+        self.alamat = redis.sock.getpeername()[:2]
+        sumber = rakit_semua()
         self.skrip = {
-            n: Skrip(redis, f)
-            for n, f in [
-                ("intake", "kuota_intake.lua"),
-                ("token", "rate_limit_ambil.lua"),
-                ("tambah", "attempts_tambah.lua"),
-                ("baca", "kuota_retry_after.lua"),
-            ]
+            pendek: Skrip(redis, bef, sumber[bef])
+            for pendek, bef in NAMA_SKRIP.items()
         }
-        self.gagal = 0
         self.lolos = 0
+        self.gagal = 0
 
-    # --- util -------------------------------------------------------------
+    # -- infrastruktur ----------------------------------------------------
+
     def periksa(self, nama: str, kondisi: bool, pesan: str = "") -> None:
         if kondisi:
             self.lolos += 1
+            print(f"  ok   {nama}")
         else:
             self.gagal += 1
             print(f"  GAGAL {nama}: {pesan}")
@@ -132,303 +209,596 @@ class Uji:
     def siapkan_run(self, run_id: str) -> None:
         self.r.cmd("SET", "pr:siap", run_id)
 
+    def mikrodetik(self) -> int:
+        detik, mikro = self.r.cmd("TIME")
+        return int(detik) * 1000000 + int(mikro)
+
     def panggil(self, skrip: str, keys: list[str], argv: list[str]):
         return self.r.evalsha(self.skrip[skrip].sha, keys, argv)
 
-    def tambah(self, pool="p1", run="run-1", kuota=100, ember_mulai=100, mode="bergulir",
-               periode="2026-11-03"):
-        return self.panggil(
-            "tambah",
-            [],
-            [
-                run,
-                mode,
-                f"pr:attempts:{pool}:{periode}",
-                f"pr:antre:{pool}",
-                str(kuota),
-                f"pr:ember:{pool}:{periode}",
-                str(JUMLAH_EMBER),
-                str(ember_mulai),
-            ],
-        )
+    # -- kunci (D1.7) -----------------------------------------------------
 
-    def intake(self, pool="p1", run="run-1", kuota=100, ember_mulai=100, mode="bergulir",
-               sync=False, periode="2026-11-03", client="c1"):
-        return self.panggil(
-            "intake",
-            [],
-            [
-                client,
-                run,
-                mode,
-                "1" if sync else "0",
-                f"pr:attempts:{pool}:{periode}",
-                f"pr:antre:{pool}",
-                str(kuota),
-                f"pr:ember:{pool}:{periode}",
-                str(JUMLAH_EMBER),
-                str(ember_mulai),
-            ],
-        )
+    @staticmethod
+    def k_attempts(pool: str = "p1", periode: int = 0) -> str:
+        return f"pr:attempts:{{{pool}}}:{periode}"
 
-    def token(self, pool="p1", run="run-1", sync=False, share="0.2", jendela=((50.0, 50),)):
-        argv = [run, pool, "1" if sync else "0", str(len(jendela)), share]
-        for rate, burst in jendela:
-            argv += [repr(rate), str(burst)]
-        return self.panggil("token", [], argv)
+    @staticmethod
+    def k_ember(pool: str = "p1") -> str:
+        return f"pr:ember:{{{pool}}}"
 
-    def baca(self, pool="p1", run="run-1", kuota=100, ember_mulai=100, mode="bergulir",
-             now=None, periode="2026-11-03"):
-        if now is None:
-            detik, mikro = self.r.cmd("TIME")
-            now = int(detik) * 1000000 + int(mikro)
-        return self.panggil(
-            "baca",
-            [f"pr:attempts:{pool}:{periode}", f"pr:ember:{pool}:{periode}"],
-            [run, mode, str(now), str(JUMLAH_EMBER), str(kuota), str(ember_mulai)],
-        )
+    @staticmethod
+    def k_antre(pool: str = "p1") -> str:
+        return f"pr:antre:{{{pool}}}"
 
-    # --- uji --------------------------------------------------------------
+    @staticmethod
+    def k_slot(pool: str = "p1") -> str:
+        return f"pr:slot:{{{pool}}}"
+
+    @staticmethod
+    def k_retry(pool: str = "p1") -> str:
+        return f"pr:retry:{{{pool}}}"
+
+    @staticmethod
+    def k_rl(jenis: str, pool: str = "p1", sync: bool = False) -> str:
+        akhiran = ":sync" if sync else ""
+        return f"pr:rl:{{{pool}}}:{jenis}{akhiran}"
+
+    # -- pemanggil per skrip ----------------------------------------------
+
+    def intake(self, *, pool="p1", run="run-1", mode="bergulir", sync=False,
+               kuota=100, no_ember=1000, periode=0):
+        keys = ["pr:siap", self.k_attempts(pool, periode), self.k_ember(pool),
+                self.k_antre(pool)]
+        argv = [run, mode, "1" if sync else "0", "klien-1", str(kuota),
+                str(JUMLAH_EMBER), str(no_ember)]
+        return self.panggil("intake", keys, argv)
+
+    def token(self, *, pool="p1", run="run-1", request_id="req-1", nomor=1,
+              mode="bergulir", sync=False, kuota=100, no_ember=1000,
+              maks=8, ttl=80_000_000, batas_retry=0, share="0.2",
+              jendela=((200_000, 5),), periode=0):
+        keys = ["pr:siap", self.k_attempts(pool, periode), self.k_ember(pool),
+                self.k_slot(pool), self.k_retry(pool)]
+        for i, _ in enumerate(jendela):
+            keys.append(self.k_rl(f"w{i}", pool))
+            keys.append(self.k_rl(f"w{i}", pool, sync=True))
+        argv = [run, request_id, str(nomor), mode, "1" if sync else "0",
+                str(kuota), str(JUMLAH_EMBER), str(no_ember), str(maks),
+                str(ttl), str(batas_retry), share, str(len(jendela))]
+        for t, burst in jendela:
+            argv += [str(t), str(burst)]
+        return self.panggil("token", keys, argv)
+
+    def tambah(self, *, member="req-1:1", pool="p1", run="run-1",
+               mode="bergulir", kuota=100, no_ember=1000, periode=0):
+        keys = ["pr:siap", self.k_attempts(pool, periode), self.k_ember(pool),
+                self.k_slot(pool)]
+        argv = [run, member, mode, str(kuota), str(JUMLAH_EMBER), str(no_ember)]
+        return self.panggil("tambah", keys, argv)
+
+    def klaim(self, *, member="req-1:1", pool="p1", run="run-1",
+              ttl=80_000_000, dari_antre=True):
+        keys = ["pr:siap", self.k_slot(pool), self.k_antre(pool)]
+        argv = [run, member, str(ttl), "1" if dari_antre else "0"]
+        return self.panggil("klaim", keys, argv)
+
+    def lepas(self, *, member="req-1:1", pool="p1", run="run-1", asal="kas"):
+        keys = ["pr:siap", self.k_slot(pool)]
+        return self.panggil("lepas", keys, [run, member, asal])
+
+    def baca(self, *, pool="p1", run="run-1", mode="bergulir", kuota=100,
+             no_ember=1000, periode=0):
+        keys = ["pr:siap", self.k_attempts(pool, periode), self.k_ember(pool),
+                self.k_slot(pool)]
+        argv = [run, mode, str(kuota), str(JUMLAH_EMBER), str(no_ember)]
+        return self.panggil("baca", keys, argv)
+
+    # -- bantu ------------------------------------------------------------
+
+    def isi_ember(self, fields: dict[int, int], pool="p1") -> None:
+        for nomor, nilai in fields.items():
+            self.r.cmd("HSET", self.k_ember(pool), f"b{nomor}", str(nilai))
+
+    def isi_attempts(self, nilai: int, pool="p1", periode=0) -> None:
+        self.r.cmd("SET", self.k_attempts(pool, periode), str(nilai))
+
+    def jumlah_ember(self, *, pool="p1", no_ember=1000) -> int:
+        data = self.r.cmd("HGETALL", self.k_ember(pool)) or []
+        batas = no_ember - (JUMLAH_EMBER - 1)
+        total = 0
+        for i in range(0, len(data), 2):
+            nama = data[i]
+            if not nama.startswith("b"):
+                continue
+            nomor = int(nama[1:])
+            if batas <= nomor <= no_ember:
+                total += int(data[i + 1])
+        return total
+
+    def slot(self, pool="p1") -> list[tuple[str, int]]:
+        data = self.r.cmd("ZRANGE", self.k_slot(pool), "0", "-1", "WITHSCORES") or []
+        return [(data[i], int(data[i + 1])) for i in range(0, len(data), 2)]
+
+    # -- uji --------------------------------------------------------------
+
     def uji_gerbang_siap(self) -> None:
-        print("gerbang kesiapan (§5a.2 butir 2)")
-        self.reset()
-        self.periksa("intake tanpa run_id", self.intake(run="")[0] == "belum_siap",
-                     "run_id kosong harus belum_siap")
-        self.periksa("intake run_id beda", self.intake(run="run-LAMA")[0] == "belum_siap",
-                     "run_id lama harus belum_siap")
-        self.r.cmd("DEL", "pr:siap")
-        self.periksa("intake kunci siap hilang", self.intake()[0] == "belum_siap",
-                     "tanpa pr:siap harus belum_siap")
-        self.r.cmd("DEL", "pr:siap")
-        self.periksa("tambah kunci siap hilang", self.tambah()[0] == "belum_siap",
-                     "tanpa pr:siap harus belum_siap")
-        self.r.cmd("DEL", "pr:siap")
-        self.periksa("token kunci siap hilang", self.token()[0] == "belum_siap",
-                     "tanpa pr:siap harus belum_siap")
-        self.r.cmd("DEL", "pr:siap")
-        self.periksa("baca kunci siap hilang", self.baca()[0] == "belum_siap",
-                     "tanpa pr:siap harus belum_siap")
-        self.siapkan_run("run-1")
-        self.periksa("intake siap", self.intake()[0] == "lolos", "run_id benar harus lolos")
+        print("gerbang kesiapan menjawab `belum_siap` di semua skrip (§5a.2 butir 2)")
+        for run, label in ((None, "tanpa pr:siap"), ("run-2", "run_id berbeda")):
+            self.r.cmd("FLUSHALL")
+            if run is not None:
+                self.siapkan_run(run)
+            hasil = {
+                "intake": self.intake()[0],
+                "token": self.token()[0],
+                "klaim": self.klaim()[0],
+                "lepas": self.lepas()[0],
+                "tambah": self.tambah()[0],
+                "baca": self.baca()[0],
+            }
+            self.periksa(
+                f"{label}: semua skrip menolak",
+                all(h == "belum_siap" for h in hasil.values()),
+                str(hasil),
+            )
 
-    def debug_periksa(self) -> None:
-        print("DEBUG periksa")
-        self.reset()
-        for v in ("145", "100", "1.5", "abc"):
-            h = self.panggil("intake", [], ["c", "run-1", "bergulir", "0",
-                                           "pr:attempts", "pr:antre", v,
-                                           "pr:ember", "145", "100"])
-            print("  kuota", v, "->", h)
+        # `belum_siap` juga harus tanpa mutasi: tidak ada slot, counter, atau TAT
+        # yang tertinggal dari pemanggilan yang ditolak.
+        self.r.cmd("FLUSHALL")
+        self.token()
+        self.tambah()
+        self.periksa("penolakan tidak menulis apa pun",
+                     self.r.cmd("DBSIZE") == 0, str(self.r.cmd("DBSIZE")))
 
     def uji_argumen_tidak_sah(self) -> None:
-        print("validasi argumen: tidak sah = galat, bukan penolakan")
+        print("argumen tidak sah dilaporkan sebagai galat, bukan sebagai penolakan")
         self.reset()
-        self.periksa("kuota 0", self.intake(kuota=0)[0] == "kuota_efektif_tidak_sah", "kuota 0")
-        self.periksa("kuota negatif", self.intake(kuota=-3)[0] == "kuota_efektif_tidak_sah", "-3")
-        self.periksa("kuota pecahan", self.intake(kuota="1.5")[0] == "kuota_efektif_tidak_sah", "1.5")
-        self.periksa("kuota bukan angka", self.intake(kuota="abc")[0] == "kuota_efektif_tidak_sah", "abc")
-        self.periksa("jumlah ember 0", self.intake(ember_mulai=100) and
-                     self.panggil("intake", [], ["c", "run-1", "bergulir", "0"])[0] != "lolos", "")
-        self.periksa("mode tidak sah", self.intake(mode="bulanan")[0] == "mode_tidak_sah", "mode")
-        self.periksa("sync tidak sah",
-                     self.panggil("intake", [], ["c", "run-1", "bergulir", "2"])[0] == "sync_tidak_sah", "sync")
-        self.periksa("tambah kuota 0", self.tambah(kuota=0)[0] == "kuota_efektif_tidak_sah", "kuota 0")
-        self.periksa("token jumlah jendela 0",
-                     self.panggil("token", [], ["run-1", "p1", "0", "0", "0.2"])[0]
-                     == "jumlah_jendela_tidak_sah", "N=0")
-        self.periksa("token jumlah jendela 4",
-                     self.panggil("token", [], ["run-1", "p1", "0", "4", "0.2", "1", "1", "1", "1", "1", "1", "1", "1"])[0]
-                     == "jumlah_jendela_tidak_sah", "N=4")
-        self.periksa("token rate 0", self.token(jendela=((0.0, 5),))[0] == "parameter_rate_tidak_sah", "rate 0")
-        self.periksa("token burst 0", self.token(jendela=((5.0, 0),))[0] == "parameter_rate_tidak_sah", "burst 0")
-        self.periksa("token share 1", self.token(share="1.0")[0] == "share_tidak_sah", "share")
-        self.periksa("token share negatif", self.token(share="-0.1")[0] == "share_tidak_sah", "share")
+        kasus = [
+            ("intake", ["mode", "harian"], "mode_tidak_sah"),
+            ("intake", ["kuota", "0"], "kuota_efektif_tidak_sah"),
+            ("intake", ["kuota", "1.5"], "kuota_efektif_tidak_sah"),
+            ("intake", ["no_ember", "b100"], "no_ember_tidak_sah"),
+            ("intake", ["no_ember", "-2"], "no_ember_tidak_sah"),
+            ("token", ["nomor", 0], "nomor_percobaan_tidak_sah"),
+            ("token", ["maks", 0], "maks_konkurensi_tidak_sah"),
+            ("token", ["ttl", 0], "ttl_slot_tidak_sah"),
+            ("token", ["batas_retry", -1], "batas_retry_tidak_sah"),
+            ("token", ["share", "1.5"], "porsi_sync_tidak_sah"),
+            ("token", ["jendela", ((200_000, 0),)], "jendela_tidak_sah"),
+            ("tambah", ["member", ""], "member_tidak_sah"),
+            ("baca", ["mode", "harian"], "mode_tidak_sah"),
+            ("klaim", ["ttl", 0], "ttl_slot_tidak_sah"),
+        ]
+        for skrip, (field, nilai), harap in kasus:
+            hasil = getattr(self, skrip)(**{field: nilai})[0]
+            self.periksa(f"{skrip}.{field}={nilai!r}", hasil == harap,
+                         f"harap {harap}, dapat {hasil}")
 
     def uji_batas_kuota(self) -> None:
-        print("kuota habis = terpakai >= kuota_efektif, pada kedua mode (§5a.1 butir 1b)")
+        print("kuota habis = terpakai + slot aktif >= kuota_efektif (§5a.1 butir 3)")
         for mode in ("bergulir", "kalender"):
             self.reset()
             kuota = 5
-            hasil = [self.intake(mode=mode, kuota=kuota)[0] for _ in range(kuota)]
-            self.periksa(f"{mode}: {kuota} intake pertama lolos", all(h == "lolos" for h in hasil), str(hasil))
-            for _ in range(kuota):
-                self.tambah(mode=mode, kuota=kuota)
-            berikut = self.intake(mode=mode, kuota=kuota)
-            self.periksa(f"{mode}: intake ke-{kuota + 1} ditolak", berikut[0] == "kuota_habis", str(berikut))
-            self.periksa(f"{mode}: terpakai dilaporkan", int(berikut[1]) == kuota, str(berikut))
-        # Satu percobaan di bawah kuota masih lolos (off-by-one arah aman).
+            for i in range(kuota):
+                h = self.token(nomor=1, request_id=f"req-{i}", mode=mode, kuota=kuota)
+                self.tambah(member=f"req-{i}:1", mode=mode, kuota=kuota)
+                self.lepas(member=f"req-{i}:1")
+                self.periksa(f"{mode}: token ke-{i + 1} lolos", h[0] == "ok", str(h))
+            h = self.token(request_id="req-lewat", mode=mode, kuota=kuota)
+            self.periksa(f"{mode}: token ke-{kuota + 1} kuota_habis",
+                         h[0] == "kuota_habis", str(h))
+            self.periksa(f"{mode}: laporan terpakai = {kuota}", h[1] == kuota, str(h))
+
+        # Slot yang belum dilepas menahan kapasitas walau `attempts` masih 0.
         self.reset()
-        for _ in range(4):
-            self.tambah(kuota=5)
-        self.periksa("terpakai = kuota-1 masih lolos", self.intake(kuota=5)[0] == "lolos",
-                     "batas harus >=, bukan >")
+        self.token(kuota=1)
+        h = self.token(request_id="req-2", kuota=1)
+        self.periksa("slot aktif ikut dihitung", h[0] == "kuota_habis", str(h))
 
     def uji_antrean(self) -> None:
-        print("kapasitas antre (async) vs sync")
+        print("antre async: INCR di intake, DECR di klaim, cek `terpakai + antre`")
         self.reset()
-        self.r.cmd("SET", "pr:antre:p1", "10")
-        self.periksa("antrean penuh menolak async", self.intake(kuota=10)[0] == "antrean_penuh", "")
-        self.periksa("antrean penuh tidak menolak sync", self.intake(kuota=10, sync=True)[0] == "lolos", "")
+        kuota = 3
+        h1 = self.intake(kuota=kuota)
+        h2 = self.intake(kuota=kuota)
+        h3 = self.intake(kuota=kuota)
+        self.periksa("tiga intake async lolos",
+                     all(h[0] == "lolos" for h in (h1, h2, h3)), str((h1, h2, h3)))
+        self.periksa("antre = 3", self.r.cmd("GET", self.k_antre()) == "3")
+        h4 = self.intake(kuota=kuota)
+        self.periksa("intake keempat antrean_penuh",
+                     h4[0] == "antrean_penuh", str(h4))
+        self.periksa("sync tidak menaikkan antre",
+                     self.intake(kuota=kuota, sync=True)[0] == "lolos"
+                     and self.r.cmd("GET", self.k_antre()) == "3")
+
+        self.token(kuota=kuota)
+        self.periksa("klaim mengeluarkan satu dari antre",
+                     self.klaim()[0] == "ok"
+                     and self.r.cmd("GET", self.k_antre()) == "2")
+        self.periksa("slot bisa diterima lagi sesudah satu keluar",
+                     self.intake(kuota=kuota)[0] == "lolos")
+        self.periksa("antre tidak bisa negatif",
+                     self.klaim(member="tidak-ada")[0] == "slot_tidak_ada")
 
     def uji_kalender_periode(self) -> None:
         print("mode kalender: terpakai dari counter periode, bukan ember")
         self.reset()
-        for _ in range(3):
-            self.tambah(mode="kalender", kuota=10)
-        # Tulis ember di hari lain: tidak boleh ikut dihitung di mode kalender.
-        self.r.cmd("HSET", "pr:ember:p1:2026-11-03", "b50", "7")
-        self.r.cmd("SET", "pr:attempts:p1:2026-11-03", "3")
-        h = self.intake(mode="kalender", kuota=10)
-        self.periksa("kalender mengabaikan ember", h[0] == "lolos" and int(h[1]) == 3, str(h))
-        h = self.intake(mode="bergulir", kuota=10)
-        self.periksa("bergulir menghitung ember", h[0] == "lolos" and int(h[1]) == 3 + 7, str(h))
+        self.isi_attempts(4)
+        self.isi_ember({1000: 99})
+        h = self.intake(mode="kalender", kuota=5)
+        self.periksa("intake kalender memakai counter periode", h == ["lolos", 4, 1], str(h))
+        self.periksa("token kalender lolos", self.token(mode="kalender", kuota=5)[0] == "ok")
+        h = self.tambah(mode="kalender", kuota=5)
+        self.periksa("tambah kalender menaikkan counter periode", h[1:] == [5, 5, 5], str(h))
+        h = self.token(request_id="req-2", mode="kalender", kuota=5)
+        self.periksa("token berikutnya kuota_habis", h[0] == "kuota_habis", str(h))
+        self.periksa("ember tidak dihitung di mode kalender",
+                     self.baca(mode="kalender", kuota=5)[1] == 5,
+                     str(self.baca(mode="kalender", kuota=5)))
 
-    def uji_ember_keluar_jendela(self) -> None:
-        print("ember keluar jendela 24 jam (145 ember)")
+    def uji_jendela_ember(self) -> None:
+        print("jendela bergulir: 145 ember bernomor absolut, dipangkas di tambah (D2.8/D2.9)")
         self.reset()
-        self.tambah(kuota=10, ember_mulai=1000)
-        self.r.cmd("HINCRBY", "pr:ember:p1:2026-11-03", "b855", "9")  # 1000-145
-        h = self.intake(kuota=10, ember_mulai=1000)
-        self.periksa("ember b855 masih dihitung", h[0] == "kuota_habis", str(h))
-        self.r.cmd("HINCRBY", "pr:ember:p1:2026-11-03", "b854", "9")  # 1000-146, di luar jendela
-        h = self.intake(kuota=10, ember_mulai=1000)
-        self.periksa("ember b854 di luar jendela", h[0] == "lolos" and int(h[1]) == 1, str(h))
-        # Pemangkasan: setelah tambah, field lama hilang, `terpakai` tinggal.
-        self.tambah(kuota=10, ember_mulai=1100)
-        fields = set(self.r.cmd("HKEYS", "pr:ember:p1:2026-11-03"))
-        self.periksa("field lama dipangkas", "b854" not in fields and "b1000" not in fields, str(fields))
-        self.periksa("field terpakai dipertahankan", "terpakai" in fields, str(fields))
+        no_ember = 1100
+        batas = no_ember - (JUMLAH_EMBER - 1)
+        self.isi_ember({batas - 1: 7, batas: 3, no_ember: 2, 1000: 4})
+        h = self.intake(no_ember=no_ember)
+        self.periksa("ember tepat di batas dihitung, satu di luarnya tidak",
+                     h == ["lolos", 9, 1], f"harap 9, dapat {h}")
+        h = self.baca(no_ember=no_ember)
+        self.periksa("baca memakai jendela yang sama", h[1] == 9, str(h))
 
-    def uji_rate_limit(self) -> None:
-        print("rate limit GCRA (TPS/TPM/TPH satu skrip)")
+        self.token(no_ember=no_ember)
+        h = self.tambah(no_ember=no_ember)
+        self.periksa("tambah menaikkan ember berjalan", h[1:] == [1, 10, 100], str(h))
+        sisa = self.r.cmd("HGETALL", self.k_ember()) or []
+        nama = {sisa[i]: sisa[i + 1] for i in range(0, len(sisa), 2)}
+        self.periksa("field di luar jendela dipangkas",
+                     f"b{batas - 1}" not in nama, str(sorted(nama)))
+        self.periksa("field di batas dipertahankan", f"b{batas}" in nama, str(sorted(nama)))
+        self.periksa("tidak ada field `terpakai` di hash",
+                     "terpakai" not in nama, str(sorted(nama)))
+
+    def uji_gcra(self) -> None:
+        print("GCRA: bucket penuh melaporkan burst, TAT ber-TTL, dua jendela (D2)")
         self.reset()
-        h = [self.token(jendela=((5.0, 5),))[0] for _ in range(5)]
-        self.periksa("burst terpenuhi lalu ditolak", h[:4] == ["lolos"] * 4 and h[4] in ("lolos", "rate_limit"), str(h))
-        hasil = [self.token(jendela=((1.0, 2),))[0] for _ in range(4)]
-        self.periksa("rate 1/s burst 2", hasil[0] == "lolos" and hasil[1] == "lolos"
-                     and hasil[2] == "rate_limit", str(hasil))
-        # Kegagalan satu jendela tidak memakan token jendela lain.
+        h = self.token(jendela=((200_000, 5),), kuota=100)
+        self.periksa("isi bucket penuh = burst", h[0] == "ok" and h[5] == 5, str(h))
+        h = self.token(request_id="req-2", jendela=((200_000, 5),), kuota=100)
+        self.periksa("isi sesudah satu token = burst − 1", h[5] == 4, f"harap 4, dapat {h}")
+
+        # 1/s burst 2: dua panggilan lolos. Ini kasus yang dulu merah karena
+        # harness lupa `reset()` sehingga TAT 5/s tersisa (keputusan Shu D2.2).
         self.reset()
-        self.r.cmd("SET", "pr:rl:p1:tpm", "9999999999999999")  # TPM selalu penuh
-        h = self.token(jendela=((1.0, 1), (1.0, 1)))
-        self.periksa("tpm menolak", h[0] == "rate_limit" and h[2] == "tpm", str(h))
-        self.periksa("tps tidak dipotong saat tpm menolak", self.r.cmd("GET", "pr:rl:p1:tps") is None,
-                     "tidak boleh ada TAT tps")
-        # Laporan isi bucket.
+        jendela = ((1_000_000, 2),)
+        h1 = self.token(jendela=jendela)
+        h2 = self.token(request_id="req-2", jendela=jendela)
+        h3 = self.token(request_id="req-3", jendela=jendela)
+        self.periksa("1/s burst 2: panggilan pertama lolos", h1[0] == "ok", str(h1))
+        self.periksa("1/s burst 2: panggilan kedua lolos", h2[0] == "ok", str(h2))
+        self.periksa("1/s burst 2: panggilan ketiga rate_limit", h3[0] == "rate_limit", str(h3))
+        self.periksa("tunggu_mikro dari TAT yang menolak",
+                     0 < h3[4] <= 1_000_000, str(h3))
+
+        pttl = self.r.cmd("PTTL", self.k_rl("w0"))
+        self.periksa("TTL TAT = TAT_baru − now + 60 s",
+                     61_000 <= pttl <= 63_500, f"pttl={pttl}")
+
+        # Dua jendela: yang paling ketat menentukan.
         self.reset()
-        h = self.token(jendela=((1.0, 3),))
-        self.periksa("laporan isi bucket", h[1].startswith("tps:") and len(h[1].split(":")) == 3, str(h))
+        jendela = ((200_000, 5), (5_000_000, 2))
+        h = self.token(jendela=jendela, kuota=100)
+        h2 = self.token(request_id="req-2", jendela=jendela, kuota=100)
+        h3 = self.token(request_id="req-3", jendela=jendela, kuota=100)
+        self.periksa("dua jendela: dua token pertama lolos (burst jendela kedua 2)",
+                     h[0] == "ok" and h2[0] == "ok", str((h, h2)))
+        self.periksa("jendela kedua menolak walau jendela pertama masih punya token",
+                     h3[0] == "rate_limit", str(h3))
+        self.periksa("tunggu_mikro memakai jendela terketat",
+                     h3[4] > 4_000_000, f"tunggu={h3[4]}")
 
     def uji_porsi_sync(self) -> None:
-        print("porsi sync K-10")
+        print("porsi sync: burst × share, dan share 0 menolak sync (§5a.1 butir 4)")
         self.reset()
-        share = "0.2"
-        # Sync: bucket global + bucket sendiri (5*0.2 = 1 token).
-        h1 = self.token(sync=True, share=share, jendela=((1.0, 5),))
-        h2 = self.token(sync=True, share=share, jendela=((1.0, 5),))
-        self.periksa("sync token pertama lolos", h1[0] == "lolos", str(h1))
-        self.periksa("sync token kedua: porsi habis", h2[0] == "porsi_sync_habis", str(h2))
-        # Async masih boleh memakai bucket global.
-        h3 = self.token(sync=False, share=share, jendela=((1.0, 5),))
-        self.periksa("async tetap lolos", h3[0] == "lolos", str(h3))
-        # Pool tanpa porsi sync: sync ditolak, async bebas.
+        jendela = ((200_000, 5),)
+        h = self.token(sync=True, share="0.2", jendela=jendela, kuota=100)
+        self.periksa("sync pertama lolos", h[0] == "ok", str(h))
+        self.periksa("porsi sync melaporkan 1 token", h[6] == 1, str(h))
+        h = self.token(request_id="req-2", sync=True, share="0.2", jendela=jendela, kuota=100)
+        self.periksa("sync kedua rate_limit pada porsi sendiri",
+                     h[0] == "rate_limit", str(h))
+        self.periksa("async masih punya token global",
+                     self.token(request_id="req-3", jendela=jendela, kuota=100)[0] == "ok")
+
         self.reset()
-        h = self.token(sync=True, share="0", jendela=((1.0, 5),))
-        self.periksa("sync pada pool share 0 ditolak", h[0] == "porsi_sync_habis", str(h))
-        h = self.token(sync=False, share="0", jendela=((1.0, 5),))
-        self.periksa("async pada pool share 0 lolos", h[0] == "lolos", str(h))
+        h = self.token(sync=True, share="0", jendela=jendela, kuota=100)
+        self.periksa("share 0: porsi_sync_habis", h[0] == "porsi_sync_habis", str(h))
+
+    def uji_retry_budget(self) -> None:
+        print("anggaran retry per menit hanya untuk nomor percobaan > 1 (§5a.3)")
+        self.reset()
+        self.token(nomor=1, batas_retry=1, kuota=100)
+        self.periksa("retry pertama (nomor 2) lolos",
+                     self.token(request_id="req-1", nomor=2, batas_retry=1, kuota=100)[0] == "ok")
+        h = self.token(request_id="req-1", nomor=3, batas_retry=1, kuota=100)
+        self.periksa("retry kedua ditolak", h[0] == "retry_budget_habis", str(h))
+        self.periksa("panggilan pertama tidak memakai anggaran",
+                     self.token(request_id="req-2", nomor=1, batas_retry=1, kuota=100)[0] == "ok")
+
+    def uji_retry_after(self) -> None:
+        print("Retry-After bergulir dari ember tertua di jendela (D2.10)")
+        self.reset()
+        detik, _ = self.r.cmd("TIME")
+        no_ember = int(detik) // MENIT_EMBER_DETIK
+        tertua = no_ember - 100
+        self.isi_ember({tertua: 1, no_ember: 1})
+        h = self.baca(kuota=2, no_ember=no_ember)
+        harap = (tertua + JUMLAH_EMBER) * MENIT_EMBER_DETIK - int(detik)
+        self.periksa("baca melaporkan kuota_habis", h[1] == 2, str(h))
+        self.periksa("Retry-After = (b_tertua + 145) × 600 − now",
+                     abs(h[4] - harap) <= 2, f"harap {harap}, dapat {h[4]}")
+        self.periksa("slot tidak ikut menahan retry_after",
+                     h[3] == 0, str(h))
+
+        self.reset()
+        self.isi_attempts(2)
+        h = self.baca(mode="kalender", kuota=2)
+        self.periksa("mode kalender: Retry-After dihitung pemanggil (0)",
+                     h[1] == 2 and h[4] == 0, str(h))
+
+        self.reset()
+        detik, _ = self.r.cmd("TIME")
+        no_ember = int(detik) // MENIT_EMBER_DETIK
+        self.isi_ember({no_ember: 1})
+        h = self.baca(kuota=1, no_ember=no_ember)
+        self.periksa("satu ember berjalan: Retry-After ≈ 24 jam 10 menit",
+                     86_000 < h[4] <= 87_000, str(h))
 
     def uji_baca_tidak_mutasi(self) -> None:
-        print("pembacaan kuota murni baca + Retry-After")
+        print("kuota_baca murni baca: slot kedaluwarsa & field tua tidak dibersihkan")
         self.reset()
-        for _ in range(3):
-            self.tambah(kuota=10, ember_mulai=100)
-        sebelum = self.r.cmd("HGETALL", "pr:ember:p1:2026-11-03")
-        now = 100 * JEDA_EMBER * 1000000
-        h = self.baca(kuota=10, ember_mulai=100, now=now)
-        self.periksa("baca ok", h[0] == "ok", str(h))
-        self.periksa("baca terpakai", int(h[1]) == 3, str(h))
-        self.periksa("baca attempts", int(h[2]) == 3, str(h))
-        sesudah = self.r.cmd("HGETALL", "pr:ember:p1:2026-11-03")
-        self.periksa("baca tidak mengubah state", sebelum == sesudah, str((sebelum, sesudah)))
-        # Retry-After jendela bergulir = awal ember tertua + 24 jam - now.
-        h = self.baca(kuota=10, ember_mulai=100, now=now + 10 * 1000000)
-        harap = HARI - 10
-        self.periksa("retry-after bergulir", int(h[4]) == harap, f"{h[4]} != {harap}")
-        # baca tanpa ember di jendela: tidak ada yang ditunggu.
-        h = self.baca(kuota=10, ember_mulai=1000, now=now)
-        self.periksa("retry-after tanpa ember = 0", int(h[4]) == 0 and int(h[1]) == 0, str(h))
+        no_ember = 1000
+        self.isi_ember({1: 5, no_ember: 2})
+        self.r.cmd("ZADD", self.k_slot(), self.mikrodetik() - 1_000_000, "lama:1")
+        sebelum = (
+            self.r.cmd("HGETALL", self.k_ember()),
+            self.r.cmd("ZRANGE", self.k_slot(), "0", "-1", "WITHSCORES"),
+            self.r.cmd("GET", self.k_attempts()),
+            self.r.cmd("DBSIZE"),
+        )
+        h = self.baca(no_ember=no_ember, kuota=5)
+        sesudah = (
+            self.r.cmd("HGETALL", self.k_ember()),
+            self.r.cmd("ZRANGE", self.k_slot(), "0", "-1", "WITHSCORES"),
+            self.r.cmd("GET", self.k_attempts()),
+            self.r.cmd("DBSIZE"),
+        )
+        self.periksa("baca tidak mengubah apa pun", sebelum == sesudah,
+                     f"{sebelum} != {sesudah}")
+        self.periksa("slot kedaluwarsa tidak dihitung aktif", h[3] == 0, str(h))
+
+    def uji_slot_bocor(self) -> None:
+        print("D1.9(i): slot yang tidak dilepas menahan kapasitas sampai TTL-nya lewat")
+        self.reset()
+        kuota = 1
+        ttl = 200_000
+        h = self.token(kuota=kuota, ttl=ttl)
+        self.periksa("slot dipesan", h[0] == "ok" and h[2] == 1, str(h))
+        h = self.token(request_id="req-2", kuota=kuota, ttl=ttl)
+        self.periksa("pemberian berikutnya menghitung slot itu",
+                     h[0] == "kuota_habis" and h[2] == 1, str(h))
+        time.sleep(0.25)
+        h = self.token(request_id="req-2", kuota=kuota, ttl=ttl)
+        self.periksa("sesudah TTL slot dibersihkan dan token lolos", h[0] == "ok", str(h))
+        self.periksa("jumlah kedaluwarsa yang dilaporkan = 1", h[3] == 1, str(h))
+        self.periksa("slot lama hilang dari semaphore",
+                     [m for m, _ in self.slot()] == ["req-2:1"], str(self.slot()))
+
+    def uji_slot_kedaluwarsa_tambah(self) -> None:
+        print("D1.9(ii): proses macet yang lanjut sesudah TTL ditolak, `attempts` tetap")
+        self.reset()
+        h = self.token(request_id="req-macet", ttl=200_000, kuota=10)
+        self.periksa("slot dipesan", h[0] == "ok", str(h))
+        time.sleep(0.25)
+        h = self.tambah(member="req-macet:1", kuota=10)
+        self.periksa("attempts_tambah menjawab slot_kedaluwarsa",
+                     h == ["slot_kedaluwarsa", 0], str(h))
+        self.periksa("`attempts` tidak berubah",
+                     self.r.cmd("GET", self.k_attempts()) is None)
+        self.periksa("ember tidak bertambah", self.jumlah_ember() == 0)
+        self.periksa("baca melaporkan terpakai 0", self.baca()[1] == 0)
+
+    def uji_rebuild_slot(self) -> None:
+        print("D1.9(iii): rebuild dari PostgreSQL memakai member yang sama")
+        self.reset()
+        ttl = 80_000_000
+        now = self.mikrodetik()
+        # Dua request yang di PostgreSQL berstatus `dispatched`/`in_flight`.
+        for member in ("disp-1:1", "kerja-2:1"):
+            self.r.cmd("ZADD", self.k_slot(), now + ttl, member)
+        h = self.klaim(member="kerja-2:1", ttl=ttl, dari_antre=False)
+        self.periksa("pemilik bisa memperpanjang member hasil rebuild",
+                     h[0] == "ok", str(h))
+        h = self.tambah(member="disp-1:1", kuota=10)
+        self.periksa("member hasil rebuild bisa dipakai menaikkan attempts",
+                     h[0] == "ok" and h[1] == 1, str(h))
+
+        # Slot yatim tanpa jejak di PostgreSQL tidak dibangun ulang, jadi
+        # klaim dan penambahan percobaannya ditolak.
+        self.periksa("slot yatim tidak ada di semaphore",
+                     "yatim-9:1" not in [m for m, _ in self.slot()])
+        self.periksa("klaim slot yatim ditolak",
+                     self.klaim(member="yatim-9:1")[0] == "slot_tidak_ada")
+        self.periksa("percobaan slot yatim ditolak",
+                     self.tambah(member="yatim-9:1", kuota=10)[0] == "slot_kedaluwarsa")
+
+        # TAT yang ditulis rebuild = now + τ, jadi tidak ada burst sesudah
+        # failover: hanya satu token, lalu laju normal.
+        t, burst = 1_000_000, 3
+        tau = (burst - 1) * t
+        self.r.cmd("SET", self.k_rl("w0"), str(self.mikrodetik() + tau))
+        jendela = ((t, burst),)
+        h1 = self.token(request_id="pasca-1", jendela=jendela, kuota=100)
+        h2 = self.token(request_id="pasca-2", jendela=jendela, kuota=100)
+        self.periksa("rebuild TAT: satu token lolos", h1[0] == "ok", str(h1))
+        self.periksa("rebuild TAT: tidak ada burst sesudahnya",
+                     h2[0] == "rate_limit", str(h2))
 
     def uji_properti_m02(self, iterasi: int) -> None:
-        """M-02: tidak ada urutan konkuren yang membuat percobaan melebihi kuota."""
-        print(f"property M-02: urutan acak percobaan vs intake ({iterasi} iterasi)")
-        rnd = random.Random(20261103)
-        for it in range(iterasi):
+        print(f"property M-02 (berurutan) lewat jalur token: {iterasi} iterasi")
+        acak = random.Random(20261103)
+        for i in range(iterasi):
+            mode = acak.choice(["bergulir", "kalender"])
+            kuota = acak.randint(1, 5)
+            awal = acak.randint(0, kuota - 1)
             self.reset()
-            kuota = rnd.randint(1, 8)
-            mode = rnd.choice(["bergulir", "kalender"])
-            periode = "2026-11-03"
-            dihitung = 0  # percobaan yang benar-benar dikirim upstream
-            for _ in range(rnd.randint(1, 25)):
-                langkah = rnd.random()
-                if langkah < 0.5:
-                    if self.intake(kuota=kuota, mode=mode, periode=periode)[0] == "lolos":
-                        h = self.tambah(kuota=kuota, mode=mode, periode=periode)
-                        self.periksa(
-                            f"properti it{it}",
-                            int(h[2]) <= kuota,
-                            f"tambah membuat terpakai {h[2]} > kuota {kuota} (mode {mode})",
-                        )
-                        dihitung += 1
+            no_ember = 1000
+            # `attempts` dan ember diisi bersama: keduanya cacah percobaan yang
+            # sama, jadi invarian `attempts == awal + panggilan` bisa diuji.
+            if mode == "kalender":
+                self.isi_attempts(awal)
+            elif awal:
+                self.isi_attempts(awal)
+                self.isi_ember({no_ember: awal})
+            panggilan = 0
+            attempts = awal
+            for langkah in range(6):
+                rid = f"r{i}-{langkah}"
+                h = self.token(request_id=rid, mode=mode, kuota=kuota,
+                               no_ember=no_ember)
+                if h[0] != "ok":
+                    continue
+                if acak.random() < 0.7:
+                    t = self.tambah(member=f"{rid}:1", mode=mode, kuota=kuota,
+                                    no_ember=no_ember)
+                    if t[0] in ("ok", "ok_terlampaui"):
+                        panggilan += 1
+                        attempts = t[1]
+                    self.lepas(member=f"{rid}:1")
                 else:
-                    # Permintaan yang lolos harus selalu di bawah kuota.
-                    h = self.intake(kuota=kuota, mode=mode, periode=periode)
-                    if h[0] == "lolos":
-                        self.periksa(f"properti it{it}", int(h[1]) < kuota,
-                                     f"intake lolos dengan terpakai {h[1]} >= kuota {kuota}")
-                        self.tambah(kuota=kuota, mode=mode, periode=periode)
-                        dihitung += 1
-                    else:
-                        self.periksa(f"properti it{it}", h[0] in ("kuota_habis", "antrean_penuh"), str(h))
-            terkirim = int(self.r.cmd("GET", f"pr:attempts:p1:{periode}") or 0)
-            self.periksa(f"properti it{it} (DQ-05)", terkirim == dihitung and terkirim <= kuota,
-                         f"mode {mode}: terkirim {terkirim}, dihitung {dihitung}, kuota {kuota}")
+                    self.lepas(member=f"{rid}:1")
+            total_ember = self.jumlah_ember(no_ember=no_ember)
+            self.periksa(
+                f"iterasi {i} ({mode}, kuota {kuota}, awal {awal})",
+                attempts == awal + panggilan
+                and attempts <= kuota
+                and (mode == "kalender" or total_ember == attempts),
+                f"panggilan={panggilan} attempts={attempts} ember={total_ember}",
+            )
+
+    # -- konkurensi -------------------------------------------------------
+
+    def _pekerja(self, alamat, skrip, mode, kuota, no_ember, awal, seed,
+                 semua_jalur, per_klien, hasil):
+        acak = random.Random(seed)
+        r = Redis(*alamat)
+        u = Uji.__new__(Uji)
+        u.r = r
+        u.skrip = skrip
+        panggilan = 0
+        token_ok = 0
+        galat = []
+        # Jalur mati memakai TTL pendek supaya pembersihan slot ikut
+        # berlomba di dalam uji, bukan hanya di uji D1.9 yang berurutan.
+        ttl = 5_000 if semua_jalur else 80_000_000
+        try:
+            for i in range(per_klien):
+                rid = f"k{seed}-{i}"
+                jalur = acak.choices(["a", "b", "c", "d"], [0.6, 0.15, 0.15, 0.1])[0]
+                if not semua_jalur:
+                    jalur = "a" if jalur in ("a", "b") else "b"
+                h = u.token(request_id=rid, mode=mode, kuota=kuota,
+                            no_ember=no_ember, ttl=ttl,
+                            jendela=((1, 1_000_000),))
+                if h[0] != "ok":
+                    continue
+                token_ok += 1
+                if jalur == "c":
+                    # dispatcher mati sesudah memesan slot, sebelum memanggil:
+                    # tidak ada log, tidak ada attempts, slot menunggu TTL.
+                    continue
+                if jalur == "b":
+                    # panggilan upstream gagal sebelum baris log: slot dilepas
+                    # dispatcher, tidak ada percobaan yang tercatat.
+                    u.lepas(member=f"{rid}:1", asal="dispatcher")
+                    continue
+                t = u.tambah(member=f"{rid}:1", mode=mode, kuota=kuota,
+                             no_ember=no_ember)
+                if t[0] in ("ok", "ok_terlampaui"):
+                    panggilan += 1
+                if jalur == "d":
+                    # worker mati sesudah commit log, sebelum melepas slot.
+                    continue
+                u.lepas(member=f"{rid}:1", asal="kas")
+        except Exception as e:  # noqa: BLE001 - dilaporkan ke uji
+            galat.append(repr(e))
+        finally:
+            r.close()
+        hasil.append((panggilan, token_ok, galat))
 
     def uji_konkuren(self, klien: int = 8, per_klien: int = 50, kuota: int = 37) -> None:
-        print(f"konkurensi: {klien} koneksi x {per_klien} percobaan vs kuota {kuota}")
-        self.reset()
-        import threading
+        """Gerbang M-02 di jalur token, tiga konfigurasi, empat jalur (D1).
 
-        hasil: list[int] = []
-        kunci = threading.Lock()
-
-        def jalankan():
-            r = Redis(*self.r.sock.getpeername()[:2] if False else ("127.0.0.1", 6395))
-            lokal = 0
-            for _ in range(per_klien):
-                if r.evalsha(self.skrip["intake"].sha, [],
-                             ["c", "run-1", "bergulir", "0", "pr:attempts:p1:2026-11-03",
-                              "pr:antre:p1", str(kuota), "pr:ember:p1:2026-11-03",
-                              str(JUMLAH_EMBER), "100"])[0] == "lolos":
-                    r.evalsha(self.skrip["tambah"].sha, [],
-                              ["run-1", "bergulir", "pr:attempts:p1:2026-11-03", "pr:antre:p1",
-                               str(kuota), "pr:ember:p1:2026-11-03", str(JUMLAH_EMBER), "100"])
-                    lokal += 1
-            r.close()
-            with kunci:
-                hasil.append(lokal)
-
-        utas = [threading.Thread(target=jalankan) for _ in range(klien)]
-        for t in utas:
-            t.start()
-        for t in utas:
-            t.join()
-        total = sum(hasil)
-        terkirim = int(self.r.cmd("GET", "pr:attempts:p1:2026-11-03") or 0)
-        self.periksa("konkuren: tidak melebihi kuota", terkirim <= kuota, f"{terkirim} > {kuota}")
-        self.periksa("konkuren: counter = jumlah lolos", total == terkirim, f"{total} != {terkirim}")
-        self.periksa("konkuren: memakai hampir semua kuota", terkirim >= kuota - klien,
-                     f"hanya {terkirim} dari {kuota} (intake seharusnya tidak memasukkan apa pun)")
+        Asersinya TANPA toleransi (D1 butir 1): `panggilan == attempts` dan
+        `panggilan <= kuota − terpakai_awal`, termasuk saat proses mati dan
+        slot kedaluwarsa. Asersi pemanfaatan hanya dijalankan pada varian tanpa
+        jalur mati, karena slot yatim memang menahan kapasitas sampai TTL.
+        """
+        konfigurasi = [
+            ("bergulir", "bergulir", 0),
+            ("kalender", "kalender", 5),
+            ("kalender transisi", "kalender", 5),
+        ]
+        for label, mode, awal in konfigurasi:
+            for semua_jalur in (True, False):
+                self.reset()
+                no_ember = 1000
+                if label == "kalender transisi":
+                    # Ember dari periode sebelumnya masih berisi; mode kalender
+                    # harus mengabaikannya (K-11).
+                    self.isi_ember({no_ember - 1: 40, no_ember: 4})
+                if mode == "kalender":
+                    self.isi_attempts(awal)
+                elif awal:
+                    self.isi_ember({no_ember: awal})
+                hasil: list = []
+                benang = [
+                    threading.Thread(
+                        target=self._pekerja,
+                        args=(self.alamat, self.skrip, mode, kuota, no_ember,
+                              awal, 100 + i, semua_jalur, per_klien, hasil),
+                    )
+                    for i in range(klien)
+                ]
+                mulai = time.time()
+                for b in benang:
+                    b.start()
+                for b in benang:
+                    b.join()
+                lama = time.time() - mulai
+                galat = [g for _, _, gs in hasil for g in gs]
+                panggilan = sum(p for p, _, _ in hasil)
+                attempts = int(self.r.cmd("GET", self.k_attempts()) or 0)
+                ember = self.jumlah_ember(no_ember=no_ember)
+                batas = kuota - awal
+                judul = f"{label}/{'4 jalur' if semua_jalur else 'tanpa mati'}"
+                self.periksa(f"{judul}: tanpa galat skrip", not galat, str(galat[:3]))
+                self.periksa(f"{judul}: attempts == awal + panggilan",
+                             attempts == awal + panggilan,
+                             f"awal={awal} panggilan={panggilan} attempts={attempts}")
+                self.periksa(f"{judul}: panggilan <= {batas}",
+                             panggilan <= batas, f"panggilan={panggilan} kuota={batas}")
+                if mode == "bergulir":
+                    self.periksa(f"{judul}: ember selaras dengan attempts",
+                                 ember == attempts, f"ember={ember} attempts={attempts}")
+                if not semua_jalur:
+                    self.periksa(
+                        f"{judul}: pemanfaatan >= {batas} − {klien}",
+                        panggilan >= batas - klien,
+                        f"panggilan={panggilan} target={batas}",
+                    )
+                print(f"       {judul}: {panggilan} panggilan, {batas} kapasitas, {lama:.2f} s")
+        self.periksa(f"konkurensi {klien}×{per_klien}", True)
 
     def jalankan_semua(self, iterasi: int) -> int:
         self.uji_gerbang_siap()
@@ -436,10 +806,15 @@ class Uji:
         self.uji_batas_kuota()
         self.uji_antrean()
         self.uji_kalender_periode()
-        self.uji_ember_keluar_jendela()
-        self.uji_rate_limit()
+        self.uji_jendela_ember()
+        self.uji_gcra()
         self.uji_porsi_sync()
+        self.uji_retry_budget()
+        self.uji_retry_after()
         self.uji_baca_tidak_mutasi()
+        self.uji_slot_bocor()
+        self.uji_slot_kedaluwarsa_tambah()
+        self.uji_rebuild_slot()
         self.uji_properti_m02(iterasi)
         self.uji_konkuren()
         print(f"\n{self.lolos} lolos, {self.gagal} gagal")

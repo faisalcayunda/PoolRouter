@@ -57,7 +57,7 @@ WORK_DIR := $(if $(filter podman,$(RUNNER)),/work,$(CURDIR))
 # Repo root on the execution side (/repo is the read-only mount in the podman container).
 REPO_DIR := $(if $(filter podman,$(RUNNER)),/repo,$(CURDIR)/..)
 
-.PHONY: help check-label setup test test-rust db-test lint fmt clean openapi openapi-check
+.PHONY: help check-label setup test test-rust db-test uji-lua lua-rakit lua-rakit-check lint fmt clean openapi openapi-check
 
 # Podman toolchain containers must carry the owning issue label, so untracked containers cannot appear (SHAA-222).
 ifeq ($(RUNNER),podman)
@@ -68,7 +68,7 @@ check-label:
 endif
 
 help:
-	@echo "targets: setup test test-rust db-test lint fmt clean openapi openapi-check build-lock-status build-lock-clean (RUNNER=podman|native)"
+	@echo "targets: setup test test-rust db-test uji-lua lua-rakit lua-rakit-check lint fmt clean openapi openapi-check build-lock-status build-lock-clean (RUNNER=podman|native)"
 
 # Fetch the locked dependency set and install the pinned cargo-deny.
 setup: check-label
@@ -91,7 +91,7 @@ setup: check-label
 	install -m 0755 "$$t/cargo-deny-$(CARGO_DENY_VERSION)-$$arch-unknown-linux-musl/cargo-deny" "$$CARGO_HOME/bin/cargo-deny"; \
 	cargo deny --version'
 
-test: test-rust db-test
+test: test-rust db-test uji-lua
 
 test-rust: check-label
 	$(HEAVY) cargo test --workspace --all-targets --locked
@@ -102,6 +102,27 @@ test-rust: check-label
 DB_ENGINE ?= podman
 db-test: check-label
 	CONTAINER_ENGINE=$(DB_ENGINE) SHAA_ISSUE=$(patsubst shaal.issue=%,%,$(CONTAINER_LABEL)) sh db/test/run.sh
+
+# Lua quota scripts (SHAA-195). `lua/` holds sources with `-- sisip:` markers;
+# `scripts/rakit-lua.sh` inlines `potongan/*.lua` into `rakitan/*.lua`, and that
+# assembled form is what Redis loads (the sandbox has no `dofile`). Sources are
+# not valid on their own, so the artifact is committed and gated: rakitan/ must
+# always equal a fresh assembly.
+LUA_SKRIP := crates/core/src/kuota/lua
+
+lua-rakit:
+	sh ../scripts/rakit-lua.sh
+
+lua-rakit-check:
+	tmp=$$(mktemp -d); trap 'rm -rf "$$tmp"' EXIT; \
+	sh ../scripts/rakit-lua.sh --keluaran "$$tmp" >/dev/null; \
+	diff -ru "$(LUA_SKRIP)/rakitan" "$$tmp"
+
+# Harness runs the scripts against a real Redis (throwaway container, pinned image).
+# Like db-test it needs a container engine on the host, so it is independent of RUNNER.
+LUA_ENGINE ?= podman
+uji-lua: check-label lua-rakit-check
+	CONTAINER_ENGINE=$(LUA_ENGINE) SHAA_ISSUE=$(patsubst shaal.issue=%,%,$(CONTAINER_LABEL)) sh lua/test/run.sh
 
 lint: check-label
 	$(RUN) cargo fmt --all --check
