@@ -111,8 +111,31 @@ COMPOSE_ARGS="-p $PROJECT -f deploy/compose/compose.yaml -f deploy/compose/compo
 PROFILE_ARGS=""
 for p in $(echo "$PROFILES" | tr ',' ' '); do PROFILE_ARGS="$PROFILE_ARGS --profile $p"; done
 
+# step NAMA PERINTAH...: catat perintah, exit code, dan seluruh output ke LOG serta stdout job.
+# Tidak menghentikan skrip; pemanggil memutuskan dari $s_rc. Output dicetak juga ke stdout
+# supaya error tampil langsung di log CI tanpa perlu artefak.
+step() {
+  s_name=$1; shift
+  log "== step $s_name: $*"
+  s_out="$LOG_DIR/step-$ISSUE_LC.out"
+  if "$@" > "$s_out" 2>&1; then s_rc=0; else s_rc=$?; fi
+  cat "$s_out" | tee -a "$LOG"
+  rm -f -- "$s_out"
+  log "step_exit name=$s_name rc=$s_rc"
+}
+
 log "== V3: docker version (daemon) =="
-cli version --format 'client={{.Client.Version}} server={{.Server.Version}} os={{.Server.Os}}/{{.Server.Arch}}' >> "$LOG" 2>&1
+step docker_version cli version --format 'client={{.Client.Version}} server={{.Server.Version}} os={{.Server.Os}}/{{.Server.Arch}}'
+if [ "$s_rc" != 0 ]; then
+  log "V3_FAIL: docker version rc=$s_rc. Diagnostik daemon di bawah."
+  # Di dalam container DinD (socket unix), di jalur TCP 2375, dan apakah dockerd benar-benar berjalan.
+  step daemon_docker_version podman exec "$NAME" docker version
+  step daemon_ping_tcp podman exec "$NAME" wget -qO- http://127.0.0.1:2375/_ping
+  step daemon_listen_2375 podman exec "$NAME" sh -c "grep -i ':0947 ' /proc/net/tcp /proc/net/tcp6 || echo 'tidak ada listener di port 2375'"
+  step daemon_dockerd_proc podman exec "$NAME" sh -c "ps 2>/dev/null | grep -i dockerd || echo 'proses dockerd tidak terlihat'"
+  step cli_image podman image inspect --format '{{.Id}}' "$CLI_IMAGE"
+  exit 1
+fi
 log "== V3: compose up --wait ($PROFILES) =="
 # shellcheck disable=SC2086
 if cli compose $COMPOSE_ARGS $PROFILE_ARGS up -d --wait >> "$LOG" 2>&1; then
