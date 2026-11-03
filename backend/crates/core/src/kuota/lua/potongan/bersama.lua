@@ -1,6 +1,13 @@
--- Invarian ARGV bersama untuk skrip kuota (ADR-0001 rev 15 §5a.1 butir 1d).
+-- Potongan bersama: invarian ARGV dan jendela bergulir skrip kuota
+-- (ADR-0001 rev 15 §5a.1 butir 1d).
 --
--- §5a.1 butir 1d: periode dan indeks ember 10 menit dihitung SEKALI di Rust
+-- BERKAS POTONGAN, bukan skrip. `scripts/rakit-lua.sh` menyisipkannya apa
+-- adanya ke setiap skrip pada baris penanda `-- sisip: potongan/bersama.lua
+-- sebagai bersama`; hasilnya ada di `rakitan/`. Sandbox Redis tidak punya
+-- `dofile`, jadi berkas ini tidak pernah dimuat sendiri (review 778f9fd,
+-- temuan blocking 2).
+--
+-- §5a.1 butir 1d: periode dan nomor ember 10 menit dihitung SEKALI di Rust
 -- dari `requested_at`, lalu dikirim sebagai argumen. Skrip tidak boleh
 -- membaca jam (`TIME`) untuk menentukan kunci. Kalau skrip yang menentukan
 -- kunci, percobaan dengan `requested_at` 23:59:59,9 yang di-INCR pada
@@ -8,27 +15,34 @@
 -- salah positif di sekitar jam reset.
 --
 -- Argumen ini dipakai keempat skrip keadaan (`kuota_intake.lua`,
--- `kuota_ambil_token.lua`, `attempts_tambah.lua`, `kuota_retry_after.lua`),
+-- `rate_limit_ambil.lua`, `attempts_tambah.lua`, `kuota_retry_after.lua`),
 -- supaya tidak ada satu jalur pun yang menyimpang. Komentar `ARGV` di setiap
 -- berkas menyebut prefiks yang ditetapkan di sini lalu posisi lokalnya.
 --
--- Prefiks boleh berbeda per skrip karena `run_id` tidak selalu di ARGV[1]
--- (`kuota_intake.lua` menaruh `client_id` lebih dulu). Nilainya tetap urutan
--- yang sama, jadi tiap skrip cukup menyebut geserannya.
-
-local ARGV_PREFIKS = 4
-
--- Membaca argumen bersama tanpa validasi tipe. Skrip yang membutuhkannya
--- (semua kecuali `kuota_retry_after.lua`, yang murni baca) memvalidasi lebih
--- dulu lewat `periksa`. `geser` = indeks ARGV elemen pertama setelah prefiks
--- skrip pemanggil, yaitu elemen pertama blok bersama (`kunci_attempts`); tanpa
--- `geser`, blok bersama mulai sesudah prefiks terpanjang.
+-- Prefiks boleh berbeda per skrip karena `run_id` (dan `client_id` pada
+-- intake) tidak selalu di ARGV[1]. Nilainya tetap urutan yang sama, jadi tiap
+-- skrip membaca `geser` = posisi `kunci_attempts`.
 --
 -- `run_id` TIDAK termasuk blok bersama: `siap.lua` sudah membacanya dari posisi
 -- prefiks masing-masing skrip (`ARGV[1]` atau `ARGV[2]`), dan tidak ada skrip
 -- yang memakai salinannya. Menyertakannya di sini membuat blok bersama menjadi
 -- tujuh argumen, sehingga argumen pertama bergeser satu dan argumen terakhir
 -- menjadi nil.
+--
+-- SATUAN `no_ember`. `no_ember` adalah NOMOR ember (`epoch / 600`), bukan detik
+-- epoch dan bukan indeks cincin `nomor mod jumlah_ember`. Jendela bergulir
+-- adalah `no_ember - (jumlah_ember - 1) ..= no_ember`, yaitu `jumlah_ember`
+-- ember dihitung dalam satuan ember. Mencampur satuan di sini pernah membuat
+-- jendela menyempit dari 145 ember menjadi 145 detik (review 778f9fd, temuan
+-- blocking 1). `batas_jendela` dan `di_jendela` di bawah satu-satunya tempat
+-- aturan itu ditulis; skrip tidak boleh mengurangkan sendiri.
+
+local ARGV_PREFIKS = 4
+
+-- Membaca argumen bersama tanpa validasi tipe. Skrip yang membutuhkannya
+-- memvalidasi lebih dulu lewat `periksa`. `geser` = indeks ARGV elemen pertama
+-- blok bersama (`kunci_attempts`); tanpa `geser`, blok bersama mulai sesudah
+-- prefiks terpanjang.
 local function baca(ARGV, geser)
   local p = geser or (ARGV_PREFIKS + 1)
   local a = {}
@@ -37,7 +51,7 @@ local function baca(ARGV, geser)
   a.kuota_efektif = ARGV[p + 2]
   a.hash_ember = ARGV[p + 3]
   a.jumlah_ember = ARGV[p + 4]
-  a.ember_mulai = ARGV[p + 5]
+  a.no_ember = ARGV[p + 5]
   return a
 end
 
@@ -55,6 +69,9 @@ local POLA_BULAT = '^%-?%d+$'
 local POLA_BULAT_POSITIF = '^%d+$'
 
 local function bulat(nilai)
+  if type(nilai) ~= 'string' then
+    return nil
+  end
   local teks = tostring(nilai)
   if not string.match(teks, POLA_BULAT) then
     return nil
@@ -65,6 +82,9 @@ local function bulat(nilai)
   end
   return n
 end
+
+-- Nama field ember: `b<nomor ember>`.
+local POLA_FIELD_EMBER = '^b(%d+)$'
 
 local function periksa(a)
   local kuota = bulat(a.kuota_efektif)
@@ -79,11 +99,11 @@ local function periksa(a)
   end
   a.jumlah_ember = ember
 
-  local mulai = bulat(a.ember_mulai)
-  if mulai == nil or mulai < 0 then
-    return 'ember_mulai_tidak_sah'
+  local nomor = bulat(a.no_ember)
+  if nomor == nil or nomor < 0 then
+    return 'no_ember_tidak_sah'
   end
-  a.ember_mulai = mulai
+  a.no_ember = nomor
 
   if type(a.kunci_attempts) ~= 'string' or a.kunci_attempts == '' then
     return 'kunci_attempts_tidak_sah'
@@ -97,8 +117,26 @@ local function periksa(a)
   return nil
 end
 
+-- Batas bawah jendela bergulir dalam satuan ember: `jumlah_ember` ember
+-- terakhir, termasuk ember berjalan (§5a.1 butir 1d). Dengan
+-- `jumlah_ember = 145` batas ini berjarak tepat 24 jam dari awal ember
+-- berjalan, jadi jendela tidak pernah lebih pendek dari 24 jam.
+local function batas_jendela(a)
+  return a.no_ember - (a.jumlah_ember - 1)
+end
+
+-- Benar bila field ember bernomor `n` dihitung pada jendela ini. Field dengan
+-- nomor di luar rentang (lebih tua dari jendela, atau dari masa depan karena
+-- jam pemanggil berbeda) tidak dihitung.
+local function di_jendela(a, n)
+  return n >= batas_jendela(a) and n <= a.no_ember
+end
+
 return {
   ARGV_PREFIKS = ARGV_PREFIKS,
+  POLA_FIELD_EMBER = POLA_FIELD_EMBER,
   baca = baca,
-  periksa = periksa
+  periksa = periksa,
+  batas_jendela = batas_jendela,
+  di_jendela = di_jendela
 }

@@ -23,5 +23,5 @@ pub mod periode;
 
 pub use periode::{
     AturanReset, GalatKuota, JUMLAH_EMBER_HARIAN, KalenderZona, MENIT_EMBER, Periode, ZonaTetap,
-    ember_mulai, indeks_ember, periode_untuk,
+    ember_mulai, indeks_ember, nomor_ember, periode_untuk,
 };

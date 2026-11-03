@@ -248,17 +248,37 @@ pub fn ember_mulai(requested_at: DateTime<Utc>) -> Result<DateTime<Utc>, GalatKu
     DateTime::from_timestamp(dasar, 0).ok_or(GalatKuota::TidakKonvergen)
 }
 
+/// Number of the 10-minute bucket that contains `requested_at`, counted from the
+/// Unix epoch in bucket units (`epoch / 600`).
+///
+/// This is the `no_ember` the Redis scripts receive: the hash field is
+/// `b{no_ember}` and the rolling window is the half-open range
+/// `no_ember - (JUMLAH_EMBER_HARIAN - 1) ..= no_ember`, that is
+/// `JUMLAH_EMBER_HARIAN` buckets counted in bucket units. The scripts derive
+/// that range in the same unit (`potongan/bersama.lua`), so the bucket width
+/// never appears in Lua and the window cannot silently collapse to
+/// `JUMLAH_EMBER_HARIAN` seconds (SHAA-195 review, blocking finding 1).
+///
+/// Unlike [`indeks_ember`] this value is not reduced modulo anything: it is the
+/// absolute bucket number, so two processes that see the same `requested_at`
+/// derive the same field no matter how many buckets the ring has.
+pub fn nomor_ember(requested_at: DateTime<Utc>) -> Result<i64, GalatKuota> {
+    let detik = ember_mulai(requested_at)?.timestamp();
+    Ok(detik.div_euclid(DETIK_EMBER))
+}
+
 /// Index of the bucket that contains `requested_at`, in `0..jumlah_ember`.
 ///
 /// The index is `(epoch / 600) mod jumlah_ember`, so it keeps the same value
 /// across restarts and needs no stored state to rebuild after a failover
-/// (ADR-0001 rev 15 section 5a.2).
+/// (ADR-0001 rev 15 section 5a.2). It is for reporting and metrics; the Redis
+/// hash field suffix is [`nomor_ember`], which is NOT reduced modulo, because
+/// the window has to count `JUMLAH_EMBER_HARIAN` distinct buckets.
 pub fn indeks_ember(requested_at: DateTime<Utc>, jumlah_ember: u32) -> Result<u32, GalatKuota> {
     if jumlah_ember == 0 {
         return Err(GalatKuota::JumlahEmberTidakSah(jumlah_ember));
     }
-    let dasar = ember_mulai(requested_at)?;
-    let nomor = dasar.timestamp().div_euclid(DETIK_EMBER);
+    let nomor = nomor_ember(requested_at)?;
     Ok(nomor.rem_euclid(i64::from(jumlah_ember)) as u32)
 }
 
@@ -461,6 +481,68 @@ mod tests {
         assert_eq!(
             ember_mulai(utc("2026-11-03T03:10:00Z")).expect("ember ada"),
             utc("2026-11-03T03:10:00Z")
+        );
+    }
+
+    #[test]
+    fn nomor_ember_dihitung_dalam_satuan_ember_bukan_detik() {
+        // Nilai yang sama dengan `no_ember` di skrip Lua: `epoch / 600`.
+        assert_eq!(
+            nomor_ember(utc("1970-01-01T00:00:00Z")).expect("ember ada"),
+            0
+        );
+        assert_eq!(
+            nomor_ember(utc("1970-01-01T00:09:59.999Z")).expect("ember ada"),
+            0
+        );
+        assert_eq!(
+            nomor_ember(utc("1970-01-01T00:10:00Z")).expect("ember ada"),
+            1
+        );
+        let satu_jam = nomor_ember(utc("1970-01-01T01:00:00Z")).expect("ember ada");
+        assert_eq!(satu_jam, 6, "satu jam = enam ember, bukan 3600 detik");
+        assert_eq!(
+            nomor_ember(utc("1969-12-31T23:50:00Z")).expect("ember ada"),
+            -1
+        );
+    }
+
+    #[test]
+    fn nomor_ember_tetap_untuk_seluruh_isi_ember() {
+        let awal = nomor_ember(utc("2026-11-03T03:00:00Z")).expect("ember ada");
+        for detik in [0, 1, 599] {
+            let saat = utc("2026-11-03T03:00:00Z") + Duration::seconds(detik);
+            assert_eq!(nomor_ember(saat).expect("ember ada"), awal, "detik {detik}");
+        }
+        let berikut = nomor_ember(utc("2026-11-03T03:10:00Z")).expect("ember ada");
+        assert_eq!(berikut, awal + 1);
+    }
+
+    #[test]
+    fn jendela_gulir_menutup_24_jam_penuh() {
+        // Kontrak dengan `potongan/bersama.lua`: jendela adalah
+        // `nomor_ember - (JUMLAH_EMBER_HARIAN - 1) ..= nomor_ember`, jadi batas
+        // bawahnya tepat 24 jam sebelum awal ember berjalan. Kalau satuan di
+        // sini bergeser ke detik, selisihnya jadi 145 detik dan uji ini gagal
+        // (SHAA-195 review, temuan blocking 1).
+        let saat = utc("2026-11-03T03:07:42.500Z");
+        let nomor = nomor_ember(saat).expect("ember ada");
+        let batas = nomor - (i64::from(JUMLAH_EMBER_HARIAN) - 1);
+        let lebar_detik = (nomor - batas) * DETIK_EMBER;
+        assert_eq!(
+            i64::from(JUMLAH_EMBER_HARIAN - 1) * DETIK_EMBER,
+            lebar_detik,
+            "jendela harus {JUMLAH_EMBER_HARIAN} ember"
+        );
+        assert!(
+            lebar_detik >= 24 * 3600,
+            "jendela {lebar_detik} detik lebih pendek dari 24 jam"
+        );
+        let batas_bawah = ember_mulai(saat).expect("ember ada") - Duration::seconds(lebar_detik);
+        assert_eq!(
+            batas_bawah,
+            utc("2026-11-02T03:00:00Z"),
+            "batas bawah jendela harus tepat 24 jam sebelum awal ember berjalan"
         );
     }
 
