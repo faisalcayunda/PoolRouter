@@ -35,5 +35,24 @@ jobs:
         with:
           persist-credentials: false
 
+      # DIAGNOSTIK SEMENTARA (SHAA-275): dihapus setelah akar exit 2 terbukti.
+      # Tanpa env/printenv/set -x; hanya ekor ~20 baris output make.
+      - name: diagnostik ref dan arsitektur (sementara)
+        shell: bash
+        run: |
+          uname -m
+          git branch -a || echo "git branch rc=$?"
+          git ls-remote --heads origin main || echo "ls-remote rc=$?"
+          git status --porcelain -- openapi; echo "git-status-openapi rc=$?"
+
       - name: openapi-check
-        run: make -C backend openapi-check
+        shell: bash
+        run: |
+          set -o pipefail
+          rc=0
+          make -C backend openapi-check 2>&1 | tee openapi-check.log || rc=$?
+          if [ "$rc" -ne 0 ]; then
+            tail -n 20 openapi-check.log | sed -e 's/%/%25/g' -e 's/\r//g' | awk 'BEGIN{ORS="%0A"} {print}' > openapi-check.tail
+            echo "::error title=openapi-check::rc=${rc}%0A$(cat openapi-check.tail)"
+          fi
+          exit "$rc"
