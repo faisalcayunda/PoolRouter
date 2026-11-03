@@ -5,6 +5,29 @@
 -- SECURITY DEFINER functions pin search_path (they run as poolrouter_owner).
 
 -- ---------------------------------------------------------------- helpers
+-- RFC 9562 UUIDv7 for rows written by database functions. PostgreSQL 17 has no uuidv7() and pgcrypto is not
+-- enabled (only btree_gist is), so the 48-bit millisecond prefix comes from the clock and the remaining 74 bits
+-- are taken from gen_random_uuid() (core, 122 random bits; enough for 74). The application still creates its own
+-- UUIDv7 ids for client-facing rows (contract 3: ID UUIDv7); this function is only used for database-written ids:
+-- audit_akses, audit_konfigurasi, request_status_history.
+CREATE FUNCTION uuidv7() RETURNS uuid
+LANGUAGE plpgsql VOLATILE SET search_path = pg_catalog, public AS $$
+DECLARE
+  v_ms bigint := (extract(epoch FROM clock_timestamp()) * 1000)::bigint;
+  v_rand bytea := uuid_send(gen_random_uuid());
+  v_hex text;
+BEGIN
+  v_hex := encode(
+    substr(int8send(v_ms), 3, 6) ||                             -- unix_ts_ms, 48 bits (big-endian, drop leading 0000)
+    '\x70'::bytea ||                                           -- version 7
+    substr(v_rand, 7, 1) ||                                     -- rand_a, 12 bits
+    set_byte('\x80'::bytea, 0, 128 | (get_byte(v_rand, 8) & 63)) ||  -- variant 10 + rand_b high 6 bits
+    substr(v_rand, 9, 8),                                       -- rand_b low 64 bits
+    'hex');
+  RETURN (substr(v_hex, 1, 8) || '-' || substr(v_hex, 9, 4) || '-' || substr(v_hex, 13, 4) || '-'
+          || substr(v_hex, 17, 4) || '-' || substr(v_hex, 21, 12))::uuid;
+END $$;
+
 CREATE FUNCTION fn_metadata_tanpa_rahasia(p_endpoint uuid, p_metadata jsonb) RETURNS jsonb
 LANGUAGE sql STABLE SET search_path = pg_catalog, public AS $$
   SELECT coalesce(p_metadata, '{}'::jsonb) - coalesce(
@@ -67,6 +90,16 @@ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public AS $$
                         WHERE i.request_id = r.request_id AND b.status = 'diterima'));
 $$;
 
+-- Admin login trail (ADR-0003 3.6): separate table, never mixed into audit_akses (decided by Klaus, round 2).
+-- A failed login for an unknown username has no pengguna_id, while audit_akses.pengguna_id is NOT NULL. The typed
+-- username is not stored (it may hold a mistyped password); no password is stored here.
+CREATE FUNCTION fn_catat_login(p_pengguna_id uuid, p_aksi text, p_hasil text, p_sesi_id text, p_ip text, p_user_agent text)
+RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public AS $$
+BEGIN
+  INSERT INTO audit_login (audit_id, pengguna_id, aksi, hasil, sesi_id, sumber_ip, user_agent)
+  VALUES (uuidv7(), p_pengguna_id, p_aksi, p_hasil, p_sesi_id, p_ip, p_user_agent);
+END $$;
+
 -- P-03: done / failed requests whose final attempt was metadata_only. Output is kept until completed_at + queue TTL
 -- (async) regardless of webhook_status (S-05); sync output goes right after the response. H-01 rows are skipped.
 CREATE FUNCTION fn_purge_p03(p_batas integer DEFAULT 1000) RETURNS integer
@@ -86,8 +119,7 @@ BEGIN
      LIMIT p_batas
      FOR UPDATE OF r SKIP LOCKED)
   UPDATE request r
-     SET input_payload = CASE WHEN fn_ditahan_data_balikan(r.request_id) THEN r.input_payload ELSE NULL END,
-         output_payload = NULL, output_purged_at = now(),
+     SET input_payload = NULL, output_payload = NULL, output_purged_at = now(),
          metadata = fn_metadata_tanpa_rahasia(r.downstream_endpoint_id, r.metadata),
          payload_purged_at = now()
     FROM kandidat k WHERE r.request_id = k.request_id;
@@ -213,7 +245,7 @@ BEGIN
   END LOOP;
 
   INSERT INTO audit_konfigurasi (audit_konfigurasi_id, pengguna_id, entitas_jenis, entitas_id, aksi, nilai_lama, nilai_baru, alasan, jumlah_cancelled, jumlah_failed)
-  VALUES (gen_random_uuid(), p_pengguna_id, p_jenis, p_id, CASE WHEN p_jenis = 'kredensial' THEN 'cabut' ELSE 'nonaktifkan' END,
+  VALUES (uuidv7(), p_pengguna_id, p_jenis, p_id, CASE WHEN p_jenis = 'kredensial' THEN 'cabut' ELSE 'nonaktifkan' END,
           jsonb_build_object('aktif', v_lama), jsonb_build_object('aktif', false), p_alasan, v_c, v_f);
   RETURN QUERY SELECT v_c, v_f;
 END $$;
@@ -241,7 +273,7 @@ BEGIN
     RAISE EXCEPTION 'entitas tidak ada' USING ERRCODE = 'no_data_found';
   END IF;
   INSERT INTO audit_konfigurasi (audit_konfigurasi_id, pengguna_id, entitas_jenis, entitas_id, aksi, nilai_lama, nilai_baru, alasan)
-  VALUES (gen_random_uuid(), p_pengguna_id, p_jenis, p_id, 'aktifkan', jsonb_build_object('aktif', false), jsonb_build_object('aktif', true), p_alasan);
+  VALUES (uuidv7(), p_pengguna_id, p_jenis, p_id, 'aktifkan', jsonb_build_object('aktif', false), jsonb_build_object('aktif', true), p_alasan);
 END $$;
 
 -- EN-08: preview numbers only, nothing stored, no ids.
@@ -292,7 +324,7 @@ $$;
 CREATE FUNCTION fn_catat_ditolak(p_pengguna uuid, p_peran text, p_filter jsonb, p_ip text, p_sesi text) RETURNS void
 LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public AS $$
   INSERT INTO audit_akses (audit_id, pengguna_id, peran, aksi, tampilan_nik, filter_kueri, jumlah_record, hasil, sumber_ip, sesi_id)
-  VALUES (gen_random_uuid(), p_pengguna, p_peran, 'akses_ditolak', 'tidak_ada', p_filter, 0, 'ditolak', p_ip, p_sesi);
+  VALUES (uuidv7(), p_pengguna, p_peran, 'akses_ditolak', 'tidak_ada', p_filter, 0, 'ditolak', p_ip, p_sesi);
 $$;
 
 -- Full NIK + payload of one attempt, auditor only, reason required. Not an auditor -> akses_ditolak row, no data.
@@ -312,7 +344,7 @@ BEGIN
   SELECT * INTO v_row FROM transaction_log WHERE kode_transaksi = p_kode_transaksi;
   INSERT INTO audit_akses (audit_id, pengguna_id, peran, aksi, tampilan_nik, filter_kueri, target_request_id, target_kode_transaksi,
                            nik_tersamar, jumlah_record, alasan, hasil, sumber_ip, sesi_id)
-  VALUES (gen_random_uuid(), p_pengguna_id, 'auditor', 'lihat_payload', 'utuh', jsonb_build_object('kode_transaksi', p_kode_transaksi),
+  VALUES (uuidv7(), p_pengguna_id, 'auditor', 'lihat_payload', 'utuh', jsonb_build_object('kode_transaksi', p_kode_transaksi),
           v_row.request_id, p_kode_transaksi, CASE WHEN v_row.nik IS NULL THEN NULL ELSE repeat('*', 12) || right(v_row.nik, 4) END,
           CASE WHEN FOUND THEN 1 ELSE 0 END, p_alasan, 'diizinkan', p_ip, p_sesi);
   IF FOUND THEN RETURN NEXT v_row; END IF;
@@ -336,7 +368,7 @@ BEGIN
   SELECT count(*) INTO v_n FROM transaction_log l
    WHERE l.nik = p_nik AND l.requested_at >= p_dari AND l.requested_at < p_sampai;
   INSERT INTO audit_akses (audit_id, pengguna_id, peran, aksi, tampilan_nik, filter_kueri, nik_hmac, nik_tersamar, jumlah_record, alasan, hasil, sumber_ip, sesi_id)
-  VALUES (gen_random_uuid(), p_pengguna_id, 'auditor', 'cari_nik', 'utuh',
+  VALUES (uuidv7(), p_pengguna_id, 'auditor', 'cari_nik', 'utuh',
           jsonb_build_object('nik_hmac', p_nik_hmac, 'nik_tersamar', repeat('*', 12) || right(p_nik, 4), 'dari', p_dari, 'sampai', p_sampai),
           p_nik_hmac, repeat('*', 12) || right(p_nik, 4), v_n, p_alasan, 'diizinkan', p_ip, p_sesi);
   RETURN QUERY SELECT l.kode_transaksi, l.request_id, l.client_id, l.requested_at, l.status_akses FROM transaction_log l
@@ -400,6 +432,10 @@ BEGIN
 END $$;
 
 -- E-06: reading audit_akses is itself audited; the response has no nik_hmac.
+-- Assumption (Ridley, round 2): filter_kueri is written only by the functions in this file, and nilainya datar
+-- (jsonb_build_object with scalars), so `- 'nik_hmac'` removes the only top-level key that could carry a NIK.
+-- A nested object key carrying nik_hmac would survive this subtraction; if filter_kueri ever gains nesting, strip
+-- recursively ({nik_hmac,nik} minus) or exclude the column.
 CREATE FUNCTION fn_lihat_audit(p_pengguna_id uuid, p_dari timestamptz, p_sampai timestamptz, p_batas integer, p_ip text, p_sesi text)
 RETURNS TABLE (audit_id uuid, pengguna_id uuid, peran text, aksi text, tampilan_nik text, filter_kueri jsonb, nik_tersamar varchar,
                jumlah_record integer, alasan varchar, hasil text, sumber_ip varchar, terjadi_at timestamptz)
@@ -414,7 +450,7 @@ BEGIN
   IF p_batas IS NULL OR p_batas < 1 THEN RAISE EXCEPTION 'batas wajib positif' USING ERRCODE = 'check_violation'; END IF;
   SELECT count(*) INTO v_n FROM (SELECT 1 FROM audit_akses a WHERE a.terjadi_at >= p_dari AND a.terjadi_at < p_sampai AND a.terjadi_at < now() LIMIT p_batas) q;
   INSERT INTO audit_akses (audit_id, pengguna_id, peran, aksi, tampilan_nik, filter_kueri, jumlah_record, hasil, sumber_ip, sesi_id)
-  VALUES (gen_random_uuid(), p_pengguna_id, 'auditor', 'lihat_audit', 'tidak_ada',
+  VALUES (uuidv7(), p_pengguna_id, 'auditor', 'lihat_audit', 'tidak_ada',
           jsonb_build_object('dari', p_dari, 'sampai', p_sampai, 'batas', p_batas), v_n, 'diizinkan', p_ip, p_sesi);
   RETURN QUERY SELECT a.audit_id, a.pengguna_id, a.peran, a.aksi, a.tampilan_nik, a.filter_kueri - 'nik_hmac', a.nik_tersamar, a.jumlah_record, a.alasan,
                       a.hasil, a.sumber_ip, a.terjadi_at
@@ -423,17 +459,22 @@ BEGIN
 END $$;
 
 -- R-02: the reconciler closes a pending attempt as tidak_diketahui, only while it is still NULL and old enough.
+-- The caller's threshold is a floor, never the authority: the effective threshold is the larger of the caller's
+-- value and konfigurasi_platform.rekonsiliasi_ambang_detik, so no caller can close an attempt that is still running.
 CREATE FUNCTION fn_tutup_log_tidak_diketahui(p_kode_transaksi uuid, p_ambang_detik integer) RETURNS boolean
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public AS $$
 DECLARE
   v_n integer;
+  v_ambang integer;
 BEGIN
   IF p_ambang_detik < 1 THEN
     RAISE EXCEPTION 'ambang detik harus positif' USING ERRCODE = 'check_violation';
   END IF;
+  SELECT GREATEST(p_ambang_detik, (nilai #>> '{}')::integer) INTO v_ambang
+    FROM konfigurasi_platform WHERE kunci = 'rekonsiliasi_ambang_detik';
   UPDATE transaction_log SET status_akses = 'tidak_diketahui'
    WHERE kode_transaksi = p_kode_transaksi AND status_akses IS NULL
-     AND requested_at <= now() - make_interval(secs => p_ambang_detik);
+     AND requested_at <= now() - make_interval(secs => v_ambang);
   GET DIAGNOSTICS v_n = ROW_COUNT;
   RETURN v_n = 1;
 END $$;

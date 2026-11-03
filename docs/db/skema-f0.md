@@ -46,6 +46,7 @@ Diuji di `backend/db/test/20_constraints.sql`: `validasi_gagal`/400 diterima den
 | §4 | `endpoint_metadata_field` | |
 | §5 | `data_balikan_batch`, `data_balikan_item` | Tabel dibuat sekarang agar H-01/H-02 bisa ditulis; job-nya F1 |
 | §8.2 `audit_akses` | `audit_akses`, `fn_auditor_*`, `fn_ekspor_log_auditor`, `fn_lihat_audit` | Checksum ekspor dihitung di fungsi (E-01, E-02) |
+| ADR-0003 §3.6 audit login admin | `audit_login` (tabel terpisah, keputusan Klaus 2; kelas Terbatas, §6) | Append-only; `pr_admin_api` INSERT saja; login gagal tanpa `pengguna_id`; dilengkapi uji `20_constraints.sql` dan `30_roles.sql` |
 | ADR-0001 §7 audit konfigurasi | `audit_konfigurasi` | `jumlah_cancelled`, `jumlah_failed` (EN-08) |
 | ADR-0003 §8 | `admin_user`, `admin_user_peran`, `admin_session` | `bahasa_ui TEXT NULL CHECK IN ('id','en')` tanpa default (Addendum A §7.2); `admin_user_peran` menegakkan A-02 lewat CHECK |
 
@@ -59,12 +60,12 @@ Diuji di `backend/db/test/20_constraints.sql`: `validasi_gagal`/400 diterima den
 | `request.reject_http_status` dan `reject_reason` | `CHECK` pasangan sah | Memindahkan DQ-32 butir pasangan ke constraint |
 | `NIK CHAR(16)` | `char(16)` + `CHECK ~ '^[0-9]{16}$'` | |
 | Kolom fisik status K-20 (§3.2.6 menyerahkan penamaan) | entitas: `aktif boolean`; kredensial: `status`, `dicabut_at`, `dicabut_oleh` | Nama sama dengan contract EN-02/EN-03 |
-| ID UUIDv7 | Tanpa default di database; `gen_random_uuid()` (v4) hanya untuk `audit_id` baris yang ditulis fungsi database | PostgreSQL 17 tidak punya `uuidv7()`; aplikasi membuat ID |
+| ID UUIDv7 | `uuidv7()` (SQL) untuk ID baris yang ditulis fungsi database (`audit_akses.audit_id`, `audit_konfigurasi.audit_konfigurasi_id`, `request_status_history`); ID baris lain dibuat aplikasi | PostgreSQL 17 tidak punya `uuidv7()`; fungsinya menyusun RFC 9562: 48 bit `unix_ts_ms`, versi 7, varian `10`, sisanya acak. Uji bit versi/varian/`unix_ts_ms` di `40_functions.sql` |
 | `audit_akses`: ADR-0001 §7.2 memberi `pr_admin_api` INSERT/SELECT | INSERT saja; baca lewat `fn_lihat_audit` | Setiap baca menulis baris `lihat_audit` (E-06); hanya auditor |
 | T-04 "dalam transaksi yang sama" | Constraint trigger tertunda: status `request` harus punya baris history dengan `status_ke` sama saat commit | Menjadikan T-04 bisa diuji |
-| Tabel di luar §3 yang dibutuhkan | `client_endpoint`, `downstream_pool_rute`, `provider_secret`, `konfigurasi_platform` (batas ekspor E-03 = 10.000), `admin_*`, `audit_konfigurasi` | Contract menyebutnya tanpa mendefinisikan kolom (ADR-0001 §7, EN-04, E-03) |
+| Tabel di luar §3 yang dibutuhkan | `client_endpoint`, `downstream_pool_rute`, `provider_secret`, `konfigurasi_platform` (batas ekspor E-03 = 10.000), `admin_*`, `audit_konfigurasi`, `audit_login` | Contract menyebutnya tanpa mendefinisikan kolom (ADR-0001 §7, EN-04, E-03, ADR-0003 §3.6). Kelas data tiap tabel ada di §6 |
 | Parameter dispatch pool (rate K-22, konkurensi, jeda acak K-05) | `upstream_pool.parameter_dispatch jsonb` | Contract §3 tidak mendefinisikannya; dikunci saat kode dispatcher ditulis |
-| Login berhasil/gagal admin "dicatat di audit" (ADR-0003 §3.6) | Belum ada tabel | `audit_akses.aksi` tidak memuat nilai login; perlu keputusan Klaus (tambah nilai, atau tabel terpisah) |
+| Login berhasil/gagal admin (ADR-0003 §3.6) | Tabel terpisah `audit_login` (keputusan Klaus 2) | `audit_akses` khusus akses data NIK dan `pengguna_id` NOT NULL, sedangkan login gagal untuk username tak dikenal tidak punya pengguna. Kolom: `audit_id`, `pengguna_id` (NULL bila username tak dikenal), `aksi IN ('login','logout')`, `hasil IN ('berhasil','gagal','terkunci')`, `sesi_id`, `sumber_ip`, `user_agent`, `terjadi_at`; append-only; ditulis lewat `fn_catat_login` (`SECURITY DEFINER`, id UUIDv7), tidak ada peran yang bisa menulis tabelnya langsung; tidak ada yang membaca langsung (auditor lewat fungsi yang menulis `audit_akses`) |
 | Batas sinkronisasi `endpoint.log_mode` "hanya lebih ketat" | Belum ditegakkan di database | Contract menyerahkannya ke admin API (422) |
 | M-R1 (endpoint Dukcapil wajib punya `status_penerima_manfaat`) | Belum ditegakkan di database | Aturan aktivasi endpoint, di admin API |
 
@@ -72,7 +73,7 @@ Diuji di `backend/db/test/20_constraints.sql`: `validasi_gagal`/400 diterima den
 
 Hak diberikan per kolom pada `request`, `transaction_log`, `client`, `client_kredensial`, dan `client_webhook`. Fungsi `SECURITY DEFINER` mengunci `search_path`, dan `EXECUTE` dicabut dari `PUBLIC`.
 
-- `pr_api` memiliki akses SELECT `nik` pada `transaction_log` untuk jalur sync; ini adalah kesesuaian kontrak §8.1, bukan akses admin/webhook.
+- `pr_api` **tidak** memiliki SELECT `nik`, `request_payload`, atau `response_payload` pada `transaction_log`. Sesuai §8.1 (akun layanan webserver punya hak **Tulis** NIK dan **Tulis input**, bukan baca) dan A-01 (NIK utuh dan payload hanya dibaca lewat fungsi `SECURITY DEFINER` beraudit, `pr_worker`, dan `pr_webhook`). Grant berbentuk kolom (bukan tingkat tabel) dan INSERT/UPDATE tetap memberi `pr_api` hak menulis NIK dan payload untuk jalur sync; trigger R-03 yang membatasi UPDATE. Uji: `30_roles.sql` (`42501` untuk `nik` / `request_payload` / `response_payload` / `SELECT *`, plus asersi katalog `information_schema.column_privileges`).
 - `pr_controller`: tanpa SELECT `nik`, `input_payload`, `output_payload`, `metadata`, `request_payload`, `response_payload`; menutup log `tidak_diketahui` hanya lewat `fn_tutup_log_tidak_diketahui`; purge lewat fungsi.
 - `pr_worker`: membaca `input_payload`; kolom status entitas saja (tanpa hash kredensial); `EXECUTE fn_purge_p02` (jalur gerbang, §8.1b).
 - `pr_webhook`: 8 kolom `client_webhook`, allowlist, `output_payload` hanya lewat view `v_request_webhook` (baris terminal async); tidak punya hak atas `transaction_log`, `provider_secret`, `client`.
@@ -81,3 +82,21 @@ Hak diberikan per kolom pada `request`, `transaction_log`, `client`, `client_kre
 
 
 Migrasi membuat grant kolom berdasarkan snapshot `information_schema` saat migrasi berjalan. Kolom yang ditambahkan migrasi berikutnya tidak otomatis mendapat grant; setiap grant baru harus eksplisit dan diuji.
+
+## 6. Klasifikasi tabel tambahan (Klaus, blocking 7)
+
+Kelas mengikuti kosakata data contract (Terbatas / Rahasia / Internal). Titik menandai kolom pembeda kelas; kolom lain Internal.
+
+| Tabel | Kelas | Kolom |
+|---|---|---|
+| `admin_user` | Internal, dengan satu kolom **Terbatas** dan satu **Rahasia** | Terbatas: `username` (identitas login). Rahasia: `password_hash` (argon2id PHC; tidak pernah dikembalikan API). Internal: `pengguna_id`, `aktif`, `client_id`, `bahasa_ui`, `dibuat_at`, `diubah_at` |
+| `admin_user_peran` | Internal | Semua kolom (`pengguna_id`, `peran`, `diajukan_oleh`, `disetujui_oleh`, `berlaku_sampai`, `diberikan_at`) |
+| `admin_session` | Internal, dengan satu kolom **Rahasia** | Rahasia: `token_sha256` (hash token sesi; pemegang hash dapat menyamar). Internal: `sesi_id`, `pengguna_id`, `dibuat_at`, `terakhir_aktif_at`, `kedaluwarsa_at`, `user_agent` |
+| `client_endpoint` | Internal | Semua kolom |
+| `downstream_pool_rute` | Internal | Semua kolom |
+| `provider_secret` | Internal, dengan kolom-kolom **Rahasia** | Rahasia: `secret_ciphertext`, `secret_dek_terbungkus`, `secret_nonce`, `kek_id` (bersama-sama materi kunci). Internal: `provider_id`, `nama_secret`, `secret_versi`, `diubah_at`, `diubah_oleh` |
+| `konfigurasi_platform` | Internal | Semua kolom (`kunci`, `nilai`, `diubah_at`, `diubah_oleh`) |
+| `audit_konfigurasi` | Internal | Semua kolom; `nilai_lama` / `nilai_baru` tidak pernah memuat nilai rahasia (komentar kolom) |
+| `audit_login` (baru, §4) | **Terbatas** | `sumber_ip` dan `user_agent` bersifat identitas; username yang diketik tidak disimpan |
+
+Rahasia tidak pernah keluar sebagai kolom yang dibaca peran aplikasi: `pr_api` hanya membaca `secret_ciphertext` `provider_secret` untuk dekripsi di proses, `pr_admin_api` menulis secret (write-only), dan `password_hash` / `token_sha256` tidak di-grant ke peran aplikasi mana pun.

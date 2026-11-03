@@ -279,3 +279,32 @@ SELECT t.gagal($$INSERT INTO admin_user_peran (pengguna_id, peran, diajukan_oleh
   '23514', 'client_owner needs a client on the user');
 ROLLBACK;
 
+-- ============ audit_login (ADR-0003 3.6): admin login trail, separate from audit_akses, append-only
+BEGIN;
+SAVEPOINT s;
+SELECT t.jalan($$INSERT INTO audit_login (audit_id, pengguna_id, aksi, hasil, sesi_id, sumber_ip, user_agent)
+  VALUES (uuidv7(), '00000000-0000-7000-8000-000000000001', 'login', 'berhasil', 'sesi-l1', '10.0.0.1', 'uji/1')$$,
+  'audit_login: a successful login is accepted');
+SELECT t.jalan($$INSERT INTO audit_login (audit_id, pengguna_id, aksi, hasil, sesi_id, sumber_ip)
+  VALUES (uuidv7(), '00000000-0000-7000-8000-000000000001', 'logout', 'berhasil', 'sesi-l1', '10.0.0.1')$$,
+  'audit_login: a logout is accepted');
+-- a failed login for an unknown username has no user and no session
+SELECT t.jalan($$INSERT INTO audit_login (audit_id, aksi, hasil, sumber_ip)
+  VALUES (uuidv7(), 'login', 'gagal', '10.0.0.9')$$,
+  'audit_login: a failed login for an unknown username is accepted without pengguna_id');
+SELECT t.gagal($$INSERT INTO audit_login (audit_id, aksi, hasil, sesi_id, sumber_ip)
+  VALUES (uuidv7(), 'login', 'berhasil', NULL, '10.0.0.1')$$, '23514', 'audit_login: a successful login needs a session');
+SELECT t.gagal($$INSERT INTO audit_login (audit_id, pengguna_id, aksi, hasil, sesi_id, sumber_ip)
+  VALUES (uuidv7(), '00000000-0000-7000-8000-000000000001', 'login', 'gagal', 'sesi-x', '10.0.0.1')$$, '23514',
+  'audit_login: a failed attempt carries no session');
+SELECT t.gagal($$INSERT INTO audit_login (audit_id, pengguna_id, aksi, hasil, sumber_ip)
+  VALUES (uuidv7(), '00000000-0000-7000-8000-000000000001', 'ganti_sandi', 'berhasil', '10.0.0.1')$$, '23514',
+  'audit_login: aksi is a closed list');
+SELECT t.gagal($$UPDATE audit_login SET hasil = 'gagal'$$, '23000', 'audit_login is append-only (update)');
+SELECT t.gagal($$DELETE FROM audit_login$$, '23000', 'audit_login is append-only (delete)');
+ROLLBACK TO s;
+-- there is no password or typed-username column: the trail cannot leak either
+SELECT t.ok(t.hitung($q$SELECT count(*) FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'audit_login'
+  AND column_name IN ('password', 'password_hash', 'username', 'kata_sandi', 'nama_pengguna')$q$) = 0,
+  'audit_login stores neither a password nor the typed username');
+ROLLBACK;

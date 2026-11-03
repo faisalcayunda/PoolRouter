@@ -58,9 +58,15 @@ SELECT t.ok(t.hitung($q$SELECT count(*) FROM request_status_history WHERE objek_
   'DQ-37 (c): reason matches the entity kind');
 -- U-54c: revoked is terminal for every path
 SELECT t.gagal($$UPDATE client_kredensial SET status = 'aktif' WHERE credential_id = '11000000-0000-7000-8000-0000000000a1'$$, '23514', 'U-54c: owner-level UPDATE dicabut -> aktif blocked by trigger');
+-- U-54c: there is no direct revocation path. Only fn_nonaktifkan_entitas may revoke (EN-03); a direct call would
+-- skip client ownership, audit_konfigurasi and the mass cancel.
 SET ROLE pr_admin_api;
-SELECT t.gagal($$SELECT fn_set_status_kredensial('11000000-0000-7000-8000-0000000000a1', 'aktif', '00000000-0000-7000-8000-000000000001', 'x')$$, '23514',
-  'U-54c: function refuses dicabut -> aktif');
+SELECT t.gagal($$SELECT fn_set_status_kredensial('11000000-0000-7000-8000-0000000000a2', 'dicabut', '00000000-0000-7000-8000-000000000001', 'x')$$, '42501',
+  'U-54c: pr_admin_api cannot call fn_set_status_kredensial directly (42501)');
+SELECT t.gagal($$SELECT fn_set_status_kredensial('11000000-0000-7000-8000-0000000000a1', 'aktif', '00000000-0000-7000-8000-000000000001', 'x')$$, '42501',
+  'U-54c: dicabut -> aktif has no path at all');
+SELECT t.ok((SELECT status = 'aktif' AND dicabut_at IS NULL FROM client_kredensial WHERE credential_id = '11000000-0000-7000-8000-0000000000a2'),
+  'U-54c: the refused direct call changed nothing');
 SELECT t.gagal($$SELECT fn_aktifkan_entitas('kredensial', '11000000-0000-7000-8000-0000000000a1', '00000000-0000-7000-8000-000000000001', 'x')$$, '23514',
   'U-54b: credentials cannot be reactivated');
 -- U-54f: a replacement credential can be created (one slot is free)
@@ -162,7 +168,35 @@ SELECT t.ok(NOT (SELECT fn_tutup_log_tidak_diketahui(kode, 60) FROM _r), 'R-02: 
 RESET ROLE;
 ROLLBACK;
 
--- ============ auditor access, export, audit (A-01, A-04, E-01..E-06)
+-- ============ reconciler threshold comes from konfigurasi_platform, not from the caller (R-02, E-03)
+-- A caller may only raise the threshold. pr_controller calling (kode, 1) must not close an attempt younger than
+-- rekonsiliasi_ambang_detik (60 s by default), otherwise it can close an attempt that is still running.
+BEGIN;
+CREATE TEMP TABLE _r2 AS SELECT t.buat_request('{"status":"in_flight","attempt_count":1,"upstream_pool_id":"30000000-0000-7000-8000-000000000001"}') AS id, gen_random_uuid() AS kode;
+INSERT INTO transaction_log (kode_transaksi, request_id, attempt_no, provider_id, upstream_pool_id, client_id, downstream_endpoint_id,
+  provider_config_version, endpoint_config_version, nik, requested_at, log_mode, worker_id)
+  SELECT kode, id, 1, '20000000-0000-7000-8000-000000000001', '30000000-0000-7000-8000-000000000001', '10000000-0000-7000-8000-000000000001',
+         '50000000-0000-7000-8000-000000000001', 1, 1, '0000000000000032', now() - interval '5 seconds', 'metadata_only', 'w1' FROM _r2;
+GRANT SELECT ON _r2 TO pr_controller;
+SELECT t.ok((SELECT (nilai #>> '{}')::integer = 60 FROM konfigurasi_platform WHERE kunci = 'rekonsiliasi_ambang_detik'),
+  'R-02: rekonsiliasi_ambang_detik is 60 s in the seed');
+SET ROLE pr_controller;
+SELECT t.ok(NOT (SELECT fn_tutup_log_tidak_diketahui(kode, 1) FROM _r2),
+  'R-02: (kode, 1) on a 5 s old attempt does not close it: the configuration threshold wins');
+RESET ROLE;
+SELECT t.ok((SELECT status_akses IS NULL FROM transaction_log l JOIN _r2 ON l.kode_transaksi = _r2.kode),
+  'R-02: the refused call left status_akses NULL');
+UPDATE konfigurasi_platform SET nilai = '120'::jsonb WHERE kunci = 'rekonsiliasi_ambang_detik';
+SET ROLE pr_controller;
+SELECT t.ok(NOT (SELECT fn_tutup_log_tidak_diketahui(kode, 60) FROM _r2),
+  'R-02: after raising the configuration to 120 s a caller value of 60 no longer closes it');
+-- a caller cannot close it via the threshold while requested_at is in the future (the test trades the age for the
+-- check above), but the guard itself is not "caller always wins": with the configuration at 120 s, a caller value
+-- of 60 stays refused, and a caller value above it opens the window only for rows old enough.
+SELECT t.ok(NOT (SELECT fn_tutup_log_tidak_diketahui(kode, 120) FROM _r2),
+  'R-02: a 5 s old attempt stays open even when the caller passes the configuration value itself');
+RESET ROLE;
+ROLLBACK;
 -- an operator asking for the auditor functions is refused and the refusal is logged
 SELECT count(*) AS n_ditolak_sebelum FROM audit_akses WHERE aksi = 'akses_ditolak' \gset
 SET ROLE pr_admin_api;
@@ -226,6 +260,39 @@ SET ROLE pr_admin_api;
 SELECT t.ok((SELECT count(*) > 0 AND bool_and(client_id = '10000000-0000-7000-8000-000000000001') FROM fn_request_milik_client('00000000-0000-7000-8000-000000000005')),
   'client owner sees only requests of their own client');
 SELECT t.ok((SELECT count(*) = 0 FROM fn_request_milik_client('00000000-0000-7000-8000-000000000004')), 'an operator is not a client owner: no rows');
+
+-- U-54c (cross client, EN-03): owner A's credential belongs to client-u54; owner of client-x must not revoke it,
+-- even through the sanctioned function. Client ownership is checked inside fn_nonaktifkan_entitas only.
+INSERT INTO admin_user (pengguna_id, username, password_hash, client_id) VALUES
+  ('00000000-0000-7000-8000-000000000006', 'owner-u54', '$argon2id$synthetic', '10000000-0000-7000-8000-0000000000a1');
+INSERT INTO admin_user_peran (pengguna_id, peran, diajukan_oleh) VALUES
+  ('00000000-0000-7000-8000-000000000006', 'client_owner', '00000000-0000-7000-8000-000000000001');
+SET ROLE pr_admin_api;
+SELECT t.gagal($$SELECT * FROM fn_nonaktifkan_entitas('kredensial', '11000000-0000-7000-8000-0000000000a2', '00000000-0000-7000-8000-000000000005', 'x')$$,
+  '42501', 'U-54c: client owner A cannot revoke a credential of client B through fn_nonaktifkan_entitas (42501)');
+RESET ROLE;
+SELECT t.ok((SELECT status = 'aktif' FROM client_kredensial WHERE credential_id = '11000000-0000-7000-8000-0000000000a2'),
+  'U-54c: the refused cross-client call left the credential aktif');
+-- the owner of the credential's own client may revoke it, and that path writes audit and cancels waiting requests
+SET ROLE pr_admin_api;
+SELECT t.ok((SELECT jumlah_cancelled = 10 AND jumlah_failed = 0
+               FROM fn_nonaktifkan_entitas('kredensial', '11000000-0000-7000-8000-0000000000a2', '00000000-0000-7000-8000-000000000006', 'uji U-54c')),
+  'U-54c: the owning client owner revokes through fn_nonaktifkan_entitas');
+RESET ROLE;
+SELECT t.ok((SELECT status = 'dicabut' AND dicabut_oleh = '00000000-0000-7000-8000-000000000006' AND dicabut_at IS NOT NULL
+               FROM client_kredensial WHERE credential_id = '11000000-0000-7000-8000-0000000000a2'),
+  'U-54c: revoking client owner recorded as dicabut_oleh');
+SELECT t.ok(t.hitung($q$SELECT count(*) FROM request WHERE credential_id = '11000000-0000-7000-8000-0000000000a2'$q$) = 10
+        AND t.hitung($q$SELECT count(*) FROM request WHERE credential_id = '11000000-0000-7000-8000-0000000000a2' AND status = 'cancelled'
+                       AND cancel_reason = 'kredensial_nonaktif' AND cancelled_by = '00000000-0000-7000-8000-000000000006'$q$) = 10,
+  'U-54c: 10 waiting requests of K2 cancelled with the revoking owner as cancelled_by');
+SELECT t.ok(t.hitung($q$SELECT count(*) FROM audit_konfigurasi WHERE entitas_jenis = 'kredensial'
+                       AND entitas_id = '11000000-0000-7000-8000-0000000000a2' AND aksi = 'cabut'
+                       AND pengguna_id = '00000000-0000-7000-8000-000000000006'$q$) = 1,
+  'U-54c: the sanctioned revocation wrote exactly one audit_konfigurasi row (EN-03, DQ-37 e)');
+SELECT t.ok(t.hitung($q$SELECT count(*) FROM pg_proc p WHERE p.proname = 'fn_set_status_kredensial'
+                       AND has_function_privilege('pr_admin_api', p.oid, 'EXECUTE')$q$) = 0,
+  'U-54c: pr_admin_api has no EXECUTE on fn_set_status_kredensial in the catalog');
 RESET ROLE;
 
 -- append-only now that rows exist (DQ-21)
@@ -242,3 +309,21 @@ SELECT t.ok(t.hitung($q$SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.
 SELECT t.ok(t.hitung($q$SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
   WHERE n.nspname = 'public' AND p.prosecdef AND (p.proconfig IS NULL OR NOT EXISTS (SELECT 1 FROM unnest(p.proconfig) c WHERE c LIKE 'search_path=%'))$q$) = 0,
   'every SECURITY DEFINER function pins search_path');
+
+-- ============ uuidv7() (R-02 rows written by functions; contract 3 ID UUIDv7)
+SELECT t.ok((SELECT get_byte(uuid_send(uuidv7()), 6) >> 4 = 7), 'uuidv7: version nibble is 7');
+SELECT t.ok((SELECT get_byte(uuid_send(uuidv7()), 8) >> 6 = 2), 'uuidv7: variant bits are 10 (RFC 9562)');
+-- bit(60) then / 4096 reads the 48-bit prefix without sign extension
+SELECT t.ok((SELECT abs(extract(epoch FROM now() - to_timestamp(
+                      (('x' || substr(replace(uuidv7()::text, '-', ''), 1, 12))::bit(60)::bigint / 4096) / 1000.0))) < 5),
+  'uuidv7: the 48-bit prefix is the current unix_ts_ms');
+SELECT t.ok((SELECT count(DISTINCT uuidv7()) = 1000 FROM generate_series(1, 1000)), 'uuidv7: 1000 calls, 1000 distinct values');
+
+-- every id a function writes is a v7 uuid: audit_akses.audit_id (all audit functions) and
+-- audit_konfigurasi.audit_konfigurasi_id (fn_nonaktifkan_entitas / fn_aktifkan_entitas).
+SELECT t.ok((SELECT count(*) > 0 AND bool_and((get_byte(uuid_send(audit_id), 6) >> 4 = 7)::int = 1) FROM audit_akses),
+  'audit_akses.audit_id written by functions is UUIDv7');
+SELECT t.ok((SELECT count(*) > 0 AND bool_and((get_byte(uuid_send(audit_konfigurasi_id), 6) >> 4 = 7)::int = 1) FROM audit_konfigurasi),
+  'audit_konfigurasi.audit_konfigurasi_id written by functions is UUIDv7');
+SELECT t.ok((SELECT count(*) > 0 AND bool_and((get_byte(uuid_send(audit_id), 8) >> 6 = 2)::int = 1) FROM audit_akses),
+  'audit_akses.audit_id has the RFC 9562 variant bits');
