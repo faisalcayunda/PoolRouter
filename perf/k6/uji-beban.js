@@ -44,7 +44,12 @@ const asyncEndToEnd = new Trend('async_end_to_end_ms', true);
 const asyncTerminal = new Counter('async_terminal_total');
 const asyncTimeout = new Counter('async_poll_timeout_total');
 const asyncPollError = new Counter('async_poll_error_total');
+// Pemisahan per kode (prasyarat gating di docs/perf/rencana-uji-beban.md). Total 5xx
+// tetap ada, dan 502/504/5xx lain dihitung terpisah. 429 diberi tag alasan dari body.
 const http5xx = new Counter('http_5xx_total');
+const http502 = new Counter('http_502_total');
+const http504 = new Counter('http_504_total');
+const http5xxLain = new Counter('http_5xx_lain_total');
 const http429 = new Counter('http_429_total');
 
 const TERMINAL = ['done', 'failed', 'expired', 'cancelled'];
@@ -66,9 +71,26 @@ function headers(extra) {
   return Object.assign({ 'Content-Type': 'application/json', 'X-API-Key': API_KEY }, extra || {});
 }
 
+// Alasan 429 diambil dari body JSON. Nama field (error/code/reason) masih asumsi sampai
+// kontrak gateway SHAA-198 ada; bila tidak cocok, alasan jadi "tanpa_kode" dan dicatat.
+function reason429(res) {
+  try {
+    const j = res.json();
+    return String(j.error || j.code || j.reason || 'tanpa_kode');
+  } catch (e) {
+    return 'bukan_json';
+  }
+}
+
 function countStatus(res) {
-  if (res.status === 429) http429.add(1);
+  if (res.status === 429) {
+    http429.add(1, { alasan: reason429(res) });
+    return;
+  }
   if (res.status >= 500) http5xx.add(1);
+  if (res.status === 502) http502.add(1);
+  else if (res.status === 504) http504.add(1);
+  else if (res.status >= 500) http5xxLain.add(1, { status: String(res.status) });
 }
 
 function doSync() {

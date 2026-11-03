@@ -22,6 +22,8 @@ Versi ini menambahkan target dari PRD v0.4.7 §4a dan §9 (bagian Target), mempe
 | SHAA-199 (controller, worker, adapter antrean, webhook) `done` | Belum (`backlog`) |
 | Hash `main` yang diuji diisi Shu | Belum |
 | Kode gateway ada di `main` | Belum. `main` hanya berisi kerangka, kontrak, dan skema |
+| Pemisahan 502, 504, dan 429 per kode di harness (`http_502_total`, `http_504_total`, `http_5xx_lain_total`, `http_429_total` dengan tag `alasan`) | Ada di kode (`perf/k6/uji-beban.js`). **Belum diuji** dengan respons 502, 504, atau 429 nyata. Selftest wajib: mock menginjeksi kode itu pada fraksi tertentu, dan jumlah counter k6 harus sama dengan jumlah yang dikirim mock. Mock belum punya injeksi status. Ini prasyarat sebelum ulangan pertama, dan Ridley memeriksanya di review berikutnya |
+| Latensi aktual mock tercatat pada run kontrol K0 untuk tiap nilai latensi (`latency_actual_ms` di `mock-stats.json`) | Mekanisme ada dan diuji (smoke 2 s, 60 detik: mean 2.000,448 ms). **Belum** untuk 0,5 s dan 5 s. K0 5 menit per nilai wajib selesai sebelum S-run pada nilai itu, karena overhead dihitung dari mean K0 (lihat "Metode dan kebenaran angka") |
 
 Sampai semua syarat di atas terpenuhi, tidak ada run eksekusi. Harness di `perf/` boleh diuji dengan mock sebagai target, seperti selftest di bagian "Bukti kesiapan".
 
@@ -47,9 +49,10 @@ Angka dari PRD dan ADR dikutip apa adanya. Angka yang belum ada di acuan ditanda
 | M-02: percobaan di atas `kuota_efektif` | 0 | Dari acuan | PRD §4a M-02 dan SHAA-205 AC |
 | 429 `kuota_habis` pada run latensi | 0 (run tidak boleh kena kuota) | Usulan | syarat validitas run, lihat Profil beban |
 
-Dua catatan untuk angka di atas:
+Catatan untuk angka di atas:
 
-- Persentil overhead dihitung dari `http_req_duration` dikurangi latensi stub. Karena latensi stub tetap, persentil overhead sama dengan persentil end-to-end dikurangi `LAT_MS`.
+- **Target PRD/ADR** (NFR-01, NFR-02, M-02) dan **target usulan** (p99, error, throughput) dilaporkan di tabel terpisah. Pass/fail target usulan tidak boleh dilaporkan sebagai pass/fail NFR (keputusan Huan, 2026-11-03).
+- Overhead dihitung dengan latensi aktual mock dari run kontrol, bukan `LAT_MS` nominal. Definisinya ada di "Metode dan kebenaran angka".
 - Porsi sync 20% dari 11,6/s = 2,32/s, sama dengan beban sync pada S3. Pada batas ini jitter bucket bisa memunculkan 429 `porsi_sync_habis`. Angka itu dilaporkan terpisah, tidak disembunyikan.
 
 ## Profil beban
@@ -73,6 +76,7 @@ Setiap skenario dijalankan dengan `perf/run-uji-beban.sh` (satu run per kombinas
 
 | ID | Mode | Latensi stub | Rate | Durasi | Ulangan |
 |---|---|---|---|---|---|
+| K0-x | kontrol: k6 langsung ke mock (`BASE_URL=http://perf-mock:8080/p/<pool>`), tanpa gateway. Hanya untuk mengukur latensi aktual mock | 0,5 s / 2 s / 5 s | 11,6/s | 5 menit | 1 per nilai |
 | S1-x | sync | 0,5 s / 2 s / 5 s | 11,6/s | 30 menit | 3 |
 | S2-x | async (enqueue, sampel 10% sampai terminal) | 0,5 s / 2 s / 5 s | 11,6/s | 30 menit | 3 |
 | S3-2s | mix (sync 20%, async 80%) | 2 s | 11,6/s | 30 menit | 3 |
@@ -81,12 +85,16 @@ Setiap skenario dijalankan dengan `perf/run-uji-beban.sh` (satu run per kombinas
 
 Laju dikirim sebagai bilangan bulat per 100 s (11,6/s = 1.160 per 100 s), jadi tepat tanpa pembulatan. Pada S3 sync 2,32/s dan async 9,28/s juga tepat, sehingga porsi 20% tidak bergeser. Laju yang tidak tepat sampai 2 desimal menggagalkan init k6 (diuji: 11,605/s gagal). Tidak ada penyimpangan dari profil K-22.
 
-Jumlah run utama: 21 (S1 9, S2 9, S3 3), 630 menit. Ditambah warm-up dan stres, satu eksekusi penuh kira-kira 11 jam di mesin lokal, tanpa waktu start-stop.
+Urutan eksekusi (Huan, 2026-11-03: S2 dan S3 pada 2 s dan 5 s lebih dulu): W dan K0 untuk nilai latensi yang sedang dijalankan, lalu S2-2s, S2-5s, S1-2s, S1-5s, S3-2s, S1-0,5s, S2-0,5s, dan S4-2s.
+
+Jumlah run: 21 run utama (S1 9, S2 9, S3 3), 630 menit, ditambah kontrol K0 (3 × 5 menit), warm-up (3 × 2 menit), dan stres S4 (3 × 5 menit). Satu eksekusi penuh kira-kira 11 jam di mesin lokal, tanpa waktu start-stop. Belum ada ulangan yang dikurangi. Bila pengurangan diajukan, penyimpangannya dicatat di laporan. Durasi run utama tidak boleh di bawah 30 menit (M-08).
+
+Terbuka untuk Huan: permintaan 2026-11-03 menyebut S2 dan S3 pada 2 s dan 5 s, tetapi S3 di rencana ini hanya pada 2 s. S3-5s (3 run, 90 menit) belum dimasukkan. Mohon konfirmasi.
 
 Setiap skenario mengukur:
 - Sync: `http_req_duration` p50, p95, p99, max; overhead dan throughput efektif (sukses per detik); `dropped_iterations`.
 - Async: `async_enqueue_ms` p50, p95, p99; `async_end_to_end_ms` pada sampel 10%; `async_poll_error_total` (poll non-200 atau respons bukan JSON).
-- Error: 429 (dipisah dari 5xx), 5xx, dan timeout. Untuk sync, 502 (`provider_error_permanen`, `retry_habis`) dan 504 (`timeout_sync`) harus dipisah per kode. Harness saat ini hanya menghitung `http5xx`; pemisahan per kode ditambahkan sebelum eksekusi.
+- Error: 429 (dipisah dari 5xx, per `alasan` dari body), 502 (`provider_error_permanen`, `retry_habis`), 504 (`timeout_sync`), 5xx lain, dan timeout. Counter per kode ada di harness (`http_502_total`, `http_504_total`, `http_5xx_lain_total`, `http_429_total`). Selftest pemisahan adalah prasyarat (lihat Gating).
 - M-02: `m02_over_kuota_total` dari mock.
 - Kuota gateway: `terpakai` awal dan akhir run dari Redis.
 - Diagnostik: `poolrouter_slot_kedaluwarsa_total` dan metrik konkurensi dari gateway, bila sudah ada (katalog metrik ADR-0001 rev 15 §5a.9).
@@ -96,7 +104,15 @@ Setiap skenario mengukur:
 - Baseline minimal tiga ulangan per skenario. Laporkan rata-rata, min, max, dan koefisien variasi (CV) untuk p95. Jika CV p95 di atas 10%, ulangan keempat dan kelima dijalankan dan dilaporkan terpisah. Angka jangan dipilih dari ulangan terbaik.
 - Warm-up (skenario W) dijalankan sebelum ulangan pertama tiap nilai latensi dan dibuang.
 - Semua angka dari mesin yang sama (Podman VM 2 CPU, 3,7 GiB, lihat keterbatasan).
-- Angka lokal diberi label "smoke/relatif". PRD M-08 menyatakan Compose lokal tidak dipakai sebagai bukti metrik. Status M-08 tetap "belum dibuktikan" sampai ada run di lingkungan PoC BGN.
+- Angka lokal diberi label "smoke/relatif". PRD M-08 menyatakan Compose lokal tidak dipakai sebagai bukti metrik. Status M-08 tetap "belum dibuktikan" sampai ada run di lingkungan PoC BGN. Laporan tidak memakai kata "lulus" untuk NFR-01/02 dari angka lokal.
+- **Overhead (definisi laporan).** Overhead tidak dihitung dari `LAT_MS` nominal. Langkahnya:
+  1. Run kontrol K0 pada latensi yang sama, dengan k6 langsung ke mock. Dari `mock-stats.json`, ambil `latency_actual_ms` (count, mean, min, p50, p95, p99, max; rata-rata latensi aktual mock di server, dari terima request sampai tulis respons). Mock tidak menghitung stdev. Catat `LAT_AKTUAL_MEAN_MS` yang dicetak `run-uji-beban.sh`.
+  2. Untuk tiap run S, overhead p95 = p95(`sync_latency_ms`) − `LAT_AKTUAL_MEAN_MS` dari K0 pada latensi itu. Hal yang sama untuk p99 dan untuk enqueue async (`async_enqueue_ms`).
+  3. Selisih dicatat di laporan per nilai latensi: `selisih_mock = LAT_AKTUAL_MEAN_MS(K0) − LAT_MS`. Pada smoke 2 s selisihnya +0,448 ms. Selisih per run S juga dicatat, sebagai pemeriksaan drift.
+  4. Keterbatasan: p95 dari (e2e − rata-rata) tidak sama dengan p95 dari overhead per request, karena jitter `time.sleep` ada per request. Laporan juga memuat p95 dan max latensi aktual K0, supaya besar jitter terlihat.
+- **Lantai harness.** K0 juga memuat jarak k6 ke mock di loopback (proses Python, HTTP). Pada smoke 60 detik 2 s: p95 `sync_latency_ms` 2.027,1 ms dikurangi mean mock 2.000,4 ms = **26,7 ms**. Angka ini sudah mencakup lantai harness dan belum ada gateway. Dari anggaran 50 ms NFR-01, lebih dari separuh (26,7 ms) sudah terpakai oleh lantai itu sebelum ada gateway. Angka K0 wajib dilaporkan berdampingan dengan S-run. Ini satu run 60 detik, bukan ulangan. Angka ini belum dianggap representatif.
+- **Validitas run.** Run tidak valid (diulang, atau dilaporkan tidak valid dengan alasan) bila: `dropped_iterations` > 0, kena batas kuota (429 `kuota_habis`, atau `m02_over_kuota_total` > 0), atau exit code dari `run-uji-beban.sh` ≠ 0 selain M-02 gagal. Run tidak valid tidak masuk agregat p95/p99. Keputusan Huan, 2026-11-03.
+- **Dropped iterations.** Smoke K0 2 s (60 detik) dan positive control 20 detik sama-sama menunjukkan `dropped_iterations` = 1. Lihat "Yang belum diselidiki".
 
 ## Mock Dukcapil dan pembuktian M-02
 
@@ -152,6 +168,12 @@ BASE_URL=http://poolrouter-gateway:8080/ ENDPOINT_ID=<uuid-sync> \
 GATEWAY_NET=<network-gateway> \
   sh perf/run-uji-beban.sh
 # hasil: <workdir>/logs/perf-shaa205/sync-lat2s-r1/{k6-summary.json,mock-stats.json,k6-stdout.log}
+# kontrol K0 (wajib sebelum S-run pada latensi yang sama): k6 langsung ke mock, tanpa gateway.
+# Catat LAT_AKTUAL_MEAN_MS dari baris keluaran; dipakai sebagai latensi stub untuk overhead.
+RUN_NAME=k0-lat2s MODE=sync LAT_MS=2000 RATE=11.6 DURATION=5m \
+KUOTA_EFEKTIF='{"pool-uji":990000}' \
+BASE_URL=http://perf-mock:8080/p/pool-uji ENDPOINT_ID=<uuid-sync> \
+  sh perf/run-uji-beban.sh
 ```
 
 Untuk pembuktian M-02, pool di gateway dan `KUOTA_EFEKTIF` diset ke nilai terskala (mis. `1000`), lalu `m02_over_kuota_total` harus 0.
@@ -159,7 +181,8 @@ Untuk pembuktian M-02, pool di gateway dan `KUOTA_EFEKTIF` diset ke nilai terska
 Bukti kesiapan (diulang 2026-11-03 dengan body mock baru; `dropped_iterations` = 1 pada positive control 20 detik, dicatat, belum dianalisis):
 - Negative control: `RUN_NAME=selftest-kuota50 ... KUOTA_EFEKTIF='{"pool-uji":50}' BASE_URL=http://perf-mock:8080/p/pool-uji` → 240 percobaan, 190 di atas kuota, exit 1.
 - Positive control: `RUN_NAME=selftest-kuota-big-lat2s ... LAT_MS=2000 KUOTA_EFEKTIF='{"pool-uji":100000}'` → 240 percobaan, 0 di atas kuota, latensi sync rata-rata 2 s, exit 0.
-- Setelah kedua run, tidak ada container atau network berlabel SHAA-205 yang tersisa.
+- Smoke kontrol K0 2 s (2026-11-03, 60 detik, k6 langsung ke mock): `RUN_NAME=kontrol-smoke-lat2s ... LAT_MS=2000 DURATION=60s BASE_URL=http://perf-mock:8080/p/pool-uji`. Hasil: 696 request, `LAT_AKTUAL_MEAN_MS` 2.000,448 (N=696), `m02_over_kuota_total` 0, exit 0. `sync_latency_ms` p95 2.027,137 ms, p99 2.043,767 ms. `dropped_iterations` = 1 (lihat "Yang belum diselidiki"). Ini uji mekanisme pengukuran, bukan angka S1.
+- Setelah ketiga run, tidak ada container, network, atau image berlabel SHAA-205 yang tersisa.
 
 ## Open questions
 
@@ -168,4 +191,9 @@ Bukti kesiapan (diulang 2026-11-03 dengan body mock baru; `dropped_iterations` =
 3. **Lingkungan M-08.** Lingkungan PoC BGN belum ada. Ke Huan: terima hasil lokal sebagai smoke/relatif dengan status M-08 "belum dibuktikan", atau tunda pembuktian M-08 sampai PoC BGN tersedia.
 4. **Envelope respons Dukcapil.** Placeholder sekarang mengikuti ADR-0002 D3. Kunci pagination dan elemen selain `NAMA_LGKP` belum ada di acuan. Ke Klaus (contract) dan pelaksana adapter SHAA-199.
 5. **Pemetaan pool ke base URL** (`/p/<pool>`) dan konfirmasi bahwa satu panggilan ke mock = satu percobaan `attempt_count`. Ke pelaksana SHAA-198/199 saat kode ada.
-6. **Pemisahan 502/504 di k6.** Ditambahkan ke harness sebelum eksekusi.
+6. **Pemisahan 502/504/429 di k6.** Kodenya sudah ada. Selftest dengan mock yang menginjeksi status adalah prasyarat (lihat Gating). Nama field alasan 429 di body (`error`, `code`, atau `reason`) masih asumsi sampai kontrak gateway SHAA-198 ada. Bila tidak cocok, alasannya `tanpa_kode` dan itu harus ditandai di laporan.
+7. **S3 pada 5 s.** Lihat catatan di bagian Skenario. Mohon konfirmasi Huan.
+
+## Yang belum diselidiki
+
+- **`dropped_iterations` = 1** pada positive control 20 detik dan pada smoke K0 2 s (60 detik). Dugaan, belum diverifikasi: k6 `constant-arrival-rate` memakai `preAllocatedVUs` = `ceil(rate × 2)` = 24, sedangkan konkurensi yang dibutuhkan pada 2 s sekitar 23,2 (rate × latensi). Pada awal run, VU masih dialokasikan, sehingga satu iterasi bisa terlewat. Langkah: naikkan `preAllocatedVUs` (mis. `ceil(rate × latensi_maks × 1,5)`), ulangi K0 2 s, dan lihat apakah angkanya 0. Bila 0, dugaan itu benar. Bila belum, selidiki lebih lanjut sebelum S-run. Keputusan Huan: satu drop di positive control tetap diselidiki di eksekusi pertama, dan run dengan drop > 0 tidak valid.

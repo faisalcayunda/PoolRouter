@@ -95,7 +95,7 @@ if ! podman exec "$MOCK_NAME" python -I -c "import urllib.request as u; print(u.
   echo "RUN TIDAK VALID: statistik mock tidak bisa diambil" >&2
   exit 2
 fi
-if ! OVER=$(podman exec -i -e KUOTA_EFEKTIF="$KUOTA_EFEKTIF" "$MOCK_NAME" python -I -c '
+if ! RES=$(podman exec -i -e KUOTA_EFEKTIF="$KUOTA_EFEKTIF" "$MOCK_NAME" python -I -c '
 import json, os, sys
 s = json.loads(sys.stdin.read())
 q = json.loads(os.environ["KUOTA_EFEKTIF"])
@@ -114,12 +114,18 @@ for k in q:
 if err:
     sys.stderr.write("; ".join(err) + "\n")
     sys.exit(2)
-print(s["m02_over_kuota_total"])
+lat = s.get("latency_actual_ms", {})
+# Baris keluaran: m02_over_kuota_total, lalu rata-rata latensi aktual mock (ms) dan jumlah sampel.
+print(s["m02_over_kuota_total"], lat.get("mean"), lat.get("count"))
 ' <"$OUT/mock-stats.json"); then
   echo "RUN TIDAK VALID: lihat pesan di atas (exit 2)" >&2
   exit 2
 fi
-echo "RUN=$RUN_NAME K6_RC=$K6_RC M02_OVER_KUOTA=$OVER OUT=$OUT"
+set -- $RES
+OVER=$1
+LAT_MEAN=$2
+LAT_N=$3
+echo "RUN=$RUN_NAME K6_RC=$K6_RC M02_OVER_KUOTA=$OVER LAT_NOMINAL_MS=$LAT_MS LAT_AKTUAL_MEAN_MS=$LAT_MEAN LAT_AKTUAL_N=$LAT_N OUT=$OUT"
 
 if [ "$OVER" -ne 0 ]; then
   echo "M-02 GAGAL: $OVER percobaan melewati kuota_efektif" >&2
