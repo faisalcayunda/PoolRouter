@@ -25,12 +25,12 @@ Yang dilakukan target `setup`:
 
 Cache per checkout ada di `backend/.cache/` (di-gitignore).
 
-CI memakai target `make -C backend setup` yang sama, tidak ada cara pasang kedua untuk `cargo-deny`.
+CI menjalankan `make setup test lint` dari akar repo dengan `RUNNER=native`. Target itu memanggil `make -C backend setup` untuk memasang `cargo-deny`; tidak ada cara pasang kedua.
 
 ## Ukuran VM
 
 - Target: **6144 MiB RAM, 4 CPU** (disk tetap). Alasan: dua build Rust berjalan bersamaan dengan batas 3 GiB per container, ditambah service persisten (`shaal-hindsight`).
-- Resize hanya dijalankan **owner**, tidak oleh agent. Langkah siap jalan dikirim owner lewat Luca di SHAA-222 (`podman machine stop`, `set --memory 6144 --cpus 4`, `start`).
+- Resize hanya dijalankan **owner**, tidak oleh agent. Langkah siap jalan dikirim ke owner lewat Luca di SHAA-222 (`podman machine stop`, `set --memory 6144 --cpus 4`, `start`).
 - Verifikasi setelah resize:
 
 ```sh
@@ -57,6 +57,12 @@ make -C backend setup CONTAINER_LABEL=shaal.issue=<ISSUE>; echo "exit=$?"
 ```
 
 Container toolchain harus berlabel `shaal.issue=<ISSUE>`. Container tanpa label dicek asal-usulnya sebelum dihapus.
+
+## Label wajib
+
+- Untuk `RUNNER=podman`, target `setup`, `test`, `lint`, `fmt`, dan `clean` gagal dengan exit 2 bila `CONTAINER_LABEL` kosong atau tidak berbentuk `shaal.issue=SHAA-<n>`. Tidak ada label default.
+- `podman run` untuk toolchain hanya boleh lewat `make` dengan `CONTAINER_LABEL=shaal.issue=<ISSUE>`.
+- Container tanpa label yang ditemukan dilaporkan di issue terkait. Jangan dihapus atau dihentikan sendiri tanpa koordinasi dengan pemiliknya.
 
 ## Membersihkan
 
