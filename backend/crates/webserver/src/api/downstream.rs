@@ -39,7 +39,7 @@ pub fn router() -> OpenApiRouter {
 }
 
 /// OpenAPI document as YAML, used by `openapi-gen`.
-pub fn yaml() -> Result<String, utoipa::Error> {
+pub fn yaml() -> Result<String, Box<dyn std::error::Error>> {
     let (_, api) = router().split_for_parts();
-    api.to_yaml()
+    Ok(api.to_yaml()?)
 }
