@@ -111,4 +111,5 @@ GRANT EXECUTE ON FUNCTION fn_nonaktifkan_entitas(text, uuid, uuid, text),
   fn_webhook_log_milik_client(uuid), fn_auditor_lihat_transaksi(uuid, text, uuid, text, text),
   fn_auditor_cari_nik(uuid, text, text, timestamptz, timestamptz, text, text, text),
   fn_ekspor_log_auditor(uuid, uuid, text, text, text, timestamptz, timestamptz, uuid, text, text, text),
-  fn_lihat_audit(uuid, timestamptz, timestamptz, integer, text, text), fn_punya_peran(uuid, text) TO pr_admin_api;
+  fn_lihat_audit(uuid, timestamptz, timestamptz, integer, text, text), fn_punya_peran(uuid, text),
+  fn_set_status_kredensial(uuid, text, uuid, text) TO pr_admin_api;
