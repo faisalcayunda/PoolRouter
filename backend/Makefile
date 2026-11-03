@@ -15,9 +15,10 @@ CARGO_DENY_VERSION ?= 0.19.0
 CARGO_DENY_SHA256_aarch64 := 2b3567a60b7491c159d1cef8b7d8479d1ad2a31e29ef49462634ad4552fcc77d
 CARGO_DENY_SHA256_x86_64 := 0e8c2aa59128612c90d9e09c02204e912f29a5b8d9a64671b94608cbe09e064f
 # Podman label, required when RUNNER=podman: CONTAINER_LABEL=shaal.issue=SHAA-<n> (checked by check-label).
-# Only for Linux/CI: RUNNER=native is for machines or CI jobs that already have Rust 1.99.1.
+# RUNNER=native is only for Linux/CI jobs that already have Rust 1.99.1; never use it on the owner's Mac.
 CONTAINER_LABEL ?=
-# Memory cap per podman toolchain container; keeps two Rust builds within a 6 GiB VM (SHAA-222).
+# Memory cap per podman toolchain container. On the current 2 CPU / 3814 MiB VM only one Rust build fits:
+# run one build at a time with JOBS=1 (see docs/runbook/backend-toolchain.md, SHAA-222).
 CONTAINER_MEMORY ?= 3g
 JOBS ?= 2
 
@@ -42,7 +43,7 @@ endif
 # Podman toolchain containers must carry the owning issue label, so untracked containers cannot appear (SHAA-222).
 ifeq ($(RUNNER),podman)
 check-label:
-	@case "$(CONTAINER_LABEL)" in shaal.issue=SHAA-[0-9]*) ;; *) echo "CONTAINER_LABEL wajib shaal.issue=SHAA-<n> untuk RUNNER=podman (contoh: make -C backend lint CONTAINER_LABEL=shaal.issue=SHAA-222)" >&2; exit 2 ;; esac
+	@echo "$(CONTAINER_LABEL)" | grep -Eq '^shaal\.issue=SHAA-[0-9]+$$' || { echo "CONTAINER_LABEL wajib shaal.issue=SHAA-<n> untuk RUNNER=podman (contoh: make -C backend lint CONTAINER_LABEL=shaal.issue=SHAA-222)" >&2; exit 2; }
 else
 check-label:
 endif

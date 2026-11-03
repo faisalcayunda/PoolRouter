@@ -4,7 +4,7 @@ Runbook ini menjelaskan cara menyiapkan, memeriksa, dan membersihkan toolchain g
 
 - **Pemilik:** Tetsu (Platform & SRE), reviewer Huan
 - **Tanggal:** 2026-11-03
-- **Status:** Draf untuk review Huan. Langkah VM Podman belum dijalankan (lihat bagian Batasan).
+- **Status:** Gate lolos di VM 2 CPU / 3814 MiB atas keputusan owner, tertanggal 2026-11-03 (lihat bagian Batasan).
 
 ## Prasyarat
 
@@ -27,11 +27,21 @@ Cache per checkout ada di `backend/.cache/` (di-gitignore).
 
 CI menjalankan `make setup test lint` dari akar repo dengan `RUNNER=native`. Target itu memanggil `make -C backend setup` untuk memasang `cargo-deny`; tidak ada cara pasang kedua.
 
-## Ukuran VM
+## Kondisi VM saat ini
 
-- Target: **6144 MiB RAM, 4 CPU** (disk tetap). Alasan: dua build Rust berjalan bersamaan dengan batas 3 GiB per container, ditambah service persisten (`shaal-hindsight`).
-- Resize hanya dijalankan **owner**, tidak oleh agent. Langkah siap jalan dikirim ke owner lewat Luca di SHAA-222 (`podman machine stop`, `set --memory 6144 --cpus 4`, `start`).
-- Verifikasi setelah resize:
+- VM `podman-machine-default` berjalan pada **2 CPU / 3814 MiB RAM** (disk tetap). Ini kondisi yang berlaku sekarang, atas keputusan owner tertanggal 2026-11-03.
+- Akibatnya **hanya satu build Rust pada satu waktu**, dengan `JOBS=1`. Jangan menjalankan dua build Rust bersamaan (misalnya dua `make test` atau `make lint` dari issue berbeda).
+- Sebelum build apa pun, cek container yang sedang jalan:
+
+```sh
+podman ps --filter label=shaal.issue --format '{{.Names}} {{.Labels}}'
+```
+
+  Jika ada build Rust lain yang masih jalan, tunggu sampai selesai dan koordinasikan di issue pemiliknya (label `shaal.issue=...` menunjukkan issue asalnya). Jangan menghentikan container milik orang lain.
+- Service persisten (`shaal-hindsight`) ikut memakai memori VM yang sama.
+- Resize hanya dijalankan **owner**, tidak oleh agent. Jangan mengubah konfigurasi `podman machine` dari runbook ini.
+
+Rekomendasi jika owner meresize nanti (bukan kondisi saat ini): **6144 MiB RAM, 4 CPU**. Dengan VM sebesar itu, dua build Rust bersamaan dengan batas 3 GiB per container lebih aman. Langkah verifikasi setelah resize:
 
 ```sh
 podman machine inspect --format '{{.Resources.Memory}} MiB, {{.Resources.CPUs}} CPU'   # harus 6144 MiB, 4 CPU
@@ -46,7 +56,7 @@ Setiap container toolchain dibatasi `--memory $(CONTAINER_MEMORY)` (default `3g`
 make -C backend test CONTAINER_MEMORY=4g
 ```
 
-Batas ini hanya berguna bila VM Podman cukup besar. Dengan VM 2 GiB, dua build Rust bersamaan tetap bisa membuat VM kehabisan memori.
+Pada VM 2 CPU / 3814 MiB, batas `3g` per container berarti hanya satu build Rust yang muat, ditambah `shaal-hindsight`. Menaikkan `CONTAINER_MEMORY` di VM ini tidak disarankan dan butuh keputusan owner.
 
 ## Memeriksa
 
