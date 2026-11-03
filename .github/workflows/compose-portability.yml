@@ -1,0 +1,87 @@
+# V4 (ADR-0001 Addendum A §8): compose-portability.
+# Menjalankan V1 (compose-lint) dan V3 (harness DinD) di runner GitHub. Runner ini memakai
+# Docker Engine untuk V1; V3 tetap memakai harness `deploy/compose/test/dind.sh` yang
+# berjalan lewat Podman rootful di runner, dengan Docker Engine sementara di dalam container.
+# Tidak ada secret repo yang dipakai. Secret uji dibuat acak saat run di direktori sementara
+# runner (mode 0700 dan file 0444), tidak disimpan dan tidak dicetak.
+name: compose-portability
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "deploy/**"
+      - "**/Containerfile"
+      - "**/.dockerignore"
+      - ".github/workflows/compose-portability.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: compose-portability-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  compose-portability:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      SHAA_ISSUE: SHAA-207
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Catat versi engine dan file (V5)
+        run: |
+          docker version --format 'docker server={{.Server.Version}}'
+          docker compose version
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq podman >/dev/null
+          podman --version
+          sha256sum deploy/compose/compose*.yaml deploy/compose/test/images.env
+
+      - name: V1 compose-lint (Docker Engine)
+        run: make compose-lint CONTAINER_ENGINE=docker
+
+      - name: Siapkan secret uji dan env sementara (di luar repo)
+        run: |
+          set -eu
+          dir="$RUNNER_TEMP/poolrouter-secrets"
+          mkdir -p "$dir"
+          chmod 0700 "$dir"
+          for f in db_password redis_password rabbitmq_password poolrouter_owner poolrouter_db_app poolrouter_kek; do
+            # Nilai acak per run, hanya untuk smoke test. Tidak dicetak.
+            openssl rand -hex 24 > "$dir/$f"
+            chmod 0444 "$dir/$f"
+          done
+          env_file="$RUNNER_TEMP/poolrouter.env"
+          sed "s|^POOLROUTER_SECRETS_DIR=.*|POOLROUTER_SECRETS_DIR=$dir|" \
+            deploy/compose/env/staging.env.example > "$env_file"
+          chmod 0444 "$env_file"
+          echo "ENV_FILE=$env_file" >> "$GITHUB_ENV"
+
+      - name: V3 harness DinD (compose-test-dind)
+        run: |
+          sudo env "PATH=$PATH" make compose-test-dind \
+            CONTAINER_ENGINE=podman SHAA_ISSUE="$SHAA_ISSUE" ENV_FILE="$ENV_FILE"
+
+      - name: Bersihkan resource berlabel (selalu)
+        if: always()
+        run: |
+          sudo podman rm -f -v --filter "label=shaal.issue=$SHAA_ISSUE" >/dev/null 2>&1 || true
+          sudo podman volume prune -f --filter "label=shaal.issue=$SHAA_ISSUE" >/dev/null 2>&1 || true
+          sudo podman network prune -f --filter "label=shaal.issue=$SHAA_ISSUE" >/dev/null 2>&1 || true
+          left=$(sudo podman ps -a --filter "label=shaal.issue=$SHAA_ISSUE" -q | wc -l | tr -d ' ')
+          echo "CLEANUP left_containers=$left"
+          rm -rf "$RUNNER_TEMP/poolrouter-secrets" "$RUNNER_TEMP/poolrouter.env"
+
+      - name: Unggah log harness
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: compose-portability-logs
+          path: deploy/compose/test/logs/
+          if-no-files-found: ignore
+          retention-days: 14
