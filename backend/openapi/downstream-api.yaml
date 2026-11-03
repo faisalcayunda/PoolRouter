@@ -105,7 +105,7 @@ paths:
                   summary: Kunci metadata tidak ada di kontrak endpoint
                   value:
                     errors:
-                    - field: metadata
+                    - field: status_penerima_manfaat
                       kode: field_tak_dikenal
                     kode: metadata_tidak_valid
                     status: 422
@@ -115,8 +115,11 @@ paths:
                   summary: Field input tak dikenal
                   value:
                     errors:
-                    - field: input
+                    - field: TRESHOLD
                       kode: field_tak_dikenal
+                    - field: NAMA_LGKAP
+                      kode: field_tak_dikenal
+                    jumlah_nama_tidak_cocok: 1
                     kode: validasi_gagal
                     status: 422
                     title: Validasi gagal
@@ -277,8 +280,8 @@ paths:
                   summary: Semua elemen sesuai
                   value:
                     hasil:
-                      status_penerima_manfaat:
-                        skor: null
+                      NAMA_LGKP:
+                        skor: 90
                         status: sesuai
                     request_id: 0b19c3b4-7c5f-4e2f-9b3a-1a2b3c4d5e6f
                     status: done
@@ -349,7 +352,7 @@ paths:
                   summary: Kunci metadata tidak ada di kontrak endpoint
                   value:
                     errors:
-                    - field: metadata
+                    - field: status_penerima_manfaat
                       kode: field_tak_dikenal
                     kode: metadata_tidak_valid
                     status: 422
@@ -359,8 +362,11 @@ paths:
                   summary: Field input tak dikenal (termasuk TRESHOLD, USER_ID, PASSWORD, IP_USER, transactionId)
                   value:
                     errors:
-                    - field: input
+                    - field: TRESHOLD
                       kode: field_tak_dikenal
+                    - field: NAMA_LGKAP
+                      kode: field_tak_dikenal
+                    jumlah_nama_tidak_cocok: 1
                     kode: validasi_gagal
                     status: 422
                     title: Validasi gagal
@@ -621,7 +627,7 @@ paths:
                   summary: Request selesai
                   value:
                     hasil:
-                      status_penerima_manfaat:
+                      NAMA_LGKP:
                         skor: 40
                         status: tidak_sesuai
                     queue_id: 0b19c3b4-7c5f-4e2f-9b3a-1a2b3c4d5e6f
@@ -736,7 +742,7 @@ webhooks:
           type: integer
           format: int64
       requestBody:
-        description: 'Status terminal: done, failed, expired, atau cancelled. Tanpa payload dan tanpa NIK'
+        description: Status terminal. Untuk `done` memuat `hasil` (bentuk sama dengan polling); tanpa data input dan tanpa NIK
         content:
           application/json:
             schema:
@@ -902,6 +908,13 @@ components:
       - downstream_pool
       - upstream_pool
       - provider
+    JumlahNamaTidakCocok:
+      type: integer
+      format: int32
+      description: |-
+        Count of failing names that are withheld instead of echoed (D6). A count of
+        zero is never emitted: the field is absent when no name was withheld.
+      minimum: 1
     Mode:
       type: string
       description: Path mode of a downstream endpoint (U-4). Not writable in request bodies.
@@ -957,11 +970,21 @@ components:
           - 'null'
           items:
             $ref: '#/components/schemas/ValidasiError'
-          description: Failing fields; only on 422 `validasi_gagal` bodies.
+          description: |-
+            Failing fields; only on 422 `validasi_gagal` and `metadata_tidak_valid`
+            bodies (D6). Entries are the names as sent, never their values.
         jenis_objek:
           oneOf:
           - $ref: '#/components/schemas/JenisObjek'
             description: Kind of the inactive object; only on `objek_nonaktif`.
+          - type: 'null'
+        jumlah_nama_tidak_cocok:
+          oneOf:
+          - $ref: '#/components/schemas/JumlahNamaTidakCocok'
+            description: |-
+              Number of failing names that did not match `^[A-Za-z0-9_]{1,64}$` and
+              are therefore not echoed, only counted (D6, R-16). Present only when at
+              least one such name was rejected.
           - type: 'null'
         kode:
           $ref: '#/components/schemas/ProblemKode'
@@ -1157,7 +1180,10 @@ components:
           description: Numeric rule parameter of the violated rule, if any.
         field:
           type: string
-          description: Field name, or a JSON pointer for template errors.
+          description: |-
+            Name of the rejected field exactly as sent (`TRESHOLD`, `NAMA_LGKAP`,
+            or the metadata key), or a JSON pointer for template errors (D6).
+            Names that do not match `^[A-Za-z0-9_]{1,64}$` are never echoed.
         kode:
           type: string
         posisi:

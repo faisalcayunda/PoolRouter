@@ -239,7 +239,7 @@ async fn get_endpoint_kontrak(
         (status = 200, description = "Jawaban provider lengkap (status done)", body = SyncResult, headers(
             ("Cache-Control" = String, description = "Selalu no-store (R-16)")
         ),
-            examples(("done" = (summary = "Semua elemen sesuai", value = json!({"request_id": "0b19c3b4-7c5f-4e2f-9b3a-1a2b3c4d5e6f", "status": "done", "hasil": {"status_penerima_manfaat": {"status": "sesuai", "skor": null}}}))))
+            examples(("done" = (summary = "Semua elemen sesuai", value = json!({"request_id": "0b19c3b4-7c5f-4e2f-9b3a-1a2b3c4d5e6f", "status": "done", "hasil": {"NAMA_LGKP": {"status": "sesuai", "skor": 90}}}))))
         ),
         (status = 400, description = "JSON tidak valid/kunci ganda (validasi_gagal) atau Idempotency-Key pada sync (idempotency_key_tidak_didukung)", body = Problem, content_type = "application/problem+json", headers(
             ("Cache-Control" = String, description = "Selalu no-store (R-16)")
@@ -256,7 +256,7 @@ async fn get_endpoint_kontrak(
         (status = 422, description = "Field input/metadata tidak sesuai kontrak; nilai tidak di-echo (R-16)", body = Problem, content_type = "application/problem+json", headers(
             ("Cache-Control" = String, description = "Selalu no-store (R-16)")
         ),
-            examples(("validasi_gagal" = (summary = "Field input tak dikenal (termasuk TRESHOLD, USER_ID, PASSWORD, IP_USER, transactionId)", value = json!({"type": "https://github.com/faisalcayunda/PoolRouter/blob/main/docs/masalah.md#validasi_gagal", "title": "Validasi gagal", "status": 422, "kode": "validasi_gagal", "errors": [{"field": "input", "kode": "field_tak_dikenal"}]}))), ("metadata_tidak_valid" = (summary = "Kunci metadata tidak ada di kontrak endpoint", value = json!({"type": "https://github.com/faisalcayunda/PoolRouter/blob/main/docs/masalah.md#metadata_tidak_valid", "title": "Metadata tidak valid", "status": 422, "kode": "metadata_tidak_valid", "errors": [{"field": "metadata", "kode": "field_tak_dikenal"}]}))))
+            examples(("validasi_gagal" = (summary = "Field input tak dikenal (termasuk TRESHOLD, USER_ID, PASSWORD, IP_USER, transactionId)", value = json!({"type": "https://github.com/faisalcayunda/PoolRouter/blob/main/docs/masalah.md#validasi_gagal", "title": "Validasi gagal", "status": 422, "kode": "validasi_gagal", "errors": [{"field": "TRESHOLD", "kode": "field_tak_dikenal"}, {"field": "NAMA_LGKAP", "kode": "field_tak_dikenal"}], "jumlah_nama_tidak_cocok": 1}))), ("metadata_tidak_valid" = (summary = "Kunci metadata tidak ada di kontrak endpoint", value = json!({"type": "https://github.com/faisalcayunda/PoolRouter/blob/main/docs/masalah.md#metadata_tidak_valid", "title": "Metadata tidak valid", "status": 422, "kode": "metadata_tidak_valid", "errors": [{"field": "status_penerima_manfaat", "kode": "field_tak_dikenal"}]}))))
         ),
         (status = 429, description = "Kuota periode habis, porsi sync/jam berjalan penuh, atau limiter penolakan aktif; semua dengan Retry-After (U-8)", body = Problem, content_type = "application/problem+json", headers(
             ("Retry-After" = String, description = "Detik hingga percobaan berikutnya (GCRA)"),
@@ -318,7 +318,7 @@ async fn submit_sync(
         (status = 422, description = "Field tak dikenal, metadata tidak valid, atau kunci idempoten dengan sidik berbeda", body = Problem, content_type = "application/problem+json", headers(
             ("Cache-Control" = String, description = "Selalu no-store (R-16)")
         ),
-            examples(("validasi_gagal" = (summary = "Field input tak dikenal", value = json!({"type": "https://github.com/faisalcayunda/PoolRouter/blob/main/docs/masalah.md#validasi_gagal", "title": "Validasi gagal", "status": 422, "kode": "validasi_gagal", "errors": [{"field": "input", "kode": "field_tak_dikenal"}]}))), ("metadata_tidak_valid" = (summary = "Kunci metadata tidak ada di kontrak endpoint", value = json!({"type": "https://github.com/faisalcayunda/PoolRouter/blob/main/docs/masalah.md#metadata_tidak_valid", "title": "Metadata tidak valid", "status": 422, "kode": "metadata_tidak_valid", "errors": [{"field": "metadata", "kode": "field_tak_dikenal"}]}))), ("idempotency_key_konflik" = (summary = "Kunci sama, isi berbeda", value = json!({"type": "https://github.com/faisalcayunda/PoolRouter/blob/main/docs/masalah.md#idempotency_key_konflik", "title": "Konflik idempotency key", "status": 422, "kode": "idempotency_key_konflik"}))))
+            examples(("validasi_gagal" = (summary = "Field input tak dikenal", value = json!({"type": "https://github.com/faisalcayunda/PoolRouter/blob/main/docs/masalah.md#validasi_gagal", "title": "Validasi gagal", "status": 422, "kode": "validasi_gagal", "errors": [{"field": "TRESHOLD", "kode": "field_tak_dikenal"}, {"field": "NAMA_LGKAP", "kode": "field_tak_dikenal"}], "jumlah_nama_tidak_cocok": 1}))), ("metadata_tidak_valid" = (summary = "Kunci metadata tidak ada di kontrak endpoint", value = json!({"type": "https://github.com/faisalcayunda/PoolRouter/blob/main/docs/masalah.md#metadata_tidak_valid", "title": "Metadata tidak valid", "status": 422, "kode": "metadata_tidak_valid", "errors": [{"field": "status_penerima_manfaat", "kode": "field_tak_dikenal"}]}))), ("idempotency_key_konflik" = (summary = "Kunci sama, isi berbeda", value = json!({"type": "https://github.com/faisalcayunda/PoolRouter/blob/main/docs/masalah.md#idempotency_key_konflik", "title": "Konflik idempotency key", "status": 422, "kode": "idempotency_key_konflik"}))))
         ),
         (status = 429, description = "Kuota periode habis atau limiter penolakan aktif; dengan Retry-After", body = Problem, content_type = "application/problem+json", headers(
             ("Retry-After" = String, description = "Detik hingga percobaan berikutnya (GCRA)"),
@@ -354,7 +354,7 @@ async fn enqueue_async(
         (status = 200, description = "Status terkini; tidak pernah mundur", body = RequestStatus, headers(
             ("Cache-Control" = String, description = "Selalu no-store (R-16)")
         ),
-            examples(("done" = (summary = "Request selesai", value = json!({"queue_id": "0b19c3b4-7c5f-4e2f-9b3a-1a2b3c4d5e6f", "status": "done", "hasil": {"status_penerima_manfaat": {"status": "tidak_sesuai", "skor": 40}}}))))
+            examples(("done" = (summary = "Request selesai", value = json!({"queue_id": "0b19c3b4-7c5f-4e2f-9b3a-1a2b3c4d5e6f", "status": "done", "hasil": {"NAMA_LGKP": {"status": "tidak_sesuai", "skor": 40}}}))))
         ),
         (status = 401, response = Problem401Down),
         (status = 404, response = Problem404Down),
@@ -413,7 +413,7 @@ async fn cancel_request(
         ("webhook-signature" = String, Header, description = "v1,<base64(HMAC-SHA256(kunci, \"{webhook-id}.{webhook-timestamp}.{body}\"))>; kunci = byte hasil decode secret whsec_ (Standard Webhooks)"),
         ("poolrouter-secret-versi" = i64, Header, description = "secret_versi yang dipakai; informatif, tidak ikut ditandatangani (contract W-08)")
     ),
-    request_body(content = RequestStatus, content_type = "application/json", description = "Status terminal: done, failed, expired, atau cancelled. Tanpa payload dan tanpa NIK"),
+    request_body(content = RequestStatus, content_type = "application/json", description = "Status terminal. Untuk `done` memuat `hasil` (bentuk sama dengan polling); tanpa data input dan tanpa NIK"),
     responses(
         (status = 200, description = "2xx apa pun dari client berarti terkirim; selain itu gagal dan tidak diulang di F0", headers(
             ("Cache-Control" = String, description = "Respons client; contoh no-store")

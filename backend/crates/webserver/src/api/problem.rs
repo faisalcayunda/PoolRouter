@@ -200,7 +200,9 @@ pub struct Posisi {
 /// parameter (never the rejected value). Template errors carry `posisi`.
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct ValidasiError {
-    /// Field name, or a JSON pointer for template errors.
+    /// Name of the rejected field exactly as sent (`TRESHOLD`, `NAMA_LGKAP`,
+    /// or the metadata key), or a JSON pointer for template errors (D6).
+    /// Names that do not match `^[A-Za-z0-9_]{1,64}$` are never echoed.
     pub field: String,
     pub kode: String,
     /// Numeric rule parameter of the violated rule, if any.
@@ -209,6 +211,31 @@ pub struct ValidasiError {
     /// Template position (U-9). Admin API and template errors only.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub posisi: Option<Posisi>,
+}
+
+/// Count of failing names that are withheld instead of echoed (D6). A count of
+/// zero is never emitted: the field is absent when no name was withheld.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(try_from = "u32", into = "u32")]
+#[schema(value_type = u32, minimum = 1)]
+pub struct JumlahNamaTidakCocok(u32);
+
+impl TryFrom<u32> for JumlahNamaTidakCocok {
+    type Error = &'static str;
+
+    fn try_from(nilai: u32) -> Result<Self, Self::Error> {
+        if nilai >= 1 {
+            Ok(Self(nilai))
+        } else {
+            Err("jumlah_nama_tidak_cocok minimal 1")
+        }
+    }
+}
+
+impl From<JumlahNamaTidakCocok> for u32 {
+    fn from(nilai: JumlahNamaTidakCocok) -> Self {
+        nilai.0
+    }
 }
 
 /// RFC 9457 problem body shared by every 4xx/5xx. `detail` never contains
@@ -225,9 +252,15 @@ pub struct Problem {
     /// Human explanation without sensitive values; absent when unneeded.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub detail: Option<String>,
-    /// Failing fields; only on 422 `validasi_gagal` bodies.
+    /// Failing fields; only on 422 `validasi_gagal` and `metadata_tidak_valid`
+    /// bodies (D6). Entries are the names as sent, never their values.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub errors: Option<Vec<ValidasiError>>,
+    /// Number of failing names that did not match `^[A-Za-z0-9_]{1,64}$` and
+    /// are therefore not echoed, only counted (D6, R-16). Present only when at
+    /// least one such name was rejected.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub jumlah_nama_tidak_cocok: Option<JumlahNamaTidakCocok>,
     /// Kind of the inactive object; only on `objek_nonaktif`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub jenis_objek: Option<JenisObjek>,
@@ -252,6 +285,7 @@ impl Problem {
             kode,
             detail: None,
             errors: None,
+            jumlah_nama_tidak_cocok: None,
             jenis_objek: None,
             status_api: None,
             request_id: None,

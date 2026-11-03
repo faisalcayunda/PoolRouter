@@ -5,7 +5,10 @@
 use serde_json::Value;
 use utoipa::OpenApi;
 
-use crate::api::{admin, downstream, problem::ProblemKode};
+use crate::api::{
+    admin, downstream,
+    problem::{JumlahNamaTidakCocok, ProblemKode},
+};
 
 fn downstream_doc() -> Value {
     serde_json::to_value(downstream::doc()).expect("downstream doc serializes")
@@ -282,4 +285,80 @@ fn sync_tanpa_idempotency_key() {
         contoh.contains("idempotency_key_tidak_didukung"),
         "400 sync tidak menjelaskan pelarangan Idempotency-Key"
     );
+}
+
+/// 10: 422 examples carry the field name as sent, never the envelope name
+/// (`input`/`metadata`), and only names are echoed (ADR-0002 rev 5 section 6a
+/// D6, R-16).
+#[test]
+fn errors_memuat_nama_field_yang_dikirim() {
+    let doc = downstream_doc();
+    let (mut jumlah, mut nama_dikirim) = (0, 0);
+    for (_method, op) in operations(&doc) {
+        for (status, response) in op["responses"].as_object().expect("responses") {
+            if status != "422" {
+                continue;
+            }
+            let response = resolve(&doc, response);
+            let contoh = &response["content"]["application/problem+json"]["examples"];
+            for (nama, contoh) in contoh.as_object().expect("examples") {
+                let Some(errors) = contoh["value"]["errors"].as_array() else {
+                    continue;
+                };
+                for error in errors {
+                    let field = error["field"].as_str().expect("field string");
+                    jumlah += 1;
+                    if field != "status_penerima_manfaat" {
+                        nama_dikirim += 1;
+                    }
+                    assert!(
+                        field != "input" && field != "metadata",
+                        "{nama}: errors[].field masih nama amplop: {field}"
+                    );
+                    assert!(
+                        field == "TRESHOLD"
+                            || field == "NAMA_LGKAP"
+                            || field == "status_penerima_manfaat",
+                        "{nama}: errors[].field bukan nama yang dikirim: {field}"
+                    );
+                }
+            }
+        }
+    }
+    assert_eq!(jumlah, 6, "jumlah entri errors yang diperiksa berubah");
+    assert!(
+        nama_dikirim >= 2,
+        "contoh D6 (TRESHOLD/NAMA_LGKAP) tidak ditemukan"
+    );
+}
+
+/// 11: a count field for names that are not echoed (D6), integer >= 1.
+#[test]
+fn problem_punya_jumlah_nama_tidak_cocok() {
+    let doc = downstream_doc();
+    let prop = &doc["components"]["schemas"]["Problem"]["properties"]["jumlah_nama_tidak_cocok"];
+    assert!(!prop.is_null(), "Problem tanpa jumlah_nama_tidak_cocok");
+    let nilai = serde_json::to_string(&doc["components"]["schemas"]["JumlahNamaTidakCocok"])
+        .expect("stringify");
+    assert!(nilai.contains("\"minimum\":1"), "tanpa minimum 1: {nilai}");
+    assert!(
+        nilai.contains("\"type\":\"integer\""),
+        "bukan integer: {nilai}"
+    );
+    let nama = JumlahNamaTidakCocok::try_from(0);
+    assert!(nama.is_err(), "nol diterima");
+    assert!(JumlahNamaTidakCocok::try_from(2).is_ok());
+}
+
+/// 12: `hasil` keys are output element names (P-1 / U-43), not metadata keys.
+#[test]
+fn hasil_memakai_nama_elemen_output() {
+    for (method, op) in operations(&downstream_doc()) {
+        let teks = serde_json::to_string(op).expect("stringify");
+        assert!(
+            !teks.contains("status_penerima_manfaat\":{\"status\"")
+                && !teks.contains("status_penerima_manfaat:\n"),
+            "{method}: contoh hasil memakai kunci metadata"
+        );
+    }
 }
