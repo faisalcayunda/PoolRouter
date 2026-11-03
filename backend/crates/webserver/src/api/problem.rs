@@ -15,9 +15,9 @@ use super::enums::{ApiStatus, JenisObjek};
 
 const ANCHOR: &str = "https://github.com/faisalcayunda/PoolRouter/blob/main/docs/masalah.md#";
 
-/// Downstream (external client) codes. Adding a value here changes the frozen
-/// external contract and needs an API version decision; admin-only codes must
-/// never be added to this enum.
+/// Kode untuk klien downstream. Menambah nilai di sini mengubah daftar kode yang
+/// sudah dibekukan dan memerlukan keputusan versi API; kode khusus admin tidak
+/// boleh ditambahkan ke enum ini.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum ProblemKodeDown {
@@ -244,15 +244,15 @@ pub struct Posisi {
     pub kolom: i64,
 }
 
-/// One failing input field, downstream. `kode` is a per-field validation code
-/// from Addendum A section 6.1; `batas` carries only the numeric rule
-/// parameter (never the rejected value). Without `posisi`: template errors are
-/// an admin-only concept.
+/// Satu field input yang gagal validasi pada API downstream. `kode` adalah kode
+/// validasi per field; `batas` hanya membawa parameter angka dari aturan yang
+/// dilanggar (tidak pernah nilai yang ditolak). Tidak ada `posisi`: error
+/// template hanya ada di API admin.
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct ValidasiErrorDown {
-    /// Name of the rejected field exactly as sent (`TRESHOLD`, `NAMA_LGKAP`,
-    /// or the metadata key) (D6). Names that do not match
-    /// `^[A-Za-z0-9_]{1,64}$` are never echoed; they are only counted in
+    /// Nama field yang ditolak, persis seperti dikirim (`TRESHOLD`, `NAMA_LGKAP`,
+    /// atau kunci metadata). Nama yang tidak cocok dengan `^[A-Za-z0-9_]{1,64}$`
+    /// tidak pernah dikembalikan; nama seperti itu hanya dihitung di
     /// `jumlah_nama_tidak_cocok`.
     pub field: String,
     pub kode: String,
@@ -308,12 +308,12 @@ impl From<JumlahNamaTidakCocok> for u32 {
     }
 }
 
-/// RFC 9457 problem body for the downstream API. `detail` never contains input
-/// values, NIK or secrets (R-16). Field names follow the contract: Indonesian
-/// on the wire except the fixed RFC members.
+/// Body problem RFC 9457 untuk API downstream. `detail` tidak pernah memuat nilai
+/// input, NIK, atau secret. Nama field memakai bahasa Indonesia, kecuali anggota
+/// tetap yang ditetapkan RFC.
 ///
-/// Also the base of the admin body: both carry `type`, `title`, `status`,
-/// `kode`, `detail` and `errors`, which is what the client sees.
+/// Body ini juga dipakai sebagai dasar body admin: keduanya membawa `type`,
+/// `title`, `status`, `kode`, `detail`, dan `errors`.
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct Problem {
     /// Stable anchor `https://github.com/faisalcayunda/PoolRouter/blob/main/docs/masalah.md#<kode>`.
@@ -324,28 +324,30 @@ pub struct Problem {
     #[schema(minimum = 400, maximum = 599)]
     pub status: u16,
     pub kode: ProblemKodeDown,
-    /// Human explanation without sensitive values; absent when unneeded.
+    /// Penjelasan untuk manusia tanpa nilai sensitif; tidak ada bila tidak perlu.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub detail: Option<String>,
-    /// Failing fields; only on 422 `validasi_gagal` and `metadata_tidak_valid`
-    /// bodies (D6). Entries are the names as sent, never their values.
+    /// Field yang gagal validasi; hanya pada body 422 `validasi_gagal` dan
+    /// `metadata_tidak_valid`. Isinya nama field seperti yang dikirim, tidak pernah
+    /// nilainya.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub errors: Option<Vec<ValidasiErrorDown>>,
-    /// Number of failing names that did not match `^[A-Za-z0-9_]{1,64}$` and
-    /// are therefore not echoed, only counted (D6, R-16). Present only when at
-    /// least one such name was rejected.
+    /// Jumlah nama yang gagal validasi karena tidak cocok dengan
+    /// `^[A-Za-z0-9_]{1,64}$`, sehingga hanya dihitung dan tidak dikembalikan. Field
+    /// ini ada hanya bila sedikitnya satu nama seperti itu ditolak.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub jumlah_nama_tidak_cocok: Option<JumlahNamaTidakCocok>,
-    /// Kind of the inactive object; only on `objek_nonaktif`.
+    /// Jenis objek yang nonaktif; hanya pada `objek_nonaktif`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub jenis_objek: Option<JenisObjek>,
-    /// Current API status; only on 409 `tidak_bisa_dibatalkan`.
+    /// Status API terkini; hanya pada 409 `tidak_bisa_dibatalkan`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub status_api: Option<ApiStatus>,
-    /// `queue_id` of the request the failure belongs to (502/504 bodies).
+    /// `queue_id` permintaan yang mengalami kegagalan (body 502/504).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub request_id: Option<Uuid>,
-    /// RFC 6749 section 5.2 error for the token endpoint. Never sent with a 429.
+    /// Kode `error` menurut RFC 6749 untuk token endpoint. Tidak pernah dikirim
+    /// bersama 429.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
 }

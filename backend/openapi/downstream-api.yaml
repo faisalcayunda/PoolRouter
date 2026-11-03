@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: PoolRouter Downstream API
-  description: Kontrak downstream PoolRouter F0 (SHAA-175). Error memakai RFC 9457 problem+json dengan kode tertutup; rincian tiap kode ada di docs/masalah.md. Semua respons no-store (R-16).
+  description: API publik PoolRouter F0 untuk klien BGN. Error memakai RFC 9457 problem+json dengan daftar `kode` tertutup; rincian tiap kode, termasuk `batas`, ada di docs/masalah.md. Semua respons selalu `no-store`; respons tidak boleh disimpan cache.
   license:
     name: UNLICENSED
     identifier: UNLICENSED
@@ -12,9 +12,10 @@ paths:
       tags:
       - downstream
       summary: |-
-        Asynchronous submit (US-07). Optional `Idempotency-Key` header:
-        identical key+fingerprint replays 200 with the current status; same key,
-        different fingerprint is 422 `idempotency_key_konflik`.
+        Pengiriman asinkron: permintaan masuk antrean dan statusnya diperiksa lewat
+        polling atau webhook. Header `Idempotency-Key` opsional: kunci dan sidik yang
+        sama diulang menghasilkan 200 berisi status terkini; kunci sama dengan sidik
+        berbeda menghasilkan 422 `idempotency_key_konflik`.
       operationId: enqueueAsync
       parameters:
       - name: endpoint_id
@@ -53,7 +54,7 @@ paths:
             Cache-Control:
               schema:
                 type: string
-              description: Selalu no-store (R-16)
+              description: Selalu `no-store`; respons tidak boleh disimpan cache
           content:
             application/json:
               schema:
@@ -70,7 +71,7 @@ paths:
             Cache-Control:
               schema:
                 type: string
-              description: Selalu no-store (R-16)
+              description: Selalu `no-store`; respons tidak boleh disimpan cache
           content:
             application/json:
               schema:
@@ -95,7 +96,7 @@ paths:
             Cache-Control:
               schema:
                 type: string
-              description: Selalu no-store (R-16)
+              description: Selalu `no-store`; respons tidak boleh disimpan cache
           content:
             application/problem+json:
               schema:
@@ -137,7 +138,7 @@ paths:
             Cache-Control:
               schema:
                 type: string
-              description: Selalu no-store (R-16)
+              description: Selalu `no-store`; respons tidak boleh disimpan cache
             Retry-After:
               schema:
                 type: integer
@@ -157,7 +158,7 @@ paths:
                     title: Kuota habis
                     type: https://github.com/faisalcayunda/PoolRouter/blob/main/docs/masalah.md#kuota_habis
                 penolakan_berlebih:
-                  summary: Limiter penolakan client aktif; hanya empat field (R-10)
+                  summary: Limiter penolakan client aktif; body hanya empat field
                   value:
                     kode: penolakan_berlebih
                     status: 429
@@ -169,13 +170,13 @@ paths:
             Cache-Control:
               schema:
                 type: string
-              description: Selalu no-store (R-16)
+              description: Selalu `no-store`; respons tidak boleh disimpan cache
             Retry-After:
               schema:
                 type: integer
                 format: int64
                 minimum: 1
-              description: Hanya ada pada layanan_tidak_tersedia, selalu 5 detik; tidak ada pada objek_nonaktif (R-10)
+              description: Hanya ada pada layanan_tidak_tersedia, selalu 5 detik; tidak ada pada objek_nonaktif
           content:
             application/problem+json:
               schema:
@@ -203,7 +204,9 @@ paths:
     get:
       tags:
       - downstream
-      summary: 'Contract of one endpoint: inputs, metadata, allowed mode (US-15).'
+      summary: |-
+        Kontrak satu endpoint: field input, field metadata, dan pola pemanggilan yang
+        diizinkan.
       operationId: getEndpointKontrak
       parameters:
       - name: endpoint_id
@@ -220,7 +223,7 @@ paths:
             Cache-Control:
               schema:
                 type: string
-              description: Selalu no-store (R-16)
+              description: Selalu `no-store`; respons tidak boleh disimpan cache
           content:
             application/json:
               schema:
@@ -233,7 +236,7 @@ paths:
             Cache-Control:
               schema:
                 type: string
-              description: Selalu no-store (R-16)
+              description: Selalu `no-store`; respons tidak boleh disimpan cache
           content:
             application/problem+json:
               schema:
@@ -256,8 +259,9 @@ paths:
       tags:
       - downstream
       summary: |-
-        Synchronous submit (US-03, 07, 08, 09). `Idempotency-Key` must NOT be
-        present (400 `idempotency_key_tidak_didukung` when it is).
+        Pengiriman sinkron: hasil provider dikembalikan pada respons yang sama.
+        `Idempotency-Key` tidak boleh dikirim; bila ada, jawabannya 400
+        `idempotency_key_tidak_didukung`.
       operationId: submitSync
       parameters:
       - name: endpoint_id
@@ -287,7 +291,7 @@ paths:
             Cache-Control:
               schema:
                 type: string
-              description: Selalu no-store (R-16)
+              description: Selalu `no-store`; respons tidak boleh disimpan cache
           content:
             application/json:
               schema:
@@ -308,7 +312,7 @@ paths:
             Cache-Control:
               schema:
                 type: string
-              description: Selalu no-store (R-16)
+              description: Selalu `no-store`; respons tidak boleh disimpan cache
           content:
             application/problem+json:
               schema:
@@ -337,7 +341,7 @@ paths:
             Cache-Control:
               schema:
                 type: string
-              description: Selalu no-store (R-16)
+              description: Selalu `no-store`; respons tidak boleh disimpan cache
           content:
             application/problem+json:
               schema:
@@ -354,12 +358,12 @@ paths:
         '404':
           $ref: '#/components/responses/Problem404Down'
         '422':
-          description: Field input/metadata tidak sesuai kontrak; nilai tidak di-echo (R-16)
+          description: Field input/metadata tidak sesuai aturan; nilai yang ditolak tidak dikembalikan
           headers:
             Cache-Control:
               schema:
                 type: string
-              description: Selalu no-store (R-16)
+              description: Selalu `no-store`; respons tidak boleh disimpan cache
           content:
             application/problem+json:
               schema:
@@ -394,7 +398,7 @@ paths:
             Cache-Control:
               schema:
                 type: string
-              description: Selalu no-store (R-16)
+              description: Selalu `no-store`; respons tidak boleh disimpan cache
             Retry-After:
               schema:
                 type: integer
@@ -414,7 +418,7 @@ paths:
                     title: Kuota habis
                     type: https://github.com/faisalcayunda/PoolRouter/blob/main/docs/masalah.md#kuota_habis
                 penolakan_berlebih:
-                  summary: Limiter penolakan client aktif; hanya empat field (R-10)
+                  summary: Limiter penolakan client aktif; body hanya empat field
                   value:
                     kode: penolakan_berlebih
                     status: 429
@@ -433,7 +437,7 @@ paths:
             Cache-Control:
               schema:
                 type: string
-              description: Selalu no-store (R-16)
+              description: Selalu `no-store`; respons tidak boleh disimpan cache
           content:
             application/problem+json:
               schema:
@@ -448,7 +452,7 @@ paths:
                     title: Kesalahan provider permanen
                     type: https://github.com/faisalcayunda/PoolRouter/blob/main/docs/masalah.md#provider_error_permanen
                 retry_habis:
-                  summary: Jendela retry habis (attempt efektif 1 di F0, contract v0.7.10)
+                  summary: Jendela retry habis (di F0 hanya ada satu percobaan efektif)
                   value:
                     kode: retry_habis
                     request_id: 0b19c3b4-7c5f-4e2f-9b3a-1a2b3c4d5e6f
@@ -461,13 +465,13 @@ paths:
             Cache-Control:
               schema:
                 type: string
-              description: Selalu no-store (R-16)
+              description: Selalu `no-store`; respons tidak boleh disimpan cache
             Retry-After:
               schema:
                 type: integer
                 format: int64
                 minimum: 1
-              description: Hanya ada pada layanan_tidak_tersedia, selalu 5 detik; tidak ada pada objek_nonaktif (R-10)
+              description: Hanya ada pada layanan_tidak_tersedia, selalu 5 detik; tidak ada pada objek_nonaktif
           content:
             application/problem+json:
               schema:
@@ -494,7 +498,7 @@ paths:
             Cache-Control:
               schema:
                 type: string
-              description: Selalu no-store (R-16)
+              description: Selalu `no-store`; respons tidak boleh disimpan cache
           content:
             application/problem+json:
               schema:
@@ -516,9 +520,9 @@ paths:
       tags:
       - downstream
       summary: |-
-        Issue a downstream access token (R-05, US-18). Credentials via HTTP Basic
-        or body; 4xx bodies are problem+json with the RFC 6749 `error` field,
-        except 429.
+        Menerbitkan access token downstream. Kredensial boleh lewat HTTP Basic atau
+        body; body 4xx adalah problem+json dengan field `error` menurut RFC 6749,
+        kecuali 429.
       operationId: issueToken
       requestBody:
         description: grant_type=client_credentials; kredensial juga boleh lewat HTTP Basic
@@ -533,12 +537,12 @@ paths:
         required: true
       responses:
         '200':
-          description: Token baru (R-05); tanpa refresh_token
+          description: Token baru; tanpa refresh_token
           headers:
             Cache-Control:
               schema:
                 type: string
-              description: Selalu no-store (R-16)
+              description: Selalu `no-store`; respons tidak boleh disimpan cache
           content:
             application/json:
               schema:
@@ -556,7 +560,7 @@ paths:
             Cache-Control:
               schema:
                 type: string
-              description: Selalu no-store (R-16)
+              description: Selalu `no-store`; respons tidak boleh disimpan cache
           content:
             application/problem+json:
               schema:
@@ -576,7 +580,7 @@ paths:
             Cache-Control:
               schema:
                 type: string
-              description: Selalu no-store (R-16)
+              description: Selalu `no-store`; respons tidak boleh disimpan cache
             WWW-Authenticate:
               schema:
                 type: string
@@ -595,12 +599,12 @@ paths:
                     title: Tidak terautentikasi
                     type: https://github.com/faisalcayunda/PoolRouter/blob/main/docs/masalah.md#tidak_terautentikasi
         '429':
-          description: Limiter GCRA per client_id (60/menit, burst 10) atau per IP (120/menit) habis (R-05)
+          description: Limiter GCRA per client_id (60/menit, burst 10) atau per IP (120/menit) habis
           headers:
             Cache-Control:
               schema:
                 type: string
-              description: Selalu no-store (R-16)
+              description: Selalu `no-store`; respons tidak boleh disimpan cache
             Retry-After:
               schema:
                 type: integer
@@ -626,8 +630,8 @@ paths:
       tags:
       - downstream
       summary: |-
-        Poll a request (US-17). Does not consume quota; `done` stays readable at
-        least for the downstream pool TTL since `completed_at` (S-05).
+        Memeriksa status sebuah permintaan. Tidak memotong kuota; hasil `done` tetap
+        bisa dibaca sedikitnya selama TTL pool downstream sejak `completed_at`.
       operationId: getRequest
       parameters:
       - name: queue_id
@@ -644,7 +648,7 @@ paths:
             Cache-Control:
               schema:
                 type: string
-              description: Selalu no-store (R-16)
+              description: Selalu `no-store`; respons tidak boleh disimpan cache
           content:
             application/json:
               schema:
@@ -700,8 +704,9 @@ paths:
       tags:
       - downstream
       summary: |-
-        Cancel a queued request (US-19). Requests in `processing` or a terminal
-        status answer 409 `tidak_bisa_dibatalkan` with the current status in the body.
+        Membatalkan permintaan yang masih `queued`. Permintaan berstatus `processing`
+        atau status akhir dijawab 409 `tidak_bisa_dibatalkan` dengan status terkini di
+        body.
       operationId: cancelRequest
       parameters:
       - name: queue_id
@@ -718,7 +723,7 @@ paths:
             Cache-Control:
               schema:
                 type: string
-              description: Selalu no-store (R-16)
+              description: Selalu `no-store`; respons tidak boleh disimpan cache
           content:
             application/json:
               schema:
@@ -740,7 +745,7 @@ paths:
             Cache-Control:
               schema:
                 type: string
-              description: Selalu no-store (R-16)
+              description: Selalu `no-store`; respons tidak boleh disimpan cache
           content:
             application/problem+json:
               schema:
@@ -765,9 +770,9 @@ webhooks:
       tags:
       - downstream
       summary: |-
-        Webhook registration handler.
-        Body is the same shape as `RequestStatus` (same mapping function,
-        ADR-0001 section 3a.6).
+        Handler tujuan webhook yang didaftarkan klien.
+        Body memakai bentuk yang sama dengan `RequestStatus`, jadi `status`, `hasil`,
+        `failure_reason`, dan `cancel_reason` dibaca dengan cara yang sama.
       operationId: requestTerminal
       parameters:
       - name: webhook-id
@@ -793,7 +798,7 @@ webhooks:
         example: v1,K5x1s0Y2b3Q4c5D6e7F8g9H0i1J2k3L4m5N6o7P8q9R=
       - name: poolrouter-secret-versi
         in: header
-        description: secret_versi yang dipakai; informatif, tidak ikut ditandatangani (contract W-08)
+        description: secret_versi yang dipakai; informatif, tidak ikut ditandatangani
         required: true
         schema:
           type: integer
@@ -836,7 +841,9 @@ components:
   schemas:
     ApiStatus:
       type: string
-      description: Status exposed by polling and webhook (ADR-0001 section 4.1). Never goes backwards.
+      description: |-
+        Status permintaan yang tampil di polling dan webhook. Tidak pernah mundur ke
+        status sebelumnya.
       enum:
       - queued
       - processing
@@ -847,8 +854,8 @@ components:
     CancelReason:
       type: string
       description: |-
-        `cancel_reason` of a `cancelled` request (contract section 3.2.3). One value
-        per entity kind; both pool kinds share `pool_nonaktif`.
+        `cancel_reason` sebuah permintaan berstatus `cancelled`. Satu nilai untuk tiap
+        jenis objek; kedua jenis pool memakai `pool_nonaktif`.
       enum:
       - dibatalkan_client
       - client_nonaktif
@@ -859,8 +866,8 @@ components:
     EndpointKontrak:
       type: object
       description: |-
-        Response of `getEndpointKontrak` (US-15). The path decides sync or async,
-        so no mode field is sent.
+        Respons `getEndpointKontrak`. Path yang menentukan sinkron atau asinkron, jadi
+        tidak ada field mode yang dikirim.
       required:
       - endpoint_id
       - field_input
@@ -886,8 +893,9 @@ components:
     EnqueueResponse:
       type: object
       description: |-
-        202: new async request. 200 with the same shape: replay of an identical
-        `Idempotency-Key` fingerprint, no new request.
+        202: permintaan asinkron baru. 200 dengan bentuk yang sama: pengulangan
+        permintaan dengan `Idempotency-Key` dan sidik yang identik, tanpa permintaan
+        baru.
       required:
       - queue_id
       - status
@@ -897,13 +905,13 @@ components:
           format: uuid
         status:
           $ref: '#/components/schemas/ApiStatus'
-          description: '`queued` on 202; the current status on 200 replay.'
+          description: '`queued` pada 202; status terkini pada 200 hasil pengulangan.'
       additionalProperties: false
     FailureReason:
       type: string
       description: |-
-        `failure_reason` of a `failed` request (contract section 3.2.5). Closed set,
-        shown to clients; the `kode` of a sync 502/504 body equals this value.
+        `failure_reason` sebuah permintaan berstatus `failed`. Daftar nilai tertutup
+        dan tampil ke klien; `kode` pada body 502/504 sinkron sama dengan nilai ini.
       enum:
       - retry_habis
       - provider_error_permanen
@@ -911,7 +919,7 @@ components:
       - objek_nonaktif
     FieldInput:
       type: object
-      description: One input field of the endpoint contract (US-15).
+      description: Satu field input pada kontrak endpoint.
       required:
       - nama
       - tipe
@@ -921,13 +929,13 @@ components:
           type: string
         tipe:
           type: string
-          description: Logical type of the field, e.g. `string` or `number`.
+          description: Tipe logis field, misalnya `string` atau `number`.
         wajib:
           type: boolean
       additionalProperties: false
     FieldMetadata:
       type: object
-      description: One metadata field of the endpoint contract (US-15).
+      description: Satu field metadata pada kontrak endpoint.
       required:
       - nama_field
       - tipe
@@ -945,20 +953,20 @@ components:
           - 'null'
           items:
             type: string
-          description: Closed value list when the field is restricted.
+          description: Daftar nilai tertutup bila field dibatasi.
         tipe:
           type: string
         versi:
           type: integer
           format: int64
-          description: Contract version of this metadata field.
+          description: Versi kontrak field metadata ini.
           example: 1
         wajib:
           type: boolean
       additionalProperties: false
     HasilElemen:
       type: object
-      description: Result for one checked element (contract section 3.2.2, O-01/O-02).
+      description: Hasil untuk satu elemen yang diperiksa.
       required:
       - status
       properties:
@@ -967,7 +975,7 @@ components:
           - integer
           - 'null'
           format: int64
-          description: 0..=100 or `null` when the provider gives no score.
+          description: 0..=100, atau `null` bila provider tidak memberi skor.
           maximum: 100
           minimum: 0
         status:
@@ -976,8 +984,8 @@ components:
     JenisObjek:
       type: string
       description: |-
-        Jenis objek yang bisa dinonaktifkan (ADR-0001 section 4.1). Dikirim di
-        `jenis_objek` pada 403/503 `objek_nonaktif`.
+        Jenis objek yang bisa dinonaktifkan. Dikirim di `jenis_objek` pada 403/503
+        `objek_nonaktif`.
       enum:
       - endpoint
       - downstream_pool
@@ -993,12 +1001,12 @@ components:
     Problem:
       type: object
       description: |-
-        RFC 9457 problem body for the downstream API. `detail` never contains input
-        values, NIK or secrets (R-16). Field names follow the contract: Indonesian
-        on the wire except the fixed RFC members.
+        Body problem RFC 9457 untuk API downstream. `detail` tidak pernah memuat nilai
+        input, NIK, atau secret. Nama field memakai bahasa Indonesia, kecuali anggota
+        tetap yang ditetapkan RFC.
 
-        Also the base of the admin body: both carry `type`, `title`, `status`,
-        `kode`, `detail` and `errors`, which is what the client sees.
+        Body ini juga dipakai sebagai dasar body admin: keduanya membawa `type`,
+        `title`, `status`, `kode`, `detail`, dan `errors`.
       required:
       - type
       - title
@@ -1009,12 +1017,14 @@ components:
           type:
           - string
           - 'null'
-          description: Human explanation without sensitive values; absent when unneeded.
+          description: Penjelasan untuk manusia tanpa nilai sensitif; tidak ada bila tidak perlu.
         error:
           type:
           - string
           - 'null'
-          description: RFC 6749 section 5.2 error for the token endpoint. Never sent with a 429.
+          description: |-
+            Kode `error` menurut RFC 6749 untuk token endpoint. Tidak pernah dikirim
+            bersama 429.
         errors:
           type:
           - array
@@ -1022,20 +1032,21 @@ components:
           items:
             $ref: '#/components/schemas/ValidasiErrorDown'
           description: |-
-            Failing fields; only on 422 `validasi_gagal` and `metadata_tidak_valid`
-            bodies (D6). Entries are the names as sent, never their values.
+            Field yang gagal validasi; hanya pada body 422 `validasi_gagal` dan
+            `metadata_tidak_valid`. Isinya nama field seperti yang dikirim, tidak pernah
+            nilainya.
         jenis_objek:
           oneOf:
           - $ref: '#/components/schemas/JenisObjek'
-            description: Kind of the inactive object; only on `objek_nonaktif`.
+            description: Jenis objek yang nonaktif; hanya pada `objek_nonaktif`.
           - type: 'null'
         jumlah_nama_tidak_cocok:
           oneOf:
           - $ref: '#/components/schemas/JumlahNamaTidakCocok'
             description: |-
-              Number of failing names that did not match `^[A-Za-z0-9_]{1,64}$` and
-              are therefore not echoed, only counted (D6, R-16). Present only when at
-              least one such name was rejected.
+              Jumlah nama yang gagal validasi karena tidak cocok dengan
+              `^[A-Za-z0-9_]{1,64}$`, sehingga hanya dihitung dan tidak dikembalikan. Field
+              ini ada hanya bila sedikitnya satu nama seperti itu ditolak.
           - type: 'null'
         kode:
           $ref: '#/components/schemas/ProblemKodeDown'
@@ -1044,7 +1055,7 @@ components:
           - string
           - 'null'
           format: uuid
-          description: '`queue_id` of the request the failure belongs to (502/504 bodies).'
+          description: '`queue_id` permintaan yang mengalami kegagalan (body 502/504).'
         status:
           type: integer
           format: int32
@@ -1054,7 +1065,7 @@ components:
         status_api:
           oneOf:
           - $ref: '#/components/schemas/ApiStatus'
-            description: Current API status; only on 409 `tidak_bisa_dibatalkan`.
+            description: Status API terkini; hanya pada 409 `tidak_bisa_dibatalkan`.
           - type: 'null'
         title:
           type: string
@@ -1064,9 +1075,9 @@ components:
     ProblemKodeDown:
       type: string
       description: |-
-        Downstream (external client) codes. Adding a value here changes the frozen
-        external contract and needs an API version decision; admin-only codes must
-        never be added to this enum.
+        Kode untuk klien downstream. Menambah nilai di sini mengubah daftar kode yang
+        sudah dibekukan dan memerlukan keputusan versi API; kode khusus admin tidak
+        boleh ditambahkan ke enum ini.
       enum:
       - tidak_terautentikasi
       - token_dibatasi
@@ -1087,9 +1098,9 @@ components:
     RequestStatus:
       type: object
       description: |-
-        Polling response (S-01..S-05) and webhook body (section 2.1). Status never
-        goes backwards; `hasil` only when `done`, `failure_reason` only when
-        `failed`, `cancel_reason` only when `cancelled`.
+        Respons polling dan body webhook. Status tidak pernah mundur; `hasil` hanya
+        saat `done`, `failure_reason` hanya saat `failed`, `cancel_reason` hanya saat
+        `cancelled`.
       required:
       - queue_id
       - status
@@ -1118,15 +1129,15 @@ components:
       additionalProperties: false
     StatusHasil:
       type: string
-      description: Status per elemen pada `hasil` (contract section 3.2.2).
+      description: Status per elemen pada `hasil`.
       enum:
       - sesuai
       - tidak_sesuai
     SubmitRequest:
       type: object
       description: |-
-        Envelope for both submit paths; `additionalProperties: false` at the
-        envelope level. Unknown `metadata` keys are rejected 422 (US-09).
+        Envelope untuk kedua jalur pengiriman; `additionalProperties: false` di
+        tingkat envelope. Kunci `metadata` yang tidak dikenal ditolak 422.
       required:
       - input
       - metadata
@@ -1134,18 +1145,16 @@ components:
         input:
           type: object
           description: |-
-            Provider input fields; unknown fields (including `TRESHOLD`,
-            `USER_ID`, `PASSWORD`, `IP_USER`, `transactionId`) are rejected 422
-            without echoing values (R-16).
+            Field input milik provider; field yang tidak dikenal (termasuk `TRESHOLD`,
+            `USER_ID`, `PASSWORD`, `IP_USER`, `transactionId`) ditolak 422 tanpa
+            mengembalikan nilainya.
         metadata:
           type: object
-          description: Metadata per endpoint contract; unknown keys rejected 422.
+          description: Metadata sesuai kontrak endpoint; kunci yang tidak dikenal ditolak 422.
       additionalProperties: false
     SyncResult:
       type: object
-      description: |-
-        Synchronous response: the provider answer is already complete (ADR-0001
-        section 4.1). `Cache-Control: no-store`.
+      description: 'Respons sinkron: jawaban provider sudah lengkap. `Cache-Control: no-store`.'
       required:
       - request_id
       - status
@@ -1153,7 +1162,7 @@ components:
       properties:
         hasil:
           type: object
-          description: Only the elements the client sent, keyed by element name.
+          description: Hanya elemen yang dikirim klien, dengan nama elemen sebagai kunci.
           additionalProperties:
             $ref: '#/components/schemas/HasilElemen'
           propertyNames:
@@ -1163,18 +1172,18 @@ components:
           format: uuid
         status:
           $ref: '#/components/schemas/ApiStatus'
-          description: Always `done` on 200.
+          description: Selalu `done` pada 200.
       additionalProperties: false
     TipeToken:
       type: string
-      description: Closed `token_type` value; the only member is `Bearer` (R-05).
+      description: Nilai `token_type` tertutup; satu-satunya anggota adalah `Bearer`.
       enum:
       - Bearer
     TokenRequest:
       type: object
       description: |-
-        `application/x-www-form-urlencoded` body (R-05). Credentials may arrive via
-        HTTP Basic instead; neither value is ever echoed back.
+        Body `application/x-www-form-urlencoded`. Kredensial boleh dikirim lewat
+        HTTP Basic; tidak ada nilainya yang dikembalikan pada respons.
       required:
       - grant_type
       properties:
@@ -1190,13 +1199,13 @@ components:
           - 'null'
         grant_type:
           type: string
-          description: Fixed value `client_credentials` (R-05).
+          description: Nilai tetap `client_credentials`.
       additionalProperties: false
     TokenResponse:
       type: object
       description: |-
-        Bearer token (R-05). No `refresh_token`; the client repeats
-        `issueToken` after expiry. Response carries `Cache-Control: no-store`.
+        Token Bearer. Tidak ada `refresh_token`; klien memanggil `issueToken` lagi
+        setelah kedaluwarsa. Respons membawa `Cache-Control: no-store`.
       required:
       - access_token
       - token_type
@@ -1204,23 +1213,25 @@ components:
       properties:
         access_token:
           type: string
-          description: 'Raw JWT, no `Bearer` prefix. Send it as `Authorization: <token_type> <access_token>`.'
+          description: |-
+            JWT mentah tanpa prefiks `Bearer`. Kirim sebagai
+            `Authorization: <token_type> <access_token>`.
         expires_in:
           type: integer
           format: int64
-          description: Lifetime in seconds; always 900 (R-05).
+          description: Masa berlaku dalam detik; selalu 900.
           example: 900
         token_type:
           $ref: '#/components/schemas/TipeToken'
-          description: Always `Bearer`; the prefix lives here, never in `access_token`.
+          description: Selalu `Bearer`; prefiks ini ada di sini, tidak pernah di `access_token`.
       additionalProperties: false
     ValidasiErrorDown:
       type: object
       description: |-
-        One failing input field, downstream. `kode` is a per-field validation code
-        from Addendum A section 6.1; `batas` carries only the numeric rule
-        parameter (never the rejected value). Without `posisi`: template errors are
-        an admin-only concept.
+        Satu field input yang gagal validasi pada API downstream. `kode` adalah kode
+        validasi per field; `batas` hanya membawa parameter angka dari aturan yang
+        dilanggar (tidak pernah nilai yang ditolak). Tidak ada `posisi`: error
+        template hanya ada di API admin.
       required:
       - field
       - kode
@@ -1235,9 +1246,9 @@ components:
         field:
           type: string
           description: |-
-            Name of the rejected field exactly as sent (`TRESHOLD`, `NAMA_LGKAP`,
-            or the metadata key) (D6). Names that do not match
-            `^[A-Za-z0-9_]{1,64}$` are never echoed; they are only counted in
+            Nama field yang ditolak, persis seperti dikirim (`TRESHOLD`, `NAMA_LGKAP`,
+            atau kunci metadata). Nama yang tidak cocok dengan `^[A-Za-z0-9_]{1,64}$`
+            tidak pernah dikembalikan; nama seperti itu hanya dihitung di
             `jumlah_nama_tidak_cocok`.
         kode:
           type: string
@@ -1248,7 +1259,7 @@ components:
         Cache-Control:
           schema:
             type: string
-          description: Selalu no-store (R-16)
+          description: Selalu `no-store`; respons tidak boleh disimpan cache
       content:
         application/problem+json:
           schema:
@@ -1267,7 +1278,7 @@ components:
         Cache-Control:
           schema:
             type: string
-          description: Selalu no-store (R-16)
+          description: Selalu `no-store`; respons tidak boleh disimpan cache
         WWW-Authenticate:
           schema:
             type: string
@@ -1290,7 +1301,7 @@ components:
         Cache-Control:
           schema:
             type: string
-          description: Selalu no-store (R-16)
+          description: Selalu `no-store`; respons tidak boleh disimpan cache
       content:
         application/problem+json:
           schema:
@@ -1310,7 +1321,7 @@ components:
         Cache-Control:
           schema:
             type: string
-          description: Selalu no-store (R-16)
+          description: Selalu `no-store`; respons tidak boleh disimpan cache
       content:
         application/problem+json:
           schema:
@@ -1329,7 +1340,7 @@ components:
         Cache-Control:
           schema:
             type: string
-          description: Selalu no-store (R-16)
+          description: Selalu `no-store`; respons tidak boleh disimpan cache
         Retry-After:
           schema:
             type: integer
@@ -1353,7 +1364,7 @@ components:
       type: apiKey
       in: header
       name: X-API-Key
-      description: API key downstream (contract section 3.1b); token oauth2 adalah pilihan pertama
+      description: API key downstream; token oauth2 adalah pilihan pertama
     oauth2:
       type: oauth2
       flows:

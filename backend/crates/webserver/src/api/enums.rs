@@ -4,7 +4,8 @@
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
-/// Status exposed by polling and webhook (ADR-0001 section 4.1). Never goes backwards.
+/// Status permintaan yang tampil di polling dan webhook. Tidak pernah mundur ke
+/// status sebelumnya.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum ApiStatus {
@@ -16,25 +17,27 @@ pub enum ApiStatus {
     Cancelled,
 }
 
-/// `failure_reason` of a `failed` request (contract section 3.2.5). Closed set,
-/// shown to clients; the `kode` of a sync 502/504 body equals this value.
+/// `failure_reason` sebuah permintaan berstatus `failed`. Daftar nilai tertutup
+/// dan tampil ke klien; `kode` pada body 502/504 sinkron sama dengan nilai ini.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum FailureReason {
-    /// Last attempt failed with a transient class and no attempt is left, or the
-    /// retry window ran out. Sync too since v0.7.10 (effective attempt limit 1).
+    /// Percobaan terakhir gagal pada kelas gangguan sementara dan tidak ada
+    /// percobaan tersisa, atau jendela retry sudah habis. Berlaku juga untuk
+    /// pengiriman sinkron (hanya ada satu percobaan efektif).
     RetryHabis,
-    /// Attempt failed with a class that is not retried (auth, provider quota,
-    /// unmapped code, invalid response, TLS).
+    /// Percobaan gagal pada kelas yang tidak diulang (autentikasi, kuota provider,
+    /// kode yang tidak dikenal, respons tidak sah, TLS).
     ProviderErrorPermanen,
-    /// Sync provider call did not finish in time.
+    /// Panggilan provider sinkron tidak selesai dalam batas waktu.
     TimeoutSync,
-    /// K-20 hit a request that was waiting for retry (`attempt_count > 0`).
+    /// Objek penyedia dinonaktifkan saat permintaan sedang menunggu retry
+    /// (`attempt_count > 0`).
     ObjekNonaktif,
 }
 
-/// `cancel_reason` of a `cancelled` request (contract section 3.2.3). One value
-/// per entity kind; both pool kinds share `pool_nonaktif`.
+/// `cancel_reason` sebuah permintaan berstatus `cancelled`. Satu nilai untuk tiap
+/// jenis objek; kedua jenis pool memakai `pool_nonaktif`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum CancelReason {
@@ -46,7 +49,7 @@ pub enum CancelReason {
     ProviderNonaktif,
 }
 
-/// `kode` of a 429 response (ADR-0001 section 5a.7). Each comes with `Retry-After`.
+/// `kode` sebuah respons 429. Setiap nilainya disertai `Retry-After`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum RateLimitKode {
@@ -63,8 +66,8 @@ pub enum BahasaUi {
     En,
 }
 
-/// Jenis objek yang bisa dinonaktifkan (ADR-0001 section 4.1). Dikirim di
-/// `jenis_objek` pada 403/503 `objek_nonaktif`.
+/// Jenis objek yang bisa dinonaktifkan. Dikirim di `jenis_objek` pada 403/503
+/// `objek_nonaktif`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum JenisObjek {
@@ -85,7 +88,7 @@ pub enum RuleJenis {
     FormatTanggal,
 }
 
-/// Jenis kredensial downstream (contract section 3.1b).
+/// Jenis kredensial downstream. Hanya dua nilai ini yang ada.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum JenisKredensial {
@@ -93,17 +96,17 @@ pub enum JenisKredensial {
     ApiKey,
 }
 
-/// Periode kuota upstream pool (ADR-0001 section 3a.5).
+/// Periode kuota upstream pool.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum JendelaKuota {
-    /// Rolling 24-hour window (schema CHECK `bergulir_24j`).
+    /// Jendela bergulir 24 jam.
     #[serde(rename = "bergulir_24j")]
     Bergulir24j,
     Kalender,
 }
 
-/// Status per elemen pada `hasil` (contract section 3.2.2).
+/// Status per elemen pada `hasil`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum StatusHasil {
@@ -111,8 +114,8 @@ pub enum StatusHasil {
     TidakSesuai,
 }
 
-/// Admin role (contract section 8.1). Closed set; the schema enforces one role
-/// per user with `client_id` only for `client_owner`.
+/// Peran admin. Daftar nilai tertutup; tiap pengguna hanya punya satu peran, dan
+/// `client_id` hanya diisi untuk `client_owner`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum Peran {

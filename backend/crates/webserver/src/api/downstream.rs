@@ -19,12 +19,12 @@ use super::problem::Problem;
 // Schemas
 // ---------------------------------------------------------------------------
 
-/// `application/x-www-form-urlencoded` body (R-05). Credentials may arrive via
-/// HTTP Basic instead; neither value is ever echoed back.
+/// Body `application/x-www-form-urlencoded`. Kredensial boleh dikirim lewat
+/// HTTP Basic; tidak ada nilainya yang dikembalikan pada respons.
 #[derive(Debug, Clone, Deserialize, ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct TokenRequest {
-    /// Fixed value `client_credentials` (R-05).
+    /// Nilai tetap `client_credentials`.
     pub grant_type: String,
     /// Alternative to HTTP Basic; secret must not appear in URLs.
     #[serde(default)]
@@ -34,20 +34,21 @@ pub struct TokenRequest {
     pub client_secret: Option<String>,
 }
 
-/// Bearer token (R-05). No `refresh_token`; the client repeats
-/// `issueToken` after expiry. Response carries `Cache-Control: no-store`.
+/// Token Bearer. Tidak ada `refresh_token`; klien memanggil `issueToken` lagi
+/// setelah kedaluwarsa. Respons membawa `Cache-Control: no-store`.
 #[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct TokenResponse {
-    /// Raw JWT, no `Bearer` prefix. Send it as `Authorization: <token_type> <access_token>`.
+    /// JWT mentah tanpa prefiks `Bearer`. Kirim sebagai
+    /// `Authorization: <token_type> <access_token>`.
     pub access_token: String,
-    /// Always `Bearer`; the prefix lives here, never in `access_token`.
+    /// Selalu `Bearer`; prefiks ini ada di sini, tidak pernah di `access_token`.
     pub token_type: TipeToken,
-    /// Lifetime in seconds; always 900 (R-05).
+    /// Masa berlaku dalam detik; selalu 900.
     #[schema(example = 900)]
     pub expires_in: i64,
 }
 
-/// Closed `token_type` value; the only member is `Bearer` (R-05).
+/// Nilai `token_type` tertutup; satu-satunya anggota adalah `Bearer`.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, ToSchema)]
 pub enum TipeToken {
     #[default]
@@ -55,32 +56,32 @@ pub enum TipeToken {
     Bearer,
 }
 
-/// One input field of the endpoint contract (US-15).
+/// Satu field input pada kontrak endpoint.
 #[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct FieldInput {
     pub nama: String,
-    /// Logical type of the field, e.g. `string` or `number`.
+    /// Tipe logis field, misalnya `string` atau `number`.
     pub tipe: String,
     pub wajib: bool,
 }
 
-/// One metadata field of the endpoint contract (US-15).
+/// Satu field metadata pada kontrak endpoint.
 #[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct FieldMetadata {
     pub nama_field: String,
     pub tipe: String,
     pub wajib: bool,
-    /// Closed value list when the field is restricted.
+    /// Daftar nilai tertutup bila field dibatasi.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub nilai_diizinkan: Option<Vec<String>>,
     pub deskripsi: String,
-    /// Contract version of this metadata field.
+    /// Versi kontrak field metadata ini.
     #[schema(example = 1)]
     pub versi: i64,
 }
 
-/// Response of `getEndpointKontrak` (US-15). The path decides sync or async,
-/// so no mode field is sent.
+/// Respons `getEndpointKontrak`. Path yang menentukan sinkron atau asinkron, jadi
+/// tidak ada field mode yang dikirim.
 #[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct EndpointKontrak {
     pub endpoint_id: Uuid,
@@ -90,54 +91,54 @@ pub struct EndpointKontrak {
     pub endpoint_config_version: i64,
 }
 
-/// Envelope for both submit paths; `additionalProperties: false` at the
-/// envelope level. Unknown `metadata` keys are rejected 422 (US-09).
+/// Envelope untuk kedua jalur pengiriman; `additionalProperties: false` di
+/// tingkat envelope. Kunci `metadata` yang tidak dikenal ditolak 422.
 #[derive(Debug, Clone, Deserialize, ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct SubmitRequest {
-    /// Provider input fields; unknown fields (including `TRESHOLD`,
-    /// `USER_ID`, `PASSWORD`, `IP_USER`, `transactionId`) are rejected 422
-    /// without echoing values (R-16).
+    /// Field input milik provider; field yang tidak dikenal (termasuk `TRESHOLD`,
+    /// `USER_ID`, `PASSWORD`, `IP_USER`, `transactionId`) ditolak 422 tanpa
+    /// mengembalikan nilainya.
     #[schema(value_type = Object)]
     pub input: serde_json::Value,
-    /// Metadata per endpoint contract; unknown keys rejected 422.
+    /// Metadata sesuai kontrak endpoint; kunci yang tidak dikenal ditolak 422.
     #[schema(value_type = Object)]
     pub metadata: serde_json::Value,
 }
 
-/// Result for one checked element (contract section 3.2.2, O-01/O-02).
+/// Hasil untuk satu elemen yang diperiksa.
 #[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct HasilElemen {
     pub status: StatusHasil,
-    /// 0..=100 or `null` when the provider gives no score.
+    /// 0..=100, atau `null` bila provider tidak memberi skor.
     #[serde(skip_serializing_if = "Option::is_none")]
     #[schema(minimum = 0, maximum = 100, nullable = true)]
     pub skor: Option<i64>,
 }
 
-/// Synchronous response: the provider answer is already complete (ADR-0001
-/// section 4.1). `Cache-Control: no-store`.
+/// Respons sinkron: jawaban provider sudah lengkap. `Cache-Control: no-store`.
 #[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct SyncResult {
     pub request_id: Uuid,
-    /// Always `done` on 200.
+    /// Selalu `done` pada 200.
     pub status: ApiStatus,
-    /// Only the elements the client sent, keyed by element name.
+    /// Hanya elemen yang dikirim klien, dengan nama elemen sebagai kunci.
     pub hasil: BTreeMap<String, HasilElemen>,
 }
 
-/// 202: new async request. 200 with the same shape: replay of an identical
-/// `Idempotency-Key` fingerprint, no new request.
+/// 202: permintaan asinkron baru. 200 dengan bentuk yang sama: pengulangan
+/// permintaan dengan `Idempotency-Key` dan sidik yang identik, tanpa permintaan
+/// baru.
 #[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct EnqueueResponse {
     pub queue_id: Uuid,
-    /// `queued` on 202; the current status on 200 replay.
+    /// `queued` pada 202; status terkini pada 200 hasil pengulangan.
     pub status: ApiStatus,
 }
 
-/// Polling response (S-01..S-05) and webhook body (section 2.1). Status never
-/// goes backwards; `hasil` only when `done`, `failure_reason` only when
-/// `failed`, `cancel_reason` only when `cancelled`.
+/// Respons polling dan body webhook. Status tidak pernah mundur; `hasil` hanya
+/// saat `done`, `failure_reason` hanya saat `failed`, `cancel_reason` hanya saat
+/// `cancelled`.
 #[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct RequestStatus {
     pub queue_id: Uuid,
@@ -158,9 +159,9 @@ fn stub() -> (StatusCode, Json<Problem>) {
     (StatusCode::NOT_IMPLEMENTED, Json(Problem::stub()))
 }
 
-/// Issue a downstream access token (R-05, US-18). Credentials via HTTP Basic
-/// or body; 4xx bodies are problem+json with the RFC 6749 `error` field,
-/// except 429.
+/// Menerbitkan access token downstream. Kredensial boleh lewat HTTP Basic atau
+/// body; body 4xx adalah problem+json dengan field `error` menurut RFC 6749,
+/// kecuali 429.
 #[utoipa::path(
     post,
     path = "/v1/oauth/token",
@@ -168,25 +169,25 @@ fn stub() -> (StatusCode, Json<Problem>) {
     tag = "downstream",
     request_body(content = TokenRequest, content_type = "application/x-www-form-urlencoded", description = "grant_type=client_credentials; kredensial juga boleh lewat HTTP Basic", example = json!({"grant_type": "client_credentials", "client_id": "bgn-mpm", "client_secret": "<secret>"})),
     responses(
-        (status = 200, description = "Token baru (R-05); tanpa refresh_token", body = TokenResponse, headers(
-            ("Cache-Control" = String, description = "Selalu no-store (R-16)")
+        (status = 200, description = "Token baru; tanpa refresh_token", body = TokenResponse, headers(
+            ("Cache-Control" = String, description = "Selalu `no-store`; respons tidak boleh disimpan cache")
         ),
             examples(("token" = (summary = "Token bearer 900 detik", value = json!({"access_token": "eyJhbGciOiJFUzI1NiJ9.eyJzdWIiOiJjbGllbnQifQ.c2lnbmF0dXJl", "token_type": "Bearer", "expires_in": 900}))))
         ),
         (status = 400, description = "JSON tidak valid, grant tidak didukung, atau kredensial tidak lengkap", body = Problem, content_type = "application/problem+json", headers(
-            ("Cache-Control" = String, description = "Selalu no-store (R-16)")
+            ("Cache-Control" = String, description = "Selalu `no-store`; respons tidak boleh disimpan cache")
         ),
             examples(("validasi_gagal" = (summary = "grant tidak didukung", value = json!({"type": "https://github.com/faisalcayunda/PoolRouter/blob/main/docs/masalah.md#validasi_gagal", "title": "Validasi gagal", "status": 400, "kode": "validasi_gagal", "error": "unsupported_grant_type"}))))
         ),
         (status = 401, description = "Kredensial salah; penyebab tidak dibedakan", body = Problem, content_type = "application/problem+json", headers(
             ("WWW-Authenticate" = String, description = "Basic untuk endpoint token"),
-            ("Cache-Control" = String, description = "Selalu no-store (R-16)")
+            ("Cache-Control" = String, description = "Selalu `no-store`; respons tidak boleh disimpan cache")
         ),
             examples(("tidak_terautentikasi" = (summary = "client_id/client_secret salah", value = json!({"type": "https://github.com/faisalcayunda/PoolRouter/blob/main/docs/masalah.md#tidak_terautentikasi", "title": "Tidak terautentikasi", "status": 401, "kode": "tidak_terautentikasi", "error": "invalid_client"}))))
         ),
-        (status = 429, description = "Limiter GCRA per client_id (60/menit, burst 10) atau per IP (120/menit) habis (R-05)", body = Problem, content_type = "application/problem+json", headers(
+        (status = 429, description = "Limiter GCRA per client_id (60/menit, burst 10) atau per IP (120/menit) habis", body = Problem, content_type = "application/problem+json", headers(
             ("Retry-After" = i64, description = "Detik bulat (minimal 1) hingga token throttle berikutnya tersedia"),
-            ("Cache-Control" = String, description = "Selalu no-store (R-16)")
+            ("Cache-Control" = String, description = "Selalu `no-store`; respons tidak boleh disimpan cache")
         ),
             examples(("token_dibatasi" = (summary = "Limiter token habis; tanpa field error", value = json!({"type": "https://github.com/faisalcayunda/PoolRouter/blob/main/docs/masalah.md#token_dibatasi", "title": "Token dibatasi", "status": 429, "kode": "token_dibatasi"}))))
         )
@@ -197,7 +198,8 @@ async fn issue_token(axum::Json(_body): axum::Json<TokenRequest>) -> (StatusCode
     stub()
 }
 
-/// Contract of one endpoint: inputs, metadata, allowed mode (US-15).
+/// Kontrak satu endpoint: field input, field metadata, dan pola pemanggilan yang
+/// diizinkan.
 #[utoipa::path(
     get,
     path = "/v1/endpoints/{endpoint_id}/kontrak",
@@ -206,12 +208,12 @@ async fn issue_token(axum::Json(_body): axum::Json<TokenRequest>) -> (StatusCode
     params(("endpoint_id" = Uuid, Path, description = "Endpoint yang ditugaskan kepada client pemanggil")),
     responses(
         (status = 200, description = "Kontrak endpoint aktif", body = EndpointKontrak, headers(
-            ("Cache-Control" = String, description = "Selalu no-store (R-16)")
+            ("Cache-Control" = String, description = "Selalu `no-store`; respons tidak boleh disimpan cache")
         )
         ),
         (status = 401, response = Problem401Down),
         (status = 404, description = "Endpoint tidak dikenal atau bukan milik client (tidak dibedakan)", body = Problem, content_type = "application/problem+json", headers(
-            ("Cache-Control" = String, description = "Selalu no-store (R-16)")
+            ("Cache-Control" = String, description = "Selalu `no-store`; respons tidak boleh disimpan cache")
         ),
             examples(("tidak_ditemukan" = (summary = "Bukan milik client atau tidak ada", value = json!({"type": "https://github.com/faisalcayunda/PoolRouter/blob/main/docs/masalah.md#tidak_ditemukan", "title": "Tidak ditemukan", "status": 404, "kode": "tidak_ditemukan"}))))
         ),
@@ -225,8 +227,9 @@ async fn get_endpoint_kontrak(
     stub()
 }
 
-/// Synchronous submit (US-03, 07, 08, 09). `Idempotency-Key` must NOT be
-/// present (400 `idempotency_key_tidak_didukung` when it is).
+/// Pengiriman sinkron: hasil provider dikembalikan pada respons yang sama.
+/// `Idempotency-Key` tidak boleh dikirim; bila ada, jawabannya 400
+/// `idempotency_key_tidak_didukung`.
 #[utoipa::path(
     post,
     path = "/v1/endpoints/{endpoint_id}/sync",
@@ -236,46 +239,46 @@ async fn get_endpoint_kontrak(
     request_body(content = SubmitRequest, content_type = "application/json", description = "Amplop input + metadata dengan additionalProperties false", example = json!({"input": {"NIK": "3201234567890001", "NAMA_LGKP": "Budi Santoso"}, "metadata": {"status_penerima_manfaat": "sesuai"}})),
     responses(
         (status = 200, description = "Jawaban provider lengkap (status done)", body = SyncResult, headers(
-            ("Cache-Control" = String, description = "Selalu no-store (R-16)")
+            ("Cache-Control" = String, description = "Selalu `no-store`; respons tidak boleh disimpan cache")
         ),
             examples(("done" = (summary = "Semua elemen sesuai", value = json!({"request_id": "0b19c3b4-7c5f-4e2f-9b3a-1a2b3c4d5e6f", "status": "done", "hasil": {"NAMA_LGKP": {"status": "sesuai", "skor": 90}}}))))
         ),
         (status = 400, description = "JSON tidak valid/kunci ganda (validasi_gagal) atau Idempotency-Key pada sync (idempotency_key_tidak_didukung)", body = Problem, content_type = "application/problem+json", headers(
-            ("Cache-Control" = String, description = "Selalu no-store (R-16)")
+            ("Cache-Control" = String, description = "Selalu `no-store`; respons tidak boleh disimpan cache")
         ),
             examples(("idempotency_key_tidak_didukung" = (summary = "Header Idempotency-Key dikirim ke path sync", value = json!({"type": "https://github.com/faisalcayunda/PoolRouter/blob/main/docs/masalah.md#idempotency_key_tidak_didukung", "title": "Idempotency key tidak didukung", "status": 400, "kode": "idempotency_key_tidak_didukung"}))), ("validasi_gagal" = (summary = "Body bukan JSON yang sah", value = json!({"type": "https://github.com/faisalcayunda/PoolRouter/blob/main/docs/masalah.md#validasi_gagal", "title": "Validasi gagal", "status": 400, "kode": "validasi_gagal", "detail": "Body bukan JSON yang sah."}))))
         ),
         (status = 401, response = Problem401Down),
         (status = 403, description = "Endpoint nonaktif (penugasan menentukan akses)", body = Problem, content_type = "application/problem+json", headers(
-            ("Cache-Control" = String, description = "Selalu no-store (R-16)")
+            ("Cache-Control" = String, description = "Selalu `no-store`; respons tidak boleh disimpan cache")
         ),
             examples(("objek_nonaktif" = (summary = "Endpoint dinonaktifkan", value = json!({"type": "https://github.com/faisalcayunda/PoolRouter/blob/main/docs/masalah.md#objek_nonaktif", "title": "Objek nonaktif", "status": 403, "kode": "objek_nonaktif", "jenis_objek": "endpoint"}))))
         ),
         (status = 404, response = Problem404Down),
-        (status = 422, description = "Field input/metadata tidak sesuai kontrak; nilai tidak di-echo (R-16)", body = Problem, content_type = "application/problem+json", headers(
-            ("Cache-Control" = String, description = "Selalu no-store (R-16)")
+        (status = 422, description = "Field input/metadata tidak sesuai aturan; nilai yang ditolak tidak dikembalikan", body = Problem, content_type = "application/problem+json", headers(
+            ("Cache-Control" = String, description = "Selalu `no-store`; respons tidak boleh disimpan cache")
         ),
             examples(("validasi_gagal" = (summary = "Field input tak dikenal (termasuk TRESHOLD, USER_ID, PASSWORD, IP_USER, transactionId)", value = json!({"type": "https://github.com/faisalcayunda/PoolRouter/blob/main/docs/masalah.md#validasi_gagal", "title": "Validasi gagal", "status": 422, "kode": "validasi_gagal", "errors": [{"field": "TRESHOLD", "kode": "field_tak_dikenal"}, {"field": "NAMA_LGKAP", "kode": "field_tak_dikenal"}], "jumlah_nama_tidak_cocok": 1}))), ("metadata_tidak_valid" = (summary = "Kunci metadata tidak ada di kontrak endpoint", value = json!({"type": "https://github.com/faisalcayunda/PoolRouter/blob/main/docs/masalah.md#metadata_tidak_valid", "title": "Metadata tidak valid", "status": 422, "kode": "metadata_tidak_valid", "errors": [{"field": "status_penerima_manfaat", "kode": "field_tak_dikenal"}]}))))
         ),
         (status = 429, description = "Kuota periode habis, porsi sync/jam berjalan penuh, atau limiter penolakan aktif; semua dengan Retry-After", body = Problem, content_type = "application/problem+json", headers(
             ("Retry-After" = i64, description = "Detik bulat (minimal 1) hingga percobaan berikutnya. `kuota_habis` mengikuti jendela kuota: sisa waktu sampai ember tertua keluar dari jendela (`bergulir_24j`) atau sampai `reset_kuota` berikutnya (`kalender`); `porsi_sync_habis` dan `penolakan_berlebih` mengikuti token limiter berikutnya"),
-            ("Cache-Control" = String, description = "Selalu no-store (R-16)")
+            ("Cache-Control" = String, description = "Selalu `no-store`; respons tidak boleh disimpan cache")
         ),
-            examples(("kuota_habis" = (summary = "Kuota periode upstream pool habis", value = json!({"type": "https://github.com/faisalcayunda/PoolRouter/blob/main/docs/masalah.md#kuota_habis", "title": "Kuota habis", "status": 429, "kode": "kuota_habis"}))), ("porsi_sync_habis" = (summary = "Porsi sync atau rate limit jam berjalan penuh (satu kode)", value = json!({"type": "https://github.com/faisalcayunda/PoolRouter/blob/main/docs/masalah.md#porsi_sync_habis", "title": "Porsi sync habis", "status": 429, "kode": "porsi_sync_habis"}))), ("penolakan_berlebih" = (summary = "Limiter penolakan client aktif; hanya empat field (R-10)", value = json!({"type": "https://github.com/faisalcayunda/PoolRouter/blob/main/docs/masalah.md#penolakan_berlebih", "title": "Penolakan berlebih", "status": 429, "kode": "penolakan_berlebih"}))))
+            examples(("kuota_habis" = (summary = "Kuota periode upstream pool habis", value = json!({"type": "https://github.com/faisalcayunda/PoolRouter/blob/main/docs/masalah.md#kuota_habis", "title": "Kuota habis", "status": 429, "kode": "kuota_habis"}))), ("porsi_sync_habis" = (summary = "Porsi sync atau rate limit jam berjalan penuh (satu kode)", value = json!({"type": "https://github.com/faisalcayunda/PoolRouter/blob/main/docs/masalah.md#porsi_sync_habis", "title": "Porsi sync habis", "status": 429, "kode": "porsi_sync_habis"}))), ("penolakan_berlebih" = (summary = "Limiter penolakan client aktif; body hanya empat field", value = json!({"type": "https://github.com/faisalcayunda/PoolRouter/blob/main/docs/masalah.md#penolakan_berlebih", "title": "Penolakan berlebih", "status": 429, "kode": "penolakan_berlebih"}))))
         ),
         (status = 502, description = "retry_habis atau provider_error_permanen, dengan request_id, tanpa Retry-After", body = Problem, content_type = "application/problem+json", headers(
-            ("Cache-Control" = String, description = "Selalu no-store (R-16)")
+            ("Cache-Control" = String, description = "Selalu `no-store`; respons tidak boleh disimpan cache")
         ),
-            examples(("retry_habis" = (summary = "Jendela retry habis (attempt efektif 1 di F0, contract v0.7.10)", value = json!({"type": "https://github.com/faisalcayunda/PoolRouter/blob/main/docs/masalah.md#retry_habis", "title": "Retry habis", "status": 502, "kode": "retry_habis", "request_id": "0b19c3b4-7c5f-4e2f-9b3a-1a2b3c4d5e6f"}))), ("provider_error_permanen" = (summary = "Kelas kegagalan tidak diulang (auth/kuota provider/kode tak dipetakan/respons invalid/TLS)", value = json!({"type": "https://github.com/faisalcayunda/PoolRouter/blob/main/docs/masalah.md#provider_error_permanen", "title": "Kesalahan provider permanen", "status": 502, "kode": "provider_error_permanen", "request_id": "0b19c3b4-7c5f-4e2f-9b3a-1a2b3c4d5e6f"}))))
+            examples(("retry_habis" = (summary = "Jendela retry habis (di F0 hanya ada satu percobaan efektif)", value = json!({"type": "https://github.com/faisalcayunda/PoolRouter/blob/main/docs/masalah.md#retry_habis", "title": "Retry habis", "status": 502, "kode": "retry_habis", "request_id": "0b19c3b4-7c5f-4e2f-9b3a-1a2b3c4d5e6f"}))), ("provider_error_permanen" = (summary = "Kelas kegagalan tidak diulang (auth/kuota provider/kode tak dipetakan/respons invalid/TLS)", value = json!({"type": "https://github.com/faisalcayunda/PoolRouter/blob/main/docs/masalah.md#provider_error_permanen", "title": "Kesalahan provider permanen", "status": 502, "kode": "provider_error_permanen", "request_id": "0b19c3b4-7c5f-4e2f-9b3a-1a2b3c4d5e6f"}))))
         ),
         (status = 503, description = "Pool/provider nonaktif (objek_nonaktif, tanpa Retry-After) atau Redis fail-closed (layanan_tidak_tersedia, Retry-After: 5)", body = Problem, content_type = "application/problem+json", headers(
-            ("Retry-After" = i64, description = "Hanya ada pada layanan_tidak_tersedia, selalu 5 detik; tidak ada pada objek_nonaktif (R-10)"),
-            ("Cache-Control" = String, description = "Selalu no-store (R-16)")
+            ("Retry-After" = i64, description = "Hanya ada pada layanan_tidak_tersedia, selalu 5 detik; tidak ada pada objek_nonaktif"),
+            ("Cache-Control" = String, description = "Selalu `no-store`; respons tidak boleh disimpan cache")
         ),
             examples(("objek_nonaktif" = (summary = "Upstream pool atau provider dinonaktifkan", value = json!({"type": "https://github.com/faisalcayunda/PoolRouter/blob/main/docs/masalah.md#objek_nonaktif", "title": "Objek nonaktif", "status": 503, "kode": "objek_nonaktif", "jenis_objek": "provider"}))), ("layanan_tidak_tersedia" = (summary = "Redis tidak siap (fail-closed)", value = json!({"type": "https://github.com/faisalcayunda/PoolRouter/blob/main/docs/masalah.md#layanan_tidak_tersedia", "title": "Layanan tidak tersedia", "status": 503, "kode": "layanan_tidak_tersedia"}))))
         ),
         (status = 504, description = "Panggilan sync tidak selesai dalam batas waktu", body = Problem, content_type = "application/problem+json", headers(
-            ("Cache-Control" = String, description = "Selalu no-store (R-16)")
+            ("Cache-Control" = String, description = "Selalu `no-store`; respons tidak boleh disimpan cache")
         ),
             examples(("timeout_sync" = (summary = "Waktu tunggu provider habis", value = json!({"type": "https://github.com/faisalcayunda/PoolRouter/blob/main/docs/masalah.md#timeout_sync", "title": "Timeout sync", "status": 504, "kode": "timeout_sync", "request_id": "0b19c3b4-7c5f-4e2f-9b3a-1a2b3c4d5e6f"}))))
         )
@@ -289,9 +292,10 @@ async fn submit_sync(
     stub()
 }
 
-/// Asynchronous submit (US-07). Optional `Idempotency-Key` header:
-/// identical key+fingerprint replays 200 with the current status; same key,
-/// different fingerprint is 422 `idempotency_key_konflik`.
+/// Pengiriman asinkron: permintaan masuk antrean dan statusnya diperiksa lewat
+/// polling atau webhook. Header `Idempotency-Key` opsional: kunci dan sidik yang
+/// sama diulang menghasilkan 200 berisi status terkini; kunci sama dengan sidik
+/// berbeda menghasilkan 422 `idempotency_key_konflik`.
 #[utoipa::path(
     post,
     path = "/v1/endpoints/{endpoint_id}/async",
@@ -301,12 +305,12 @@ async fn submit_sync(
     request_body(content = SubmitRequest, content_type = "application/json", description = "Amplop input + metadata dengan additionalProperties false", example = json!({"input": {"NIK": "3201234567890001", "NAMA_LGKP": "Budi Santoso"}, "metadata": {"status_penerima_manfaat": "sesuai"}})),
     responses(
         (status = 202, description = "Request baru masuk antrean", body = EnqueueResponse, headers(
-            ("Cache-Control" = String, description = "Selalu no-store (R-16)")
+            ("Cache-Control" = String, description = "Selalu `no-store`; respons tidak boleh disimpan cache")
         ),
             examples(("queued" = (summary = "Request baru", value = json!({"queue_id": "0b19c3b4-7c5f-4e2f-9b3a-1a2b3c4d5e6f", "status": "queued"}))))
         ),
         (status = 200, description = "Replay kunci idempoten yang sudah ada; tidak ada request baru", body = EnqueueResponse, headers(
-            ("Cache-Control" = String, description = "Selalu no-store (R-16)")
+            ("Cache-Control" = String, description = "Selalu `no-store`; respons tidak boleh disimpan cache")
         ),
             examples(("replay" = (summary = "Kunci dan sidik sama", value = json!({"queue_id": "0b19c3b4-7c5f-4e2f-9b3a-1a2b3c4d5e6f", "status": "done"}))))
         ),
@@ -315,19 +319,19 @@ async fn submit_sync(
         (status = 403, response = Problem403ObjekNonaktif),
         (status = 404, response = Problem404Down),
         (status = 422, description = "Field tak dikenal, metadata tidak valid, atau kunci idempoten dengan sidik berbeda", body = Problem, content_type = "application/problem+json", headers(
-            ("Cache-Control" = String, description = "Selalu no-store (R-16)")
+            ("Cache-Control" = String, description = "Selalu `no-store`; respons tidak boleh disimpan cache")
         ),
             examples(("validasi_gagal" = (summary = "Field input tak dikenal", value = json!({"type": "https://github.com/faisalcayunda/PoolRouter/blob/main/docs/masalah.md#validasi_gagal", "title": "Validasi gagal", "status": 422, "kode": "validasi_gagal", "errors": [{"field": "TRESHOLD", "kode": "field_tak_dikenal"}, {"field": "NAMA_LGKAP", "kode": "field_tak_dikenal"}], "jumlah_nama_tidak_cocok": 1}))), ("metadata_tidak_valid" = (summary = "Kunci metadata tidak ada di kontrak endpoint", value = json!({"type": "https://github.com/faisalcayunda/PoolRouter/blob/main/docs/masalah.md#metadata_tidak_valid", "title": "Metadata tidak valid", "status": 422, "kode": "metadata_tidak_valid", "errors": [{"field": "status_penerima_manfaat", "kode": "field_tak_dikenal"}]}))), ("idempotency_key_konflik" = (summary = "Kunci sama, isi berbeda", value = json!({"type": "https://github.com/faisalcayunda/PoolRouter/blob/main/docs/masalah.md#idempotency_key_konflik", "title": "Konflik idempotency key", "status": 422, "kode": "idempotency_key_konflik"}))))
         ),
         (status = 429, description = "Kuota periode habis atau limiter penolakan aktif; dengan Retry-After", body = Problem, content_type = "application/problem+json", headers(
             ("Retry-After" = i64, description = "Detik bulat (minimal 1) hingga percobaan berikutnya. `kuota_habis` mengikuti jendela kuota: sisa waktu sampai ember tertua keluar dari jendela (`bergulir_24j`) atau sampai `reset_kuota` berikutnya (`kalender`); `porsi_sync_habis` dan `penolakan_berlebih` mengikuti token limiter berikutnya"),
-            ("Cache-Control" = String, description = "Selalu no-store (R-16)")
+            ("Cache-Control" = String, description = "Selalu `no-store`; respons tidak boleh disimpan cache")
         ),
-            examples(("kuota_habis" = (summary = "Kuota periode upstream pool habis", value = json!({"type": "https://github.com/faisalcayunda/PoolRouter/blob/main/docs/masalah.md#kuota_habis", "title": "Kuota habis", "status": 429, "kode": "kuota_habis"}))), ("penolakan_berlebih" = (summary = "Limiter penolakan client aktif; hanya empat field (R-10)", value = json!({"type": "https://github.com/faisalcayunda/PoolRouter/blob/main/docs/masalah.md#penolakan_berlebih", "title": "Penolakan berlebih", "status": 429, "kode": "penolakan_berlebih"}))))
+            examples(("kuota_habis" = (summary = "Kuota periode upstream pool habis", value = json!({"type": "https://github.com/faisalcayunda/PoolRouter/blob/main/docs/masalah.md#kuota_habis", "title": "Kuota habis", "status": 429, "kode": "kuota_habis"}))), ("penolakan_berlebih" = (summary = "Limiter penolakan client aktif; body hanya empat field", value = json!({"type": "https://github.com/faisalcayunda/PoolRouter/blob/main/docs/masalah.md#penolakan_berlebih", "title": "Penolakan berlebih", "status": 429, "kode": "penolakan_berlebih"}))))
         ),
         (status = 503, description = "Pool/provider nonaktif (objek_nonaktif, tanpa Retry-After) atau Redis fail-closed (layanan_tidak_tersedia, Retry-After: 5)", body = Problem, content_type = "application/problem+json", headers(
-            ("Retry-After" = i64, description = "Hanya ada pada layanan_tidak_tersedia, selalu 5 detik; tidak ada pada objek_nonaktif (R-10)"),
-            ("Cache-Control" = String, description = "Selalu no-store (R-16)")
+            ("Retry-After" = i64, description = "Hanya ada pada layanan_tidak_tersedia, selalu 5 detik; tidak ada pada objek_nonaktif"),
+            ("Cache-Control" = String, description = "Selalu `no-store`; respons tidak boleh disimpan cache")
         ),
             examples(("objek_nonaktif" = (summary = "Upstream pool atau provider dinonaktifkan", value = json!({"type": "https://github.com/faisalcayunda/PoolRouter/blob/main/docs/masalah.md#objek_nonaktif", "title": "Objek nonaktif", "status": 503, "kode": "objek_nonaktif", "jenis_objek": "provider"}))), ("layanan_tidak_tersedia" = (summary = "Redis tidak siap (fail-closed)", value = json!({"type": "https://github.com/faisalcayunda/PoolRouter/blob/main/docs/masalah.md#layanan_tidak_tersedia", "title": "Layanan tidak tersedia", "status": 503, "kode": "layanan_tidak_tersedia"}))))
         )
@@ -341,8 +345,8 @@ async fn enqueue_async(
     stub()
 }
 
-/// Poll a request (US-17). Does not consume quota; `done` stays readable at
-/// least for the downstream pool TTL since `completed_at` (S-05).
+/// Memeriksa status sebuah permintaan. Tidak memotong kuota; hasil `done` tetap
+/// bisa dibaca sedikitnya selama TTL pool downstream sejak `completed_at`.
 #[utoipa::path(
     get,
     path = "/v1/requests/{queue_id}",
@@ -351,7 +355,7 @@ async fn enqueue_async(
     params(("queue_id" = Uuid, Path, description = "queue_id dari enqueueAsync")),
     responses(
         (status = 200, description = "Status terkini; tidak pernah mundur", body = RequestStatus, headers(
-            ("Cache-Control" = String, description = "Selalu no-store (R-16)")
+            ("Cache-Control" = String, description = "Selalu `no-store`; respons tidak boleh disimpan cache")
         ),
             examples(
                 ("queued" = (summary = "Masih menunggu di antrean", value = json!({"queue_id": "0b19c3b4-7c5f-4e2f-9b3a-1a2b3c4d5e6f", "status": "queued"}))),
@@ -374,8 +378,9 @@ async fn get_request(
     stub()
 }
 
-/// Cancel a queued request (US-19). Requests in `processing` or a terminal
-/// status answer 409 `tidak_bisa_dibatalkan` with the current status in the body.
+/// Membatalkan permintaan yang masih `queued`. Permintaan berstatus `processing`
+/// atau status akhir dijawab 409 `tidak_bisa_dibatalkan` dengan status terkini di
+/// body.
 #[utoipa::path(
     post,
     path = "/v1/requests/{queue_id}/cancel",
@@ -384,14 +389,14 @@ async fn get_request(
     params(("queue_id" = Uuid, Path, description = "queue_id dari enqueueAsync")),
     responses(
         (status = 200, description = "Request dibatalkan", body = RequestStatus, headers(
-            ("Cache-Control" = String, description = "Selalu no-store (R-16)")
+            ("Cache-Control" = String, description = "Selalu `no-store`; respons tidak boleh disimpan cache")
         ),
             examples(("cancelled" = (summary = "Dibatalkan sebelum diproses", value = json!({"queue_id": "0b19c3b4-7c5f-4e2f-9b3a-1a2b3c4d5e6f", "status": "cancelled", "cancel_reason": "dibatalkan_client"}))))
         ),
         (status = 401, response = Problem401Down),
         (status = 404, response = Problem404Down),
         (status = 409, description = "Request sedang `processing` atau sudah terminal (`done`/`failed`/`expired`/`cancelled`); body memuat status API saat ini", body = Problem, content_type = "application/problem+json", headers(
-            ("Cache-Control" = String, description = "Selalu no-store (R-16)")
+            ("Cache-Control" = String, description = "Selalu `no-store`; respons tidak boleh disimpan cache")
         ),
             examples(("tidak_bisa_dibatalkan" = (summary = "Status processing atau sudah done/failed/expired/cancelled", value = json!({"type": "https://github.com/faisalcayunda/PoolRouter/blob/main/docs/masalah.md#tidak_bisa_dibatalkan", "title": "Tidak bisa dibatalkan", "status": 409, "kode": "tidak_bisa_dibatalkan", "status_api": "done"}))))
         ),
@@ -405,9 +410,9 @@ async fn cancel_request(
     stub()
 }
 
-/// Webhook registration handler.
-/// Body is the same shape as `RequestStatus` (same mapping function,
-/// ADR-0001 section 3a.6).
+/// Handler tujuan webhook yang didaftarkan klien.
+/// Body memakai bentuk yang sama dengan `RequestStatus`, jadi `status`, `hasil`,
+/// `failure_reason`, dan `cancel_reason` dibaca dengan cara yang sama.
 #[utoipa::path(
     post,
     path = "requestTerminal",
@@ -417,7 +422,7 @@ async fn cancel_request(
         ("webhook-id" = String, Header, description = "request_id (= queue_id); tetap sama saat retry di F1", example = json!("0b19c3b4-7c5f-4e2f-9b3a-1a2b3c4d5e6f")),
         ("webhook-timestamp" = String, Header, description = "Detik Unix; client menolak selisih > 5 menit", example = json!("1762387200")),
         ("webhook-signature" = String, Header, description = "v1,<base64(HMAC-SHA256(kunci, \"{webhook-id}.{webhook-timestamp}.{body}\"))>; kunci = byte hasil decode secret whsec_ (Standard Webhooks)", example = json!("v1,K5x1s0Y2b3Q4c5D6e7F8g9H0i1J2k3L4m5N6o7P8q9R=")),
-        ("poolrouter-secret-versi" = i64, Header, description = "secret_versi yang dipakai; informatif, tidak ikut ditandatangani (contract W-08)", example = json!(3))
+        ("poolrouter-secret-versi" = i64, Header, description = "secret_versi yang dipakai; informatif, tidak ikut ditandatangani", example = json!(3))
     ),
     request_body(content = RequestStatus, content_type = "application/json", description = "Status terminal. Untuk `done` memuat `hasil` (bentuk sama dengan polling); tanpa data input dan tanpa NIK", examples(
         ("done" = (summary = "Request selesai; memuat hasil", value = json!({"queue_id": "0b19c3b4-7c5f-4e2f-9b3a-1a2b3c4d5e6f", "status": "done", "hasil": {"NAMA_LGKP": {"status": "sesuai", "skor": 90}}}))),
@@ -434,15 +439,15 @@ async fn cancel_request(
 fn _request_terminal_webhook() {}
 
 // ---------------------------------------------------------------------------
-// Reusable problem responses (R-10: one example per kode)
+// Reusable problem responses (satu contoh per kode)
 // ---------------------------------------------------------------------------
 
 /// 401 on authenticated paths: `WWW-Authenticate: Bearer`, no request row,
-/// no quota consumed (R-16).
+/// no quota consumed.
 #[derive(utoipa::ToResponse)]
 #[response(description = "Token atau API key tidak valid atau kedaluwarsa; tidak disimpan", content_type = "application/problem+json", headers(
     ("WWW-Authenticate" = String, description = "Bearer untuk endpoint resource"),
-    ("Cache-Control" = String, description = "Selalu no-store (R-16)")
+    ("Cache-Control" = String, description = "Selalu `no-store`; respons tidak boleh disimpan cache")
 ), examples(
     ("tidak_terautentikasi" = (summary = "Token kedaluwarsa atau salah", value = json!({"type": "https://github.com/faisalcayunda/PoolRouter/blob/main/docs/masalah.md#tidak_terautentikasi", "title": "Tidak terautentikasi", "status": 401, "kode": "tidak_terautentikasi"})))
 ))]
@@ -451,7 +456,7 @@ pub struct Problem401Down(pub Problem);
 /// 400 on downstream paths (malformed JSON).
 #[derive(utoipa::ToResponse)]
 #[response(description = "Body bukan JSON yang sah", content_type = "application/problem+json", headers(
-    ("Cache-Control" = String, description = "Selalu no-store (R-16)")
+    ("Cache-Control" = String, description = "Selalu `no-store`; respons tidak boleh disimpan cache")
 ), examples(
     ("validasi_gagal" = (summary = "JSON tidak dapat diurai", value = json!({"type": "https://github.com/faisalcayunda/PoolRouter/blob/main/docs/masalah.md#validasi_gagal", "title": "Validasi gagal", "status": 400, "kode": "validasi_gagal"})))
 ))]
@@ -461,7 +466,7 @@ pub struct Problem400Down(pub Problem);
 /// distinguished.
 #[derive(utoipa::ToResponse)]
 #[response(description = "Tidak ditemukan atau bukan milik client (tidak dibedakan)", content_type = "application/problem+json", headers(
-    ("Cache-Control" = String, description = "Selalu no-store (R-16)")
+    ("Cache-Control" = String, description = "Selalu `no-store`; respons tidak boleh disimpan cache")
 ), examples(
     ("tidak_ditemukan" = (summary = "queue_id/endpoint_id tidak dikenal", value = json!({"type": "https://github.com/faisalcayunda/PoolRouter/blob/main/docs/masalah.md#tidak_ditemukan", "title": "Tidak ditemukan", "status": 404, "kode": "tidak_ditemukan"})))
 ))]
@@ -470,18 +475,17 @@ pub struct Problem404Down(pub Problem);
 /// 403 `objek_nonaktif` for the endpoint itself (before enqueue).
 #[derive(utoipa::ToResponse)]
 #[response(description = "Endpoint nonaktif", content_type = "application/problem+json", headers(
-    ("Cache-Control" = String, description = "Selalu no-store (R-16)")
+    ("Cache-Control" = String, description = "Selalu `no-store`; respons tidak boleh disimpan cache")
 ), examples(
     ("objek_nonaktif" = (summary = "Endpoint dinonaktifkan", value = json!({"type": "https://github.com/faisalcayunda/PoolRouter/blob/main/docs/masalah.md#objek_nonaktif", "title": "Objek nonaktif", "status": 403, "kode": "objek_nonaktif", "jenis_objek": "endpoint"})))
 ))]
 pub struct Problem403ObjekNonaktif(pub Problem);
 
-/// 503 `layanan_tidak_tersedia`: Redis fail-closed; always `Retry-After: 5`
-/// (ADR-0001 section 5a.7).
+/// 503 `layanan_tidak_tersedia`: Redis fail-closed; always `Retry-After: 5`.
 #[derive(utoipa::ToResponse)]
 #[response(description = "Redis fail-closed atau komponen tidak siap", content_type = "application/problem+json", headers(
     ("Retry-After" = i64, description = "Selalu 5 detik"),
-    ("Cache-Control" = String, description = "Selalu no-store (R-16)")
+    ("Cache-Control" = String, description = "Selalu `no-store`; respons tidak boleh disimpan cache")
 ), examples(
     ("layanan_tidak_tersedia" = (summary = "Redis tidak siap", value = json!({"type": "https://github.com/faisalcayunda/PoolRouter/blob/main/docs/masalah.md#layanan_tidak_tersedia", "title": "Layanan tidak tersedia", "status": 503, "kode": "layanan_tidak_tersedia"})))
 ))]
@@ -511,7 +515,7 @@ impl utoipa::Modify for SecurityAddon {
             "apiKey",
             SecurityScheme::ApiKey(ApiKey::Header(ApiKeyValue::with_description(
                 "X-API-Key",
-                "API key downstream (contract section 3.1b); token oauth2 adalah pilihan pertama",
+                "API key downstream; token oauth2 adalah pilihan pertama",
             ))),
         );
         rapi_retry_after(openapi);
@@ -520,9 +524,9 @@ impl utoipa::Modify for SecurityAddon {
     }
 }
 
-/// `Retry-After` is integer seconds, rounded up, at least 1 (ADR-0001 section
-/// 5a.7). The `headers(..)` attribute can only set type and description, so the
-/// floor is applied here, after both documents are assembled.
+/// `Retry-After` is integer seconds, rounded up, at least 1. The `headers(..)`
+/// attribute can only set type and description, so the floor is applied here,
+/// after both documents are assembled.
 pub fn rapi_retry_after(openapi: &mut utoipa::openapi::OpenApi) {
     let skema = || {
         utoipa::openapi::schema::ObjectBuilder::new()
@@ -572,7 +576,7 @@ pub fn rapi_retry_after(openapi: &mut utoipa::openapi::OpenApi) {
 
 #[derive(OpenApi)]
 #[openapi(
-    info(title = "PoolRouter Downstream API", description = "Kontrak downstream PoolRouter F0 (SHAA-175). Error memakai RFC 9457 problem+json dengan kode tertutup; rincian tiap kode ada di docs/masalah.md. Semua respons no-store (R-16)."),
+    info(title = "PoolRouter Downstream API", description = "API publik PoolRouter F0 untuk klien BGN. Error memakai RFC 9457 problem+json dengan daftar `kode` tertutup; rincian tiap kode, termasuk `batas`, ada di docs/masalah.md. Semua respons selalu `no-store`; respons tidak boleh disimpan cache."),
     paths(issue_token, get_endpoint_kontrak, submit_sync, enqueue_async, get_request, cancel_request),
     components(schemas(
         TokenRequest, TokenResponse, EndpointKontrak, FieldInput, FieldMetadata,

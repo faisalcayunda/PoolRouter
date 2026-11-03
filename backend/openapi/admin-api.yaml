@@ -2764,21 +2764,21 @@ components:
       - gagal_internal
     JendelaKuota:
       type: string
-      description: Periode kuota upstream pool (ADR-0001 section 3a.5).
+      description: Periode kuota upstream pool.
       enum:
       - bergulir_24j
       - kalender
     JenisKredensial:
       type: string
-      description: Jenis kredensial downstream (contract section 3.1b).
+      description: Jenis kredensial downstream. Hanya dua nilai ini yang ada.
       enum:
       - oauth2
       - api_key
     JenisObjek:
       type: string
       description: |-
-        Jenis objek yang bisa dinonaktifkan (ADR-0001 section 4.1). Dikirim di
-        `jenis_objek` pada 403/503 `objek_nonaktif`.
+        Jenis objek yang bisa dinonaktifkan. Dikirim di `jenis_objek` pada 403/503
+        `objek_nonaktif`.
       enum:
       - endpoint
       - downstream_pool
@@ -3168,8 +3168,8 @@ components:
     Peran:
       type: string
       description: |-
-        Admin role (contract section 8.1). Closed set; the schema enforces one role
-        per user with `client_id` only for `client_owner`.
+        Peran admin. Daftar nilai tertutup; tiap pengguna hanya punya satu peran, dan
+        `client_id` hanya diisi untuk `client_owner`.
       enum:
       - auditor
       - operator

@@ -503,11 +503,29 @@ fn update_memakai_body_config_yang_sama() {
     }
 }
 
-/// Non-blocking guard: client-facing text carries no internal ticket labels.
-/// R-xx and ADR references stay; `U-x`/`F-x` labels must not leak into the
-/// downstream contract or `docs/masalah.md`.
+/// Apakah `byte` termasuk kelas `[A-Za-z0-9_]` (setara `\w` pada ASCII).
+fn kelas_kata(byte: u8) -> bool {
+    byte.is_ascii_alphanumeric() || byte == b'_'
+}
+
+/// Setara `\b` pada kedua ujung rentang `awal..akhir`: sisi dalam adalah kelas
+/// kata dan sisi luar bukan kelas kata. Mencegah `R-16` cocok di tengah kata
+/// seperti `FXR-16`.
+fn kata_utuh(byte: &[u8], awal: usize, akhir: usize) -> bool {
+    let kiri = awal == 0 || !kelas_kata(byte[awal - 1]);
+    let kanan = akhir >= byte.len() || !kelas_kata(byte[akhir]);
+    kiri && kanan
+}
+
+/// Test penjaga: teks yang tampil ke klien tidak boleh memuat rujukan dokumen
+/// kerja internal (PRD, ADR, data contract). Aturannya harus ditulis sebagai
+/// kalimat, misalnya "Selalu `no-store`; respons tidak boleh disimpan cache".
+///
+/// `downstream-api.yaml` diserahkan ke BGN sebagai lampiran dokumentasi, jadi
+/// teksnya harus terbaca tanpa dokumen internal. Rujukan di komentar kode Rust
+/// tetap boleh ada; `admin-api.yaml` tidak diperiksa karena tidak diserahkan.
 #[test]
-fn teks_client_tanpa_label_tiket_internal() {
+fn teks_client_tanpa_rujukan_dokumen_kerja() {
     let root = masalah_path()
         .parent()
         .and_then(|d| d.parent())
@@ -527,28 +545,75 @@ fn teks_client_tanpa_label_tiket_internal() {
     for (nama, isi) in berkas {
         for (nomor, baris) in isi.lines().enumerate() {
             let byte = baris.as_bytes();
-            for i in 0..byte.len().saturating_sub(2) {
-                let awal_kata =
-                    i == 0 || !(byte[i - 1].is_ascii_alphanumeric() || byte[i - 1] == b'_');
-                if !awal_kata
-                    || !(byte[i] == b'U' || byte[i] == b'F')
-                    || byte[i + 1] != b'-'
-                    || !byte[i + 2].is_ascii_digit()
-                {
-                    continue;
-                }
-                let akhir = byte[i + 2..]
-                    .iter()
-                    .position(|c| !c.is_ascii_digit())
-                    .map_or(byte.len(), |p| i + 2 + p);
-                let akhir_kata = akhir == byte.len()
-                    || !(byte[akhir].is_ascii_alphanumeric() || byte[akhir] == b'_');
-                if akhir_kata {
+            for (awal, karakter) in baris.char_indices() {
+                let ekor = &byte[awal..];
+
+                // `§`
+                if karakter == '§' {
                     panic!(
-                        "{nama}:{} memuat label tiket internal ({}): {baris}",
-                        nomor + 1,
-                        &baris[i..akhir]
+                        "{nama}:{} memuat rujukan dokumen kerja (§): {baris}",
+                        nomor + 1
                     );
+                }
+
+                // `ADR-\d+`
+                if ekor.starts_with(b"ADR-")
+                    && ekor.get(3).is_some_and(u8::is_ascii_digit)
+                    && kata_utuh(byte, awal, awal + 4)
+                {
+                    panic!(
+                        "{nama}:{} memuat rujukan dokumen kerja (ADR): {baris}",
+                        nomor + 1
+                    );
+                }
+
+                // `[Cc]ontract`
+                if (ekor.starts_with(b"contract") || ekor.starts_with(b"Contract"))
+                    && kata_utuh(byte, awal, awal + 8)
+                {
+                    panic!(
+                        "{nama}:{} memuat rujukan dokumen kerja (contract): {baris}",
+                        nomor + 1
+                    );
+                }
+
+                // `section`
+                if ekor.starts_with(b"section") && kata_utuh(byte, awal, awal + 7) {
+                    panic!(
+                        "{nama}:{} memuat rujukan dokumen kerja (section): {baris}",
+                        nomor + 1
+                    );
+                }
+
+                // `SHAA-\d+`
+                if ekor.starts_with(b"SHAA-")
+                    && ekor.get(5).is_some_and(u8::is_ascii_digit)
+                    && kata_utuh(byte, awal, awal + 6)
+                {
+                    panic!(
+                        "{nama}:{} memuat label tiket internal (SHAA): {baris}",
+                        nomor + 1
+                    );
+                }
+
+                // `\b[A-Z]{1,2}-\d+\b`: R-16, U-3, S-05, W-08, K-20, L-04, dan
+                // sejenisnya.
+                let awalan = ekor.iter().take_while(|c| c.is_ascii_uppercase()).count();
+                if (1..=2).contains(&awalan)
+                    && ekor.get(awalan) == Some(&b'-')
+                    && ekor.get(awalan + 1).is_some_and(u8::is_ascii_digit)
+                {
+                    let mut akhir = awalan + 1;
+                    while ekor.get(akhir).is_some_and(u8::is_ascii_digit) {
+                        akhir += 1;
+                    }
+                    if kata_utuh(byte, awal, awal + akhir) {
+                        panic!(
+                            "{nama}:{} memuat kode dokumen kerja ({}): {baris}",
+                            nomor + 1,
+                            &baris[awal..awal + akhir]
+                        );
+                    }
                 }
             }
         }
