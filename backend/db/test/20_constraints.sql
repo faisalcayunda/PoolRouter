@@ -155,19 +155,29 @@ UPDATE request SET status = 'dispatched', dispatched_at = now() WHERE request_id
 INSERT INTO request_status_history (request_id, seq, status_dari, status_ke, aktor) SELECT id, 2, 'queued', 'dispatched', 'controller' FROM _p;
 COMMIT;
 SELECT t.ok(t.hitung($$SELECT count(*) FROM request WHERE status = 'dispatched' AND request_id = (SELECT id FROM _p)$$) = 1, 'T-04: transition with history commits');
--- T-04 negative: transition UPDATE whose history row has the wrong status_dari is still rejected at commit
+-- T-04 negative: the transition is otherwise legal (dispatched -> in_flight with attempt_count/dispatched_at), so only the
+-- history row's status_dari ('queued' instead of 'dispatched') is wrong. The rejection must come from T-04 itself,
+-- not from another check (chk_attempt etc.), so the message is asserted.
 DO $x$
-DECLARE v uuid := (SELECT id FROM _p);
+DECLARE v uuid := (SELECT id FROM _p); m text;
 BEGIN
   BEGIN
-    UPDATE request SET status = 'in_flight' WHERE request_id = v;
+    UPDATE request SET status = 'in_flight', attempt_count = 1, dispatched_at = now() WHERE request_id = v;
     INSERT INTO request_status_history (request_id, seq, status_dari, status_ke, aktor) VALUES (v, 3, 'queued', 'in_flight', 'worker');
     SET CONSTRAINTS request_history_wajib IMMEDIATE;
     RAISE EXCEPTION 'FAIL: wrong status_dari accepted (T-04)';
   EXCEPTION WHEN integrity_constraint_violation THEN
-    RAISE NOTICE 'ok - history with wrong status_dari is rejected (T-04)';
+    GET STACKED DIAGNOSTICS m = MESSAGE_TEXT;
+    IF m NOT LIKE '%(T-04)%' THEN RAISE EXCEPTION 'FAIL: rejected by something other than T-04: %', m; END IF;
+    RAISE NOTICE 'ok - history with wrong status_dari is rejected by T-04 (%)', m;
   END;
 END $x$;
+-- control: the identical UPDATE with the correct status_dari commits, so history is the only difference
+BEGIN;
+UPDATE request SET status = 'in_flight', attempt_count = 1, dispatched_at = now() WHERE request_id = (SELECT id FROM _p);
+INSERT INTO request_status_history (request_id, seq, status_dari, status_ke, aktor) SELECT id, 3, 'dispatched', 'in_flight', 'worker' FROM _p;
+COMMIT;
+SELECT t.ok(t.hitung($$SELECT count(*) FROM request WHERE status = 'in_flight' AND request_id = (SELECT id FROM _p)$$) = 1, 'T-04 control: same UPDATE with correct status_dari commits');
 DROP TABLE _p;
 
 -- ---- transaction_log rules (R-03, R-05, R-07, R-08, nik requirement)
