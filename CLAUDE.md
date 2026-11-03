@@ -2,17 +2,17 @@
 
 Aturan ini mengikat semua agent dan kontributor. Standar teknis umum ada di skill `shaal-eng-standards`; kalau bertentangan, file ini yang berlaku.
 
-Dasar wewenang: keputusan owner K-34 (2026-11-03, dicatat Fitcher di SHAA-179). Squad Engineering boleh commit, push, dan membuat branch sendiri di repo ini, sehingga konfirmasi owner per aksi git (`shaal-eng-standards` §0/§2) tidak diperlukan. Batas di bawah tetap berlaku: perubahan ke `main` hanya lewat PR yang di-approve Ridley.
+Dasar wewenang: keputusan owner K-34 dan K-35 (2026-11-03, dicatat Fitcher di SHAA-179 dan SHAA-182). Squad Engineering boleh commit, push, dan membuat branch sendiri di repo ini, termasuk push langsung ke `main` tanpa PR. Konfirmasi owner per aksi git (`shaal-eng-standards` §0/§2) tidak diperlukan. Setiap push ke `main` di-review Ridley post-hoc. Force-push ke `main` dan secret di repo tetap dilarang.
 
 ## Branch dan push
 - Satu branch per pekerjaan: `agent/<nama-agent>/<issue>`, contoh `agent/flik/shaa-200`.
-- Push hanya ke branch milik sendiri. Push langsung ke `main` dilarang. Satu-satunya pengecualian adalah commit bootstrap awal repo ini.
+- Push ke branch milik sendiri atau langsung ke `main` (fast-forward, tanpa force). Branch orang lain tidak disentuh.
 - Dilarang: force push ke `main`, rebase atau reset branch milik orang lain, menghapus branch milik orang lain, dan menambah remote.
 
 ## Pull request dan merge
-- Semua perubahan masuk ke `main` lewat PR ke `main`.
-- PR di-approve Ridley pada hash yang akan di-merge. Setelah itu PR di-merge oleh pelaksana (Flik atau Viktor) dengan merge commit (`gh pr merge --merge`), bukan squash atau rebase.
-- Sebelum merge: merge `main` terbaru ke branch PR, jalankan gate penuh repo, dan pastikan lolos (`shaal-eng-standards` §6). Kalau ada konflik atau gate gagal, perbaiki di branch PR, bukan di `main`.
+- PR ke `main` tidak wajib. Perubahan boleh di-push langsung ke `main`.
+- Ridley me-review post-hoc hash commit di `main` setelah pelaksana (Flik atau Viktor) me-mention. Temuan blocking diperbaiki dengan push lanjutan ke `main`.
+- Sebelum push ke `main`: rebase atau merge `main` terbaru ke branch kerja, jalankan gate penuh repo, dan pastikan lolos (`shaal-eng-standards` §6).
 - Board of Directors tidak commit, push, atau merge.
 
 ## Rahasia dan data
@@ -20,5 +20,5 @@ Dasar wewenang: keputusan owner K-34 (2026-11-03, dicatat Fitcher di SHAA-179). 
 - Data NIK hanya sintetis.
 
 ## Struktur dan stack
-- Struktur folder, stack, dan gate (`Makefile`) ditetapkan lewat ADR SHAA-178 dan ditambahkan lewat PR.
+- Struktur folder, stack, dan gate (`Makefile`) ditetapkan lewat ADR SHAA-178 dan ditambahkan lewat commit ke `main`.
 - Kode, identifier, dan pesan commit ditulis dalam Bahasa Inggris. Dokumen di `docs/` ditulis dalam Bahasa Indonesia.
