@@ -22,35 +22,48 @@ PNPM_HOME_DIR := /work/frontend/.cache/corepack
 # Keep the pnpm store and metadata cache in .cache/ (git- and lint-ignored) so retries are incremental.
 CACHE_ENV := -e npm_config_store_dir=/work/frontend/.cache/pnpm-store -e npm_config_cache=/work/frontend/.cache/npm
 PNPM_INSTALL_FLAGS ?= --network-concurrency 2
+NODE_CMD = $(NODE_IMAGE) sh -c 'corepack enable && exec "$$@"' sh
+
+# Shared "one heavy build per host" lock (SHAA-194, K-41). Same include and HEAVY
+# shape as backend/Makefile; there is no second lock implementation in this repo.
+include ../scripts/build-lock.mk
 
 ifeq ($(FRONTEND_RUNNER),podman)
 # The repository root is mounted at /work and the workdir is /work/frontend, so
 # paths written relative to frontend/ resolve as they do on the host: ../docs for
 # the ADR a test asserts against, ../backend/openapi for gen-api. Mounting only
 # frontend/ silently broke both.
-RUN = podman run --rm --memory $(CONTAINER_MEMORY) --label $(CONTAINER_LABEL) \
+RUN_OPTS = podman run --rm --memory $(CONTAINER_MEMORY) --label $(CONTAINER_LABEL) \
 	-v "$(CURDIR)/..":/work -w /work/frontend \
-	-e COREPACK_HOME=$(PNPM_HOME_DIR) -e COREPACK_ENABLE_DOWNLOAD_PROMPT=0 -e CI=1 $(CACHE_ENV) \
-	$(NODE_IMAGE) sh -c 'corepack enable && exec "$$@"' sh
+	-e COREPACK_HOME=$(PNPM_HOME_DIR) -e COREPACK_ENABLE_DOWNLOAD_PROMPT=0 -e CI=1 $(CACHE_ENV)
+RUN = $(RUN_OPTS) $(NODE_CMD)
 # --ipc=host gives Chromium the host /dev/shm (Playwright's documented invocation);
 # with the host IPC namespace, --shm-size is rejected, so it is not set.
 # The Playwright image has no corepack and needs no package manager: the repo's
 # node_modules is bind-mounted, so the pinned binaries run directly.
-RUN_PW = podman run --rm --memory $(CONTAINER_MEMORY) --ipc=host --label $(CONTAINER_LABEL) \
+RUN_PW_OPTS = podman run --rm --memory $(CONTAINER_MEMORY) --ipc=host --label $(CONTAINER_LABEL) \
 	-e HOME=/tmp -e CI=1 \
-	-v "$(CURDIR)/..":/work -w /work/frontend \
-	$(PLAYWRIGHT_IMAGE)
+	-v "$(CURDIR)/..":/work -w /work/frontend
+RUN_PW = $(RUN_PW_OPTS) $(PLAYWRIGHT_IMAGE)
+# Heavy targets take the lock: pnpm install, vite build, vitest, and the Chromium e2e run.
+# lint, fmt, i18n-check, and clean stay unlocked (podman run only, no node_modules writes).
+# On a held lock they exit 75 (EX_TEMPFAIL): do non-compile work and retry, never wait in a loop.
+HEAVY = $(BUILD_LOCK_SH) run -- $(RUN_OPTS) $(BUILD_LOCK_OPTS) $(NODE_CMD)
+HEAVY_PW = $(BUILD_LOCK_SH) run -- $(RUN_PW_OPTS) $(BUILD_LOCK_OPTS) $(PLAYWRIGHT_IMAGE)
 else
 RUN = corepack enable &&
 RUN_PW = true
+HEAVY = $(RUN)
+HEAVY_PW = $(RUN_PW)
 endif
 
 PNPM = $(RUN) pnpm
 
-.PHONY: help check-label setup test lint fmt clean gen-api gen-api-check build e2e i18n-check i18n-types
+.PHONY: help check-label setup test lint fmt clean gen-api gen-api-check build e2e i18n-check i18n-types build-lock-status build-lock-clean
 
 help:
 	@echo "targets: setup test lint fmt clean gen-api gen-api-check build e2e i18n-check i18n-types"
+	@echo "lock:    build-lock-status build-lock-clean (K-41 heavy build lock, shared with backend)"
 
 # Every podman container must carry shaal.issue=SHAA-<n> (playbook section 6).
 # Skipped for FRONTEND_RUNNER=local, where no container is created.
@@ -62,11 +75,14 @@ else
 check-label:
 endif
 
+# Heavy targets run under the K-41 lock: they create node_modules or compile bundles.
+# setup (pnpm install), build (vite build), test (vitest), and e2e (Chromium) are locked.
+# A held lock exits 75 (EX_TEMPFAIL): switch to non-compile work and retry, don't wait.
 setup: check-label
-	$(PNPM) install --frozen-lockfile $(PNPM_INSTALL_FLAGS)
+	$(HEAVY) pnpm install --frozen-lockfile $(PNPM_INSTALL_FLAGS)
 
 test: check-label
-	$(PNPM) exec vitest run
+	$(HEAVY) pnpm exec vitest run
 
 # lint = ESLint + Prettier --check + tsc --noEmit + i18n-check (Addendum A section 8).
 lint: check-label i18n-check
@@ -98,9 +114,10 @@ gen-api-check: check-label
 	git diff --exit-code -- src/api/schema.gen.ts
 
 build: check-label
-	$(PNPM) exec vite build
+	$(HEAVY) pnpm exec vite build
 
 # e2e: Playwright (Chromium) against the built SPA served by `vite preview`, in the pinned
-# Playwright image. Full Compose stack arrives with the screens. Heavy build: follow the VM rules.
+# Playwright image. Full Compose stack arrives with the screens. The `build` prerequisite takes
+# the lock and releases it before this recipe runs, so the two never nest.
 e2e: check-label build
-	$(RUN_PW) ./node_modules/.bin/playwright test
+	$(HEAVY_PW) ./node_modules/.bin/playwright test
