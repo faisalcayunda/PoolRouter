@@ -50,7 +50,10 @@ jobs:
           set -eu
           dir="$RUNNER_TEMP/poolrouter-secrets"
           mkdir -p "$dir"
-          chmod 0700 "$dir"
+          # 0755 agar UID container non-root (postgres, rabbitmq, redis) bisa menelusuri direktori
+          # ini saat dibind-mount lewat Podman rootful. Isi tetap acak per run, file 0444,
+          # dan induknya ($RUNNER_TEMP) hanya milik user runner.
+          chmod 0755 "$dir"
           for f in db_password redis_password rabbitmq_password poolrouter_owner poolrouter_db_app poolrouter_kek; do
             # Nilai acak per run, hanya untuk smoke test. Tidak dicetak.
             openssl rand -hex 24 > "$dir/$f"
