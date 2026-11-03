@@ -19,7 +19,6 @@ set -u
 NAME="${BUILD_LOCK_NAME:-shaal-build-heavy}"
 ENGINE="${BUILD_LOCK_ENGINE:-podman}"
 EX_TEMPFAIL=75
-WORK=".cache/build-lock"
 
 # inspect_field <format>: nilai field dari container kunci, kosong bila tidak ada.
 inspect_field() {
@@ -47,22 +46,25 @@ remove_stale() {
 	"$ENGINE" rm "$NAME" >/dev/null 2>&1
 }
 
-# attempt <cmd...>: jalankan perintah, tampilkan outputnya (juga ke $WORK.log), exit code ke $WORK.rc.
+# attempt <cmd...>: jalankan perintah, tampilkan outputnya (juga ke $WD/log), exit code ke $WD/rc.
 attempt() {
-	( "$@" 2>&1; echo $? >"$WORK.rc" ) | tee "$WORK.log"
-	rc=$(cat "$WORK.rc")
+	( "$@" 2>&1; echo $? >"$WD/rc" ) | tee "$WD/log"
+	rc=$(cat "$WD/rc")
 }
 
 cmd_run() {
 	[ "${1:-}" = "--" ] && shift
 	[ $# -gt 0 ] || { echo "build-lock: perintah kosong" >&2; return 2; }
 	mkdir -p .cache
+	# Direktori kerja unik per run: dua run dari worktree yang sama tidak saling menimpa.
+	WD=$(mktemp -d .cache/build-lock.XXXXXX) || return 1
+	trap 'rm -rf "$WD"' EXIT
 	attempt "$@"
-	if [ "$rc" = 125 ] && grep -Fq "container name \"$NAME\" is already in use" "$WORK.log"; then
+	if [ "$rc" = 125 ] && grep -Fq "container name \"$NAME\" is already in use" "$WD/log"; then
 		if remove_stale; then
 			echo "build-lock: kunci basi dihapus, mencoba sekali lagi." >&2
 			attempt "$@"
-			if [ "$rc" = 125 ] && grep -Fq "container name \"$NAME\" is already in use" "$WORK.log"; then
+			if [ "$rc" = 125 ] && grep -Fq "container name \"$NAME\" is already in use" "$WD/log"; then
 				echo "build-lock: kunci dipegang $(holder_text). Jalankan pekerjaan non-compile, atau tunggu sampai container itu selesai." >&2
 				rc=$EX_TEMPFAIL
 			fi
@@ -71,7 +73,6 @@ cmd_run() {
 			rc=$EX_TEMPFAIL
 		fi
 	fi
-	rm -f "$WORK.log" "$WORK.rc"
 	return "$rc"
 }
 
