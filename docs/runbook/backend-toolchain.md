@@ -30,7 +30,7 @@ CI menjalankan `make setup test lint` dari akar repo dengan `RUNNER=native`. Tar
 ## Kondisi VM saat ini
 
 - VM `podman-machine-default` berjalan pada **2 CPU / 3814 MiB RAM** (disk tetap). Ini kondisi yang berlaku sekarang, atas keputusan owner tertanggal 2026-11-03.
-- Akibatnya **hanya satu build Rust pada satu waktu**, dengan `JOBS=1`. Default `JOBS` di `backend/Makefile` sekarang `1`. `JOBS=2` hanya untuk VM 6144 MiB / 4 CPU, bukan untuk VM ini. Jangan menjalankan dua build Rust bersamaan (misalnya dua `make test` atau `make lint` dari issue berbeda).
+- Akibatnya **hanya satu build Rust pada satu waktu**, dengan `JOBS=1`. Jangan menjalankan dua build Rust bersamaan (misalnya dua `make test` atau `make lint` dari issue berbeda).
 - Sebelum build apa pun, cek container yang sedang jalan:
 
 ```sh
