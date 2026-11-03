@@ -3653,17 +3653,32 @@ components:
         Upstream pool configuration body (US-04/05; KP-01/KP-02 ranges enforced
         server-side with 422, SHAA-280).
 
-        Every field carries `minimum`/`maximum` plus a `default`, except
-        `provider_id` (chosen by the caller) and `alasan` (context, not a setting):
-        KP-01 (ADR-0001 section 5a) for the quota/retry parameters, Sisipan H (US-22)
-        for `jeda_min`/`jeda_maks`/`ambang_berdampingan`, which has no range in the
-        ADR — those three bounds and defaults are the practical ceilings decided for
-        SHAA-280 and are recorded in `backend/openapi/DESIGN.md` section 3.2.
+        Ranges follow KP-01 (ADR-0001 section 5a "Parameter per upstream pool dan
+        rentangnya") exactly as decided for SHAA-280; the table lives in
+        `backend/openapi/DESIGN.md` section 3.2 and `KP01` in `api/tests.rs` asserts
+        it on the generated document.
+
+        Seven fields are **required with no default**, so the server never silently
+        picks a value the operator did not choose: `provider_id`, `jeda_min`,
+        `jeda_maks`, `ambang_berdampingan`, `kuota_harian`, `rate_limit_per_jam`, and
+        `porsi_sync`. The remaining parameters keep the KP-01 defaults.
+
+        Bounds that `minimum`/`maximum` cannot express are documented here and
+        enforced by [`UpstreamPoolConfig::validate`] (wiring into the handlers
+        follows SHAA-175):
+        - `retry_backoff_cap_detik` must be greater than or equal to
+          `retry_backoff_base_detik`;
+        - `jeda_maks` must be greater than or equal to `jeda_min`;
+        - both `jeda_min` and `jeda_maks` must be at most
+          `floor(3_600_000 / rate_limit_per_jam)` milliseconds. That is the mean
+          inter-request spacing the hourly rate limit allows, so a longer pause
+          would drop the pool below `rate_limit_per_jam` on its own. The `maximum`
+          of 60_000 below is only the static ceiling for `rate_limit_per_jam = 60`
+          and above; for example `rate_limit_per_jam = 36_000` caps both delays at
+          100 ms.
+
         The `example` values are deliberately values a caller could send, not the
-        defaults: they coincide with `default` only where the ADR and the
-        `upstream_pool` column defaults agree, so an example can never be read as
-        "the value the server picks when the field is absent". `e2e_upstream_pool`
-        in `api/tests.rs` asserts that rule on the generated document.
+        defaults.
       required:
       - provider_id
       - kuota_harian
@@ -3695,11 +3710,9 @@ components:
           type: integer
           format: int64
           description: |-
-            Concurrency threshold (`ambang berdampingan`, US-22), 1..=100.
-            Default 4.
-          default: 4
+            Concurrency threshold (`ambang berdampingan`, US-22), at least 1 with no
+            upper bound. Required: no default.
           example: 8
-          maximum: 100
           minimum: 1
         batas_percobaan:
           type: integer
@@ -3713,17 +3726,19 @@ components:
           type: integer
           format: int64
           description: |-
-            Maximum inter-request delay in milliseconds, 0..=60_000, and never
-            below `jeda_min` (cross-field 422). Default 800.
-          default: 800
+            Maximum inter-request delay in milliseconds, 0..=60_000 and at most
+            `floor(3_600_000 / rate_limit_per_jam)`, and never below `jeda_min`
+            (cross-field 422). Required: no default.
           example: 1500
           maximum: 60000
           minimum: 0
         jeda_min:
           type: integer
           format: int64
-          description: Minimum inter-request delay in milliseconds, 0..=60_000. Default 200.
-          default: 200
+          description: |-
+            Minimum inter-request delay in milliseconds, 0..=60_000 and at most
+            `floor(3_600_000 / rate_limit_per_jam)` (cross-field 422). Required: no
+            default.
           example: 250
           maximum: 60000
           minimum: 0
@@ -3732,8 +3747,9 @@ components:
         kuota_harian:
           type: integer
           format: int64
-          description: Daily upstream quota, 1..=1_000_000. Default 500 (ADR-0001 §5a KP-01).
-          default: 500
+          description: |-
+            Daily upstream quota, 1..=1_000_000 (KP-01). Required: no default, so a
+            create must state the quota it wants.
           example: 750
           maximum: 1000000
           minimum: 1
@@ -3749,9 +3765,8 @@ components:
           type: number
           format: double
           description: |-
-            Sync portion of the pool, 0.0..1.0. Default 0.2 (ADR-0001 §5a KP-01:
-            `porsi_sync_maks`).
-          default: 0.2
+            Sync portion of the pool, 0.0..1.0 (KP-01: `porsi_sync_maks`). Required:
+            no default.
           example: 0.1
           maximum: 1
           minimum: 0
@@ -3761,8 +3776,10 @@ components:
         rate_limit_per_jam:
           type: integer
           format: int64
-          description: Upstream rate limit per hour, 1..=10_000. Default 60 (ADR-0001 §5a KP-01).
-          default: 60
+          description: |-
+            Upstream rate limit per hour, 1..=10_000 (KP-01). Required: no default.
+            Also caps `jeda_min`/`jeda_maks` at `floor(3_600_000 / rate_limit_per_jam)`
+            milliseconds.
           example: 120
           maximum: 10000
           minimum: 1
@@ -3791,8 +3808,10 @@ components:
           type: integer
           format: int64
           description: |-
-            Backoff cap in seconds, 1..=3600, and never below
-            `retry_backoff_base_detik` (cross-field 422). Default 300.
+            Backoff cap in seconds, `retry_backoff_base_detik`..=3600. The lower
+            bound is per request, not a fixed `minimum`: `retry_backoff_cap_detik`
+            must be greater than or equal to `retry_backoff_base_detik` (cross-field
+            422, see [`UpstreamPoolConfig::validate`]). Default 300.
           default: 300
           example: 60
           maximum: 3600

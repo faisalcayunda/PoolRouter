@@ -183,30 +183,48 @@ pub struct SecretNilai {
 /// Upstream pool configuration body (US-04/05; KP-01/KP-02 ranges enforced
 /// server-side with 422, SHAA-280).
 ///
-/// Every field carries `minimum`/`maximum` plus a `default`, except
-/// `provider_id` (chosen by the caller) and `alasan` (context, not a setting):
-/// KP-01 (ADR-0001 section 5a) for the quota/retry parameters, Sisipan H (US-22)
-/// for `jeda_min`/`jeda_maks`/`ambang_berdampingan`, which has no range in the
-/// ADR — those three bounds and defaults are the practical ceilings decided for
-/// SHAA-280 and are recorded in `backend/openapi/DESIGN.md` section 3.2.
+/// Ranges follow KP-01 (ADR-0001 section 5a "Parameter per upstream pool dan
+/// rentangnya") exactly as decided for SHAA-280; the table lives in
+/// `backend/openapi/DESIGN.md` section 3.2 and `KP01` in `api/tests.rs` asserts
+/// it on the generated document.
+///
+/// Seven fields are **required with no default**, so the server never silently
+/// picks a value the operator did not choose: `provider_id`, `jeda_min`,
+/// `jeda_maks`, `ambang_berdampingan`, `kuota_harian`, `rate_limit_per_jam`, and
+/// `porsi_sync`. The remaining parameters keep the KP-01 defaults.
+///
+/// Bounds that `minimum`/`maximum` cannot express are documented here and
+/// enforced by [`UpstreamPoolConfig::validate`] (wiring into the handlers
+/// follows SHAA-175):
+/// - `retry_backoff_cap_detik` must be greater than or equal to
+///   `retry_backoff_base_detik`;
+/// - `jeda_maks` must be greater than or equal to `jeda_min`;
+/// - both `jeda_min` and `jeda_maks` must be at most
+///   `floor(3_600_000 / rate_limit_per_jam)` milliseconds. That is the mean
+///   inter-request spacing the hourly rate limit allows, so a longer pause
+///   would drop the pool below `rate_limit_per_jam` on its own. The `maximum`
+///   of 60_000 below is only the static ceiling for `rate_limit_per_jam = 60`
+///   and above; for example `rate_limit_per_jam = 36_000` caps both delays at
+///   100 ms.
+///
 /// The `example` values are deliberately values a caller could send, not the
-/// defaults: they coincide with `default` only where the ADR and the
-/// `upstream_pool` column defaults agree, so an example can never be read as
-/// "the value the server picks when the field is absent". `e2e_upstream_pool`
-/// in `api/tests.rs` asserts that rule on the generated document.
+/// defaults.
 #[derive(Debug, Clone, Deserialize, ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct UpstreamPoolConfig {
     pub provider_id: Uuid,
-    /// Daily upstream quota, 1..=1_000_000. Default 500 (ADR-0001 §5a KP-01).
-    #[schema(minimum = 1, maximum = 1_000_000, default = 500, example = 750)]
+    /// Daily upstream quota, 1..=1_000_000 (KP-01). Required: no default, so a
+    /// create must state the quota it wants.
+    #[schema(minimum = 1, maximum = 1_000_000, example = 750)]
     pub kuota_harian: i64,
-    /// Upstream rate limit per hour, 1..=10_000. Default 60 (ADR-0001 §5a KP-01).
-    #[schema(minimum = 1, maximum = 10_000, default = 60, example = 120)]
+    /// Upstream rate limit per hour, 1..=10_000 (KP-01). Required: no default.
+    /// Also caps `jeda_min`/`jeda_maks` at `floor(3_600_000 / rate_limit_per_jam)`
+    /// milliseconds.
+    #[schema(minimum = 1, maximum = 10_000, example = 120)]
     pub rate_limit_per_jam: i64,
-    /// Sync portion of the pool, 0.0..1.0. Default 0.2 (ADR-0001 §5a KP-01:
-    /// `porsi_sync_maks`).
-    #[schema(minimum = 0, maximum = 1, default = 0.2, example = 0.1)]
+    /// Sync portion of the pool, 0.0..1.0 (KP-01: `porsi_sync_maks`). Required:
+    /// no default.
+    #[schema(minimum = 0, maximum = 1, example = 0.1)]
     pub porsi_sync: f64,
     /// Quota reservation margin, 0.001..0.200 (KP-01). Default 0.01.
     #[schema(minimum = 0.001, maximum = 0.2, default = 0.01, example = 0.05)]
@@ -217,8 +235,10 @@ pub struct UpstreamPoolConfig {
     /// Backoff base in seconds, 1..=300 (KP-01). Default 5.
     #[schema(minimum = 1, maximum = 300, default = 5, example = 2)]
     pub retry_backoff_base_detik: i64,
-    /// Backoff cap in seconds, 1..=3600, and never below
-    /// `retry_backoff_base_detik` (cross-field 422). Default 300.
+    /// Backoff cap in seconds, `retry_backoff_base_detik`..=3600. The lower
+    /// bound is per request, not a fixed `minimum`: `retry_backoff_cap_detik`
+    /// must be greater than or equal to `retry_backoff_base_detik` (cross-field
+    /// 422, see [`UpstreamPoolConfig::validate`]). Default 300.
     #[schema(minimum = 1, maximum = 3600, default = 300, example = 60)]
     pub retry_backoff_cap_detik: i64,
     /// Retry budget as a ratio of `kuota_harian`, 0.0..=0.5 (KP-01).
@@ -235,22 +255,218 @@ pub struct UpstreamPoolConfig {
     /// IANA time zone; the offset is pinned to this zone (KP-02).
     #[schema(default = "Asia/Jakarta", example = "Asia/Jayapura")]
     pub reset_kuota_zona: String,
-    /// Minimum inter-request delay in milliseconds, 0..=60_000. Default 200.
-    #[schema(minimum = 0, maximum = 60_000, default = 200, example = 250)]
+    /// Minimum inter-request delay in milliseconds, 0..=60_000 and at most
+    /// `floor(3_600_000 / rate_limit_per_jam)` (cross-field 422). Required: no
+    /// default.
+    #[schema(minimum = 0, maximum = 60_000, example = 250)]
     pub jeda_min: i64,
-    /// Maximum inter-request delay in milliseconds, 0..=60_000, and never
-    /// below `jeda_min` (cross-field 422). Default 800.
-    #[schema(minimum = 0, maximum = 60_000, default = 800, example = 1500)]
+    /// Maximum inter-request delay in milliseconds, 0..=60_000 and at most
+    /// `floor(3_600_000 / rate_limit_per_jam)`, and never below `jeda_min`
+    /// (cross-field 422). Required: no default.
+    #[schema(minimum = 0, maximum = 60_000, example = 1500)]
     pub jeda_maks: i64,
-    /// Concurrency threshold (`ambang berdampingan`, US-22), 1..=100.
-    /// Default 4.
-    #[schema(minimum = 1, maximum = 100, default = 4, example = 8)]
+    /// Concurrency threshold (`ambang berdampingan`, US-22), at least 1 with no
+    /// upper bound. Required: no default.
+    #[schema(minimum = 1, example = 8)]
     pub ambang_berdampingan: i64,
     /// Reason; required on update, and required with `kalender` (source of
     /// certainty of the calendar window).
     #[serde(skip_serializing_if = "Option::is_none")]
     #[schema(min_length = 10, max_length = 500)]
     pub alasan: Option<String>,
+}
+
+/// One rejected field of [`UpstreamPoolConfig`], as the pure validator reports
+/// it (SHAA-280 AC 3). The handler layer (SHAA-175) maps a list of these onto a
+/// 422 problem document; until then the function is exercised by unit tests only,
+/// so the promised 422 has a tested single source of truth.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FieldError {
+    /// Field name exactly as it appears in the JSON body and the OpenAPI schema,
+    /// so a client can point at the offending member.
+    pub field: &'static str,
+    /// Human-readable reason, English like the rest of the code.
+    pub message: String,
+}
+
+impl FieldError {
+    fn new(field: &'static str, message: impl Into<String>) -> Self {
+        Self {
+            field,
+            message: message.into(),
+        }
+    }
+}
+
+impl UpstreamPoolConfig {
+    /// Mean inter-request spacing, in milliseconds, that `rate_limit_per_jam`
+    /// allows: `floor(3_600_000 / rate_limit_per_jam)`. It is the cross-field
+    /// ceiling for `jeda_min` and `jeda_maks` (KP-01, SHAA-280).
+    ///
+    /// Returns `None` when `rate_limit_per_jam` is not positive, because then the
+    /// field's own `minimum` bound already fails and there is no meaningful
+    /// ceiling to compare against.
+    #[must_use]
+    pub fn batas_jeda_dari_rate_limit(&self) -> Option<i64> {
+        (self.rate_limit_per_jam > 0).then(|| 3_600_000 / self.rate_limit_per_jam)
+    }
+
+    /// Pure validation of every KP-01 bound, including the cross-field rules that
+    /// a JSON Schema `minimum`/`maximum` cannot express (SHAA-280 AC 3).
+    ///
+    /// Returns every violation found, not just the first, so a client can fix the
+    /// whole body in one round trip. An empty `Ok(())` means the body is valid.
+    /// Field bounds are checked here as well as in the schema, so this function is
+    /// self-contained: a caller can rely on it alone.
+    ///
+    /// No I/O and no environment access, which is what makes it unit-testable and
+    /// what later lets the handler call it unchanged (SHAA-175).
+    pub fn validate(&self) -> Result<(), Vec<FieldError>> {
+        let mut errors = Vec::new();
+
+        // Single-field ranges (KP-01 + Sisipan H for the jeda triad).
+        rentang(&mut errors, "kuota_harian", self.kuota_harian, 1, 1_000_000);
+        rentang(
+            &mut errors,
+            "rate_limit_per_jam",
+            self.rate_limit_per_jam,
+            1,
+            10_000,
+        );
+        rentang(&mut errors, "batas_percobaan", self.batas_percobaan, 1, 5);
+        rentang(
+            &mut errors,
+            "retry_backoff_base_detik",
+            self.retry_backoff_base_detik,
+            1,
+            300,
+        );
+        rentang(
+            &mut errors,
+            "retry_backoff_cap_detik",
+            self.retry_backoff_cap_detik,
+            1,
+            3_600,
+        );
+        rentang_pecahan(&mut errors, "retry_rasio", self.retry_rasio, 0.0, 0.5);
+        rentang(
+            &mut errors,
+            "retry_min_per_jam",
+            self.retry_min_per_jam,
+            0,
+            10_000,
+        );
+        rentang(&mut errors, "jeda_min", self.jeda_min, 0, 60_000);
+        rentang(&mut errors, "jeda_maks", self.jeda_maks, 0, 60_000);
+        // `ambang_berdampingan` has no upper bound (Shu, SHAA-280).
+        rentang_min(
+            &mut errors,
+            "ambang_berdampingan",
+            self.ambang_berdampingan,
+            1,
+        );
+        rentang_pecahan(&mut errors, "margin_kuota", self.margin_kuota, 0.001, 0.2);
+        rentang(&mut errors, "reset_kuota_jam", self.reset_kuota_jam, 0, 23);
+        rentang_pecahan(&mut errors, "porsi_sync", self.porsi_sync, 0.0, 1.0);
+
+        // Cross-field: the retry cap never undershoots the base.
+        if self.retry_backoff_cap_detik < self.retry_backoff_base_detik {
+            errors.push(FieldError::new(
+                "retry_backoff_cap_detik",
+                format!(
+                    "must be >= retry_backoff_base_detik ({}), got {}",
+                    self.retry_backoff_base_detik, self.retry_backoff_cap_detik
+                ),
+            ));
+        }
+
+        // Cross-field: the maximum delay never undershoots the minimum delay.
+        if self.jeda_maks < self.jeda_min {
+            errors.push(FieldError::new(
+                "jeda_maks",
+                format!(
+                    "must be >= jeda_min ({}), got {}",
+                    self.jeda_min, self.jeda_maks
+                ),
+            ));
+        }
+
+        // Cross-field: both delays respect the interval the hourly rate limit
+        // leaves between requests.
+        if let Some(batas) = self.batas_jeda_dari_rate_limit() {
+            let penjelasan = format!(
+                "must be <= floor(3600000 / rate_limit_per_jam) = {batas} ms \
+                 for rate_limit_per_jam = {}",
+                self.rate_limit_per_jam
+            );
+            if self.jeda_min > batas {
+                errors.push(FieldError::new(
+                    "jeda_min",
+                    format!("{penjelasan}, got {}", self.jeda_min),
+                ));
+            }
+            if self.jeda_maks > batas {
+                errors.push(FieldError::new(
+                    "jeda_maks",
+                    format!("{penjelasan}, got {}", self.jeda_maks),
+                ));
+            }
+        }
+
+        // One error per field: static bounds are checked first, so a field that
+        // is already out of its own range is not reported a second time by a
+        // cross-field rule that the same bad value also breaks.
+        let mut dilaporkan: Vec<&'static str> = Vec::new();
+        errors.retain(|e| {
+            if dilaporkan.contains(&e.field) {
+                false
+            } else {
+                dilaporkan.push(e.field);
+                true
+            }
+        });
+
+        if errors.is_empty() {
+            Ok(())
+        } else {
+            Err(errors)
+        }
+    }
+}
+
+fn rentang(errors: &mut Vec<FieldError>, field: &'static str, nilai: i64, min: i64, max: i64) {
+    if nilai < min || nilai > max {
+        errors.push(FieldError::new(
+            field,
+            format!("must be between {min} and {max}, got {nilai}"),
+        ));
+    }
+}
+
+fn rentang_min(errors: &mut Vec<FieldError>, field: &'static str, nilai: i64, min: i64) {
+    if nilai < min {
+        errors.push(FieldError::new(
+            field,
+            format!("must be at least {min}, got {nilai}"),
+        ));
+    }
+}
+
+fn rentang_pecahan(
+    errors: &mut Vec<FieldError>,
+    field: &'static str,
+    nilai: f64,
+    min: f64,
+    max: f64,
+) {
+    // NaN is not expressible in JSON, but it is in Rust: reject it rather than
+    // letting a comparison that is always false slip through.
+    if !nilai.is_finite() || nilai < min || nilai > max {
+        errors.push(FieldError::new(
+            field,
+            format!("must be between {min} and {max}, got {nilai}"),
+        ));
+    }
 }
 
 /// Upstream pool entity (list/get/create/update/activate responses). Every field
