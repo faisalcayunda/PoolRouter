@@ -4,7 +4,7 @@
 #
 # Isi jalur ini:
 #   - amd64 (ubuntu-latest): podman build (Buildah) sebagai bukti kompatibilitas, lalu BuildKit push by digest.
-#   - arm64 (ubuntu-24.04-arm): BuildKit push by digest, runner native tanpa QEMU.
+#   - arm64 (ubuntu-24.04-arm, opt-in lewat variable BACKEND_IMAGE_ARM=true): BuildKit push by digest, native tanpa QEMU.
 #   - index: satu index manifest linux/amd64 + linux/arm64 di tag sha-<12 hex>, dicatat digest-nya.
 #
 # Gerbang: job hanya berjalan jika backend/Containerfile ada di commit ini. Sebelum Containerfile masuk main,
