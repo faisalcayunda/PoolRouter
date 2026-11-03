@@ -102,3 +102,8 @@ aturan itu. Header "sementara, DV-2, diganti di SHAA-187" wajib tetap ada sampai
 - `tests/csp.test.ts` — bentuk header CSP.
 - `e2e/shell.spec.ts` — smoke app shell di Chromium, plus listener `securitypolicyviolation`
   (ADR-0003 §3.5) yang menggagalkan test saat ada pelanggaran CSP.
+- `e2e/visual.spec.ts` — bukti visual di lima lebar (1440/1024/768/375/320). Tangkapan layar
+  ditulis ke `e2e/screenshots/<layar>@<lebar>.png`; nama berkas itu kontraknya, jadi reviewer bisa
+  membuka foldernya dan memeriksa satu layar sekilas. Suite ini memakai build `--mode playwright`
+  (`make build-e2e`) karena peran di-pin lewat `?peran=`, dan seam itu tidak boleh ada di bundel
+  produksi.

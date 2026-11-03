@@ -59,10 +59,10 @@ endif
 
 PNPM = $(RUN) pnpm
 
-.PHONY: help check-label setup test lint fmt clean gen-api gen-api-check build e2e i18n-check i18n-types build-lock-status build-lock-clean
+.PHONY: help check-label setup test lint fmt clean gen-api gen-api-check build build-e2e e2e i18n-check i18n-types build-lock-status build-lock-clean
 
 help:
-	@echo "targets: setup test lint fmt clean gen-api gen-api-check build e2e i18n-check i18n-types"
+	@echo "targets: setup test lint fmt clean gen-api gen-api-check build build-e2e e2e i18n-check i18n-types"
 	@echo "lock:    build-lock-status build-lock-clean (K-41 heavy build lock, shared with backend)"
 
 # Every podman container must carry shaal.issue=SHAA-<n> (playbook section 6).
@@ -122,7 +122,7 @@ build-e2e: check-label
 	$(HEAVY) pnpm exec vite build --mode playwright
 
 # e2e: Playwright (Chromium) against the built SPA served by `vite preview`, in the pinned
-# Playwright image. Full Compose stack arrives with the screens. The `build` prerequisite takes
+# Playwright image. Full Compose stack arrives with the screens. The `build-e2e` prerequisite takes
 # the lock and releases it before this recipe runs, so the two never nest.
 e2e: check-label build-e2e
 	$(HEAVY_PW) ./node_modules/.bin/playwright test
