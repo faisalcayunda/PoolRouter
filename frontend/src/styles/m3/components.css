@@ -23,6 +23,21 @@
 .m3-state[data-pressed]::before {
   opacity: var(--md-sys-state-pressed-state-layer-opacity);
 }
+/* A 48px pressable whose visual circle is 40px (M3 icon button, §7.5) paints the
+   state layer on a child. The data attributes stay on the pressable, so the child
+   reads them through .m3-state-host. */
+.m3-state-host[data-hovered] > .m3-state::before {
+  opacity: var(--md-sys-state-hover-state-layer-opacity);
+}
+.m3-state-host[data-focus-visible] > .m3-state::before {
+  opacity: var(--md-sys-state-focus-state-layer-opacity);
+}
+.m3-state-host[data-pressed] > .m3-state::before {
+  opacity: var(--md-sys-state-pressed-state-layer-opacity);
+}
+.m3-state-host[data-disabled] > .m3-state::before {
+  opacity: 0;
+}
 .m3-state[data-disabled]::before {
   opacity: 0;
 }
@@ -66,6 +81,9 @@
   }
 }
 @media (prefers-reduced-motion: reduce) {
+  .m3-state::before {
+    transition: none;
+  }
   .m3-skeleton,
   .m3-indeterminate-bar,
   .m3-spin {

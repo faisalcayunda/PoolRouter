@@ -1,5 +1,4 @@
 import {
-  Button as RacButton,
   Calendar,
   CalendarCell,
   CalendarGrid,
@@ -18,6 +17,7 @@ import {
 import type { DateValue } from '@internationalized/date';
 import type { ReactNode } from 'react';
 import { cx } from './cx';
+import { IconButton } from './IconButton';
 import { Icon, icons } from '../../icons';
 
 const FIELD =
@@ -42,14 +42,12 @@ function CalendarGridBody() {
 }
 
 /** The calendar trigger; its accessible name comes from the catalog at the usage site. */
+// Icon-only, so it gets the tooltip-with-the-same-text treatment from IconButton (§7.5).
 function CalendarTrigger({ label }: { label: string }) {
   return (
-    <RacButton
-      aria-label={label}
-      className="m3-focus ml-auto flex h-10 w-10 items-center justify-center rounded-full text-on-surface-variant hover:bg-on-surface/8"
-    >
+    <IconButton aria-label={label} className="ml-auto">
       <Icon icon={icons.calendarMonth} />
-    </RacButton>
+    </IconButton>
   );
 }
 

@@ -37,6 +37,17 @@ describe('IconButton (Addendum A 5.4)', () => {
     render(<IconButton aria-label="Tambah perangkat">+</IconButton>);
     expect(screen.getByRole('button', { name: 'Tambah perangkat' })).toBeInTheDocument();
   });
+
+  // §7.5: icon-only controls carry a plain tooltip with the same words as the
+  // accessible name. Both come from one prop, so they cannot drift.
+  it('shows a tooltip with the same text as its accessible name', async () => {
+    render(<IconButton aria-label="Tambah perangkat">+</IconButton>);
+    const button = screen.getByRole('button', { name: 'Tambah perangkat' });
+    expect(screen.queryByRole('tooltip')).not.toBeInTheDocument();
+    await userEvent.tab();
+    expect(button).toHaveFocus();
+    expect(await screen.findByRole('tooltip')).toHaveTextContent('Tambah perangkat');
+  });
 });
 
 describe('Checkbox / CheckboxGroup', () => {
