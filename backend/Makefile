@@ -96,9 +96,11 @@ clean: check-label
 	$(RUN) cargo clean
 	rm -rf -- .cache/cargo/registry/cache
 
-# Filled in by the API contract sub-issue (ADR-0004 section 4.1, utoipa code-first).
+# OpenAPI is generated from code (ADR-0004 section 4.1, utoipa code-first).
 openapi:
-	@echo "openapi: nothing to generate yet"
+	mkdir -p openapi
+	$(RUN) cargo run --locked -q -p poolrouter-webserver --bin openapi-gen -- openapi
 
-openapi-check:
-	@echo "openapi-check: nothing to check yet"
+# Fails when the committed YAML differs from what the code generates.
+openapi-check: openapi
+	git diff --exit-code -- openapi
