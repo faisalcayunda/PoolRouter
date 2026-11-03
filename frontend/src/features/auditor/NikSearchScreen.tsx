@@ -112,7 +112,8 @@ export function NikSearchScreen({ client = api }: NikSearchScreenProps): ReactNo
 
   /**
    * Hand the finished CSV to the browser. Kept inline because the export is the only download in
-   * F0; the object URL is revoked on the next tick so the blob is not leaked.
+   * F0; the object URL is revoked on the next task so the browser has already started the
+   * download before the blob is released, and nothing is leaked.
    */
   function saveDownload(berkas: EksporBerkas) {
     const url = URL.createObjectURL(berkas.blob);
@@ -122,7 +123,7 @@ export function NikSearchScreen({ client = api }: NikSearchScreenProps): ReactNo
     document.body.append(anchor);
     anchor.click();
     anchor.remove();
-    URL.revokeObjectURL(url);
+    setTimeout(() => URL.revokeObjectURL(url), 0);
   }
 
   async function runExport(alasan: string) {

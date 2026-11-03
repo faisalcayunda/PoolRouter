@@ -1,5 +1,6 @@
+import { useState } from 'react';
 import { describe, expect, it, vi } from 'vitest';
-import { screen, within } from '@testing-library/react';
+import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { ApiError, type ApiClient, type LogPage } from '../src/api/client';
 import { NikSearchScreen } from '../src/features/auditor/NikSearchScreen';
@@ -177,6 +178,79 @@ describe('payload dialog', () => {
 
     unmount();
     expect(document.body.textContent).not.toContain(NIK);
+  });
+
+  it('drops an in-flight payload when the dialog closes, so the next opening asks again', async () => {
+    // Regression (review round 1): the caller keeps the dialog mounted and only flips `isOpen`.
+    // A late response for transaction A must not land in state — otherwise the next opening skips
+    // the reason dialog and shows A's payload under B's heading (section 18.3, ADR-0003 3.6b).
+    let resolveFirst: (view: typeof payload) => void = () => {};
+    const first = new Promise<typeof payload>((resolve) => {
+      resolveFirst = resolve;
+    });
+    const client = stubClient({
+      bukaPayload: vi
+        .fn()
+        .mockReturnValueOnce(first)
+        .mockResolvedValueOnce({ ...payload, kode_transaksi: 'TRX-2026-0099' }),
+    });
+
+    function Harness() {
+      const [kode, setKode] = useState('TRX-2026-0042');
+      return (
+        <>
+          <button type="button" onClick={() => setKode('TRX-2026-0099')}>
+            pilih-trx-b
+          </button>
+          <PayloadDialog
+            isOpen={kode !== ''}
+            kodeTransaksi={kode}
+            initialReason=""
+            client={client}
+            onClose={() => setKode('')}
+          />
+        </>
+      );
+    }
+
+    renderWithI18n(<Harness />);
+
+    const reasonDialog = await screen.findByRole('dialog');
+    await userEvent.type(
+      within(reasonDialog).getByLabelText('Alasan (minimal 10 karakter)'),
+      'Cek aduan W-2026-07',
+    );
+    await userEvent.click(within(reasonDialog).getByRole('button', { name: 'Lihat payload' }));
+
+    // Close while the request is still in flight (the payload dialog shows the loading state).
+    await screen.findByText('Memuat…');
+    // Both dialogs stay mounted, so scope to the close button that sits next to the loading line.
+    const [closeButton] = screen.getAllByRole('button', { name: 'Tutup' });
+    await userEvent.click(closeButton!);
+    expect(vi.mocked(client.bukaPayload).mock.calls[0]![1]?.signal).toBeInstanceOf(AbortSignal);
+
+    // The response arrives after the close: it must be ignored, not rendered.
+    resolveFirst(payload);
+    await waitFor(() => expect(vi.mocked(client.bukaPayload)).toHaveBeenCalledTimes(1));
+    expect(screen.queryByText('Ringkasan transaksi')).not.toBeInTheDocument();
+
+    // Reopen for another transaction: the reason dialog comes first and A's payload is nowhere.
+    await userEvent.click(screen.getByRole('button', { name: 'pilih-trx-b' }));
+    const reopened = await screen.findByRole('dialog');
+    expect(within(reopened).getByLabelText('Alasan (minimal 10 karakter)')).toHaveValue('');
+    expect(screen.queryByText('Ringkasan transaksi')).not.toBeInTheDocument();
+    expect(screen.queryByText('TRX-2026-0042')).not.toBeInTheDocument();
+
+    await userEvent.type(
+      within(reopened).getByLabelText('Alasan (minimal 10 karakter)'),
+      'Cek aduan W-2026-08',
+    );
+    await userEvent.click(within(reopened).getByRole('button', { name: 'Lihat payload' }));
+    expect(await screen.findByText('Ringkasan transaksi')).toBeInTheDocument();
+    expect(vi.mocked(client.bukaPayload).mock.calls[1]![0]).toEqual({
+      kode_transaksi: 'TRX-2026-0099',
+      alasan: 'Cek aduan W-2026-08',
+    });
   });
 
   it('reports a purged payload as a normal outcome, not a retryable error', async () => {

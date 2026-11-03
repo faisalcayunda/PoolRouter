@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { api, ApiError, type ApiClient, type PayloadView } from '../../api/client';
 import { Dialog } from '../../components/m3/Dialog';
@@ -84,15 +84,59 @@ export function PayloadDialog({
   const [payload, setPayload] = useState<PayloadView | null>(null);
   const [errorKode, setErrorKode] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  // Aborts the in-flight `bukaPayload` when the dialog closes or unmounts. A late response for a
+  // closed dialog must never land in state: the component stays mounted by its callers, so a
+  // payload left behind would show up under the *next* transaction's heading (section 18.3).
+  const inFlight = useRef<AbortController | null>(null);
+  // Monotonic token; a response is applied only if it still owns the current request.
+  const requestId = useRef(0);
 
+  /** Retire whatever is on the wire: the token makes any late response stale, and the abort frees it. */
+  function cancelInFlight() {
+    requestId.current += 1;
+    inFlight.current?.abort();
+    inFlight.current = null;
+  }
+
+  /** Drop the payload and the reason. Called only from event handlers, never from render. */
   function reset() {
+    cancelInFlight();
     setPhase('reason');
     setPayload(null);
     setErrorKode(null);
     setReasonDraft(null);
+    setSubmitting(false);
   }
 
+  // Closing the dialog — by the dialog itself, or by the caller flipping `isOpen` — drops
+  // everything, so the next opening starts with a fresh reason. The state is adjusted during
+  // render (React's "adjust state when a prop changes" pattern) so the stale payload is never
+  // painted; only the ref work waits for the effect.
+  const [wasOpen, setWasOpen] = useState(isOpen);
+  if (isOpen !== wasOpen) {
+    setWasOpen(isOpen);
+    if (!isOpen) {
+      setPhase('reason');
+      setPayload(null);
+      setErrorKode(null);
+      setReasonDraft(null);
+      setSubmitting(false);
+    }
+  }
+
+  // Abort whatever is still on the wire whenever the dialog closes, and on unmount: nothing may
+  // resolve into a closed dialog or a gone component. `requestId` is bumped here too, so a
+  // response that slipped in between the render and this effect is still dropped, not rendered.
+  useEffect(() => {
+    if (!isOpen) cancelInFlight();
+    return () => cancelInFlight();
+  }, [isOpen]);
+
   async function open(nextReason: string) {
+    cancelInFlight();
+    const controller = new AbortController();
+    inFlight.current = controller;
+    const id = requestId.current;
     setSubmitting(true);
     setPhase('loading');
     // Remember the reason only to pre-fill a retry; it is cleared by `reset()` on close, so the
@@ -101,16 +145,21 @@ export function PayloadDialog({
     try {
       const body = await client.bukaPayload(
         { kode_transaksi: kodeTransaksi, alasan: nextReason },
-        { alasan: nextReason },
+        { alasan: nextReason, signal: controller.signal },
       );
+      if (id !== requestId.current) return; // dialog closed while this was in flight
       setPayload(body);
       setPhase('open');
       onOpened?.();
     } catch (error) {
+      if (id !== requestId.current) return; // abandoned request, not a failure to report
       setErrorKode(error instanceof ApiError ? error.kode : 'jaringan');
       setPhase('error');
     } finally {
-      setSubmitting(false);
+      if (id === requestId.current) {
+        inFlight.current = null;
+        setSubmitting(false);
+      }
     }
   }
 
