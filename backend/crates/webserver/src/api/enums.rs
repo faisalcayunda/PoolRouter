@@ -1,6 +1,5 @@
-//! Closed value sets shared by downstream and admin APIs. Names follow data
-//! contract v0.7.10; values not yet transcribed from the contract are listed in
-//! the TODO notes and must be completed before review.
+//! Closed value sets shared by downstream and admin APIs. Names and values
+//! follow data contract v0.7.10 (see `backend/openapi/DESIGN.md`).
 
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
@@ -17,22 +16,33 @@ pub enum ApiStatus {
     Cancelled,
 }
 
-/// `failure_reason` of a `failed` request (contract section 3.2.5).
-// TODO(SHAA-175): complete from contract v0.7.10 section 3.2.5.
+/// `failure_reason` of a `failed` request (contract section 3.2.5). Closed set,
+/// shown to clients; the `kode` of a sync 502/504 body equals this value.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum FailureReason {
+    /// Last attempt failed with a transient class and no attempt is left, or the
+    /// retry window ran out. Sync too since v0.7.10 (effective attempt limit 1).
     RetryHabis,
-    ObjekNonaktif,
+    /// Attempt failed with a class that is not retried (auth, provider quota,
+    /// unmapped code, invalid response, TLS).
+    ProviderErrorPermanen,
+    /// Sync provider call did not finish in time.
     TimeoutSync,
+    /// K-20 hit a request that was waiting for retry (`attempt_count > 0`).
+    ObjekNonaktif,
 }
 
-/// `cancel_reason` of a `cancelled` request (contract section 3.2.3).
-// TODO(SHAA-175): complete from contract v0.7.10 section 3.2.3 (one value per entity kind).
+/// `cancel_reason` of a `cancelled` request (contract section 3.2.3). One value
+/// per entity kind; both pool kinds share `pool_nonaktif`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum CancelReason {
+    DibatalkanClient,
+    ClientNonaktif,
     KredensialNonaktif,
+    EndpointNonaktif,
+    PoolNonaktif,
     ProviderNonaktif,
 }
 
