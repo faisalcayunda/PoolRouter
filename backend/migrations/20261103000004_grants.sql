@@ -131,3 +131,9 @@ GRANT EXECUTE ON FUNCTION fn_nonaktifkan_entitas(text, uuid, uuid, text),
   TO pr_admin_api;
 -- Explicit: no direct credential-revocation path. Reached only from fn_nonaktifkan_entitas (SECURITY DEFINER).
 REVOKE ALL ON FUNCTION fn_set_status_kredensial(uuid, text, uuid, text) FROM PUBLIC;
+
+-- ================================================================ defaults for later migrations
+-- Every function above revokes EXECUTE from PUBLIC by hand. Make that the default instead of a habit: a function
+-- added by a later migration (created by poolrouter_owner) must not be executable by PUBLIC either. Grants stay
+-- explicit and per role, as for the functions above.
+ALTER DEFAULT PRIVILEGES FOR ROLE poolrouter_owner IN SCHEMA public REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC;

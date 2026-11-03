@@ -364,8 +364,9 @@ CREATE TRIGGER audit_akses_no_truncate BEFORE TRUNCATE ON audit_akses
 -- Admin login/logout trail, deliberately separate from audit_akses: audit_akses tracks NIK data access and its
 -- pengguna_id is NOT NULL, but a failed login for an unknown username has no user. The typed username is never
 -- stored (it may hold a mistyped password or personal data); passwords are never stored. Limited, append-only,
--- INSERT only for pr_admin_api; only an auditor reads it, through a SECURITY DEFINER function that writes an
--- audit_akses lihat_audit row. Same retention as audit_akses.
+-- INSERT only for pr_admin_api. Nobody can read it yet: the auditor read function (specified in design review round 1,
+-- decision 2: auditors only, writing an audit_akses lihat_audit row) is backend Web UI work in SHAA-201.
+-- Same retention as audit_akses.
 CREATE TABLE audit_login (
   audit_id uuid PRIMARY KEY,
   pengguna_id uuid,                                    -- NULL when the username is not recognised
@@ -375,8 +376,9 @@ CREATE TABLE audit_login (
   sumber_ip varchar(45) NOT NULL,
   user_agent varchar(512),
   terjadi_at timestamptz NOT NULL DEFAULT now(),
-  -- a successful login and any logout belong to a session; a failed or locked-out attempt does not
-  CONSTRAINT chk_sesi_wajib CHECK (((aksi = 'logout' OR hasil = 'berhasil') AND sesi_id IS NOT NULL)
+  -- a successful login and any logout belong to a session; a failed or locked-out attempt does not. A logout only
+  -- exists for a successful session, so its outcome is always 'berhasil'.
+  CONSTRAINT chk_sesi_wajib CHECK ((hasil = 'berhasil' AND sesi_id IS NOT NULL)
                                     OR (aksi = 'login' AND hasil IN ('gagal', 'terkunci') AND sesi_id IS NULL))
 );
 CREATE INDEX audit_login_terjadi_idx ON audit_login (terjadi_at);

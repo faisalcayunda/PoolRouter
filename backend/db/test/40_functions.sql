@@ -168,6 +168,16 @@ SELECT t.ok(NOT (SELECT fn_tutup_log_tidak_diketahui(kode, 60) FROM _r), 'R-02: 
 RESET ROLE;
 ROLLBACK;
 
+-- ============ a missing threshold row fails loudly instead of silently never closing (design review, Ridley)
+BEGIN;
+CREATE TEMP TABLE _r3 AS SELECT gen_random_uuid() AS kode;
+DELETE FROM konfigurasi_platform WHERE kunci = 'rekonsiliasi_ambang_detik';
+SELECT t.gagal($$SELECT fn_tutup_log_tidak_diketahui((SELECT kode FROM _r3), 60)$$, 'P0002',
+  'R-02: a missing rekonsiliasi_ambang_detik raises instead of silently never closing');
+SELECT t.ok(NOT EXISTS (SELECT 1 FROM konfigurasi_platform WHERE kunci = 'rekonsiliasi_ambang_detik'),
+  'R-02: the threshold really is absent for the assertion above');
+ROLLBACK;
+
 -- ============ reconciler threshold comes from konfigurasi_platform, not from the caller (R-02, E-03)
 -- A caller may only raise the threshold. pr_controller calling (kode, 1) must not close an attempt younger than
 -- rekonsiliasi_ambang_detik (60 s by default), otherwise it can close an attempt that is still running.
@@ -318,6 +328,11 @@ SELECT t.ok((SELECT abs(extract(epoch FROM now() - to_timestamp(
                       (('x' || substr(replace(uuidv7()::text, '-', ''), 1, 12))::bit(60)::bigint / 4096) / 1000.0))) < 5),
   'uuidv7: the 48-bit prefix is the current unix_ts_ms');
 SELECT t.ok((SELECT count(DISTINCT uuidv7()) = 1000 FROM generate_series(1, 1000)), 'uuidv7: 1000 calls, 1000 distinct values');
+SELECT t.ok((SELECT length(uuid_send(uuidv7())) = 16), 'uuidv7: the raw value is exactly 16 bytes');
+-- rand_a (12 bits after the version nibble) is full-width random, not an empty upper nibble
+SELECT t.ok((SELECT count(DISTINCT (get_byte(uuid_send(v), 6) & 15) * 256 + get_byte(uuid_send(v), 7)) > 5
+               FROM (SELECT uuidv7() AS v FROM generate_series(1, 20)) s),
+  'uuidv7: rand_a is filled, not a zero nibble');
 
 -- every id a function writes is a v7 uuid: audit_akses.audit_id (all audit functions) and
 -- audit_konfigurasi.audit_konfigurasi_id (fn_nonaktifkan_entitas / fn_aktifkan_entitas).

@@ -4,7 +4,7 @@ SELECT t.ok(t.hitung($q$
    WHERE NOT EXISTS (SELECT 1 FROM information_schema.columns c
                       WHERE c.table_schema = 'public' AND c.table_name = k.tabel AND c.column_name = k.kolom)$q$) = 0,
   'all contract columns exist (missing = 0)');
-SELECT t.ok(t.hitung('SELECT count(*) FROM t.kolom_contract') >= 130, 'contract column list is loaded');
+SELECT t.ok(t.hitung('SELECT count(*) FROM t.kolom_contract') = 135, 'contract column list is loaded (135 unique table.column pairs)');
 
 -- Columns of contract 3.3a / 3.2.6 / 3.7 / 4 that the list above cannot derive from a column table.
 WITH exp(tabel, kolom) AS (VALUES

@@ -197,3 +197,14 @@ SELECT t.ok(t.hitung($q$
 -- DQ-37 (f) on the test data
 SELECT t.ok(t.hitung($q$ SELECT count(*) FROM client_kredensial WHERE (status = 'aktif' AND dicabut_at IS NOT NULL) OR (status = 'dicabut' AND (dicabut_at IS NULL OR dicabut_oleh IS NULL))$q$) = 0,
   'DQ-37 (f): no active credential with dicabut_at, no revoked credential without stamps');
+
+-- ============ default privileges: a function from a later migration is not executable by PUBLIC
+-- Created as poolrouter_owner, which is who later migrations run as. Without the ALTER DEFAULT PRIVILEGES of
+-- 20261103000004_grants.sql, PostgreSQL gives PUBLIC EXECUTE on every new function.
+BEGIN;
+CREATE FUNCTION t_uji_default_privileges() RETURNS integer LANGUAGE sql AS $$ SELECT 1 $$;
+-- No explicit ACL entry means no PUBLIC grant: without the ALTER DEFAULT PRIVILEGES, the acl would be {=X/owner}.
+-- (has_function_privilege() cannot be used for this from the superuser session: it always reports true.)
+SELECT t.ok(NOT EXISTS (SELECT 1 FROM pg_proc p WHERE p.oid = 't_uji_default_privileges()'::regprocedure AND p.proacl IS NOT NULL),
+  'default privileges: a new function has no ACL entry, so nothing beyond the implicit owner grant applies');
+ROLLBACK;

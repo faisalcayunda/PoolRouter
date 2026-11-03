@@ -297,6 +297,12 @@ SELECT t.gagal($$INSERT INTO audit_login (audit_id, aksi, hasil, sesi_id, sumber
 SELECT t.gagal($$INSERT INTO audit_login (audit_id, pengguna_id, aksi, hasil, sesi_id, sumber_ip)
   VALUES (uuidv7(), '00000000-0000-7000-8000-000000000001', 'login', 'gagal', 'sesi-x', '10.0.0.1')$$, '23514',
   'audit_login: a failed attempt carries no session');
+SELECT t.gagal($$INSERT INTO audit_login (audit_id, pengguna_id, aksi, hasil, sesi_id, sumber_ip)
+  VALUES (uuidv7(), '00000000-0000-7000-8000-000000000001', 'logout', 'gagal', 'sesi-l1', '10.0.0.1')$$, '23514',
+  'audit_login: a logout can only be berhasil');
+SELECT t.gagal($$INSERT INTO audit_login (audit_id, pengguna_id, aksi, hasil, sesi_id, sumber_ip)
+  VALUES (uuidv7(), '00000000-0000-7000-8000-000000000001', 'logout', 'terkunci', 'sesi-l1', '10.0.0.1')$$, '23514',
+  'audit_login: a locked-out logout is rejected');
 SELECT t.gagal($$INSERT INTO audit_login (audit_id, pengguna_id, aksi, hasil, sumber_ip)
   VALUES (uuidv7(), '00000000-0000-7000-8000-000000000001', 'ganti_sandi', 'berhasil', '10.0.0.1')$$, '23514',
   'audit_login: aksi is a closed list');

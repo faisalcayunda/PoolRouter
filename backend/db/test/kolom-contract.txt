@@ -62,7 +62,6 @@ transaction_log response_payload
 transaction_log response_hash
 transaction_log worker_id
 transaction_log archived_at
-transaction_log error_class
 request_status_history request_id
 request_status_history seq
 request_status_history status_dari

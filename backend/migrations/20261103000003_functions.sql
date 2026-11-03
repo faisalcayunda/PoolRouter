@@ -6,8 +6,10 @@
 
 -- ---------------------------------------------------------------- helpers
 -- RFC 9562 UUIDv7 for rows written by database functions. PostgreSQL 17 has no uuidv7() and pgcrypto is not
--- enabled (only btree_gist is), so the 48-bit millisecond prefix comes from the clock and the remaining 74 bits
--- are taken from gen_random_uuid() (core, 122 random bits; enough for 74). The application still creates its own
+-- enabled (only btree_gist is), so the 48-bit millisecond prefix comes from the clock and the 74 bits that RFC 9562
+-- leaves free (rand_a 12 + rand_b 62) are filled from gen_random_uuid(), which supplies 122 random bits and 6 fixed
+-- ones (4 version + 2 variant). Only the 66 bits of that output that carry no fixed bit are reused, so the unique
+-- entropy per id is about 66 bits: enough for uniqueness, not a 74-bit claim. The application still creates its own
 -- UUIDv7 ids for client-facing rows (contract 3: ID UUIDv7); this function is only used for database-written ids:
 -- audit_akses, audit_konfigurasi, request_status_history.
 CREATE FUNCTION uuidv7() RETURNS uuid
@@ -17,12 +19,16 @@ DECLARE
   v_rand bytea := uuid_send(gen_random_uuid());
   v_hex text;
 BEGIN
+  -- Exactly 16 bytes: 6 unix_ts_ms, 1 version+rand_a high, 1 rand_a low, 1 variant+rand_b high, 8 rand_b low.
+  -- Bytes 7 and 9 of gen_random_uuid() carry the fixed version/variant bits, so their low nibbles and low 6 bits
+  -- are reused instead of the whole byte.
+  -- hex of the 16 bytes, with the dashes inserted by hand: uuid_in() only accepts the canonical 8-4-4-4-12 text.
   v_hex := encode(
-    substr(int8send(v_ms), 3, 6) ||                             -- unix_ts_ms, 48 bits (big-endian, drop leading 0000)
-    '\x70'::bytea ||                                           -- version 7
-    substr(v_rand, 7, 1) ||                                     -- rand_a, 12 bits
-    set_byte('\x80'::bytea, 0, 128 | (get_byte(v_rand, 8) & 63)) ||  -- variant 10 + rand_b high 6 bits
-    substr(v_rand, 9, 8),                                       -- rand_b low 64 bits
+    substr(int8send(v_ms), 3, 6) ||                                        -- unix_ts_ms, 48 bits (big-endian)
+    set_byte('\x70'::bytea, 0, 112 | (get_byte(v_rand, 6) & 15)) ||       -- version 7 + rand_a high 4 bits
+    substr(v_rand, 8, 1) ||                                                -- rand_a low 8 bits
+    set_byte('\x80'::bytea, 0, 128 | (get_byte(v_rand, 8) & 63)) ||       -- variant 10 + rand_b high 6 bits
+    substr(v_rand, 9, 8),                                                  -- rand_b low 64 bits
     'hex');
   RETURN (substr(v_hex, 1, 8) || '-' || substr(v_hex, 9, 4) || '-' || substr(v_hex, 13, 4) || '-'
           || substr(v_hex, 17, 4) || '-' || substr(v_hex, 21, 12))::uuid;
@@ -472,6 +478,11 @@ BEGIN
   END IF;
   SELECT GREATEST(p_ambang_detik, (nilai #>> '{}')::integer) INTO v_ambang
     FROM konfigurasi_platform WHERE kunci = 'rekonsiliasi_ambang_detik';
+  -- Fail loudly instead of silently never closing: a missing threshold row (or a missing value) has no safe default.
+  IF v_ambang IS NULL THEN
+    RAISE EXCEPTION 'rekonsiliasi_ambang_detik tidak ada di konfigurasi_platform'
+      USING ERRCODE = 'no_data_found';
+  END IF;
   UPDATE transaction_log SET status_akses = 'tidak_diketahui'
    WHERE kode_transaksi = p_kode_transaksi AND status_akses IS NULL
      AND requested_at <= now() - make_interval(secs => v_ambang);

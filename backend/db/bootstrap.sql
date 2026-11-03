@@ -39,12 +39,25 @@ ALTER ROLE pr_worker PASSWORD :'pw_worker';
 ALTER ROLE pr_webhook PASSWORD :'pw_webhook';
 
 -- Never let a statement from the application roles leak parameters into the server log
--- (ADR-0001 section 7.1, contract R-04).
+-- (ADR-0001 section 7.1, contract R-04). Two settings, both needed:
+--  * log_parameter_max_length_on_error = 0: an ERROR must not print parameters (binds).
+--  * log_parameter_max_length = 0: extended-protocol parameters are not logged when log_statement is 'all'/'mod',
+--    so a NIK cannot reach the server log through that path either (see the note on server scope below).
 ALTER ROLE pr_api SET log_parameter_max_length_on_error = 0;
 ALTER ROLE pr_admin_api SET log_parameter_max_length_on_error = 0;
 ALTER ROLE pr_controller SET log_parameter_max_length_on_error = 0;
 ALTER ROLE pr_worker SET log_parameter_max_length_on_error = 0;
 ALTER ROLE pr_webhook SET log_parameter_max_length_on_error = 0;
+ALTER ROLE pr_api SET log_parameter_max_length = 0;
+ALTER ROLE pr_admin_api SET log_parameter_max_length = 0;
+ALTER ROLE pr_controller SET log_parameter_max_length = 0;
+ALTER ROLE pr_worker SET log_parameter_max_length = 0;
+ALTER ROLE pr_webhook SET log_parameter_max_length = 0;
+-- Scope: log_parameter_max_length and its _on_error variant are user-settable, so the per-role settings above are
+-- what actually applies to statements from these roles (the server default of log_parameter_max_length_on_error is
+-- already 0; log_parameter_max_length defaults to -1, i.e. unlimited). `log_statement` is superuser-only, so the
+-- question of whether parameters are logged at all belongs to the server configuration of the target environment
+-- (ADR-0001 section 7.1), not to a migration that runs as poolrouter_owner.
 
 -- The database and the public schema belong to poolrouter_owner; nobody else may create objects.
 SELECT format('ALTER DATABASE %I OWNER TO poolrouter_owner', :'dbname') \gexec
