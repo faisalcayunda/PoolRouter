@@ -373,11 +373,13 @@ describe('NavigationDrawer', () => {
 });
 
 describe('TopAppBar', () => {
-  it('renders the screen title as the only level-1 heading', () => {
+  it('renders the app title as text, leaving the level-1 heading to the screen', () => {
+    // Handoff spec section 13.1: the TopAppBar title is not a heading, so `<main>` can open with
+    // the screen's own `h1` without the document ending up with two.
     render(<TopAppBar title="Log transaksi" leading={<Button aria-label="Buka menu">m</Button>} />);
     expect(screen.getByRole('banner')).toBeInTheDocument();
-    expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1);
-    expect(screen.getByRole('heading', { level: 1, name: 'Log transaksi' })).toBeInTheDocument();
+    expect(screen.queryAllByRole('heading')).toHaveLength(0);
+    expect(screen.getByText('Log transaksi')).toBeVisible();
   });
 });
 
