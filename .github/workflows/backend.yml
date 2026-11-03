@@ -1,0 +1,51 @@
+# Gate backend (ADR-0003 section 5, SHAA-194). Menjalankan gate repo `make setup test lint` untuk backend.
+# Tidak ada secret yang dipakai. Tidak menyentuh stack Compose (milik SHAA-207).
+# Action dan image di-pin dengan tag dan digest.
+name: backend
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "backend/**"
+      - ".github/workflows/backend.yml"
+      - "Makefile"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: backend-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  gate:
+    # Ambang gagal: setiap langkah `make` di bawah harus exit 0. `cargo fmt --check`, clippy `-D warnings`,
+    # dan `cargo deny check` masing-masing gagal pada temuan apa pun.
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    # Toolchain di dalam image yang di-pin (ADR-0004 section 2). Sama dengan rust-toolchain.toml.
+    container:
+      image: docker.io/library/rust:1.99.1-bookworm@sha256:9181b56c2a21ab1d5e73cffe04fc762426d30aa7fac3c91141dd033f49a7fc8b
+    env:
+      RUNNER: native
+      JOBS: "2"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Cache cargo registry dan target
+        uses: actions/cache@0c45773b623bea8c8e75f6c82b208c3cf94ea4f9 # v4.0.2
+        with:
+          path: |
+            backend/.cache/cargo
+            backend/target
+          key: backend-${{ runner.os }}-rust-1.99.1-${{ hashFiles('backend/Cargo.lock') }}
+          restore-keys: |
+            backend-${{ runner.os }}-rust-1.99.1-
+
+      - name: Gate (setup, test, lint)
+        run: make setup test lint

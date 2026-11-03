@@ -1,0 +1,47 @@
+# Gate frontend (SHAA-194). Hanya berjalan jika ada perubahan di `frontend/`. Selama `frontend/` belum ada,
+# job di-skip dengan benar: langkah pertama keluar dengan sukses jika `frontend/Makefile` belum ada.
+# Ambang `pnpm audit --prod`: gagal pada temuan severity high atau critical (`--audit-level high`).
+name: frontend
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "frontend/**"
+      - ".github/workflows/frontend.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: frontend-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    container:
+      image: docker.io/library/node:22-bookworm-slim@sha256:4b150b48b4116e2a22f2c39cc27025fbf4f153e2078fd3b14d159fdb5c7279da
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Lewati jika frontend belum ada
+        id: guard
+        run: |
+          if [ ! -f frontend/Makefile ]; then
+            echo "frontend/Makefile belum ada: job di-skip."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Gate frontend
+        if: steps.guard.outputs.skip != 'true'
+        run: make -C frontend setup test lint
+
+      - name: pnpm audit --prod (ambang: high)
+        if: steps.guard.outputs.skip != 'true'
+        run: cd frontend && npx --yes pnpm@9 audit --prod --audit-level high

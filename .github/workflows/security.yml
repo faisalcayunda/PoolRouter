@@ -1,0 +1,94 @@
+# Supply chain R-14 (SHAA-194, laporan riset SHAA-184 v1.2 section 4c): SBOM, scan image, secret scanning, SAST.
+# Ambang gagal tertulis di tiap job. Semua tool di-pin dengan tag dan digest. Tidak ada secret yang dipakai.
+name: security
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: security-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  sbom:
+    # Ambang: tidak ada. Job gagal hanya jika SBOM tidak bisa dibuat. SBOM dihasilkan per build (artifact 90 hari).
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Buat SBOM CycloneDX (syft v1.18.1)
+        run: |
+          docker run --rm -v "$PWD":/src -w /src \
+            docker.io/anchore/syft:v1.18.1@sha256:b8c170b8e51bfc4779ec3ef4399942c57290f5ce76a9c3af564c9d00d4946a6b \
+            dir:/src -o cyclonedx-json=/src/sbom.cdx.json
+
+      - name: Unggah SBOM
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: sbom-cyclonedx
+          path: sbom.cdx.json
+          retention-days: 90
+
+  secret-scan:
+    # Ambang: gagal pada temuan apa pun (--exit-code 1). Nilai temuan di-redact dan tidak dicetak.
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout (seluruh riwayat)
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Gitleaks v8.24.2
+        run: |
+          docker run --rm -v "$PWD":/repo -w /repo \
+            docker.io/zricethezav/gitleaks:v8.24.2@sha256:b5918eb91b8d2473cec722f066abb4352e4ffdc4ec9f4283ec143aba9ec9ebc4 \
+            detect --source /repo --redact --exit-code 1 --no-banner
+
+  sast:
+    # Ambang: gagal pada temuan severity ERROR (--error --severity ERROR). WARNING dilaporkan, tidak memblokir.
+    # Catatan: ruleset registry (p/rust) berubah dari waktu ke waktu; pin ruleset dicatat di SHAA-194 jika dibutuhkan.
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Semgrep 1.113.0 (ambang: ERROR)
+        run: |
+          docker run --rm -v "$PWD":/src -w /src \
+            docker.io/semgrep/semgrep:1.113.0@sha256:136c094630123be54d7f832217fd0a217d148a8bfea08c7c366ce17f94cfdb22 \
+            semgrep scan --config p/rust --severity ERROR --error --metrics=off .
+
+  image-scan:
+    # Ambang: gagal pada CVE HIGH atau CRITICAL yang punya perbaikan (--ignore-unfixed --exit-code 1).
+    # Hanya berjalan jika backend/Containerfile sudah ada (milik SHAA-207). Build dan push tetap di SHAA-207.
+    if: hashFiles('backend/Containerfile') != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Build image backend (lokal, tidak di-push)
+        run: docker build -f backend/Containerfile -t localhost/poolrouter-backend:ci backend
+
+      - name: Trivy 0.58.2 (ambang: HIGH, CRITICAL)
+        run: |
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
+            docker.io/aquasec/trivy:0.58.2@sha256:665030f4d33a82c1e8d9d5e0453365842236723c1ee5cc3becca698268e66a56 \
+            image --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1 localhost/poolrouter-backend:ci

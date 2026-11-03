@@ -1,0 +1,37 @@
+# Kontrak API (ADR-0003 section 4.2, SHAA-194). Saat ini hanya `openapi-check` yang ada, karena spec belum dibuat.
+# `gen-api-check`, `tsc`, dan `oasdiff breaking` belum dipasang: menunggu sub-issue kontrak API (ADR-0004 section 4.1).
+name: contract
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "backend/**"
+      - "frontend/**"
+      - ".github/workflows/contract.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: contract-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  openapi-check:
+    # Ambang: gagal jika `make openapi-check` exit non-zero.
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    container:
+      image: docker.io/library/rust:1.99.1-bookworm@sha256:9181b56c2a21ab1d5e73cffe04fc762426d30aa7fac3c91141dd033f49a7fc8b
+    env:
+      RUNNER: native
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: openapi-check
+        run: make -C backend openapi-check
