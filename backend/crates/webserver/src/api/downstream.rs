@@ -20,7 +20,7 @@ use super::problem::Problem;
 // ---------------------------------------------------------------------------
 
 /// `application/x-www-form-urlencoded` body (R-05). Credentials may arrive via
-/// HTTP Basic instead (U-3); neither value is ever echoed back.
+/// HTTP Basic instead; neither value is ever echoed back.
 #[derive(Debug, Clone, Deserialize, ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct TokenRequest {
@@ -41,10 +41,18 @@ pub struct TokenResponse {
     /// Raw JWT, no `Bearer` prefix. Send it as `Authorization: <token_type> <access_token>`.
     pub access_token: String,
     /// Always `Bearer`; the prefix lives here, never in `access_token`.
-    pub token_type: String,
+    pub token_type: TipeToken,
     /// Lifetime in seconds; always 900 (R-05).
     #[schema(example = 900)]
     pub expires_in: i64,
+}
+
+/// Closed `token_type` value; the only member is `Bearer` (R-05).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, ToSchema)]
+pub enum TipeToken {
+    #[default]
+    #[serde(rename = "Bearer")]
+    Bearer,
 }
 
 /// One input field of the endpoint contract (US-15).
@@ -114,12 +122,12 @@ pub struct SyncResult {
     pub request_id: Uuid,
     /// Always `done` on 200.
     pub status: ApiStatus,
-    /// Only the elements the client sent, keyed by element name (U-6).
+    /// Only the elements the client sent, keyed by element name.
     pub hasil: BTreeMap<String, HasilElemen>,
 }
 
 /// 202: new async request. 200 with the same shape: replay of an identical
-/// `Idempotency-Key` fingerprint, no new request (U-5).
+/// `Idempotency-Key` fingerprint, no new request.
 #[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct EnqueueResponse {
     pub queue_id: Uuid,
@@ -151,8 +159,8 @@ fn stub() -> (StatusCode, Json<Problem>) {
 }
 
 /// Issue a downstream access token (R-05, US-18). Credentials via HTTP Basic
-/// or body (U-3); 4xx bodies are problem+json with the RFC 6749 `error` field
-/// (U-3), except 429.
+/// or body; 4xx bodies are problem+json with the RFC 6749 `error` field,
+/// except 429.
 #[utoipa::path(
     post,
     path = "/v1/oauth/token",
@@ -168,9 +176,9 @@ fn stub() -> (StatusCode, Json<Problem>) {
         (status = 400, description = "JSON tidak valid, grant tidak didukung, atau kredensial tidak lengkap", body = Problem, content_type = "application/problem+json", headers(
             ("Cache-Control" = String, description = "Selalu no-store (R-16)")
         ),
-            examples(("validasi_gagal" = (summary = "grant tidak didukung (U-3)", value = json!({"type": "https://github.com/faisalcayunda/PoolRouter/blob/main/docs/masalah.md#validasi_gagal", "title": "Validasi gagal", "status": 400, "kode": "validasi_gagal", "error": "unsupported_grant_type"}))))
+            examples(("validasi_gagal" = (summary = "grant tidak didukung", value = json!({"type": "https://github.com/faisalcayunda/PoolRouter/blob/main/docs/masalah.md#validasi_gagal", "title": "Validasi gagal", "status": 400, "kode": "validasi_gagal", "error": "unsupported_grant_type"}))))
         ),
-        (status = 401, description = "Kredensial salah; penyebab tidak dibedakan (U-1)", body = Problem, content_type = "application/problem+json", headers(
+        (status = 401, description = "Kredensial salah; penyebab tidak dibedakan", body = Problem, content_type = "application/problem+json", headers(
             ("WWW-Authenticate" = String, description = "Basic untuk endpoint token"),
             ("Cache-Control" = String, description = "Selalu no-store (R-16)")
         ),
@@ -224,7 +232,7 @@ async fn get_endpoint_kontrak(
     path = "/v1/endpoints/{endpoint_id}/sync",
     operation_id = "submitSync",
     tag = "downstream",
-    params(("endpoint_id" = Uuid, Path, description = "Endpoint sinkron (U-4: mode ditentukan path)")),
+    params(("endpoint_id" = Uuid, Path, description = "Endpoint sinkron; mode ditentukan oleh path")),
     request_body(content = SubmitRequest, content_type = "application/json", description = "Amplop input + metadata dengan additionalProperties false", example = json!({"input": {"NIK": "3201234567890001", "NAMA_LGKP": "Budi Santoso"}, "metadata": {"status_penerima_manfaat": "sesuai"}})),
     responses(
         (status = 200, description = "Jawaban provider lengkap (status done)", body = SyncResult, headers(
@@ -249,11 +257,11 @@ async fn get_endpoint_kontrak(
         ),
             examples(("validasi_gagal" = (summary = "Field input tak dikenal (termasuk TRESHOLD, USER_ID, PASSWORD, IP_USER, transactionId)", value = json!({"type": "https://github.com/faisalcayunda/PoolRouter/blob/main/docs/masalah.md#validasi_gagal", "title": "Validasi gagal", "status": 422, "kode": "validasi_gagal", "errors": [{"field": "TRESHOLD", "kode": "field_tak_dikenal"}, {"field": "NAMA_LGKAP", "kode": "field_tak_dikenal"}], "jumlah_nama_tidak_cocok": 1}))), ("metadata_tidak_valid" = (summary = "Kunci metadata tidak ada di kontrak endpoint", value = json!({"type": "https://github.com/faisalcayunda/PoolRouter/blob/main/docs/masalah.md#metadata_tidak_valid", "title": "Metadata tidak valid", "status": 422, "kode": "metadata_tidak_valid", "errors": [{"field": "status_penerima_manfaat", "kode": "field_tak_dikenal"}]}))))
         ),
-        (status = 429, description = "Kuota periode habis, porsi sync/jam berjalan penuh, atau limiter penolakan aktif; semua dengan Retry-After (U-8)", body = Problem, content_type = "application/problem+json", headers(
+        (status = 429, description = "Kuota periode habis, porsi sync/jam berjalan penuh, atau limiter penolakan aktif; semua dengan Retry-After", body = Problem, content_type = "application/problem+json", headers(
             ("Retry-After" = i64, description = "Detik bulat (minimal 1) hingga percobaan berikutnya. `kuota_habis` mengikuti jendela kuota: sisa waktu sampai ember tertua keluar dari jendela (`bergulir_24j`) atau sampai `reset_kuota` berikutnya (`kalender`); `porsi_sync_habis` dan `penolakan_berlebih` mengikuti token limiter berikutnya"),
             ("Cache-Control" = String, description = "Selalu no-store (R-16)")
         ),
-            examples(("kuota_habis" = (summary = "Kuota periode upstream pool habis", value = json!({"type": "https://github.com/faisalcayunda/PoolRouter/blob/main/docs/masalah.md#kuota_habis", "title": "Kuota habis", "status": 429, "kode": "kuota_habis"}))), ("porsi_sync_habis" = (summary = "Porsi sync atau rate limit jam berjalan penuh (satu kode, U-8)", value = json!({"type": "https://github.com/faisalcayunda/PoolRouter/blob/main/docs/masalah.md#porsi_sync_habis", "title": "Porsi sync habis", "status": 429, "kode": "porsi_sync_habis"}))), ("penolakan_berlebih" = (summary = "Limiter penolakan client aktif; hanya empat field (R-10)", value = json!({"type": "https://github.com/faisalcayunda/PoolRouter/blob/main/docs/masalah.md#penolakan_berlebih", "title": "Penolakan berlebih", "status": 429, "kode": "penolakan_berlebih"}))))
+            examples(("kuota_habis" = (summary = "Kuota periode upstream pool habis", value = json!({"type": "https://github.com/faisalcayunda/PoolRouter/blob/main/docs/masalah.md#kuota_habis", "title": "Kuota habis", "status": 429, "kode": "kuota_habis"}))), ("porsi_sync_habis" = (summary = "Porsi sync atau rate limit jam berjalan penuh (satu kode)", value = json!({"type": "https://github.com/faisalcayunda/PoolRouter/blob/main/docs/masalah.md#porsi_sync_habis", "title": "Porsi sync habis", "status": 429, "kode": "porsi_sync_habis"}))), ("penolakan_berlebih" = (summary = "Limiter penolakan client aktif; hanya empat field (R-10)", value = json!({"type": "https://github.com/faisalcayunda/PoolRouter/blob/main/docs/masalah.md#penolakan_berlebih", "title": "Penolakan berlebih", "status": 429, "kode": "penolakan_berlebih"}))))
         ),
         (status = 502, description = "retry_habis atau provider_error_permanen, dengan request_id, tanpa Retry-After", body = Problem, content_type = "application/problem+json", headers(
             ("Cache-Control" = String, description = "Selalu no-store (R-16)")
@@ -292,7 +300,7 @@ async fn submit_sync(
     params(("endpoint_id" = Uuid, Path, description = "Endpoint asinkron; path menentukan mode"), ("Idempotency-Key" = Option<String>, Header, description = "Opsional; 1–128 karakter ASCII printable (0x20–0x7E). Kunci sama + sidik sama → 200 replay; kunci sama + sidik beda → 422")),
     request_body(content = SubmitRequest, content_type = "application/json", description = "Amplop input + metadata dengan additionalProperties false", example = json!({"input": {"NIK": "3201234567890001", "NAMA_LGKP": "Budi Santoso"}, "metadata": {"status_penerima_manfaat": "sesuai"}})),
     responses(
-        (status = 202, description = "Request baru masuk antrean (U-5)", body = EnqueueResponse, headers(
+        (status = 202, description = "Request baru masuk antrean", body = EnqueueResponse, headers(
             ("Cache-Control" = String, description = "Selalu no-store (R-16)")
         ),
             examples(("queued" = (summary = "Request baru", value = json!({"queue_id": "0b19c3b4-7c5f-4e2f-9b3a-1a2b3c4d5e6f", "status": "queued"}))))
@@ -366,8 +374,8 @@ async fn get_request(
     stub()
 }
 
-/// Cancel a queued request (US-19). Terminal requests answer 409
-/// `tidak_bisa_dibatalkan` with the current status in the body.
+/// Cancel a queued request (US-19). Requests in `processing` or a terminal
+/// status answer 409 `tidak_bisa_dibatalkan` with the current status in the body.
 #[utoipa::path(
     post,
     path = "/v1/requests/{queue_id}/cancel",
@@ -385,7 +393,7 @@ async fn get_request(
         (status = 409, description = "Request sedang `processing` atau sudah terminal (`done`/`failed`/`expired`/`cancelled`); body memuat status API saat ini", body = Problem, content_type = "application/problem+json", headers(
             ("Cache-Control" = String, description = "Selalu no-store (R-16)")
         ),
-            examples(("tidak_bisa_dibatalkan" = (summary = "Status sudah done/failed/expired/cancelled", value = json!({"type": "https://github.com/faisalcayunda/PoolRouter/blob/main/docs/masalah.md#tidak_bisa_dibatalkan", "title": "Tidak bisa dibatalkan", "status": 409, "kode": "tidak_bisa_dibatalkan", "status_api": "done"}))))
+            examples(("tidak_bisa_dibatalkan" = (summary = "Status processing atau sudah done/failed/expired/cancelled", value = json!({"type": "https://github.com/faisalcayunda/PoolRouter/blob/main/docs/masalah.md#tidak_bisa_dibatalkan", "title": "Tidak bisa dibatalkan", "status": 409, "kode": "tidak_bisa_dibatalkan", "status_api": "done"}))))
         ),
         (status = 503, response = Problem503Layanan)
     ),
@@ -397,7 +405,7 @@ async fn cancel_request(
     stub()
 }
 
-/// Webhook registration handler. Contract only; not routed in F0.
+/// Webhook registration handler.
 /// Body is the same shape as `RequestStatus` (same mapping function,
 /// ADR-0001 section 3a.6).
 #[utoipa::path(
@@ -430,7 +438,7 @@ fn _request_terminal_webhook() {}
 // ---------------------------------------------------------------------------
 
 /// 401 on authenticated paths: `WWW-Authenticate: Bearer`, no request row,
-/// no quota consumed (U-1, R-16).
+/// no quota consumed (R-16).
 #[derive(utoipa::ToResponse)]
 #[response(description = "Token atau API key tidak valid atau kedaluwarsa; tidak disimpan", content_type = "application/problem+json", headers(
     ("WWW-Authenticate" = String, description = "Bearer untuk endpoint resource"),
@@ -450,7 +458,7 @@ pub struct Problem401Down(pub Problem);
 pub struct Problem400Down(pub Problem);
 
 /// 404 on downstream paths: unknown or other client's resource, not
-/// distinguished (U-1).
+/// distinguished.
 #[derive(utoipa::ToResponse)]
 #[response(description = "Tidak ditemukan atau bukan milik client (tidak dibedakan)", content_type = "application/problem+json", headers(
     ("Cache-Control" = String, description = "Selalu no-store (R-16)")

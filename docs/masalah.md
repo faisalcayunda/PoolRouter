@@ -69,16 +69,21 @@ konfigurasi client, L-04). Body hanya empat field: `type`, `title`, `status`,
 
 # objek_nonaktif
 
-403 atau 503. Objek yang menjadi sasaran permintaan sedang nonaktif (K-20):
-403 saat sebelum masuk antrean (`jenis_objek: endpoint`), 503 saat pool atau
-provider dinonaktifkan setelah request diterima (`jenis_objek`:
-`downstream_pool`, `upstream_pool`, atau `provider`). Tanpa `Retry-After`
-(R-10).
+403 atau 503, hanya untuk request baru saat submit (K-20). 403 =
+downstream endpoint nonaktif (`jenis_objek: endpoint`). 503 = downstream pool,
+upstream pool, atau provider di rute itu nonaktif (`jenis_objek`:
+`downstream_pool`, `upstream_pool`, atau `provider`); request ditolak dan tidak
+masuk antrean. Tanpa `Retry-After` (R-10).
+
+Request yang sudah diterima tidak pernah dijawab 503; status akhirnya terlihat
+lewat polling atau webhook (`cancelled` + `cancel_reason`, atau `failed` +
+`failure_reason` `objek_nonaktif`).
 
 # tidak_bisa_dibatalkan
 
-409. `POST /v1/requests/{queue_id}/cancel` pada request yang sudah terminal.
-Body memuat `status_api` saat ini.
+409. `POST /v1/requests/{queue_id}/cancel` pada request berstatus `processing`
+atau sudah terminal (`done`, `failed`, `expired`, `cancelled`). Body memuat
+`status_api` saat ini.
 
 # layanan_tidak_tersedia
 
@@ -139,8 +144,8 @@ provider tersebut (US-02).
 
 # kredensial_dicabut
 
-409. Kredensial masih dipakai endpoint aktif. Mengaktifkan ulang kredensial
-yang dicabut selalu 409; buat kredensial baru untuk mengganti.
+409 saat mengaktifkan lagi kredensial yang sudah dicabut: pencabutan
+permanen (ADR-0001 section 3a.2). Buat kredensial baru untuk mengganti.
 
 # batas_kredensial
 

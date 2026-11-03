@@ -256,8 +256,11 @@ pub struct ValidasiErrorDown {
     /// `jumlah_nama_tidak_cocok`.
     pub field: String,
     pub kode: String,
-    /// Numeric rule parameter of the violated rule, if any.
+    /// Numeric rule parameter of the violated rule, if any. Optional: absent
+    /// when the rule has no numeric parameter (for example `wajib` or an
+    /// unknown rule). When present the value is always a number, never `null`.
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[schema(value_type = f64)]
     pub batas: Option<f64>,
 }
 
@@ -269,8 +272,11 @@ pub struct ValidasiErrorAdmin {
     /// admin request bodies and template errors (D6).
     pub field: String,
     pub kode: String,
-    /// Numeric rule parameter of the violated rule, if any.
+    /// Numeric rule parameter of the violated rule, if any. Optional: absent
+    /// when the rule has no numeric parameter (for example `wajib` or an
+    /// unknown rule). When present the value is always a number, never `null`.
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[schema(value_type = f64)]
     pub batas: Option<f64>,
     /// Template position. Admin API and template errors only.
     #[serde(skip_serializing_if = "Option::is_none")]

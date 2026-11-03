@@ -433,3 +433,124 @@ fn hasil_memakai_nama_elemen_output() {
         );
     }
 }
+
+fn schema<'a>(doc: &'a Value, nama: &str) -> &'a Value {
+    doc["components"]["schemas"]
+        .get(nama)
+        .unwrap_or_else(|| panic!("skema {nama} tidak ada"))
+}
+
+fn properti(doc: &Value, nama: &str) -> std::collections::BTreeSet<String> {
+    schema(doc, nama)["properties"]
+        .as_object()
+        .unwrap_or_else(|| panic!("skema {nama} tanpa properties"))
+        .keys()
+        .cloned()
+        .collect()
+}
+
+/// A-4: the read model must expose every writable config field (minus `alasan`)
+/// so the Web UI edit form (US-01/04/05/15) can be pre-filled from a read. The
+/// PUT operations are full replacement: a missing field in the response means
+/// the form submits a default and silently wipes the current configuration.
+#[test]
+fn entitas_respons_memuat_semua_field_config() {
+    let doc = admin_doc();
+    let pasangan = [
+        ("Client", "ClientConfig"),
+        ("DownstreamPool", "DownstreamPoolConfig"),
+        ("Endpoint", "EndpointConfig"),
+        ("Provider", "ProviderConfig"),
+        ("UpstreamPool", "UpstreamPoolConfig"),
+    ];
+    for (entitas, config) in pasangan {
+        let punya_entitas = properti(&doc, entitas);
+        let wajib_config = properti(&doc, config);
+        let selisih: Vec<&String> = wajib_config
+            .iter()
+            .filter(|f| f.as_str() != "alasan")
+            .filter(|f| !punya_entitas.contains(*f))
+            .collect();
+        assert!(
+            selisih.is_empty(),
+            "{entitas} tidak memuat field {config}: {selisih:?}"
+        );
+    }
+}
+
+/// A-4: the PUT bodies are `*Config` references, so the pairing above really is
+/// the read/write contract of the edit form.
+#[test]
+fn update_memakai_body_config_yang_sama() {
+    let doc = admin_doc();
+    let pasangan = [
+        ("updateClient", "ClientConfig"),
+        ("updateDownstreamPool", "DownstreamPoolConfig"),
+        ("updateEndpoint", "EndpointConfig"),
+        ("updateProvider", "ProviderConfig"),
+        ("updateUpstreamPool", "UpstreamPoolConfig"),
+    ];
+    for (operasi, config) in pasangan {
+        let op = operations(&doc)
+            .into_iter()
+            .find(|(_, op)| op["operationId"] == operasi)
+            .unwrap_or_else(|| panic!("operasi {operasi} tidak ada"));
+        let teks = serde_json::to_string(&op.1["requestBody"]).expect("stringify");
+        assert!(
+            teks.contains(&format!("#/components/schemas/{config}")),
+            "{operasi} tidak memakai body {config}: {teks}"
+        );
+    }
+}
+
+/// Non-blocking guard: client-facing text carries no internal ticket labels.
+/// R-xx and ADR references stay; `U-x`/`F-x` labels must not leak into the
+/// downstream contract or `docs/masalah.md`.
+#[test]
+fn teks_client_tanpa_label_tiket_internal() {
+    let root = masalah_path()
+        .parent()
+        .and_then(|d| d.parent())
+        .expect("repo root")
+        .to_path_buf();
+    let berkas = [
+        (
+            "backend/openapi/downstream-api.yaml",
+            std::fs::read_to_string(root.join("backend/openapi/downstream-api.yaml"))
+                .expect("downstream-api.yaml ada"),
+        ),
+        (
+            "docs/masalah.md",
+            std::fs::read_to_string(masalah_path()).expect("docs/masalah.md ada"),
+        ),
+    ];
+    for (nama, isi) in berkas {
+        for (nomor, baris) in isi.lines().enumerate() {
+            let byte = baris.as_bytes();
+            for i in 0..byte.len().saturating_sub(2) {
+                let awal_kata =
+                    i == 0 || !(byte[i - 1].is_ascii_alphanumeric() || byte[i - 1] == b'_');
+                if !awal_kata
+                    || !(byte[i] == b'U' || byte[i] == b'F')
+                    || byte[i + 1] != b'-'
+                    || !byte[i + 2].is_ascii_digit()
+                {
+                    continue;
+                }
+                let akhir = byte[i + 2..]
+                    .iter()
+                    .position(|c| !c.is_ascii_digit())
+                    .map_or(byte.len(), |p| i + 2 + p);
+                let akhir_kata = akhir == byte.len()
+                    || !(byte[akhir].is_ascii_alphanumeric() || byte[akhir] == b'_');
+                if akhir_kata {
+                    panic!(
+                        "{nama}:{} memuat label tiket internal ({}): {baris}",
+                        nomor + 1,
+                        &baris[i..akhir]
+                    );
+                }
+            }
+        }
+    }
+}

@@ -65,7 +65,7 @@ paths:
                     queue_id: 0b19c3b4-7c5f-4e2f-9b3a-1a2b3c4d5e6f
                     status: done
         '202':
-          description: Request baru masuk antrean (U-5)
+          description: Request baru masuk antrean
           headers:
             Cache-Control:
               schema:
@@ -262,7 +262,7 @@ paths:
       parameters:
       - name: endpoint_id
         in: path
-        description: 'Endpoint sinkron (U-4: mode ditentukan path)'
+        description: Endpoint sinkron; mode ditentukan oleh path
         required: true
         schema:
           type: string
@@ -389,7 +389,7 @@ paths:
                     title: Validasi gagal
                     type: https://github.com/faisalcayunda/PoolRouter/blob/main/docs/masalah.md#validasi_gagal
         '429':
-          description: Kuota periode habis, porsi sync/jam berjalan penuh, atau limiter penolakan aktif; semua dengan Retry-After (U-8)
+          description: Kuota periode habis, porsi sync/jam berjalan penuh, atau limiter penolakan aktif; semua dengan Retry-After
           headers:
             Cache-Control:
               schema:
@@ -421,7 +421,7 @@ paths:
                     title: Penolakan berlebih
                     type: https://github.com/faisalcayunda/PoolRouter/blob/main/docs/masalah.md#penolakan_berlebih
                 porsi_sync_habis:
-                  summary: Porsi sync atau rate limit jam berjalan penuh (satu kode, U-8)
+                  summary: Porsi sync atau rate limit jam berjalan penuh (satu kode)
                   value:
                     kode: porsi_sync_habis
                     status: 429
@@ -517,8 +517,8 @@ paths:
       - downstream
       summary: |-
         Issue a downstream access token (R-05, US-18). Credentials via HTTP Basic
-        or body (U-3); 4xx bodies are problem+json with the RFC 6749 `error` field
-        (U-3), except 429.
+        or body; 4xx bodies are problem+json with the RFC 6749 `error` field,
+        except 429.
       operationId: issueToken
       requestBody:
         description: grant_type=client_credentials; kredensial juga boleh lewat HTTP Basic
@@ -563,7 +563,7 @@ paths:
                 $ref: '#/components/schemas/Problem'
               examples:
                 validasi_gagal:
-                  summary: grant tidak didukung (U-3)
+                  summary: grant tidak didukung
                   value:
                     error: unsupported_grant_type
                     kode: validasi_gagal
@@ -571,7 +571,7 @@ paths:
                     title: Validasi gagal
                     type: https://github.com/faisalcayunda/PoolRouter/blob/main/docs/masalah.md#validasi_gagal
         '401':
-          description: Kredensial salah; penyebab tidak dibedakan (U-1)
+          description: Kredensial salah; penyebab tidak dibedakan
           headers:
             Cache-Control:
               schema:
@@ -700,8 +700,8 @@ paths:
       tags:
       - downstream
       summary: |-
-        Cancel a queued request (US-19). Terminal requests answer 409
-        `tidak_bisa_dibatalkan` with the current status in the body.
+        Cancel a queued request (US-19). Requests in `processing` or a terminal
+        status answer 409 `tidak_bisa_dibatalkan` with the current status in the body.
       operationId: cancelRequest
       parameters:
       - name: queue_id
@@ -747,7 +747,7 @@ paths:
                 $ref: '#/components/schemas/Problem'
               examples:
                 tidak_bisa_dibatalkan:
-                  summary: Status sudah done/failed/expired/cancelled
+                  summary: Status processing atau sudah done/failed/expired/cancelled
                   value:
                     kode: tidak_bisa_dibatalkan
                     status: 409
@@ -765,7 +765,7 @@ webhooks:
       tags:
       - downstream
       summary: |-
-        Webhook registration handler. Contract only; not routed in F0.
+        Webhook registration handler.
         Body is the same shape as `RequestStatus` (same mapping function,
         ADR-0001 section 3a.6).
       operationId: requestTerminal
@@ -887,7 +887,7 @@ components:
       type: object
       description: |-
         202: new async request. 200 with the same shape: replay of an identical
-        `Idempotency-Key` fingerprint, no new request (U-5).
+        `Idempotency-Key` fingerprint, no new request.
       required:
       - queue_id
       - status
@@ -1153,7 +1153,7 @@ components:
       properties:
         hasil:
           type: object
-          description: Only the elements the client sent, keyed by element name (U-6).
+          description: Only the elements the client sent, keyed by element name.
           additionalProperties:
             $ref: '#/components/schemas/HasilElemen'
           propertyNames:
@@ -1165,11 +1165,16 @@ components:
           $ref: '#/components/schemas/ApiStatus'
           description: Always `done` on 200.
       additionalProperties: false
+    TipeToken:
+      type: string
+      description: Closed `token_type` value; the only member is `Bearer` (R-05).
+      enum:
+      - Bearer
     TokenRequest:
       type: object
       description: |-
         `application/x-www-form-urlencoded` body (R-05). Credentials may arrive via
-        HTTP Basic instead (U-3); neither value is ever echoed back.
+        HTTP Basic instead; neither value is ever echoed back.
       required:
       - grant_type
       properties:
@@ -1206,7 +1211,7 @@ components:
           description: Lifetime in seconds; always 900 (R-05).
           example: 900
         token_type:
-          type: string
+          $ref: '#/components/schemas/TipeToken'
           description: Always `Bearer`; the prefix lives here, never in `access_token`.
       additionalProperties: false
     ValidasiErrorDown:
@@ -1221,11 +1226,12 @@ components:
       - kode
       properties:
         batas:
-          type:
-          - number
-          - 'null'
+          type: number
           format: double
-          description: Numeric rule parameter of the violated rule, if any.
+          description: |-
+            Numeric rule parameter of the violated rule, if any. Optional: absent
+            when the rule has no numeric parameter (for example `wajib` or an
+            unknown rule). When present the value is always a number, never `null`.
         field:
           type: string
           description: |-

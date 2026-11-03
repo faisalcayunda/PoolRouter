@@ -96,8 +96,9 @@ pub struct ProviderConfig {
     pub alasan: Option<String>,
 }
 
-/// One provider parameter with an optional validation rule (US-03).
-#[derive(Debug, Clone, Deserialize, ToSchema)]
+/// One provider parameter with an optional validation rule (US-03). Also
+/// serialized: the provider entity returns it for the edit form.
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct ParameterRule {
     /// Parameter name stored verbatim (`USER_ID`, `TRESHOLD`, `NAMA_LGKP`).
     #[schema(example = "USER_ID")]
@@ -108,8 +109,9 @@ pub struct ParameterRule {
     pub rule: Option<RuleValidasi>,
 }
 
-/// Validation rule for a provider parameter (BRD US-03; closed `jenis`).
-#[derive(Debug, Clone, Deserialize, ToSchema)]
+/// Validation rule for a provider parameter (BRD US-03; closed `jenis`). Also
+/// serialized: the provider entity returns it for the edit form.
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct RuleValidasi {
     pub jenis: RuleJenis,
     /// Regex pattern for `jenis = regex`.
@@ -127,14 +129,34 @@ pub struct RuleValidasi {
     pub format_tanggal: Option<String>,
 }
 
-/// Provider entity (list/get/update/activate responses).
+/// Provider entity (list/get/create/update/activate responses). Every field of
+/// [`ProviderConfig`] except `alasan` is present, so the Web UI edit form
+/// (US-01/04) can be pre-filled from a read. Secrets never appear here:
+/// `body_template` only carries `{{secret.X}}` names, never secret values
+/// (R-16).
 #[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct Provider {
     pub provider_id: Uuid,
+    /// Provider base URL (https).
     #[schema(example = "https://provider.example.go.id/api")]
     pub base_url: String,
+    /// Body template. Placeholders `{{secret.X}}` reference a secret by name;
+    /// the value is never returned.
+    #[schema(example = "{\"NIK\":\"{{input.NIK}}\",\"UID\":\"{{endpoint.USER_ID}}\"}")]
+    pub body_template: String,
+    /// Provider parameters plus their validation rules.
+    pub parameters: Vec<ParameterRule>,
+    /// Response schema used to map elements (US-05).
+    #[schema(value_type = Object)]
+    pub respons_skema: serde_json::Value,
+    /// TLS trust setting for the provider call.
+    #[schema(example = "sistem")]
+    pub tls_trust: String,
     #[schema(example = "ringkas")]
     pub log_mode: String,
+    /// Fixed 1 in F0.
+    #[schema(minimum = 1, maximum = 1, example = 1)]
+    pub config_schema_version: i64,
     #[schema(example = 2)]
     pub provider_config_version: i64,
     pub aktif: bool,
@@ -169,7 +191,7 @@ pub struct UpstreamPoolConfig {
     #[schema(minimum = 1, example = 60)]
     pub rate_limit_per_jam: i64,
     /// Sync portion of the pool, 0.0..1.0.
-    #[schema(example = 0.1)]
+    #[schema(minimum = 0, maximum = 1, example = 0.1)]
     pub porsi_sync: f64,
     /// 0.001..0.200 (KP-01).
     #[schema(minimum = 0.001, maximum = 0.2, example = 0.05)]
@@ -208,12 +230,52 @@ pub struct UpstreamPoolConfig {
     pub alasan: Option<String>,
 }
 
-/// Upstream pool entity.
+/// Upstream pool entity (list/get/create/update/activate responses). Every field
+/// of [`UpstreamPoolConfig`] except `alasan` is present, so the Web UI edit form
+/// (US-04/05) can be pre-filled from a read: the `PUT` is a full replacement and
+/// a missing field would be submitted as a default, silently overwriting the
+/// current configuration.
 #[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct UpstreamPool {
     pub upstream_pool_id: Uuid,
     pub provider_id: Uuid,
+    #[schema(minimum = 1, example = 500)]
+    pub kuota_harian: i64,
+    #[schema(minimum = 1, example = 60)]
+    pub rate_limit_per_jam: i64,
+    /// Sync portion of the pool, 0.0..1.0.
+    #[schema(minimum = 0, maximum = 1, example = 0.1)]
+    pub porsi_sync: f64,
+    /// 0.001..0.200 (KP-01).
+    #[schema(minimum = 0.001, maximum = 0.2, example = 0.05)]
+    pub margin_kuota: f64,
+    /// 1..5 attempts (KP-01).
+    #[schema(minimum = 1, maximum = 5, example = 3)]
+    pub batas_percobaan: i64,
+    #[schema(example = 2)]
+    pub retry_backoff_base_detik: i64,
+    #[schema(example = 60)]
+    pub retry_backoff_cap_detik: i64,
+    #[schema(example = 0.5)]
+    pub retry_rasio: f64,
+    #[schema(example = 10)]
+    pub retry_min_per_jam: i64,
     pub jendela_kuota: JendelaKuota,
+    /// Hour of the period reset (0..23), interpreted in `reset_kuota_zona`.
+    #[schema(minimum = 0, maximum = 23, example = 0)]
+    pub reset_kuota_jam: i64,
+    /// IANA time zone; the offset is pinned to this zone (KP-02).
+    #[schema(example = "Asia/Jakarta")]
+    pub reset_kuota_zona: String,
+    /// Minimum inter-request delay in milliseconds.
+    #[schema(example = 200)]
+    pub jeda_min: i64,
+    /// Maximum inter-request delay in milliseconds.
+    #[schema(example = 800)]
+    pub jeda_maks: i64,
+    /// Concurrency threshold (`ambang berdampingan`).
+    #[schema(example = 4)]
+    pub ambang_berdampingan: i64,
     pub aktif: bool,
 }
 
@@ -393,8 +455,16 @@ pub struct Endpoint {
     pub endpoint_id: Uuid,
     pub provider_id: Uuid,
     pub downstream_pool_id: Uuid,
+    /// Literal parameters, including `TRESHOLD` (BGN mandate).
+    pub parameter_literal: BTreeMap<String, String>,
     #[schema(example = "ringkas")]
     pub log_mode: String,
+    /// Metadata field definitions; Dukcapil endpoints must include
+    /// `status_penerima_manfaat` (M-R1).
+    pub metadata_fields: Vec<MetadataFieldDef>,
+    /// Fixed 1 in F0.
+    #[schema(minimum = 1, maximum = 1, example = 1)]
+    pub config_schema_version: i64,
     #[schema(example = 3)]
     pub endpoint_config_version: i64,
     pub aktif: bool,
@@ -422,8 +492,9 @@ pub struct EndpointConfig {
     pub alasan: Option<String>,
 }
 
-/// Metadata field definition (US-15).
-#[derive(Debug, Clone, Deserialize, ToSchema)]
+/// Metadata field definition (US-15). Also serialized: the endpoint entity
+/// returns it so the edit form can be pre-filled.
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct MetadataFieldDef {
     #[schema(example = "status_penerima_manfaat")]
     pub nama_field: String,
@@ -1748,7 +1819,9 @@ async fn nonaktifkan_client(
     stub()
 }
 
-/// Activate a client; mode = free without re-verification (K-20).
+/// Activate a client (section 3a.1). No re-verification required. Applies to
+/// requests submitted after this call, needs no K-20 dialog, and is recorded in
+/// the configuration audit log.
 #[utoipa::path(
     post,
     path = "/admin/v1/clients/{id}/aktifkan",
@@ -1897,7 +1970,9 @@ async fn nonaktifkan_endpoint(
     stub()
 }
 
-/// Activate an endpoint; mode = free (K-20).
+/// Activate an endpoint (section 3a.1). Applies to requests submitted after
+/// this call, needs no K-20 dialog, and is recorded in the configuration
+/// audit log.
 #[utoipa::path(
     post,
     path = "/admin/v1/endpoints/{id}/aktifkan",
@@ -1972,7 +2047,9 @@ async fn nonaktifkan_downstream_pool(
     stub()
 }
 
-/// Activate a downstream pool; mode = free (K-20).
+/// Activate a downstream pool (section 3a.1). Applies to requests submitted after
+/// this call, needs no K-20 dialog, and is recorded in the configuration
+/// audit log.
 #[utoipa::path(
     post,
     path = "/admin/v1/downstream-pools/{id}/aktifkan",
@@ -2022,8 +2099,13 @@ async fn pratinjau_nonaktifkan_upstream_pool(
     stub()
 }
 
-/// Deactivate an upstream pool (K-20): cancel queued, fail waiting for retry,
-/// expire the rest across allocated downstream pools.
+/// Deactivate an upstream pool (K-20; section 3a.7 and 3a.10). Only requests
+/// whose `upstream_pool_id` is this pool are affected: `akan_cancelled` for
+/// `attempt_count = 0`, `akan_failed` for those waiting for a retry. Requests
+/// not yet dispatched (`attempt_count = 0` with no `upstream_pool_id` set) are
+/// unchanged and stay `queued` until an active upstream pool picks them up or
+/// the TTL expires. If this pool is the last active upstream for a downstream
+/// pool, see `upstream_aktif_terakhir_untuk`.
 #[utoipa::path(
     post,
     path = "/admin/v1/upstream-pools/{id}/nonaktifkan",
@@ -2050,7 +2132,9 @@ async fn nonaktifkan_upstream_pool(
     stub()
 }
 
-/// Activate an upstream pool; mode = free (K-20).
+/// Activate an upstream pool (section 3a.1). Applies to requests submitted after
+/// this call, needs no K-20 dialog, and is recorded in the configuration
+/// audit log.
 #[utoipa::path(
     post,
     path = "/admin/v1/upstream-pools/{id}/aktifkan",
@@ -2125,7 +2209,9 @@ async fn nonaktifkan_provider(
     stub()
 }
 
-/// Activate a provider; mode = free (K-20).
+/// Activate a provider (section 3a.1). Applies to requests submitted after
+/// this call, needs no K-20 dialog, and is recorded in the configuration
+/// audit log.
 #[utoipa::path(
     post,
     path = "/admin/v1/providers/{id}/aktifkan",
