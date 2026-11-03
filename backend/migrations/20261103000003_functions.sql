@@ -79,14 +79,15 @@ BEGIN
       FROM request r
       JOIN transaction_log l ON l.kode_transaksi = r.final_kode_transaksi
       LEFT JOIN downstream_pool d ON d.downstream_pool_id = r.downstream_pool_id
-     WHERE r.status IN ('done', 'failed') AND r.payload_purged_at IS NULL AND l.log_mode = 'metadata_only'
+      WHERE r.status IN ('done', 'failed') AND r.output_purged_at IS NULL AND l.log_mode = 'metadata_only'
        AND r.completed_at + CASE WHEN r.mode = 'sync' THEN interval '0' ELSE make_interval(secs => coalesce(d.ttl_antrean_detik, 0)) END <= now()
        AND NOT fn_ditahan_data_balikan(r.request_id)
      ORDER BY r.completed_at
      LIMIT p_batas
      FOR UPDATE OF r SKIP LOCKED)
   UPDATE request r
-     SET input_payload = NULL, output_payload = NULL,
+     SET input_payload = CASE WHEN fn_ditahan_data_balikan(r.request_id) THEN r.input_payload ELSE NULL END,
+         output_payload = NULL, output_purged_at = now(),
          metadata = fn_metadata_tanpa_rahasia(r.downstream_endpoint_id, r.metadata),
          payload_purged_at = now()
     FROM kandidat k WHERE r.request_id = k.request_id;
@@ -146,7 +147,11 @@ DECLARE
   v_webhook text;
 BEGIN
   IF NOT fn_punya_peran(p_pengguna_id, 'platform_admin') THEN
-    RAISE EXCEPTION 'hanya platform admin' USING ERRCODE = 'insufficient_privilege';
+    IF NOT (p_jenis = 'kredensial' AND fn_punya_peran(p_pengguna_id, 'client_owner')
+            AND EXISTS (SELECT 1 FROM client_kredensial k JOIN admin_user u ON u.client_id = k.client_id
+                        WHERE k.credential_id = p_id AND u.pengguna_id = p_pengguna_id)) THEN
+      RAISE EXCEPTION 'hanya platform admin atau pemilik client' USING ERRCODE = 'insufficient_privilege';
+    END IF;
   END IF;
   IF p_alasan IS NULL OR length(btrim(p_alasan)) = 0 THEN
     RAISE EXCEPTION 'alasan wajib' USING ERRCODE = 'check_violation';
@@ -389,7 +394,7 @@ BEGIN
   v_sum := encode(sha256(v_bytes), 'hex');
   INSERT INTO audit_akses (audit_id, pengguna_id, peran, aksi, tampilan_nik, filter_kueri, nik_hmac, nik_tersamar, jumlah_record,
                            ekspor_checksum, alasan, hasil, sumber_ip, sesi_id)
-  VALUES (p_audit_id, p_pengguna_id, 'auditor', 'ekspor', 'utuh', v_filter, coalesce(p_nik_hmac, repeat('0', 64)), p_nik_tersamar, v_n,
+   VALUES (p_audit_id, p_pengguna_id, 'auditor', 'ekspor', 'utuh', v_filter, p_nik_hmac, p_nik_tersamar, v_n,
           v_sum, p_alasan, 'diizinkan', p_ip, p_sesi);
   RETURN QUERY SELECT p_audit_id, v_bytes, v_sum, v_n, 'diizinkan'::text;
 END $$;
@@ -406,11 +411,12 @@ BEGIN
     PERFORM fn_catat_ditolak(p_pengguna_id, 'tidak_berwenang', jsonb_build_object('dari', p_dari, 'sampai', p_sampai), p_ip, p_sesi);
     RETURN;
   END IF;
-  SELECT count(*) INTO v_n FROM (SELECT 1 FROM audit_akses a WHERE a.terjadi_at >= p_dari AND a.terjadi_at < p_sampai LIMIT p_batas) q;
+  IF p_batas IS NULL OR p_batas < 1 THEN RAISE EXCEPTION 'batas wajib positif' USING ERRCODE = 'check_violation'; END IF;
+  SELECT count(*) INTO v_n FROM (SELECT 1 FROM audit_akses a WHERE a.terjadi_at >= p_dari AND a.terjadi_at < p_sampai AND a.terjadi_at < now() LIMIT p_batas) q;
   INSERT INTO audit_akses (audit_id, pengguna_id, peran, aksi, tampilan_nik, filter_kueri, jumlah_record, hasil, sumber_ip, sesi_id)
   VALUES (gen_random_uuid(), p_pengguna_id, 'auditor', 'lihat_audit', 'tidak_ada',
           jsonb_build_object('dari', p_dari, 'sampai', p_sampai, 'batas', p_batas), v_n, 'diizinkan', p_ip, p_sesi);
-  RETURN QUERY SELECT a.audit_id, a.pengguna_id, a.peran, a.aksi, a.tampilan_nik, a.filter_kueri, a.nik_tersamar, a.jumlah_record, a.alasan,
+  RETURN QUERY SELECT a.audit_id, a.pengguna_id, a.peran, a.aksi, a.tampilan_nik, a.filter_kueri - 'nik_hmac', a.nik_tersamar, a.jumlah_record, a.alasan,
                       a.hasil, a.sumber_ip, a.terjadi_at
     FROM audit_akses a WHERE a.terjadi_at >= p_dari AND a.terjadi_at < p_sampai AND a.terjadi_at < now()
     ORDER BY a.terjadi_at, a.audit_id LIMIT p_batas;

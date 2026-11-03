@@ -106,7 +106,7 @@ GRANT SELECT, INSERT ON audit_konfigurasi TO pr_admin_api;
 GRANT INSERT ON audit_akses TO pr_admin_api;
 GRANT SELECT ON upstream_attempt_daily TO pr_admin_api;               -- usage and quota aggregates, no NIK
 GRANT SELECT ON v_request_tersamar, v_transaction_log_tersamar TO pr_admin_api;
-GRANT EXECUTE ON FUNCTION fn_set_status_kredensial(uuid, text, uuid, text), fn_nonaktifkan_entitas(text, uuid, uuid, text),
+GRANT EXECUTE ON FUNCTION fn_nonaktifkan_entitas(text, uuid, uuid, text),
   fn_aktifkan_entitas(text, uuid, uuid, text), fn_pratinjau_nonaktif(text, uuid), fn_request_milik_client(uuid),
   fn_webhook_log_milik_client(uuid), fn_auditor_lihat_transaksi(uuid, text, uuid, text, text),
   fn_auditor_cari_nik(uuid, text, text, timestamptz, timestamptz, text, text, text),

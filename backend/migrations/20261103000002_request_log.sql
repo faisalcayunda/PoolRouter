@@ -29,6 +29,7 @@ CREATE TABLE request (
   input_payload jsonb,
   metadata jsonb NOT NULL,
   payload_purged_at timestamptz,
+  output_purged_at timestamptz,
   received_at timestamptz NOT NULL,
   ttl_expires_at timestamptz,
   dispatched_at timestamptz,
@@ -76,7 +77,7 @@ CREATE TABLE request (
   CONSTRAINT chk_final_log_only CHECK (status IN ('done', 'failed') OR final_kode_transaksi IS NULL),
   -- output only for done; may be purged afterwards (P-03)
   CONSTRAINT chk_output CHECK (
-    CASE WHEN status = 'done' THEN output_payload IS NOT NULL OR payload_purged_at IS NOT NULL
+    CASE WHEN status = 'done' THEN output_payload IS NOT NULL OR output_purged_at IS NOT NULL
          ELSE output_payload IS NULL END),
   -- queue time limit (async only)
   CONSTRAINT chk_ttl_mode CHECK (mode = 'async' OR ttl_expires_at IS NULL),
@@ -95,13 +96,10 @@ CREATE TABLE request (
 
   -- NULL list for bodies that cannot be parsed (AC SHAA-193, contract 3.2.2 validasi_gagal):
   -- these columns derive from the body / pool choice, nothing else does.
-  CONSTRAINT chk_pool_kolom_serempak CHECK (
-    (downstream_pool_id IS NULL) = (prioritas IS NULL) AND (downstream_pool_id IS NULL) = (prioritas_efektif IS NULL)),
+  CONSTRAINT chk_pool_kolom_not_null CHECK (downstream_pool_id IS NOT NULL AND prioritas IS NOT NULL AND prioritas_efektif IS NOT NULL),
   CONSTRAINT chk_null_body_tak_terbaca CHECK (
-    (downstream_pool_id IS NOT NULL AND (mode = 'sync' OR ttl_expires_at IS NOT NULL))
-    OR (status = 'rejected' AND reject_reason = 'validasi_gagal' AND reject_http_status = 400
-        AND metadata = '{}'::jsonb AND input_payload IS NULL AND ttl_expires_at IS NULL)
-  )
+    NOT (reject_reason = 'validasi_gagal' AND reject_http_status = 400) OR metadata = '{}'::jsonb),
+  CONSTRAINT chk_ttl_async CHECK ((mode = 'async') = (ttl_expires_at IS NOT NULL))
 );
 
 CREATE UNIQUE INDEX request_idempotency_uq ON request (client_id, idempotency_key) WHERE idempotency_key IS NOT NULL;
@@ -172,7 +170,7 @@ CREATE TABLE request_status_history (
   PRIMARY KEY (request_id, seq),
   CONSTRAINT chk_seq_pertama CHECK ((seq = 1) = (status_dari IS NULL)),
   CONSTRAINT chk_pemicu_k20 CHECK (
-    (alasan IN ('client_nonaktif', 'kredensial_nonaktif', 'endpoint_nonaktif', 'pool_nonaktif', 'provider_nonaktif')
+     (coalesce(alasan IN ('client_nonaktif', 'kredensial_nonaktif', 'endpoint_nonaktif', 'pool_nonaktif', 'provider_nonaktif'), false)
      OR (status_ke = 'failed' AND alasan = 'objek_nonaktif')) = (objek_pemicu_id IS NOT NULL))
 );
 CREATE INDEX request_status_history_pemicu_idx ON request_status_history (objek_pemicu_id, terjadi_at) WHERE objek_pemicu_id IS NOT NULL;
@@ -183,7 +181,9 @@ CREATE TRIGGER request_status_history_append_only BEFORE UPDATE OR DELETE ON req
 CREATE FUNCTION tg_request_punya_history() RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public AS $$
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM request_status_history h
-                  WHERE h.request_id = NEW.request_id AND h.status_ke = NEW.status) THEN
+                   WHERE h.request_id = NEW.request_id AND h.status_dari IS NOT DISTINCT FROM
+                         (SELECT status FROM request WHERE request_id = NEW.request_id)
+                     AND h.status_ke = NEW.status AND h.terjadi_at >= transaction_timestamp()) THEN
     RAISE EXCEPTION 'request % berstatus % tanpa baris request_status_history yang cocok (T-04)', NEW.request_id, NEW.status
       USING ERRCODE = 'integrity_constraint_violation';
   END IF;
@@ -225,8 +225,8 @@ CREATE TABLE transaction_log (
   CONSTRAINT chk_status_error CHECK (
     CASE WHEN status_akses IS NULL THEN error_class IS NULL
          WHEN status_akses IN ('berhasil', 'tidak_diketahui') THEN error_class IS NULL
-         WHEN status_akses = 'gagal_jaringan' THEN error_class IN ('timeout', 'koneksi', 'tls')
-         WHEN status_akses = 'gagal_provider' THEN error_class IN ('respons_tidak_valid', 'auth_ditolak',
+          WHEN status_akses = 'gagal_jaringan' THEN error_class IS NOT NULL AND error_class IN ('timeout', 'koneksi', 'tls')
+          WHEN status_akses = 'gagal_provider' THEN error_class IS NOT NULL AND error_class IN ('respons_tidak_valid', 'auth_ditolak',
            'kuota_provider_habis', 'rate_limit_provider', 'provider_sementara', 'lainnya')
     END),
   -- R-07
@@ -342,7 +342,7 @@ CREATE TABLE audit_akses (
     aksi NOT IN ('cari_log', 'cari_nik', 'lihat_log', 'ekspor', 'lihat_audit', 'akses_ditolak') OR filter_kueri IS NOT NULL),
   -- E-01..E-03, DQ-35 (a)(b)
   CONSTRAINT chk_ekspor_checksum CHECK (
-    CASE WHEN aksi = 'ekspor' AND hasil = 'diizinkan' THEN ekspor_checksum ~ '^[0-9a-f]{64}$' AND nik_hmac IS NOT NULL
+    CASE WHEN aksi = 'ekspor' AND hasil = 'diizinkan' THEN ekspor_checksum IS NOT NULL AND ekspor_checksum ~ '^[0-9a-f]{64}$' AND nik_hmac IS NOT NULL
          ELSE ekspor_checksum IS NULL END)
 );
 CREATE INDEX audit_akses_terjadi_idx ON audit_akses (terjadi_at);
