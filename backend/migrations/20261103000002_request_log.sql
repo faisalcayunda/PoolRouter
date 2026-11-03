@@ -180,7 +180,7 @@ CREATE TRIGGER request_status_history_append_only BEFORE UPDATE OR DELETE ON req
   FOR EACH ROW EXECUTE FUNCTION tg_append_only();
 
 -- T-04: every status written to request has a history row in the same transaction (checked at commit).
-CREATE FUNCTION tg_request_punya_history() RETURNS trigger LANGUAGE plpgsql AS $$
+CREATE FUNCTION tg_request_punya_history() RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public AS $$
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM request_status_history h
                   WHERE h.request_id = NEW.request_id AND h.status_ke = NEW.status) THEN
@@ -245,7 +245,7 @@ CREATE INDEX transaction_log_nik_idx ON transaction_log (nik);   -- auditor NIK 
 ALTER TABLE request ADD CONSTRAINT request_final_log_fk
   FOREIGN KEY (final_kode_transaksi) REFERENCES transaction_log (kode_transaksi) DEFERRABLE INITIALLY DEFERRED;
 
-CREATE FUNCTION tg_log_insert() RETURNS trigger LANGUAGE plpgsql AS $$
+CREATE FUNCTION tg_log_insert() RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public AS $$
 DECLARE
   v_wajib boolean;
 BEGIN

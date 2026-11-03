@@ -54,3 +54,6 @@ BEGIN
   RETURN rec.request_id;
 END $$;
 GRANT EXECUTE ON FUNCTION t.buat_request(jsonb) TO PUBLIC;
+
+CREATE TABLE IF NOT EXISTS t.hasil_ekspor (nama text, audit_id uuid, berkas bytea, ekspor_checksum text, jumlah_record integer, hasil text);
+GRANT ALL ON t.hasil_ekspor TO PUBLIC;
