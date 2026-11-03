@@ -20,7 +20,8 @@ CONTAINER_LABEL ?=
 # Memory cap per podman toolchain container. On the current 2 CPU / 3814 MiB VM only one Rust build fits:
 # run one build at a time with JOBS=1 (see docs/runbook/backend-toolchain.md, SHAA-222).
 CONTAINER_MEMORY ?= 3g
-JOBS ?= 2
+# Default 1 matches the gate tested on the 2 CPU / 3814 MiB VM (docs/runbook/backend-toolchain.md). Use JOBS=2 only on a 6144 MiB / 4 CPU VM.
+JOBS ?= 1
 
 export CARGO_HOME := $(CURDIR)/.cache/cargo
 export CARGO_TERM_COLOR ?= never
