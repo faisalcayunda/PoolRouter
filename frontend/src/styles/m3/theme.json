@@ -1,0 +1,76 @@
+{
+  "description": "PoolRouter F0 theme. Derived programmatically (material-color-utilities 0.3.0, SchemeFidelity); NOT a Material Theme Builder export. Replace with real export when MTB session exists.",
+  "seed": "#5C6670",
+  "coreColors": {
+    "primary": "#5C6670"
+  },
+  "extendedColors": [
+    {
+      "name": "success",
+      "color": "#386A20",
+      "description": "custom color, harmonize off",
+      "blend": false
+    },
+    {
+      "name": "warning",
+      "color": "#7C5800",
+      "description": "custom color, harmonize off",
+      "blend": false
+    },
+    {
+      "name": "info",
+      "color": "#00639B",
+      "description": "custom color, harmonize off",
+      "blend": false
+    }
+  ],
+  "schemes": {
+    "light": {
+      "primary": "#444E58",
+      "onPrimary": "#FFFFFF",
+      "primaryContainer": "#5C6670",
+      "onPrimaryContainer": "#DAE4F0",
+      "secondary": "#5B5F63",
+      "onSecondary": "#FFFFFF",
+      "secondaryContainer": "#DDE0E5",
+      "onSecondaryContainer": "#5F6367",
+      "tertiary": "#5C493B",
+      "onTertiary": "#FFFFFF",
+      "tertiaryContainer": "#756152",
+      "onTertiaryContainer": "#F9DECB",
+      "error": "#BA1A1A",
+      "onError": "#FFFFFF",
+      "errorContainer": "#FFDAD6",
+      "onErrorContainer": "#93000A",
+      "surface": "#FBF9F9",
+      "onSurface": "#1B1B1C",
+      "onSurfaceVariant": "#44474B",
+      "surfaceContainerLowest": "#FFFFFF",
+      "surfaceContainerLow": "#F6F3F3",
+      "surfaceContainer": "#F0EDEE",
+      "surfaceContainerHigh": "#EAE7E8",
+      "surfaceContainerHighest": "#E4E2E2",
+      "surfaceDim": "#DCD9DA",
+      "surfaceBright": "#FBF9F9",
+      "inverseSurface": "#303031",
+      "inverseOnSurface": "#F3F0F0",
+      "inversePrimary": "#BDC8D3",
+      "outline": "#74777B",
+      "outlineVariant": "#C4C6CB",
+      "scrim": "#000000",
+      "shadow": "#000000",
+      "success": "#386A20",
+      "onSuccess": "#FFFFFF",
+      "successContainer": "#B8F398",
+      "onSuccessContainer": "#072100",
+      "warning": "#7C5800",
+      "onWarning": "#FFFFFF",
+      "warningContainer": "#FFDEA7",
+      "onWarningContainer": "#271900",
+      "info": "#00639B",
+      "onInfo": "#FFFFFF",
+      "infoContainer": "#CEE5FF",
+      "onInfoContainer": "#001D33"
+    }
+  }
+}
