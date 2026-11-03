@@ -1,0 +1,114 @@
+-- F0 schema, part 4: grants per component role (SHAA-193).
+-- Source: ADR-0001 rev 15 section 7.2, data contract v0.7.10 sections 8.1, 8.1a, 8.1b.
+-- Roles (pr_api, pr_admin_api, pr_controller, pr_worker, pr_webhook) come from backend/db/bootstrap.sh.
+-- Column grants only on request / transaction_log / client / client_kredensial / client_webhook.
+-- An UPDATE that reads a column in WHERE or RETURNING needs SELECT on it, so CAS columns stay readable.
+
+-- All columns of a table except the listed ones, for column-level grants.
+CREATE FUNCTION pg_temp.kolom(p_tabel text, p_kecuali text[] DEFAULT ARRAY[]::text[]) RETURNS text
+LANGUAGE sql AS $$
+  SELECT string_agg(quote_ident(column_name), ', ' ORDER BY ordinal_position)
+    FROM information_schema.columns
+   WHERE table_schema = 'public' AND table_name = p_tabel AND column_name <> ALL (p_kecuali);
+$$;
+
+-- ================================================================ pr_api (webserver: downstream API and sync path)
+GRANT SELECT ON downstream_endpoint, downstream_pool, downstream_pool_rute, upstream_pool, provider, provider_config_versi,
+  endpoint_config_versi, endpoint_metadata_field, client_endpoint, provider_secret, upstream_attempt_daily TO pr_api;
+GRANT SELECT (client_id, nama, aktif, limiter_penolakan_burst, limiter_penolakan_isi_ulang_per_detik) ON client TO pr_api;
+GRANT SELECT (credential_id, client_id, jenis, kunci_hash, status, kedaluwarsa_at) ON client_kredensial TO pr_api;   -- authentication
+GRANT SELECT (client_id, aktif) ON client_webhook TO pr_api;
+DO $$ BEGIN
+  EXECUTE format('GRANT SELECT (%s) ON request TO pr_api', pg_temp.kolom('request', ARRAY['input_payload', 'metadata']));
+END $$;
+GRANT INSERT ON request TO pr_api;
+-- Client cancel (K-19) and the sync outcome; payload purge goes through fn_purge_p02.
+GRANT UPDATE (status, upstream_pool_id, dispatched_at, first_attempt_at, completed_at, attempt_count, final_kode_transaksi,
+  output_payload, sumber_hasil, failure_reason, cancel_reason, cancelled_by, webhook_status, not_before) ON request TO pr_api;
+GRANT SELECT, INSERT ON request_status_history TO pr_api;
+GRANT SELECT, INSERT, UPDATE ON transaction_log TO pr_api;   -- sync path; trigger R-03 limits updates
+GRANT EXECUTE ON FUNCTION fn_purge_p02(uuid), fn_entitas_nonaktif_pertama(uuid) TO pr_api;
+
+-- ================================================================ pr_worker
+GRANT SELECT ON downstream_endpoint, downstream_pool, downstream_pool_rute, upstream_pool, provider, provider_config_versi,
+  endpoint_config_versi, endpoint_metadata_field, provider_secret TO pr_worker;
+-- 8.1b: status columns only, no credential hash columns
+GRANT SELECT (client_id, aktif) ON client TO pr_worker;
+GRANT SELECT (credential_id, client_id, status) ON client_kredensial TO pr_worker;
+GRANT SELECT (client_id, aktif) ON client_webhook TO pr_worker;
+DO $$ BEGIN
+  EXECUTE format('GRANT SELECT (%s) ON request TO pr_worker', pg_temp.kolom('request', ARRAY['output_payload']));
+END $$;
+GRANT UPDATE (status, upstream_pool_id, first_attempt_at, completed_at, attempt_count, final_kode_transaksi, output_payload,
+  sumber_hasil, failure_reason, cancel_reason, cancelled_by, not_before, webhook_status) ON request TO pr_worker;
+GRANT SELECT, INSERT ON request_status_history TO pr_worker;
+GRANT SELECT, INSERT, UPDATE ON transaction_log TO pr_worker;
+GRANT SELECT ON upstream_attempt_daily TO pr_worker;
+GRANT EXECUTE ON FUNCTION fn_purge_p02(uuid), fn_entitas_nonaktif_pertama(uuid) TO pr_worker;   -- gate to cancelled (8.1b)
+
+-- ================================================================ pr_controller (dispatcher, sweepers, reconciler, jobs)
+GRANT SELECT ON downstream_endpoint, downstream_pool, downstream_pool_rute, upstream_pool, provider TO pr_controller;
+GRANT SELECT (client_id, aktif) ON client TO pr_controller;
+GRANT SELECT (credential_id, client_id, status) ON client_kredensial TO pr_controller;
+GRANT SELECT (client_id, aktif) ON client_webhook TO pr_controller;
+DO $$ BEGIN
+  EXECUTE format('GRANT SELECT (%s) ON request TO pr_controller', pg_temp.kolom('request', ARRAY['input_payload', 'output_payload', 'metadata']));
+END $$;
+GRANT UPDATE (status, upstream_pool_id, prioritas_efektif, dispatched_at, not_before, completed_at, attempt_count,
+  final_kode_transaksi, failure_reason, cancel_reason, cancelled_by, webhook_status) ON request TO pr_controller;
+GRANT SELECT, INSERT ON request_status_history TO pr_controller;
+DO $$ BEGIN
+  EXECUTE format('GRANT SELECT (%s) ON transaction_log TO pr_controller', pg_temp.kolom('transaction_log', ARRAY['nik', 'request_payload', 'response_payload']));
+END $$;
+GRANT UPDATE (archived_at) ON transaction_log TO pr_controller;
+GRANT SELECT, INSERT, UPDATE ON upstream_attempt_daily TO pr_controller;
+GRANT EXECUTE ON FUNCTION fn_purge_p02(uuid), fn_purge_p03(integer), fn_tutup_log_tidak_diketahui(uuid, integer),
+  fn_entitas_nonaktif_pertama(uuid), fn_ditahan_data_balikan(uuid) TO pr_controller;
+
+-- ================================================================ pr_webhook (webhook job in the controller)
+GRANT SELECT (request_id, webhook_status, webhook_attempt_count) ON request TO pr_webhook;   -- CAS claim 0 -> 1
+GRANT UPDATE (webhook_status, webhook_attempt_count, webhook_last_at, webhook_last_http_status, webhook_last_error) ON request TO pr_webhook;
+GRANT SELECT ON v_request_webhook TO pr_webhook;                       -- terminal async rows, output_payload, no input / metadata
+GRANT INSERT ON webhook_log TO pr_webhook;
+-- W-02: exactly eight columns of client_webhook, plus the allowlist
+GRANT SELECT (client_id, webhook_url, aktif, secret_versi, secret_ciphertext, secret_dek_terbungkus, secret_nonce, kek_id) ON client_webhook TO pr_webhook;
+GRANT SELECT ON webhook_domain_allowlist TO pr_webhook;
+
+-- ================================================================ pr_admin_api (admin API for the Web UI)
+-- Entity status flags (aktif) change only through fn_nonaktifkan_entitas / fn_aktifkan_entitas (audit + mass cancel).
+GRANT SELECT, INSERT ON client, provider, upstream_pool, downstream_pool, downstream_endpoint TO pr_admin_api;
+DO $$ BEGIN
+  EXECUTE format('GRANT UPDATE (%s) ON client TO pr_admin_api', pg_temp.kolom('client', ARRAY['client_id', 'aktif']));
+  EXECUTE format('GRANT UPDATE (%s) ON provider TO pr_admin_api', pg_temp.kolom('provider', ARRAY['provider_id', 'aktif']));
+  EXECUTE format('GRANT UPDATE (%s) ON upstream_pool TO pr_admin_api', pg_temp.kolom('upstream_pool', ARRAY['upstream_pool_id', 'aktif']));
+  EXECUTE format('GRANT UPDATE (%s) ON downstream_pool TO pr_admin_api', pg_temp.kolom('downstream_pool', ARRAY['downstream_pool_id', 'aktif']));
+  EXECUTE format('GRANT UPDATE (%s) ON downstream_endpoint TO pr_admin_api', pg_temp.kolom('downstream_endpoint', ARRAY['downstream_endpoint_id', 'aktif']));
+END $$;
+GRANT SELECT, INSERT, UPDATE, DELETE ON downstream_pool_rute, client_endpoint, endpoint_metadata_field TO pr_admin_api;
+GRANT SELECT, INSERT ON provider_config_versi, endpoint_config_versi TO pr_admin_api;
+-- Credentials: hash is write-only; status / dicabut_* only through fn_set_status_kredensial (EN-03)
+GRANT SELECT (credential_id, client_id, jenis, status, dicabut_at, dicabut_oleh, kedaluwarsa_at, dibuat_at, dibuat_oleh) ON client_kredensial TO pr_admin_api;
+GRANT INSERT ON client_kredensial TO pr_admin_api;
+GRANT UPDATE (kunci_hash, kedaluwarsa_at) ON client_kredensial TO pr_admin_api;
+-- Webhook config: secret columns write-only (W-03)
+GRANT SELECT (client_id, webhook_url, aktif, secret_versi, kek_id, diubah_at, diubah_oleh) ON client_webhook TO pr_admin_api;
+GRANT INSERT ON client_webhook TO pr_admin_api;
+GRANT UPDATE (webhook_url, aktif, secret_versi, secret_ciphertext, secret_dek_terbungkus, secret_nonce, kek_id, diubah_at, diubah_oleh) ON client_webhook TO pr_admin_api;
+-- Provider secrets: write-only
+GRANT SELECT (provider_id, nama_secret, secret_versi, diubah_at, diubah_oleh) ON provider_secret TO pr_admin_api;
+GRANT INSERT ON provider_secret TO pr_admin_api;
+GRANT UPDATE (secret_versi, secret_ciphertext, secret_dek_terbungkus, secret_nonce, kek_id, diubah_at, diubah_oleh) ON provider_secret TO pr_admin_api;
+GRANT SELECT, INSERT, UPDATE ON webhook_domain_allowlist, konfigurasi_platform TO pr_admin_api;
+GRANT SELECT, INSERT, UPDATE ON admin_user, admin_user_peran TO pr_admin_api;
+GRANT SELECT, INSERT, UPDATE, DELETE ON admin_session TO pr_admin_api;
+GRANT SELECT, INSERT ON audit_konfigurasi TO pr_admin_api;
+-- audit_akses: INSERT only; reading goes through fn_lihat_audit (E-06)
+GRANT INSERT ON audit_akses TO pr_admin_api;
+GRANT SELECT ON upstream_attempt_daily TO pr_admin_api;               -- usage and quota aggregates, no NIK
+GRANT SELECT ON v_request_tersamar, v_transaction_log_tersamar TO pr_admin_api;
+GRANT EXECUTE ON FUNCTION fn_set_status_kredensial(uuid, text, uuid, text), fn_nonaktifkan_entitas(text, uuid, uuid, text),
+  fn_aktifkan_entitas(text, uuid, uuid, text), fn_pratinjau_nonaktif(text, uuid), fn_request_milik_client(uuid),
+  fn_webhook_log_milik_client(uuid), fn_auditor_lihat_transaksi(uuid, text, uuid, text, text),
+  fn_auditor_cari_nik(uuid, text, text, timestamptz, timestamptz, text, text, text),
+  fn_ekspor_log_auditor(uuid, uuid, text, text, text, timestamptz, timestamptz, uuid, text, text, text),
+  fn_lihat_audit(uuid, timestamptz, timestamptz, integer, text, text), fn_punya_peran(uuid, text) TO pr_admin_api;
