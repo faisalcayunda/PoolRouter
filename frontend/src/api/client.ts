@@ -165,8 +165,23 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
     cariLogNik: (body, opts) =>
       request<LogPage>('/auditor/log/cari-nik', { method: 'POST' }, { ...opts, body }),
 
-    bukaPayload: (body, opts) =>
-      request<PayloadView>('/auditor/payload', { method: 'POST' }, { ...opts, body }),
+    bukaPayload: async (body, opts) => {
+      const response = await doFetch(
+        `${baseUrl}/auditor/payload`,
+        buildInit({ method: 'POST' }, { ...opts, body }),
+      );
+      const text = await response.text();
+      const parsed: unknown = text ? safeJson(text) : undefined;
+      if (!response.ok) throw new ApiError(response.status, problemFrom(response.status, parsed));
+      // R-16 / section 18.3: the payload is only safe to render if the *answer* is uncacheable.
+      // The request header alone does not bind an intermediary, so a payload without it is a
+      // contract breach and must not reach the screen.
+      const cacheControl = response.headers.get('Cache-Control') ?? '';
+      if (!/\bno-store\b/i.test(cacheControl)) {
+        throw new ApiError(502, { status: 502, kode: 'payload_bukan_no_store' });
+      }
+      return parsed as PayloadView;
+    },
 
     async eksporLog(body, opts = {}) {
       const response = await doFetch(

@@ -48,7 +48,9 @@ describe('admin API client', () => {
   it('opens a payload with no-store and the reason in a header (section 18.3)', async () => {
     const fetchImpl = vi
       .fn()
-      .mockResolvedValue(jsonResponse({ input: {}, metadata: {}, hasil: {} }));
+      .mockResolvedValue(
+        jsonResponse({ input: {}, metadata: {}, hasil: {} }, 200, { 'Cache-Control': 'no-store' }),
+      );
     await client(fetchImpl).bukaPayload(
       { kode_transaksi: 'TRX-2026-0042', alasan: 'Tindak lanjut aduan W-2026-09' },
       { alasan: 'Tindak lanjut aduan W-2026-09' },
@@ -63,6 +65,44 @@ describe('admin API client', () => {
     expect(init.cache).toBe('no-store');
     expect(new Headers(init.headers).get('Cache-Control')).toBe('no-store');
     expect(new Headers(init.headers).get('X-Alasan')).toBe('Tindak lanjut aduan W-2026-09');
+  });
+
+  it('fails a payload response that omits Cache-Control: no-store (R-16)', async () => {
+    // The request asks for `no-store`, but the contract is only kept if the *response* says it
+    // too: a caching intermediary that ignores the request header would otherwise store the
+    // payload. An answer without it is a contract breach and must reject, not resolve.
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValue(
+        jsonResponse({ input: { nik: '3175000000000001' }, metadata: {}, hasil: {} }),
+      );
+
+    await expect(
+      client(fetchImpl).bukaPayload(
+        { kode_transaksi: 'TRX-2026-0042', alasan: 'Tindak lanjut aduan W-2026-09' },
+        { alasan: 'Tindak lanjut aduan W-2026-09' },
+      ),
+    ).rejects.toSatisfy(
+      (error: unknown) => error instanceof ApiError && error.kode === 'payload_bukan_no_store',
+    );
+  });
+
+  it('accepts a payload response that states no-store', async () => {
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValue(
+        jsonResponse(
+          { input: { nik: '3175000000000001' }, metadata: {}, hasil: { status: 'ok' } },
+          200,
+          { 'Cache-Control': 'no-store' },
+        ),
+      );
+
+    const view = await client(fetchImpl).bukaPayload(
+      { kode_transaksi: 'TRX-2026-0042', alasan: 'Tindak lanjut aduan W-2026-09' },
+      { alasan: 'Tindak lanjut aduan W-2026-09' },
+    );
+    expect(view.hasil).toEqual({ status: 'ok' });
   });
 
   it('carries the auditor reason in a header, never in the URL', async () => {

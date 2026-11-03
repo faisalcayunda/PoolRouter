@@ -1,6 +1,6 @@
 import { lazy, Suspense, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
-import { RoleProvider } from '../features/common/RoleContext';
+import { RoleProvider, type AdminRole } from '../features/common/RoleContext';
 import { LogPageScreen } from '../features/log/LogPageScreen';
 
 /*
@@ -52,10 +52,29 @@ export function ScreenForPath({ pathname }: { pathname: string }): ReactNode {
 /**
  * Screens sit under the role context so a shared layout does not re-read the session per screen.
  * `null` = no role-specific affordances until the session hook lands (handoff spec section 18.1).
+ *
+ * Until SHAA-202/SHAA-196 land the session hook, the assembled app has no way to assume a role,
+ * so the auditor screens could never be driven end to end. A `?peran=` query parameter pins the
+ * role for exactly that: the e2e suite sets it and nothing else does. It is a preview-only seam,
+ * not a substitute for the session — the API stays the last guard for every role-gated action
+ * (section 18.1), so a forged role buys no data from the server.
  */
-export function RoutedScreens({ pathname }: { pathname: string }): ReactNode {
+const ROLES: readonly AdminRole[] = ['platform_admin', 'operator', 'auditor'];
+
+function roleFromSearch(search: string): AdminRole | null {
+  const value = new URLSearchParams(search).get('peran');
+  return ROLES.find((role) => role === value) ?? null;
+}
+
+export function RoutedScreens({
+  pathname,
+  search = window.location.search,
+}: {
+  pathname: string;
+  search?: string;
+}): ReactNode {
   return (
-    <RoleProvider current={null}>
+    <RoleProvider current={roleFromSearch(search)}>
       <Suspense fallback={null}>
         <ScreenForPath pathname={pathname} />
       </Suspense>

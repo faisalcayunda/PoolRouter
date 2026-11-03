@@ -59,6 +59,8 @@ async function stubAuditorApi(page: Page): Promise<Recorded[]> {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
+        // R-16: the payload answer must state `no-store`; the client rejects one that omits it.
+        headers: { 'cache-control': 'no-store' },
         // Shape follows `PayloadView` in the admin OpenAPI: the four identity fields are required,
         // and the screen formats `requested_at`, so an incomplete stub breaks the render.
         body: JSON.stringify({

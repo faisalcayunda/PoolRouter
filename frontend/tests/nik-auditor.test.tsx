@@ -143,6 +143,43 @@ describe('payload dialog', () => {
     });
   });
 
+  it('keeps the NIK out of every persistent store and drops the payload on close', async () => {
+    // Section 18.3: the payload lives in the dialog only. Nothing about it — and no NIK — may be
+    // written to localStorage, sessionStorage or IndexedDB, and closing the dialog must forget it.
+    const client = stubClient({ bukaPayload: vi.fn().mockResolvedValue(payload) });
+    const { unmount } = renderWithI18n(
+      <PayloadDialog
+        isOpen
+        kodeTransaksi="TRX-2026-0042"
+        initialReason=""
+        client={client}
+        onClose={() => {}}
+      />,
+    );
+
+    const dialog = await screen.findByRole('dialog');
+    await userEvent.type(
+      within(dialog).getByLabelText('Alasan (minimal 10 karakter)'),
+      'Cek aduan W-2026-07',
+    );
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Buka payload' }));
+
+    // The NIK did render inside the Input JSON block, so the assertions below are not vacuous.
+    expect(await screen.findByText('Log transaksi')).toBeInTheDocument();
+    expect(screen.getByRole('dialog').textContent).toContain(NIK);
+
+    expect(localStorage.length).toBe(0);
+    expect(sessionStorage.length).toBe(0);
+    // jsdom ships no IndexedDB; the e2e runs the same check in a real browser
+    // (`e2e/log-auditor.spec.ts`), so here it is only asserted where the API exists.
+    if (typeof indexedDB !== 'undefined') {
+      expect(await indexedDB.databases()).toEqual([]);
+    }
+
+    unmount();
+    expect(document.body.textContent).not.toContain(NIK);
+  });
+
   it('reports a purged payload as a normal outcome, not a retryable error', async () => {
     const client = stubClient({
       bukaPayload: vi
