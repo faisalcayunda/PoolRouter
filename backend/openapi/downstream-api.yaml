@@ -1075,9 +1075,9 @@ components:
     ProblemKodeDown:
       type: string
       description: |-
-        Kode untuk klien downstream. Menambah nilai di sini mengubah daftar kode yang
-        sudah dibekukan dan memerlukan keputusan versi API; kode khusus admin tidak
-        boleh ditambahkan ke enum ini.
+        Kode untuk klien downstream. Daftar kode bersifat tertutup: klien tidak boleh
+        menganggap kode lain mungkin muncul, dan kode baru hanya dikirim bersama versi
+        API baru.
       enum:
       - tidak_terautentikasi
       - token_dibatasi

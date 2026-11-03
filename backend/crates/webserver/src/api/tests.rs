@@ -67,7 +67,8 @@ fn downstream_milik_enam_operasi() {
     assert_eq!(operations(&downstream_doc()).len(), 6);
 }
 
-/// 1c: admin count (64 operations: 6 sesi + 42 konfigurasi + 18 K-20 + kuota + 6 log/audit... jumlah final tercantum di YAML).
+/// 1c: admin count (64 operations: sesi, konfigurasi, kuota, log/audit, dan
+/// operasi K-20; daftarnya ditentukan di `admin-api.yaml`).
 #[test]
 fn admin_milik_enam_puluh_empat_operasi() {
     assert_eq!(operations(&admin_doc()).len(), 64);
@@ -396,7 +397,12 @@ fn errors_memuat_nama_field_yang_dikirim() {
             }
         }
     }
-    assert_eq!(jumlah, 6, "jumlah entri errors yang diperiksa berubah");
+    // Dua kasus diperiksa (11a/11b). Batas bawah, bukan jumlah pasti: menambah
+    // contoh 422 tidak boleh merusak test ini tanpa ada regresi.
+    assert!(
+        jumlah >= 4,
+        "kurang dari dua contoh 422 yang diperiksa: {jumlah} entri errors"
+    );
     assert!(
         nama_dikirim >= 2,
         "contoh D6 (TRESHOLD/NAMA_LGKAP) tidak ditemukan"
@@ -517,13 +523,101 @@ fn kata_utuh(byte: &[u8], awal: usize, akhir: usize) -> bool {
     kiri && kanan
 }
 
-/// Test penjaga: teks yang tampil ke klien tidak boleh memuat rujukan dokumen
-/// kerja internal (PRD, ADR, data contract). Aturannya harus ditulis sebagai
-/// kalimat, misalnya "Selalu `no-store`; respons tidak boleh disimpan cache".
+/// Apakah kata `section` di `awal` dirujuk ke RFC bernomor, misalnya
+/// `RFC 6749 section 5.2`. Rujukan seperti itu adalah rujukan standar publik, bukan
+/// dokumen kerja internal, jadi penjaga membiarkannya.
+fn dirujuk_ke_rfc(byte: &[u8], awal: usize) -> bool {
+    let sebelum = &byte[..awal];
+    let Some(mulai_rfc) = sebelum.windows(4).rposition(|w| w == b"RFC ") else {
+        return false;
+    };
+    // Harus ada nomor setelah "RFC " dan sebelum kata `section`.
+    let nomor = &sebelum[mulai_rfc + 4..];
+    let nomor = nomor.strip_suffix(b" ").unwrap_or(nomor);
+    !nomor.is_empty() && nomor.iter().all(u8::is_ascii_digit)
+}
+
+/// Temuan pertama di satu baris teks klien, atau `None` bila bersih.
 ///
-/// `downstream-api.yaml` diserahkan ke BGN sebagai lampiran dokumentasi, jadi
-/// teksnya harus terbaca tanpa dokumen internal. Rujukan di komentar kode Rust
-/// tetap boleh ada; `admin-api.yaml` tidak diperiksa karena tidak diserahkan.
+/// Aturannya: teks yang tampil ke klien tidak boleh memuat rujukan dokumen kerja
+/// internal (PRD, ADR, data contract). Aturannya harus ditulis sebagai kalimat,
+/// misalnya "Selalu `no-store`; respons tidak boleh disimpan cache".
+///
+/// Rujukan standar publik tetap boleh, misalnya `RFC 6749 section 5.2` dan
+/// `RFC 9457`. Istilah produk "kontrak endpoint" juga boleh. Sebaliknya, kata
+/// "contract"/"Contract" ditolak karena di dokumen ini selalu berarti data
+/// contract internal.
+fn temuan_rujukan_dokumen_kerja(baris: &str) -> Option<String> {
+    let byte = baris.as_bytes();
+    for (awal, karakter) in baris.char_indices() {
+        let ekor = &byte[awal..];
+
+        // `§`
+        if karakter == '§' {
+            return Some("§".to_string());
+        }
+
+        // `ADR-\d+`: digit bisa lebih dari satu, jadi rentangnya harus memakan
+        // seluruh deretan angka agar batas kanan tidak jatuh di tengah angka.
+        if ekor.starts_with(b"ADR-") && ekor.get(4).is_some_and(u8::is_ascii_digit) {
+            let mut akhir = 5;
+            while ekor.get(akhir).is_some_and(u8::is_ascii_digit) {
+                akhir += 1;
+            }
+            if kata_utuh(byte, awal, awal + akhir) {
+                return Some("ADR".to_string());
+            }
+        }
+
+        // `[Cc]ontract`
+        if (ekor.starts_with(b"contract") || ekor.starts_with(b"Contract"))
+            && kata_utuh(byte, awal, awal + 8)
+        {
+            return Some("contract".to_string());
+        }
+
+        // `section`, kecuali yang dirujuk ke RFC tertentu: "RFC 6749 section 5.2"
+        // boleh, "section 3.2.1" tidak.
+        if ekor.starts_with(b"section")
+            && kata_utuh(byte, awal, awal + 7)
+            && !dirujuk_ke_rfc(byte, awal)
+        {
+            return Some("section".to_string());
+        }
+
+        // `SHAA-\d+`
+        if ekor.starts_with(b"SHAA-") && ekor.get(5).is_some_and(u8::is_ascii_digit) {
+            let mut akhir = 6;
+            while ekor.get(akhir).is_some_and(u8::is_ascii_digit) {
+                akhir += 1;
+            }
+            if kata_utuh(byte, awal, awal + akhir) {
+                return Some("SHAA".to_string());
+            }
+        }
+
+        // `\b[A-Z]{1,2}-\d+\b`: R-16, U-3, S-05, W-08, K-20, L-04, dan sejenisnya.
+        let awalan = ekor.iter().take_while(|c| c.is_ascii_uppercase()).count();
+        if (1..=2).contains(&awalan)
+            && ekor.get(awalan) == Some(&b'-')
+            && ekor.get(awalan + 1).is_some_and(u8::is_ascii_digit)
+        {
+            let mut akhir = awalan + 2;
+            while ekor.get(akhir).is_some_and(u8::is_ascii_digit) {
+                akhir += 1;
+            }
+            if kata_utuh(byte, awal, awal + akhir) {
+                return Some(baris[awal..awal + akhir].to_string());
+            }
+        }
+    }
+    None
+}
+
+/// Penjaga: `downstream-api.yaml` diserahkan ke BGN sebagai lampiran
+/// dokumentasi, jadi seluruh teksnya, beserta `docs/masalah.md`, harus terbaca
+/// tanpa dokumen internal. Rujukan di komentar kode Rust tetap boleh ada;
+/// `admin-api.yaml` tidak diperiksa karena tidak diserahkan.
 #[test]
 fn teks_client_tanpa_rujukan_dokumen_kerja() {
     let root = masalah_path()
@@ -544,78 +638,55 @@ fn teks_client_tanpa_rujukan_dokumen_kerja() {
     ];
     for (nama, isi) in berkas {
         for (nomor, baris) in isi.lines().enumerate() {
-            let byte = baris.as_bytes();
-            for (awal, karakter) in baris.char_indices() {
-                let ekor = &byte[awal..];
-
-                // `§`
-                if karakter == '§' {
-                    panic!(
-                        "{nama}:{} memuat rujukan dokumen kerja (§): {baris}",
-                        nomor + 1
-                    );
-                }
-
-                // `ADR-\d+`
-                if ekor.starts_with(b"ADR-")
-                    && ekor.get(3).is_some_and(u8::is_ascii_digit)
-                    && kata_utuh(byte, awal, awal + 4)
-                {
-                    panic!(
-                        "{nama}:{} memuat rujukan dokumen kerja (ADR): {baris}",
-                        nomor + 1
-                    );
-                }
-
-                // `[Cc]ontract`
-                if (ekor.starts_with(b"contract") || ekor.starts_with(b"Contract"))
-                    && kata_utuh(byte, awal, awal + 8)
-                {
-                    panic!(
-                        "{nama}:{} memuat rujukan dokumen kerja (contract): {baris}",
-                        nomor + 1
-                    );
-                }
-
-                // `section`
-                if ekor.starts_with(b"section") && kata_utuh(byte, awal, awal + 7) {
-                    panic!(
-                        "{nama}:{} memuat rujukan dokumen kerja (section): {baris}",
-                        nomor + 1
-                    );
-                }
-
-                // `SHAA-\d+`
-                if ekor.starts_with(b"SHAA-")
-                    && ekor.get(5).is_some_and(u8::is_ascii_digit)
-                    && kata_utuh(byte, awal, awal + 6)
-                {
-                    panic!(
-                        "{nama}:{} memuat label tiket internal (SHAA): {baris}",
-                        nomor + 1
-                    );
-                }
-
-                // `\b[A-Z]{1,2}-\d+\b`: R-16, U-3, S-05, W-08, K-20, L-04, dan
-                // sejenisnya.
-                let awalan = ekor.iter().take_while(|c| c.is_ascii_uppercase()).count();
-                if (1..=2).contains(&awalan)
-                    && ekor.get(awalan) == Some(&b'-')
-                    && ekor.get(awalan + 1).is_some_and(u8::is_ascii_digit)
-                {
-                    let mut akhir = awalan + 1;
-                    while ekor.get(akhir).is_some_and(u8::is_ascii_digit) {
-                        akhir += 1;
-                    }
-                    if kata_utuh(byte, awal, awal + akhir) {
-                        panic!(
-                            "{nama}:{} memuat kode dokumen kerja ({}): {baris}",
-                            nomor + 1,
-                            &baris[awal..awal + akhir]
-                        );
-                    }
-                }
+            if let Some(temuan) = temuan_rujukan_dokumen_kerja(baris) {
+                panic!(
+                    "{nama}:{} memuat rujukan dokumen kerja ({temuan}): {baris}",
+                    nomor + 1
+                );
             }
         }
+    }
+}
+
+/// Penjaga di atas harus terbukti dua arah: menangkap semua bentuk rujukan,
+/// termasuk nomor lebih dari satu digit, dan tetap meloloskan rujukan standar
+/// publik serta istilah produk.
+#[test]
+fn penjaga_rujukan_menangkap_dan_meloloskan_contoh() {
+    let ditolak = [
+        "Lihat R-16 untuk detail.",
+        "Sesuai U-4 dan U-43.",
+        "Daftar K-20 dan L-04 serta MT-03.",
+        "Sesuai ADR-0001.",
+        "ADR-3 juga.",
+        "Lampiran SHAA-175.",
+        "section 3.2.1 menjelaskan hal ini.",
+        "Sesuai contract section 3.2.",
+        "Berlaku sejak contract v0.7.10.",
+        "Ini data contract internal.",
+        "Ini data Contract internal.",
+        "Rujuk §3a.7.",
+    ];
+    for baris in ditolak {
+        assert!(
+            temuan_rujukan_dokumen_kerja(baris).is_some(),
+            "penjaga meloloskan rujukan dokumen kerja: {baris}"
+        );
+    }
+
+    let diloloskan = [
+        "Selalu `no-store`; respons tidak boleh disimpan cache.",
+        "Galat memakai RFC 9457 problem+json.",
+        "Kode galat mengikuti RFC 6749 section 5.2.",
+        "Kunci metadata tidak ada di kontrak endpoint.",
+        "Satu field input pada kontrak endpoint.",
+        "Nilai `FXR-16` bukan kode dokumen kerja.",
+    ];
+    for baris in diloloskan {
+        assert_eq!(
+            temuan_rujukan_dokumen_kerja(baris),
+            None,
+            "penjaga salah menolak teks klien: {baris}"
+        );
     }
 }

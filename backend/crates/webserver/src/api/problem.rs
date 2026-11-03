@@ -15,9 +15,14 @@ use super::enums::{ApiStatus, JenisObjek};
 
 const ANCHOR: &str = "https://github.com/faisalcayunda/PoolRouter/blob/main/docs/masalah.md#";
 
-/// Kode untuk klien downstream. Menambah nilai di sini mengubah daftar kode yang
-/// sudah dibekukan dan memerlukan keputusan versi API; kode khusus admin tidak
-/// boleh ditambahkan ke enum ini.
+// Catatan internal (sengaja bukan doc comment, karena doc comment ikut ke YAML
+// yang diserahkan ke BGN): menambah nilai di enum ini membekukan ulang daftar kode
+// dan memerlukan keputusan versi API; kode khusus admin tidak boleh ditambahkan ke
+// enum ini.
+
+/// Kode untuk klien downstream. Daftar kode bersifat tertutup: klien tidak boleh
+/// menganggap kode lain mungkin muncul, dan kode baru hanya dikirim bersama versi
+/// API baru.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum ProblemKodeDown {
