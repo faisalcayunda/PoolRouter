@@ -31,7 +31,10 @@ pub struct DownstreamDoc;
     responses((status = 501, description = "Not implemented", body = Problem, content_type = "application/problem+json"))
 )]
 async fn enqueue_async() -> (StatusCode, Json<Problem>) {
-    (StatusCode::NOT_IMPLEMENTED, Json(Problem::not_implemented()))
+    (
+        StatusCode::NOT_IMPLEMENTED,
+        Json(Problem::not_implemented()),
+    )
 }
 
 pub fn router() -> OpenApiRouter {

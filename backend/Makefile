@@ -26,7 +26,7 @@ export CARGO_TERM_COLOR ?= never
 
 ifeq ($(RUNNER),podman)
 RUN = podman run --rm --memory $(CONTAINER_MEMORY) $(if $(CONTAINER_LABEL),--label $(CONTAINER_LABEL)) \
-	-v "$(CURDIR)":/work -w /work \
+	-v "$(CURDIR)":/work -v "$(CURDIR)/../docs":/docs -w /work \
 	-e CARGO_HOME=/work/.cache/cargo -e RUSTUP_HOME=/work/.cache/rustup -e CARGO_TERM_COLOR=$(CARGO_TERM_COLOR) \
 	-e CARGO_BUILD_JOBS=$(JOBS) -e SQLX_OFFLINE=true \
 	-e PATH=/work/.cache/cargo/bin:/usr/local/cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
