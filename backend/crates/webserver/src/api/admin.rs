@@ -181,47 +181,70 @@ pub struct SecretNilai {
 }
 
 /// Upstream pool configuration body (US-04/05; KP-01/KP-02 ranges enforced
-/// server-side with 422).
+/// server-side with 422, SHAA-280).
+///
+/// Every field carries `minimum`/`maximum` plus a `default`, except
+/// `provider_id` (chosen by the caller) and `alasan` (context, not a setting):
+/// KP-01 (ADR-0001 section 5a) for the quota/retry parameters, Sisipan H (US-22)
+/// for `jeda_min`/`jeda_maks`/`ambang_berdampingan`, which has no range in the
+/// ADR — those three bounds and defaults are the practical ceilings decided for
+/// SHAA-280 and are recorded in `backend/openapi/DESIGN.md` section 3.2.
+/// The `example` values are deliberately values a caller could send, not the
+/// defaults: they coincide with `default` only where the ADR and the
+/// `upstream_pool` column defaults agree, so an example can never be read as
+/// "the value the server picks when the field is absent". `e2e_upstream_pool`
+/// in `api/tests.rs` asserts that rule on the generated document.
 #[derive(Debug, Clone, Deserialize, ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct UpstreamPoolConfig {
     pub provider_id: Uuid,
-    #[schema(minimum = 1, example = 500)]
+    /// Daily upstream quota, 1..=1_000_000. Default 500 (ADR-0001 §5a KP-01).
+    #[schema(minimum = 1, maximum = 1_000_000, default = 500, example = 750)]
     pub kuota_harian: i64,
-    #[schema(minimum = 1, example = 60)]
+    /// Upstream rate limit per hour, 1..=10_000. Default 60 (ADR-0001 §5a KP-01).
+    #[schema(minimum = 1, maximum = 10_000, default = 60, example = 120)]
     pub rate_limit_per_jam: i64,
-    /// Sync portion of the pool, 0.0..1.0.
-    #[schema(minimum = 0, maximum = 1, example = 0.1)]
+    /// Sync portion of the pool, 0.0..1.0. Default 0.2 (ADR-0001 §5a KP-01:
+    /// `porsi_sync_maks`).
+    #[schema(minimum = 0, maximum = 1, default = 0.2, example = 0.1)]
     pub porsi_sync: f64,
-    /// 0.001..0.200 (KP-01).
-    #[schema(minimum = 0.001, maximum = 0.2, example = 0.05)]
+    /// Quota reservation margin, 0.001..0.200 (KP-01). Default 0.01.
+    #[schema(minimum = 0.001, maximum = 0.2, default = 0.01, example = 0.05)]
     pub margin_kuota: f64,
-    /// 1..5 attempts (KP-01).
-    #[schema(minimum = 1, maximum = 5, example = 3)]
+    /// Attempts per request, 1..=5 (KP-01). Default 3.
+    #[schema(minimum = 1, maximum = 5, default = 3, example = 2)]
     pub batas_percobaan: i64,
-    #[schema(example = 2)]
+    /// Backoff base in seconds, 1..=300 (KP-01). Default 5.
+    #[schema(minimum = 1, maximum = 300, default = 5, example = 2)]
     pub retry_backoff_base_detik: i64,
-    #[schema(example = 60)]
+    /// Backoff cap in seconds, 1..=3600, and never below
+    /// `retry_backoff_base_detik` (cross-field 422). Default 300.
+    #[schema(minimum = 1, maximum = 3600, default = 300, example = 60)]
     pub retry_backoff_cap_detik: i64,
-    #[schema(example = 0.5)]
+    /// Retry budget as a ratio of `kuota_harian`, 0.0..=0.5 (KP-01).
+    /// Default 0.1.
+    #[schema(minimum = 0, maximum = 0.5, default = 0.1, example = 0.5)]
     pub retry_rasio: f64,
-    #[schema(example = 10)]
+    /// Retry budget floor per hour, 0..=10_000 (KP-01). Default 20.
+    #[schema(minimum = 0, maximum = 10_000, default = 20, example = 10)]
     pub retry_min_per_jam: i64,
     pub jendela_kuota: JendelaKuota,
-    /// Hour of the period reset (0..23), interpreted in `reset_kuota_zona`.
-    #[schema(minimum = 0, maximum = 23, example = 0)]
+    /// Hour of the period reset (0..=23), interpreted in `reset_kuota_zona`.
+    #[schema(minimum = 0, maximum = 23, default = 0, example = 0)]
     pub reset_kuota_jam: i64,
     /// IANA time zone; the offset is pinned to this zone (KP-02).
-    #[schema(example = "Asia/Jakarta")]
+    #[schema(default = "Asia/Jakarta", example = "Asia/Jayapura")]
     pub reset_kuota_zona: String,
-    /// Minimum inter-request delay in milliseconds.
-    #[schema(example = 200)]
+    /// Minimum inter-request delay in milliseconds, 0..=60_000. Default 200.
+    #[schema(minimum = 0, maximum = 60_000, default = 200, example = 250)]
     pub jeda_min: i64,
-    /// Maximum inter-request delay in milliseconds.
-    #[schema(example = 800)]
+    /// Maximum inter-request delay in milliseconds, 0..=60_000, and never
+    /// below `jeda_min` (cross-field 422). Default 800.
+    #[schema(minimum = 0, maximum = 60_000, default = 800, example = 1500)]
     pub jeda_maks: i64,
-    /// Concurrency threshold (`ambang berdampingan`).
-    #[schema(example = 4)]
+    /// Concurrency threshold (`ambang berdampingan`, US-22), 1..=100.
+    /// Default 4.
+    #[schema(minimum = 1, maximum = 100, default = 4, example = 8)]
     pub ambang_berdampingan: i64,
     /// Reason; required on update, and required with `kalender` (source of
     /// certainty of the calendar window).
@@ -239,6 +262,8 @@ pub struct UpstreamPoolConfig {
 pub struct UpstreamPool {
     pub upstream_pool_id: Uuid,
     pub provider_id: Uuid,
+    // Stored values, so no `default` here: a read never reports what a create
+    // would have used (SHAA-280 scopes the KP-01 ranges/defaults to the body).
     #[schema(minimum = 1, example = 500)]
     pub kuota_harian: i64,
     #[schema(minimum = 1, example = 60)]

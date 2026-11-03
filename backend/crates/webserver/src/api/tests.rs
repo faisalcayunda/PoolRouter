@@ -697,3 +697,139 @@ fn penjaga_rujukan_menangkap_dan_meloloskan_contoh() {
         );
     }
 }
+
+/// KP-01 table as decided for SHAA-280 (ADR-0001 section 5a "Parameter per
+/// upstream pool dan rentangnya"). Kept as the expected values in one place so
+/// a later edit to `UpstreamPoolConfig` cannot silently drop a bound.
+const KP01: &[(&str, Option<f64>, Option<f64>, &str)] = &[
+    ("kuota_harian", Some(1.0), Some(1_000_000.0), "500"),
+    ("rate_limit_per_jam", Some(1.0), Some(10_000.0), "60"),
+    ("porsi_sync", Some(0.0), Some(1.0), "0.2"),
+    ("margin_kuota", Some(0.001), Some(0.2), "0.01"),
+    ("batas_percobaan", Some(1.0), Some(5.0), "3"),
+    ("retry_backoff_base_detik", Some(1.0), Some(300.0), "5"),
+    ("retry_backoff_cap_detik", Some(1.0), Some(3600.0), "300"),
+    ("retry_rasio", Some(0.0), Some(0.5), "0.1"),
+    ("retry_min_per_jam", Some(0.0), Some(10_000.0), "20"),
+    ("jeda_min", Some(0.0), Some(60_000.0), "200"),
+    ("jeda_maks", Some(0.0), Some(60_000.0), "800"),
+    ("ambang_berdampingan", Some(1.0), Some(100.0), "4"),
+];
+
+fn angka(value: &Value) -> Option<f64> {
+    value.as_f64()
+}
+
+/// SHAA-280 AC 1/2: every settable field of the upstream pool body carries the
+/// KP-01 range and a default, and the emitted `example` is never the emitted
+/// `default` (the old examples made a default look like a stored value).
+#[test]
+fn e2e_upstream_pool() {
+    let doc = admin_doc();
+    let skema = &doc["components"]["schemas"]["UpstreamPoolConfig"];
+    let properti = skema["properties"]
+        .as_object()
+        .expect("properties UpstreamPoolConfig");
+    for (nama, _, _, _) in KP01 {
+        assert!(
+            properti.contains_key(*nama),
+            "field {nama} hilang dari UpstreamPoolConfig"
+        );
+    }
+    for (nama, minimum, maximum, default) in KP01 {
+        let field = &properti[*nama];
+        assert_eq!(
+            angka(&field["minimum"]),
+            *minimum,
+            "{nama}: minimum tidak sesuai KP-01: {field}"
+        );
+        assert_eq!(
+            angka(&field["maximum"]),
+            *maximum,
+            "{nama}: maximum tidak sesuai KP-01: {field}"
+        );
+        assert_eq!(
+            angka(&field["default"]),
+            Some(default.parse::<f64>().expect("default numerik")),
+            "{nama}: default tidak sesuai KP-01: {field}"
+        );
+        assert_ne!(
+            angka(&field["example"]),
+            angka(&field["default"]),
+            "{nama}: example sama dengan default, mudah terbaca sebagai default"
+        );
+    }
+    // `porsi_sync` is a fraction, so its `default` must stay a JSON number.
+    assert!(
+        properti["porsi_sync"]["default"].is_number(),
+        "porsi_sync.default bukan angka: {}",
+        properti["porsi_sync"]
+    );
+
+    // Fields without a KP-01 range still get a bound and a default.
+    assert_eq!(
+        angka(&properti["reset_kuota_jam"]["minimum"]),
+        Some(0.0),
+        "reset_kuota_jam tanpa minimum"
+    );
+    assert_eq!(
+        angka(&properti["reset_kuota_jam"]["maximum"]),
+        Some(23.0),
+        "reset_kuota_jam tanpa maximum"
+    );
+    assert!(properti["reset_kuota_jam"]["default"].is_number());
+    let zona = &properti["reset_kuota_zona"];
+    assert!(
+        zona["default"].as_str().is_some_and(|z| !z.is_empty()),
+        "reset_kuota_zona tanpa default: {zona}"
+    );
+    assert_ne!(
+        zona["example"], zona["default"],
+        "reset_kuota_zona: example sama dengan default"
+    );
+
+    // `provider_id` is chosen by the caller and `alasan` is context, not a
+    // setting: neither may advertise a default.
+    for tanpa_default in ["provider_id", "alasan"] {
+        assert!(
+            properti[tanpa_default].get("default").is_none(),
+            "{tanpa_default} tidak boleh punya default"
+        );
+    }
+
+    // The 422 is still advertised on both write operations.
+    for (method, op) in operations(&doc) {
+        if op["operationId"] != "createUpstreamPool" && op["operationId"] != "updateUpstreamPool" {
+            continue;
+        }
+        let status: Vec<&str> = op["responses"]
+            .as_object()
+            .expect("responses")
+            .keys()
+            .map(String::as_str)
+            .collect();
+        assert!(
+            status.contains(&"422"),
+            "{method}: {op:?} tanpa respons 422"
+        );
+    }
+}
+
+/// The read entity mirrors stored values, so it must not advertise a default
+/// (SHAA-280 scopes KP-01 ranges/defaults to the write body).
+#[test]
+fn upstream_pool_tanpa_default() {
+    let doc = admin_doc();
+    let properti = doc["components"]["schemas"]["UpstreamPool"]["properties"]
+        .as_object()
+        .expect("properties UpstreamPool");
+    let dengan_default: Vec<&str> = properti
+        .iter()
+        .filter(|(_, field)| field.get("default").is_some())
+        .map(|(nama, _)| nama.as_str())
+        .collect();
+    assert!(
+        dengan_default.is_empty(),
+        "UpstreamPool tidak boleh punya default: {dengan_default:?}"
+    );
+}

@@ -134,6 +134,26 @@ Sumber umum: peran PA (hak ubah), audit konfigurasi di setiap tulis (siapa, kapa
 | `listUpstreamPools` / `getUpstreamPool` | `GET /admin/v1/upstream-pools`, `…/{id}` | PA | — | 200; 404 |
 | `createUpstreamPool` / `updateUpstreamPool` | `POST /admin/v1/upstream-pools`, `PUT …/{id}` | PA | `provider_id`, `kuota_harian`, `rate_limit_per_jam`, `porsi_sync`, `margin_kuota` (0,001–0,200), `batas_percobaan` (1–5), `retry_backoff_base_detik`, `retry_backoff_cap_detik`, `retry_rasio`, `retry_min_per_jam`, `jendela_kuota` (`bergulir_24j`\|`kalender`), `reset_kuota_jam`, `reset_kuota_zona` (IANA), `jeda_min`, `jeda_maks`, `ambang_berdampingan`, `alasan` (wajib saat ubah) | 201/200; 422 di luar rentang KP-01, offset tetap pada zona, `kalender` tanpa sumber kepastian di `alasan`; `reset_kuota_*` berlaku di akhir periode (KP-02) |
 | `listDownstreamPools` / `getDownstreamPool` | `GET /admin/v1/downstream-pools`, `…/{id}` | PA | — | 200; 404 |
+
+`UpstreamPoolConfig` membawa rentang dan `default` eksplisit sejak SHAA-280 (KP-01 untuk parameter retry/kuota, Sisipan H untuk `jeda_*`/`ambang_berdampingan`; ADR-0001 §5a). Handler masih stub: 422 menyusul di hand-off SHAA-175.
+
+| Field | `minimum`–`maximum` | `default` |
+|---|---|---|
+| `kuota_harian` | 1–1.000.000 | 500 |
+| `rate_limit_per_jam` | 1–10.000 | 60 |
+| `porsi_sync` | 0–1 | 0,2 |
+| `margin_kuota` | 0,001–0,200 | 0,01 |
+| `batas_percobaan` | 1–5 | 3 |
+| `retry_backoff_base_detik` | 1–300 | 5 |
+| `retry_backoff_cap_detik` | 1–3600 (≥ `retry_backoff_base_detik`) | 300 |
+| `retry_rasio` | 0–0,5 | 0,1 |
+| `retry_min_per_jam` | 0–10.000 | 20 |
+| `reset_kuota_jam` | 0–23 | 0 |
+| `jeda_min` | 0–60.000 | 200 |
+| `jeda_maks` | 0–60.000 (≥ `jeda_min`) | 800 |
+| `ambang_berdampingan` | 1–100 | 4 |
+
+`reset_kuota_zona` hanya punya `default: Asia/Jakarta` (tanpa rentang). `provider_id` dan `alasan` tanpa `default`. `example` sengaja berbeda dari `default` agar tidak terbaca sebagai nilai yang dipakai server saat field kosong; `UpstreamPool` (entitas baca) tidak memuat `default`. Diuji `e2e_upstream_pool` dan `upstream_pool_tanpa_default` (`backend/crates/webserver/src/api/tests.rs`).
 | `createDownstreamPool` / `updateDownstreamPool` | `POST …`, `PUT …/{id}` | PA | `nama` (wajib, unik), `ttl_antrean_detik` (default 24 jam), `upstream_pool_ids[]` (`minItems`/`maxItems` 1; alokasi tunggal), `alasan` wajib saat ubah. **Tanpa `mode`**: mode ditentukan path. Respons menambah `prioritas` (`readOnly`, selalu 1) | 201/200; 422 |
 | `listClients` / `getClient` | `GET /admin/v1/clients`, `…/{id}` | PA; CO hanya clientnya | — | 200; 404 |
 | `createClient` / `updateClient` | `POST /admin/v1/clients`, `PUT …/{id}` | PA | `nama`, `limiter_penolakan_burst` (1–1000, default 20), `limiter_penolakan_isi_ulang_per_detik` (0,10–100,00, default 1,00), `alasan` wajib saat ubah limiter | 201/200; 422 di luar rentang (L-04) |
