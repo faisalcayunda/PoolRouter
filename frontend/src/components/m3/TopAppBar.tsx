@@ -2,8 +2,11 @@ import type { ReactNode } from 'react';
 import { cx } from './cx';
 
 /**
- * M3 top app bar (katalog 7.1). Renders a heading at level 1 so every screen has
- * exactly one; leading controls get their accessible label at the usage site.
+ * M3 top app bar (katalog 7.1).
+ *
+ * The app/section title is **text, not a heading** (handoff spec section 13.1): each screen's
+ * `<main>` opens with its own `h1`, so a heading here would give the document two level-1
+ * headings. Leading controls get their accessible label at the usage site.
  */
 export interface TopAppBarProps {
   /** Screen title. Supplied from the catalog (`*.page.title`) by the usage site. */
@@ -21,7 +24,7 @@ export function TopAppBar({ title, leading, trailing, className }: TopAppBarProp
       className={cx('flex min-h-16 items-center gap-2 bg-surface px-4 text-on-surface', className)}
     >
       {leading}
-      <h1 className="typescale-title-large flex-1 truncate">{title}</h1>
+      <p className="typescale-title-large flex-1 truncate">{title}</p>
       {trailing}
     </header>
   );

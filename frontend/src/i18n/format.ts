@@ -68,3 +68,20 @@ export function createFormatter(lng: BahasaUi, t: TFunction): Formatter {
     },
   };
 }
+
+/** Short weekday + hour for the quota tracker's "current hour (07.00–08.00)" range. */
+export function hourRangeLabel(lng: BahasaUi, from: Date, to: Date): string {
+  const locale = LOCALES[lng].formatLocale;
+  const fmt = new Intl.DateTimeFormat(locale, {
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+    timeZone: TIME_ZONE,
+  });
+  const normalize = (s: string) => s.replace(/\u202f|\u00a0/g, ' ');
+  const weekday = new Intl.DateTimeFormat(locale, {
+    weekday: 'short',
+    timeZone: TIME_ZONE,
+  }).format(from);
+  return `${weekday}, ${normalize(fmt.format(from))}–${normalize(fmt.format(to))}`;
+}

@@ -20,10 +20,28 @@ test.describe('app shell', () => {
     expect(csp).not.toContain('unsafe-inline');
 
     await expect(page.locator('main#main-content')).toBeVisible();
-    await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
-    // Skip link is the first tabbable element (ADR-0003 7.5).
-    await page.keyboard.press('Tab');
-    await expect(page.getByRole('link', { name: /lompat ke konten/i })).toBeFocused();
+
+    // Exactly one level-1 heading per page, and it lives in `main` (spec section 13.1/13.2); the
+    // app-bar title is plain text.
+    const h1 = page.getByRole('heading', { level: 1 });
+    await expect(h1).toHaveCount(1);
+    await expect(page.locator('main#main-content h1')).toHaveCount(1);
+
+    // Skip link is the first focusable element in DOM order (ADR-0003 7.5). Asserting the order
+    // rather than "first Tab after load" keeps this stable: screens focus their own `h1` on mount
+    // (section 8), which would consume the initial Tab.
+    const skipLink = page.getByRole('link', { name: /lompat ke konten/i });
+    await expect(skipLink).toHaveAttribute('href', '#main-content');
+    const firstFocusable = await page.evaluate(() => {
+      const candidates = document.querySelectorAll<HTMLElement>(
+        'a[href], button, input, select, textarea, [tabindex]:not([tabindex="-1"])',
+      );
+      return candidates[0]?.textContent?.trim() ?? null;
+    });
+    expect(firstFocusable).toBe('Lompat ke konten');
+    // Focusing it reveals the link and lands on `main`.
+    await skipLink.focus();
+    await expect(skipLink).toBeFocused();
 
     await expectNoAxeViolations(page);
     expect(cspViolations).toEqual([]);
