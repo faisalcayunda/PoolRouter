@@ -1,0 +1,31 @@
+#!/bin/sh
+# Provider Compose untuk `podman compose` (ADR-0001 Addendum A §3.2, P3).
+# Menjalankan Docker Compose v2 dari image CLI yang di-pin, terhubung ke socket
+# API Podman di dalam VM `podman machine`. Tanpa instalasi native di mesin owner.
+#
+# Pemakaian (dibungkus `make`):
+#   PODMAN_COMPOSE_PROVIDER=deploy/compose/bin/compose-provider podman compose ...
+#
+# Variabel opsional:
+#   PODMAN_VM_SOCKET  path socket API Podman di sisi VM (default: dari `podman info`)
+set -eu
+
+# Image CLI Docker (klien Compose saja, bukan engine). Tag dan digest di-pin.
+COMPOSE_CLI_IMAGE="docker.io/library/docker:27-cli@sha256:4a35bc2bdc2ae427c176bc3f1bbc6d696dd0d35b7c6ba4ecd6b09ddc270148c1"
+
+PROJECT_DIR=$(pwd -P)
+if [ -n "${PODMAN_VM_SOCKET:-}" ]; then
+  VM_SOCK="$PODMAN_VM_SOCKET"
+else
+  VM_SOCK=$(podman info --format '{{.Host.RemoteSocket.Path}}' | sed 's#^unix://##')
+fi
+
+# --security-opt label=disable: socket API milik user VM tidak bisa diakses
+# dari label SELinux default container (diuji 2026-11-03).
+exec podman run --rm -i \
+  --security-opt label=disable \
+  -e DOCKER_HOST=unix:///var/run/docker.sock \
+  -v "$VM_SOCK:/var/run/docker.sock" \
+  -v "$PROJECT_DIR:$PROJECT_DIR" \
+  -w "$PROJECT_DIR" \
+  "$COMPOSE_CLI_IMAGE" compose "$@"

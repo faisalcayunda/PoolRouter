@@ -1,0 +1,36 @@
+# Override produksi (ADR-0001 Addendum A §3.1, §4, §5). Image berdasarkan digest.
+# Tidak ada build, tidak ada service mock-dukcapil (dijaga compose-lint, V1).
+x-hardened-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
+
+services:
+  backend-webserver:
+    restart: unless-stopped
+    logging: *logging
+    deploy:
+      resources:
+        limits: {cpus: "1.0", memory: 512m}
+
+  backend-controller:
+    restart: unless-stopped
+    logging: *logging
+    deploy:
+      resources:
+        limits: {cpus: "0.5", memory: 256m}
+
+  backend-worker:
+    restart: unless-stopped
+    logging: *logging
+    deploy:
+      resources:
+        limits: {cpus: "1.0", memory: 512m}
+
+  frontend:
+    restart: unless-stopped
+    logging: *logging
+    deploy:
+      resources:
+        limits: {cpus: "0.5", memory: 256m}

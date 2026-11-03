@@ -1,0 +1,19 @@
+# Override dev (ADR-0001 Addendum A §3.1, §4). Build dari source lewat `make image`;
+# blok `build:` hanya mencatat konteks dan nama image. Seed dan mock hanya di dev.
+services:
+  backend-webserver:
+    build:
+      context: ../../backend
+      dockerfile: Containerfile
+    environment:
+      POOLROUTER_SEED_SYNTHETIC: "true"
+
+  mock-dukcapil:
+    image: ${POOLROUTER_MOCK_DUKCAPIL_IMAGE:?isi POOLROUTER_MOCK_DUKCAPIL_IMAGE di file env}
+    profiles: ["mock"]
+    ports:
+      - "127.0.0.1:${POOLROUTER_MOCK_PORT:-18080}:8080"
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]

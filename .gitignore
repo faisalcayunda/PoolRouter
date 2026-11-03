@@ -2,3 +2,5 @@
 .env.*
 !.env.example
 data/
+deploy/compose/env/*.env
+deploy/compose/secrets/

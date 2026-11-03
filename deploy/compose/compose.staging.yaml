@@ -1,0 +1,67 @@
+# Override staging (ADR-0001 Addendum A §3.1, §4, §6). Image berdasarkan digest, tanpa build.
+# Mock hanya untuk staging uji (profile mock). Target host belum diputuskan (K-38).
+x-hardened-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
+
+services:
+  postgres:
+    restart: unless-stopped
+    logging: *logging
+    deploy:
+      resources:
+        limits: {cpus: "1.0", memory: 1g}
+
+  redis:
+    restart: unless-stopped
+    logging: *logging
+    deploy:
+      resources:
+        limits: {cpus: "0.5", memory: 512m}
+
+  rabbitmq:
+    restart: unless-stopped
+    logging: *logging
+    deploy:
+      resources:
+        limits: {cpus: "1.0", memory: 1g}
+
+  backend-webserver:
+    restart: unless-stopped
+    logging: *logging
+    deploy:
+      resources:
+        limits: {cpus: "1.0", memory: 512m}
+
+  backend-controller:
+    restart: unless-stopped
+    logging: *logging
+    deploy:
+      resources:
+        limits: {cpus: "0.5", memory: 256m}
+
+  backend-worker:
+    restart: unless-stopped
+    logging: *logging
+    deploy:
+      resources:
+        limits: {cpus: "1.0", memory: 512m}
+
+  frontend:
+    restart: unless-stopped
+    logging: *logging
+    deploy:
+      resources:
+        limits: {cpus: "0.5", memory: 256m}
+
+  mock-dukcapil:
+    image: ${POOLROUTER_MOCK_DUKCAPIL_IMAGE:?isi POOLROUTER_MOCK_DUKCAPIL_IMAGE di file env}
+    profiles: ["mock"]
+    restart: unless-stopped
+    logging: *logging
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]

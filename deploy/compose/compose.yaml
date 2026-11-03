@@ -1,0 +1,151 @@
+# Definisi dasar PoolRouter (ADR-0001 Addendum A §3.1, §4, §6).
+# Dipakai bersama override per lingkungan: compose.dev.yaml, compose.staging.yaml,
+# compose.prod.yaml. Jalankan lewat `make compose-up ENV=<dev|staging|prod>`.
+# Tidak memakai fitur khusus satu engine (§5). Image pihak ketiga di-pin tag dan digest.
+
+services:
+  postgres:
+    image: docker.io/library/postgres:17-alpine@sha256:266d3c257594e195b309ae9d1805e54c788f1d7b375f56bf6c367aac6c917e7b
+    profiles: ["bundled-infra"]
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:?isi POSTGRES_DB di file env}
+      POSTGRES_USER: ${POSTGRES_USER:?isi POSTGRES_USER di file env}
+      POSTGRES_PASSWORD_FILE: /run/secrets/db_password
+    secrets: [db_password]
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 10s
+
+  redis:
+    image: docker.io/library/redis:7-alpine@sha256:8da19c7399dca900c6822a1cf30f9d2285585e2c4b457ff4095b0f4500054d3f
+    profiles: ["bundled-infra"]
+    command: ["sh", "-c", "exec redis-server --appendonly yes --requirepass \"$$(cat /run/secrets/redis_password)\""]
+    secrets: [redis_password]
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a \"$$(cat /run/secrets/redis_password)\" --no-auth-warning ping | grep -q PONG"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 5s
+
+  rabbitmq:
+    image: docker.io/library/rabbitmq:4-management-alpine@sha256:89a52c69f937d258e8cf1e13a008131e28990c30fc0dfa8a94037a418f4415b8
+    profiles: ["bundled-infra"]
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:?isi RABBITMQ_USER di file env}
+      RABBITMQ_DEFAULT_PASS_FILE: /run/secrets/rabbitmq_password
+    secrets: [rabbitmq_password]
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 15s
+      retries: 20
+      start_period: 30s
+
+  migrate:
+    image: ${POOLROUTER_BACKEND_IMAGE:?isi POOLROUTER_BACKEND_IMAGE di file env}
+    profiles: ["migrate"]
+    command: ["migrate"]
+    environment:
+      POOLROUTER_DB_HOST: ${POOLROUTER_DB_HOST:-postgres}
+      POOLROUTER_DB_PORT: ${POOLROUTER_DB_PORT:-5432}
+      POOLROUTER_DB_NAME: ${POSTGRES_DB:?}
+      POOLROUTER_DB_USER: ${POOLROUTER_DB_OWNER_USER:?isi POOLROUTER_DB_OWNER_USER di file env}
+      POOLROUTER_DB_PASSWORD_FILE: /run/secrets/poolrouter_owner
+    secrets: [poolrouter_owner]
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+
+  backend-webserver:
+    image: ${POOLROUTER_BACKEND_IMAGE:?isi POOLROUTER_BACKEND_IMAGE di file env}
+    profiles: ["app"]
+    command: ["webserver"]
+    environment: &backend-env
+      POOLROUTER_DB_HOST: ${POOLROUTER_DB_HOST:-postgres}
+      POOLROUTER_DB_PORT: ${POOLROUTER_DB_PORT:-5432}
+      POOLROUTER_DB_NAME: ${POSTGRES_DB:?}
+      POOLROUTER_DB_USER: ${POOLROUTER_DB_APP_USER:?isi POOLROUTER_DB_APP_USER di file env}
+      POOLROUTER_DB_PASSWORD_FILE: /run/secrets/poolrouter_db_app
+      POOLROUTER_REDIS_HOST: ${POOLROUTER_REDIS_HOST:-redis}
+      POOLROUTER_RABBITMQ_HOST: ${POOLROUTER_RABBITMQ_HOST:-rabbitmq}
+      POOLROUTER_KEK_FILE: /run/secrets/poolrouter_kek
+    secrets: [poolrouter_db_app, poolrouter_kek]
+    healthcheck:
+      test: ["CMD", "poolrouter", "healthcheck"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 15s
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    restart: "no"
+
+  backend-controller:
+    image: ${POOLROUTER_BACKEND_IMAGE:?isi POOLROUTER_BACKEND_IMAGE di file env}
+    profiles: ["app"]
+    command: ["controller"]
+    environment: *backend-env
+    secrets: [poolrouter_db_app, poolrouter_kek]
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+
+  backend-worker:
+    image: ${POOLROUTER_BACKEND_IMAGE:?isi POOLROUTER_BACKEND_IMAGE di file env}
+    profiles: ["app"]
+    command: ["worker"]
+    environment: *backend-env
+    secrets: [poolrouter_db_app, poolrouter_kek]
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+
+  frontend:
+    image: ${POOLROUTER_FRONTEND_IMAGE:?isi POOLROUTER_FRONTEND_IMAGE di file env}
+    profiles: ["app"]
+    ports:
+      - "${POOLROUTER_BIND_ADDR:-127.0.0.1}:${POOLROUTER_HTTP_PORT:-8080}:8080"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+    read_only: true
+    tmpfs: [/tmp, /var/cache/nginx, /var/run]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+
+volumes:
+  pg_data: {}
+  redis_data: {}
+  rabbitmq_data: {}
+
+secrets:
+  db_password:
+    file: ${POOLROUTER_SECRETS_DIR:?isi POOLROUTER_SECRETS_DIR di file env}/db_password
+  redis_password:
+    file: ${POOLROUTER_SECRETS_DIR:?}/redis_password
+  rabbitmq_password:
+    file: ${POOLROUTER_SECRETS_DIR:?}/rabbitmq_password
+  poolrouter_owner:
+    file: ${POOLROUTER_SECRETS_DIR:?}/poolrouter_owner
+  poolrouter_db_app:
+    file: ${POOLROUTER_SECRETS_DIR:?}/poolrouter_db_app
+  poolrouter_kek:
+    file: ${POOLROUTER_SECRETS_DIR:?}/poolrouter_kek
