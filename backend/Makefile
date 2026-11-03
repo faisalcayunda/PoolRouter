@@ -52,6 +52,9 @@ export CARGO_BUILD_JOBS := $(JOBS)
 export SQLX_OFFLINE := true
 endif
 
+# Path backend di sisi eksekusi: /work di dalam container Podman, direktori checkout untuk RUNNER=native (CI).
+WORK_DIR := $(if $(filter podman,$(RUNNER)),/work,$(CURDIR))
+
 .PHONY: help check-label setup test test-rust db-test lint fmt clean openapi openapi-check
 
 # Podman toolchain containers must carry the owning issue label, so untracked containers cannot appear (SHAA-222).
@@ -133,7 +136,7 @@ oasdiff-breaking: check-label
 	git show main:backend/openapi/downstream-api.yaml > .cache/oasdiff/base-downstream.yaml; \
 	git show main:backend/openapi/admin-api.yaml > .cache/oasdiff/base-admin.yaml; \
 	$(RUN) sh -c 'set -eu; \
-	if [ ! -x /work/.cache/oasdiff/oasdiff ] || ! /work/.cache/oasdiff/oasdiff --version 2>/dev/null | grep -q "$(OASDIFF_VERSION)"; then \
+	if [ ! -x $(WORK_DIR)/.cache/oasdiff/oasdiff ] || ! $(WORK_DIR)/.cache/oasdiff/oasdiff --version 2>/dev/null | grep -q "$(OASDIFF_VERSION)"; then \
 	  arch=$$(uname -m); \
 	  case "$$arch" in \
 	    aarch64) urlarch=arm64; sha="$(OASDIFF_SHA256_arm64)" ;; \
@@ -145,12 +148,12 @@ oasdiff-breaking: check-label
 	  curl -fsSL -o "$$t/o.tar.gz" "$$url"; \
 	  echo "$$sha  $$t/o.tar.gz" | sha256sum -c -; \
 	  tar -xzf "$$t/o.tar.gz" -C "$$t" oasdiff; \
-	  mv "$$t/oasdiff" /work/.cache/oasdiff/oasdiff; \
+	  mv "$$t/oasdiff" $(WORK_DIR)/.cache/oasdiff/oasdiff; \
 	fi; \
 	rc=0; \
 	for pair in "base-downstream.yaml downstream-api.yaml" "base-admin.yaml admin-api.yaml"; do \
 	  set -- $$pair; \
-	  if ! /work/.cache/oasdiff/oasdiff breaking --fail-on ERR "/work/.cache/oasdiff/$$1" "/work/openapi/$$2"; then \
+	  if ! $(WORK_DIR)/.cache/oasdiff/oasdiff breaking --fail-on ERR "$(WORK_DIR)/.cache/oasdiff/$$1" "$(WORK_DIR)/openapi/$$2"; then \
 	    echo "oasdiff: perubahan breaking pada $$2 terhadap main" >&2; \
 	    rc=1; \
 	  fi; \
