@@ -23,7 +23,10 @@ export default interface Resources {
         "action": "Aksi",
         "count": "Jumlah record",
         "filter": "Filter atau kueri",
+        "reason": "Alasan",
+        "result": "Hasil",
         "role": "Peran",
+        "time": "Waktu",
         "user": "Pengguna"
       },
       "empty": {
@@ -112,6 +115,18 @@ export default interface Resources {
       "app": {
         "name": "PoolRouter"
       },
+      "date": {
+        "format_error": "Tanggal belum sah. Tulis dengan format 03/11/2026.",
+        "format_hint": "Format: 03/11/2026",
+        "from": "Dari",
+        "from_picker": "Pilih tanggal mulai",
+        "from_time": "Jam mulai",
+        "only_note": "Pilih tanggal dan jam mulai serta akhir untuk mencari.",
+        "order_error": "Tanggal akhir harus sama dengan atau setelah tanggal awal.",
+        "to": "Sampai",
+        "to_picker": "Pilih tanggal akhir",
+        "to_time": "Jam akhir"
+      },
       "datetime": {
         "wib": "{{tanggal}}, {{jam}} WIB"
       },
@@ -123,6 +138,7 @@ export default interface Resources {
       },
       "pagination": {
         "next_page": "Halaman berikutnya",
+        "page_number": "Halaman {{ke}} dari {{total}}",
         "page_range": "{{dari, number}}–{{sampai, number}} dari {{total, number}}",
         "prev_page": "Halaman sebelumnya",
         "rows_per_page": "Baris per halaman"
@@ -171,6 +187,7 @@ export default interface Resources {
         "lihat_payload": "Lihat payload"
       },
       "hasil": {
+        "berhasil": "Berhasil",
         "diizinkan": "Diizinkan",
         "ditolak": "Ditolak"
       },
@@ -222,6 +239,7 @@ export default interface Resources {
         "client": "Client",
         "code": "Kode transaksi",
         "nik": "NIK",
+        "queue": "Queue ID",
         "request_id": "ID permintaan",
         "requested_at": "Diminta pada",
         "time": "Waktu"
@@ -341,6 +359,7 @@ export default interface Resources {
       "page": {
         "error": "Masukkan NIK 16 digit.",
         "export": "Ekspor hasil",
+        "export_help": "Masukkan NIK 16 digit yang sah untuk mengaktifkan ekspor.",
         "field": "NIK (16 digit)",
         "field_help": "Hanya angka.",
         "payload": "Payload",
@@ -468,11 +487,16 @@ export default interface Resources {
         "out": "Habis"
       },
       "page": {
+        "empty_action": "Atur upstream pool",
         "hour": "Jam berjalan ({{rentang}})",
         "meta": "Pool: {{nama_pool}} · Diperbarui {{waktu}}",
         "note": "Angka hitung dari jumlah percobaan ke Dukcapil. Selisih dengan log transaksi: rekonsiliasi menunggu OQ-12.",
         "of_total": "{{terpakai, number}} dari {{total, number}}",
+        "pool_filter": "Pool",
+        "pool_unknown": "Pool upstream",
+        "reload": "Muat ulang",
         "reset_at": "reset {{waktu}}",
+        "stale": "Data lama ditampilkan. Terakhir dimuat {{waktu}}.",
         "sync_heading": "Porsi sync",
         "sync_used": "Sync terpakai {{terpakai, number}} dari batas {{persen, number}}%",
         "title": "Kuota",

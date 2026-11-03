@@ -45,7 +45,8 @@ export function Dialog({
       isDismissable
       className={cx(
         'fixed inset-0 z-50 flex bg-on-surface/32 data-[entering]:animate-none data-[exiting]:animate-none',
-        variant === 'basic' ? 'items-center justify-center p-4' : 'items-stretch justify-stretch',
+        // Section 4: the dialog is at most the viewport width minus 48 px.
+        variant === 'basic' ? 'items-center justify-center p-6' : 'items-stretch justify-stretch',
       )}
     >
       <RacDialog
@@ -59,7 +60,7 @@ export function Dialog({
         {({ close }) => (
           <>
             <div className="flex items-start justify-between gap-2">
-              <Heading slot="title" className="typescale-headline-small text-on-surface">
+              <Heading slot="title" level={2} className="typescale-headline-small text-on-surface">
                 {title}
               </Heading>
               <IconButton aria-label={closeLabel} icon-position="end" onPress={close}>

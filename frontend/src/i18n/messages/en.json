@@ -75,7 +75,8 @@
       "rows_per_page": "Rows per page",
       "page_range": "{{dari, number}}–{{sampai, number}} of {{total, number}}",
       "prev_page": "Previous page",
-      "next_page": "Next page"
+      "next_page": "Next page",
+      "page_number": "Page {{ke}} of {{total}}"
     },
     "empty": {
       "logs": {
@@ -85,6 +86,18 @@
     },
     "datetime": {
       "wib": "{{tanggal}}, {{jam}} WIB"
+    },
+    "date": {
+      "from": "From",
+      "to": "To",
+      "from_time": "Start time",
+      "to_time": "End time",
+      "from_picker": "Choose start date",
+      "to_picker": "Choose end date",
+      "format_hint": "Format: 03/11/2026",
+      "format_error": "The date is not valid yet. Write it as 03/11/2026.",
+      "order_error": "The end date must be on or after the start date.",
+      "only_note": "Choose a start and an end date and time to search."
     }
   },
   "account": {
@@ -120,7 +133,8 @@
     },
     "hasil": {
       "diizinkan": "Allowed",
-      "ditolak": "Denied"
+      "ditolak": "Denied",
+      "berhasil": "Succeeded"
     }
   },
   "error": {
@@ -483,7 +497,12 @@
       "hour": "Current hour ({{rentang}})",
       "sync_heading": "Sync share",
       "sync_used": "Sync used {{terpakai, number}} of the {{persen, number}}% limit",
-      "note": "Figures count attempts to Dukcapil. Differences from the transaction log: reconciliation is pending OQ-12."
+      "note": "Figures count attempts to Dukcapil. Differences from the transaction log: reconciliation is pending OQ-12.",
+      "reload": "Reload",
+      "pool_filter": "Pool",
+      "pool_unknown": "Upstream pool",
+      "stale": "Showing earlier data. Last loaded {{waktu}}.",
+      "empty_action": "Set up an upstream pool"
     },
     "level": {
       "ok": "OK",
@@ -516,11 +535,12 @@
     "col": {
       "time": "Time",
       "code": "Transaction code",
+      "queue": "Queue ID",
       "client": "Client",
       "nik": "NIK",
       "access": "Access status",
-      "request_id": "Request ID",
-      "requested_at": "Requested at"
+      "requested_at": "Requested at",
+      "request_id": "Request ID"
     },
     "row": {
       "aria": "Transaction details {{kode}}"
@@ -561,7 +581,8 @@
       "range_only_note": "Searching by time range alone isn't available; a NIK is required.",
       "export": "Export results",
       "payload": "Payload",
-      "retention": "Data outside the online retention period can't be searched yet. Archive search arrives in F1."
+      "retention": "Data outside the online retention period can't be searched yet. Archive search arrives in F1.",
+      "export_help": "Enter a valid 16-digit NIK to enable export."
     },
     "reason": {
       "title": "Reason for searching NIK logs",
@@ -609,7 +630,10 @@
       "role": "Role",
       "action": "Action",
       "filter": "Filter or query",
-      "count": "Record count"
+      "result": "Result",
+      "count": "Record count",
+      "time": "Time",
+      "reason": "Reason"
     },
     "empty": {
       "title": "No records match",

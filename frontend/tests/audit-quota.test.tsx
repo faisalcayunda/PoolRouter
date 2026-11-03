@@ -52,17 +52,19 @@ describe('S13 audit akses', () => {
     // Scope to the table: the result filter also renders "Ditolak" as an option.
     const table = within(screen.getByRole('table'));
     expect(table.getByText('Cek aduan W-2026-07')).toBeInTheDocument();
-    // Catalog v0.14 carries both the result and the payload action (SHAA-285).
+    // The action and the result are rendered from the shared enum group (section 13.2).
     expect(table.getByText('Ditolak')).toBeInTheDocument();
     expect(table.getByText('Lihat payload')).toBeInTheDocument();
     // A missing reason is shown as an em dash, never the string "null".
     expect(table.getByText('—')).toBeInTheDocument();
 
     const body = vi.mocked(client.cariAuditAkses).mock.calls[0]![0];
-    const days = (Date.parse(body.sampai!) - Date.parse(body.dari)) / 86_400_000;
-    expect(days).toBeGreaterThan(6.9);
-    expect(days).toBeLessThan(7.1);
-    expect(body.aksi).toBeNull();
+    // Default window is the last 24 hours, the same as S11: a first visit always has a range.
+    const hours = (Date.parse(body.sampai!) - Date.parse(body.dari)) / 3_600_000;
+    expect(hours).toBeGreaterThan(23.9);
+    expect(hours).toBeLessThan(24.1);
+    // The action filter is not sent until the screen offers one.
+    expect(body.aksi).toBeUndefined();
   });
 
   it('offers no edit or delete affordance on any row', async () => {
@@ -139,7 +141,7 @@ describe('quota tracker', () => {
     renderWithI18n(<QuotaScreen client={client} />);
 
     await waitFor(() => expect(client.upstreamPools).toHaveBeenCalled());
-    await userEvent.click(screen.getByRole('button', { name: 'Coba lagi' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Muat ulang' }));
     await waitFor(() => expect(vi.mocked(client.kuota).mock.calls.length).toBeGreaterThan(1));
   });
 
@@ -148,6 +150,29 @@ describe('quota tracker', () => {
     renderWithI18n(<QuotaScreen client={client} />);
 
     expect(await screen.findByText('Belum ada upstream pool')).toBeInTheDocument();
+    // Section 7: the empty state points at the screen that fixes it (S06).
+    expect(screen.getByRole('link', { name: 'Atur upstream pool' })).toHaveAttribute(
+      'href',
+      '/upstream',
+    );
+  });
+
+  it('keeps the last good numbers when a reload fails (section 7)', async () => {
+    const client = stubClient({
+      kuota: vi
+        .fn()
+        .mockResolvedValueOnce([quota()])
+        .mockRejectedValueOnce(new ApiError(500, { status: 500 })),
+    });
+    renderWithI18n(<QuotaScreen client={client} />);
+
+    expect(await screen.findByText(/Terpakai/)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Muat ulang' }));
+
+    // The error shows, and the previous numbers stay on screen with their timestamp.
+    expect(await screen.findByText(/Data belum bisa dimuat/)).toBeInTheDocument();
+    expect(screen.getByText(/Data lama ditampilkan/)).toBeInTheDocument();
+    expect(screen.getByText(/Terpakai/)).toBeInTheDocument();
   });
 
   it('surfaces a quota read failure with a retry', async () => {
@@ -158,7 +183,9 @@ describe('quota tracker', () => {
 
     // The quota scope has no dedicated catalog line, so the generic network copy is used.
     expect(await screen.findByText(/Data belum bisa dimuat/)).toBeInTheDocument();
-    // The header carries its own refresh button; the error alert brings a second retry.
+    // The header button reloads; it says "Muat ulang", not "Coba lagi" (section 13.2).
+    expect(screen.getByRole('button', { name: 'Muat ulang' })).toBeInTheDocument();
+    // The error alert keeps its own retry.
     expect(screen.getAllByRole('button', { name: 'Coba lagi' }).length).toBeGreaterThan(0);
   });
 });

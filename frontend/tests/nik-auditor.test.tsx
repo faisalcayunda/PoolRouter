@@ -79,11 +79,14 @@ describe('S12 pencarian log per NIK', () => {
 
     const dialog = await screen.findByRole('dialog');
     const confirm = within(dialog).getByRole('button', { name: 'Cari' });
-    // Nothing is disabled silently: the confirm stays inert until the reason reaches 10 characters.
-    expect(confirm).toBeDisabled();
+    // Section 8: submit stays enabled; pressing it reports the problem instead of doing nothing.
+    expect(confirm).toBeEnabled();
 
     await userEvent.type(within(dialog).getByLabelText('Alasan (minimal 10 karakter)'), 'pendek');
-    expect(confirm).toBeDisabled();
+    await userEvent.click(confirm);
+    expect(
+      await within(dialog).findByText('Alasan wajib diisi dengan 10–500 karakter.'),
+    ).toBeInTheDocument();
     expect(client.cariLogNik).not.toHaveBeenCalled();
   });
 
@@ -128,7 +131,7 @@ describe('payload dialog', () => {
 
     const dialog = await screen.findByRole('dialog');
     await userEvent.type(
-      within(dialog).getByLabelText('Alasan (minimal 10 karakter)'),
+      within(dialog).getByLabelText('Alasan membuka payload'),
       'Cek aduan W-2026-07',
     );
     await userEvent.click(within(dialog).getByRole('button', { name: 'Lihat payload' }));
@@ -159,7 +162,7 @@ describe('payload dialog', () => {
 
     const dialog = await screen.findByRole('dialog');
     await userEvent.type(
-      within(dialog).getByLabelText('Alasan (minimal 10 karakter)'),
+      within(dialog).getByLabelText('Alasan membuka payload'),
       'Cek aduan W-2026-07',
     );
     await userEvent.click(within(dialog).getByRole('button', { name: 'Lihat payload' }));
@@ -217,7 +220,7 @@ describe('payload dialog', () => {
 
     const reasonDialog = await screen.findByRole('dialog');
     await userEvent.type(
-      within(reasonDialog).getByLabelText('Alasan (minimal 10 karakter)'),
+      within(reasonDialog).getByLabelText('Alasan membuka payload'),
       'Cek aduan W-2026-07',
     );
     await userEvent.click(within(reasonDialog).getByRole('button', { name: 'Lihat payload' }));
@@ -237,12 +240,12 @@ describe('payload dialog', () => {
     // Reopen for another transaction: the reason dialog comes first and A's payload is nowhere.
     await userEvent.click(screen.getByRole('button', { name: 'pilih-trx-b' }));
     const reopened = await screen.findByRole('dialog');
-    expect(within(reopened).getByLabelText('Alasan (minimal 10 karakter)')).toHaveValue('');
+    expect(within(reopened).getByLabelText('Alasan membuka payload')).toHaveValue('');
     expect(screen.queryByText('Ringkasan transaksi')).not.toBeInTheDocument();
     expect(screen.queryByText('TRX-2026-0042')).not.toBeInTheDocument();
 
     await userEvent.type(
-      within(reopened).getByLabelText('Alasan (minimal 10 karakter)'),
+      within(reopened).getByLabelText('Alasan membuka payload'),
       'Cek aduan W-2026-08',
     );
     await userEvent.click(within(reopened).getByRole('button', { name: 'Lihat payload' }));

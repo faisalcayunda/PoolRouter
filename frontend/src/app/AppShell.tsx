@@ -114,9 +114,14 @@ export function AppShell({ pathname = '/', children }: AppShellProps) {
         </NavigationDrawer>
 
         <main id="main-content" tabIndex={-1} className="min-w-0 flex-1 p-4">
-          <Suspense fallback={<p className="typescale-body-medium">{t('common.state.loading')}</p>}>
-            {children}
-          </Suspense>
+          {/* Section 4: content is capped at 1200 px so long tables stay readable on a wide screen. */}
+          <div className="mx-auto w-full max-w-[1200px]">
+            <Suspense
+              fallback={<p className="typescale-body-medium">{t('common.state.loading')}</p>}
+            >
+              {children}
+            </Suspense>
+          </div>
         </main>
       </div>
     </div>

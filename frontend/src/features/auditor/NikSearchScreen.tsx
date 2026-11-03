@@ -13,11 +13,11 @@ import {
 import { Button } from '../../components/m3/Button';
 import { InlineAlert } from '../../components/m3/InlineAlert';
 import { Icon, icons } from '../../icons';
+import { IconButton } from '../../components/m3/IconButton';
 import { Card } from '../../components/m3/Card';
 import { StatusLabel } from '../../components/m3/StatusLabel';
 import { TextField } from '../../components/m3/TextField';
 import { useFormatter } from '../../i18n/useFormatter';
-import type { MessageId } from '../../i18n/types';
 import { DateRangeField, type DateRange } from '../common/DateRangeField';
 import { ReasonDialog } from '../common/ReasonDialog';
 import { PageHeader, EmptyState, LoadingState, QueryError } from '../common/page';
@@ -26,6 +26,8 @@ import { useDocumentTitle, useFocusOnMount } from '../common/a11y';
 import { ScrollArea } from '../common/ScrollArea';
 import { accessTone } from '../log/accessTone';
 import { PayloadDialog } from '../log/PayloadDialog';
+import { SnackbarRegion, useSnackbar } from '../common/useSnackbar';
+import { enumLabel } from '../../i18n/enums';
 
 const NIK_LENGTH = 16;
 
@@ -58,10 +60,11 @@ export interface NikSearchScreenProps {
  * matches the page the auditor actually saw (ADR-0003 rev 3 3.6a–c).
  */
 export function NikSearchScreen({ client = api }: NikSearchScreenProps): ReactNode {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const format = useFormatter();
   const titleRef = useFocusOnMount<HTMLHeadingElement>();
   useDocumentTitle(t('title.page.nik_search'));
+  const snackbar = useSnackbar();
 
   const [nik, setNik] = useState('');
   const [nikTouched, setNikTouched] = useState(false);
@@ -90,8 +93,8 @@ export function NikSearchScreen({ client = api }: NikSearchScreenProps): ReactNo
     setNikTouched(true);
     if (!nikValid) return;
     if (!range) {
-      // A NIK without a range is the case the catalog already words for this screen.
-      setRangeError(t('nik.page.range_only_note'));
+      // The note above the form explains that a NIK is required; the range needs its own line.
+      setRangeError(t('common.date.only_note'));
       return;
     }
     setRangeError(null);
@@ -101,6 +104,8 @@ export function NikSearchScreen({ client = api }: NikSearchScreenProps): ReactNo
   function search(nextReason: string) {
     setReason(nextReason);
     setReasonOpen(false);
+    // Section 7: the search is an audited action, so its success is confirmed in a snackbar.
+    snackbar.notify(t('nik.snackbar.logged'));
     const body: NikCariRequest = {
       nik: nik.trim(),
       dari: range!.from,
@@ -205,7 +210,7 @@ export function NikSearchScreen({ client = api }: NikSearchScreenProps): ReactNo
       <p className="typescale-body-small text-on-surface-variant">{t('nik.page.retention')}</p>
 
       {/* "Ekspor hasil" belongs to S12 (handoff spec section 6): enabled once a NIK is valid. */}
-      <div>
+      <div className="flex flex-col gap-1">
         <Button
           variant="outlined"
           isDisabled={!nikValid || exporting}
@@ -219,10 +224,12 @@ export function NikSearchScreen({ client = api }: NikSearchScreenProps): ReactNo
           <Icon icon={icons.download} aria-hidden="true" />
           {exporting ? t('common.state.loading') : t('nik.page.export')}
         </Button>
+        {/* Section 7: a disabled action says why it is disabled. */}
+        <p className="typescale-body-small text-on-surface-variant">{t('nik.page.export_help')}</p>
       </div>
 
       {exportNotice === 'too_large' ? (
-        <InlineAlert tone="warning" live="polite" heading={t('nik.page.error')}>
+        <InlineAlert tone="warning" live="polite" heading={t('export.error.title')}>
           {t('export.error.too_large')}
         </InlineAlert>
       ) : null}
@@ -243,65 +250,71 @@ export function NikSearchScreen({ client = api }: NikSearchScreenProps): ReactNo
         ) : (
           <Card variant="filled" className="p-0">
             <ScrollArea label={t('nik.page.title')}>
-              <table className="w-full border-collapse">
-                <caption className="sr-only">{t('nik.page.title')}</caption>
-                <thead>
-                  <tr>
-                    <th scope="col" className="typescale-label-large px-4 py-3 text-left">
-                      {t('log.col.time')}
-                    </th>
-                    <th scope="col" className="typescale-label-large px-4 py-3 text-left">
-                      {t('log.col.code')}
-                    </th>
-                    <th scope="col" className="typescale-label-large px-4 py-3 text-left">
-                      {t('log.col.client')}
-                    </th>
-                    <th scope="col" className="typescale-label-large px-4 py-3 text-left">
-                      {t('log.col.nik')}
-                    </th>
-                    <th scope="col" className="typescale-label-large px-4 py-3 text-left">
-                      {t('log.col.access')}
-                    </th>
-                    <th scope="col" className="typescale-label-large px-4 py-3 text-left">
-                      {t('nik.page.payload')}
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {rows.map((row) => (
-                    <tr key={`${row.kode_transaksi}-${row.requested_at}`} className="h-10">
-                      <td className="typescale-body-medium px-4">
-                        {format.tanggalWaktu(row.requested_at)}
-                      </td>
-                      <td className="typescale-body-medium px-4">
-                        <Link
-                          href={`/log/${encodeURIComponent(row.kode_transaksi)}`}
-                          className="m3-focus rounded-small text-primary underline-offset-2 hover:underline"
-                          aria-label={t('log.row.aria', { kode: row.kode_transaksi })}
-                        >
-                          {row.kode_transaksi}
-                        </Link>
-                      </td>
-                      <td className="typescale-body-medium px-4">{row.client_nama}</td>
-                      <td className="typescale-body-medium px-4">{row.nik}</td>
-                      <td className="typescale-body-medium px-4">
-                        <StatusLabel tone={accessTone(row.status_akses)}>
-                          {t(`enum.status_akses.${row.status_akses}` as MessageId)}
-                        </StatusLabel>
-                      </td>
-                      <td className="px-4">
-                        <Button
-                          variant="text"
-                          onPress={() => setPayloadFor(row)}
-                          aria-label={t('nik.page.payload', { kode: row.kode_transaksi })}
-                        >
-                          {t('nik.page.payload')}
-                        </Button>
-                      </td>
+              <div className="table-card">
+                <table className="w-full border-collapse">
+                  <caption className="sr-only">{t('nik.page.title')}</caption>
+                  <thead>
+                    <tr>
+                      <th scope="col" className="typescale-label-large px-4 py-3 text-left">
+                        {t('log.col.time')}
+                      </th>
+                      <th scope="col" className="typescale-label-large px-4 py-3 text-left">
+                        {t('log.col.code')}
+                      </th>
+                      <th scope="col" className="typescale-label-large px-4 py-3 text-left">
+                        {t('log.col.client')}
+                      </th>
+                      <th scope="col" className="typescale-label-large px-4 py-3 text-left">
+                        {t('log.col.nik')}
+                      </th>
+                      <th scope="col" className="typescale-label-large px-4 py-3 text-left">
+                        {t('log.col.access')}
+                      </th>
+                      <th scope="col" className="typescale-label-large px-4 py-3 text-left">
+                        {t('log.payload.open')}
+                      </th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {rows.map((row) => (
+                      <tr key={`${row.kode_transaksi}-${row.requested_at}`} className="h-10">
+                        <td data-label={t('log.col.time')} className="typescale-body-medium px-4">
+                          {format.tanggalWaktu(row.requested_at)}
+                        </td>
+                        <td data-label={t('log.col.code')} className="typescale-body-medium px-4">
+                          <Link
+                            href={`/log/${encodeURIComponent(row.kode_transaksi)}`}
+                            className="m3-focus rounded-small text-primary underline-offset-2 hover:underline"
+                            aria-label={t('log.row.aria', { kode: row.kode_transaksi })}
+                          >
+                            {row.kode_transaksi}
+                          </Link>
+                        </td>
+                        <td data-label={t('log.col.client')} className="typescale-body-medium px-4">
+                          {row.client_nama}
+                        </td>
+                        <td data-label={t('log.col.nik')} className="typescale-body-medium px-4">
+                          {row.nik}
+                        </td>
+                        <td data-label={t('log.col.access')} className="typescale-body-medium px-4">
+                          <StatusLabel tone={accessTone(row.status_akses)}>
+                            {enumLabel(i18n, 'status_akses', row.status_akses)}
+                          </StatusLabel>
+                        </td>
+                        {/* The action cell carries no data-label: its single button names itself. */}
+                        <td className="px-4">
+                          <IconButton
+                            aria-label={`${t('log.payload.open')} — ${row.kode_transaksi}`}
+                            onPress={() => setPayloadFor(row)}
+                          >
+                            <Icon icon={icons.visibility} />
+                          </IconButton>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </ScrollArea>
           </Card>
         )
@@ -334,8 +347,10 @@ export function NikSearchScreen({ client = api }: NikSearchScreenProps): ReactNo
         kodeTransaksi={payloadFor?.kode_transaksi ?? ''}
         initialReason={reason}
         client={client}
+        onOpened={() => snackbar.notify(t('log.payload.snackbar.opened'))}
         onClose={() => setPayloadFor(null)}
       />
+      <SnackbarRegion queue={snackbar.queue} />
     </section>
   );
 }

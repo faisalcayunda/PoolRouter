@@ -29,7 +29,9 @@ export function Snackbar<T>({
     <ToastRegionRoot
       queue={queue}
       className={cx(
-        'fixed inset-x-0 bottom-4 z-50 flex flex-col items-center gap-2 outline-none',
+        // Full-width strip for centring, but click-through: only the toasts take pointer events,
+        // otherwise the empty strip silently swallows clicks on whatever sits behind it.
+        'pointer-events-none fixed inset-x-0 bottom-4 z-50 flex flex-col items-center gap-2 outline-none',
         className,
       )}
     >
@@ -37,7 +39,7 @@ export function Snackbar<T>({
         {({ toast }: { toast: QueuedToast<unknown> }) => (
           <Toast
             toast={toast as QueuedToast<T>}
-            className="m3-focus typescale-body-medium flex min-h-12 w-full max-w-sm items-center gap-2 rounded-extra-small bg-inverse-surface py-2 pl-4 pr-1 text-inverse-on-surface shadow-level3 outline-none"
+            className="pointer-events-auto m3-focus typescale-body-medium flex min-h-12 w-full max-w-sm items-center gap-2 rounded-extra-small bg-inverse-surface py-2 pl-4 pr-1 text-inverse-on-surface shadow-level3 outline-none"
           >
             <ToastContent className="flex-1">{renderContent(toast.content as T)}</ToastContent>
             <button

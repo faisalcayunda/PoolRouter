@@ -43,7 +43,7 @@ describe('S11 log transaksi', () => {
 
     await userEvent.click(screen.getByRole('button', { name: 'Cari' }));
 
-    await screen.findByText('TRX-2026-0001');
+    await screen.findByRole('link', { name: 'TRX-2026-0001' });
     expect(client.cariLog).toHaveBeenCalledOnce();
     const body = vi.mocked(client.cariLog).mock.calls[0]![0];
     // Both ends of the default 24-hour window travel in the body, not the URL.
@@ -60,17 +60,18 @@ describe('S11 log transaksi', () => {
     await userEvent.type(screen.getByRole('textbox', { name: 'Kode transaksi' }), 'TRX-2026-0001');
     await userEvent.click(screen.getByRole('button', { name: 'Cari' }));
 
-    await waitFor(() => expect(client.cariLog).toHaveBeenCalledOnce());
-    const body = vi.mocked(client.cariLog).mock.calls[0]![0];
+    // The initial window loads on mount; the code only appears in the body of the explicit search.
+    await waitFor(() => expect(client.cariLog).toHaveBeenCalledTimes(2));
+    const body = vi.mocked(client.cariLog).mock.calls[1]![0];
     expect(body.kode_transaksi).toBe('TRX-2026-0001');
   });
 
   it('hides the payload column from a role that cannot open one', async () => {
     renderWithI18n(<LogPageScreen client={stubClient()} canOpenPayload={false} />);
     await userEvent.click(screen.getByRole('button', { name: 'Cari' }));
-    await screen.findByText('TRX-2026-0001');
+    await screen.findByRole('link', { name: 'TRX-2026-0001' });
 
-    expect(screen.queryByRole('columnheader', { name: 'Payload' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('columnheader', { name: 'Lihat payload' })).not.toBeInTheDocument();
     expect(
       screen.getByText(
         'Pencarian per NIK hanya tersedia untuk auditor. Butuh NIK lengkap? Minta auditor.',
@@ -84,9 +85,9 @@ describe('S11 log transaksi', () => {
       <LogPageScreen client={stubClient()} canOpenPayload onOpenPayload={onOpenPayload} />,
     );
     await userEvent.click(screen.getByRole('button', { name: 'Cari' }));
-    await screen.findByText('TRX-2026-0001');
+    await screen.findByRole('link', { name: 'TRX-2026-0001' });
 
-    await userEvent.click(screen.getByRole('button', { name: 'Payload' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Lihat payload — TRX-2026-0001' }));
     expect(onOpenPayload).toHaveBeenCalledWith(LOG.baris[0]);
   });
 
@@ -97,9 +98,9 @@ describe('S11 log transaksi', () => {
       </RoleProvider>,
     );
     await userEvent.click(screen.getByRole('button', { name: 'Cari' }));
-    await screen.findByText('TRX-2026-0001');
+    await screen.findByRole('link', { name: 'TRX-2026-0001' });
 
-    expect(screen.getByRole('columnheader', { name: 'Payload' })).toBeInTheDocument();
+    expect(screen.getByRole('columnheader', { name: 'Lihat payload' })).toBeInTheDocument();
   });
 
   it('keeps the payload column from an operator signed in through the role context', async () => {
@@ -109,9 +110,9 @@ describe('S11 log transaksi', () => {
       </RoleProvider>,
     );
     await userEvent.click(screen.getByRole('button', { name: 'Cari' }));
-    await screen.findByText('TRX-2026-0001');
+    await screen.findByRole('link', { name: 'TRX-2026-0001' });
 
-    expect(screen.queryByRole('columnheader', { name: 'Payload' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('columnheader', { name: 'Lihat payload' })).not.toBeInTheDocument();
   });
 
   it('opens the payload only after a reason is given on S11 (section 18.3)', async () => {
@@ -126,9 +127,9 @@ describe('S11 log transaksi', () => {
     });
     renderWithI18n(<LogPageScreen client={client} canOpenPayload />);
     await userEvent.click(screen.getByRole('button', { name: 'Cari' }));
-    await screen.findByText('TRX-2026-0001');
+    await screen.findByRole('link', { name: 'TRX-2026-0001' });
 
-    await userEvent.click(screen.getByRole('button', { name: 'Payload' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Lihat payload — TRX-2026-0001' }));
 
     // Nothing is fetched until a reason is submitted: the dialog itself is the guard.
     expect(client.bukaPayload).not.toHaveBeenCalled();

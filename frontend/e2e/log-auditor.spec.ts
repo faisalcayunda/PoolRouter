@@ -97,20 +97,24 @@ test.describe('S11 log transaksi (auditor)', () => {
     await page.getByRole('textbox', { name: 'Kode transaksi' }).fill('TRX-2026-0077');
     await page.getByRole('button', { name: 'Cari' }).click();
 
-    await expect(page.getByRole('cell', { name: 'TRX-2026-0077' })).toBeVisible();
+    await expect(page.getByRole('link', { name: 'TRX-2026-0077' })).toBeVisible();
     // Both clients appear: an auditor's S11 is not scoped to one client.
     await expect(page.getByRole('cell', { name: 'Kemensos Demo' })).toBeVisible();
     await expectNoAxeViolations(page);
 
     const cari = calls.filter((c) => c.url.includes('/log/cari'));
-    expect(cari.length).toBeGreaterThan(0);
-    expect(cari[0]!.method).toBe('POST');
-    expect(cari[0]!.body).toMatchObject({ kode_transaksi: 'TRX-2026-0077' });
+    // The first call is the initial 24-hour window; the code only appears in the explicit search.
+    const typed = cari.filter(
+      (c) => (c.body as { kode_transaksi?: string } | null)?.kode_transaksi === 'TRX-2026-0077',
+    );
+    expect(typed).toHaveLength(1);
+    expect(typed[0]!.method).toBe('POST');
     // The transaction code never leaks into the query string (it would reach the access log).
     expect(cari[0]!.url).not.toContain('TRX-2026-0077');
 
     // 2. The auditor gets the payload affordance, and it opens only through the reason dialog.
-    const openButtons = page.getByRole('button', { name: 'Payload' });
+    // Every row names its own target: an icon button called just "Payload" is ambiguous (section 18.3).
+    const openButtons = page.getByRole('button', { name: /^Lihat payload — TRX-/ });
     await expect(openButtons).toHaveCount(2);
     await openButtons.first().click();
 
@@ -118,13 +122,15 @@ test.describe('S11 log transaksi (auditor)', () => {
     await expect(dialog).toBeVisible();
     await expectNoAxeViolations(page);
 
-    // The confirm stays disabled until the minimum reason length is met: the dialog is the guard.
+    // Section 8: submit is always enabled; pressing it with no reason reports the error and the
+    // dialog stays put. Nothing is fetched until a valid reason is given.
     const confirm = dialog.getByRole('button', { name: 'Lihat payload' });
-    await expect(confirm).toBeDisabled();
+    await expect(confirm).toBeEnabled();
+    await confirm.click();
+    await expect(dialog.getByText('Alasan wajib diisi dengan 10–500 karakter.')).toBeVisible();
     expect(calls.filter((c) => c.url.includes('/auditor/payload'))).toHaveLength(0);
 
-    await dialog.getByLabel('Alasan (minimal 10 karakter)').fill('Tindak lanjut aduan W-2026-09');
-    await expect(confirm).toBeEnabled();
+    await dialog.getByLabel('Alasan membuka payload').fill('Tindak lanjut aduan W-2026-09');
     await confirm.click();
 
     // The payload renders read-only; the full NIK only shows in the Input block.
@@ -148,10 +154,10 @@ test.describe('S11 log transaksi (auditor)', () => {
     await page.goto('/?peran=auditor');
     await page.getByRole('textbox', { name: 'Kode transaksi' }).fill('TRX-2026-0077');
     await page.getByRole('button', { name: 'Cari' }).click();
-    await page.getByRole('button', { name: 'Payload' }).first().click();
+    await page.getByRole('button', { name: 'Lihat payload — TRX-2026-0077' }).click();
 
     const dialog = page.getByRole('dialog');
-    await dialog.getByLabel('Alasan (minimal 10 karakter)').fill('Tindak lanjut aduan W-2026-09');
+    await dialog.getByLabel('Alasan membuka payload').fill('Tindak lanjut aduan W-2026-09');
     await dialog.getByRole('button', { name: 'Lihat payload' }).click();
     await expect(dialog.getByText('3175000000000001')).toBeVisible();
 

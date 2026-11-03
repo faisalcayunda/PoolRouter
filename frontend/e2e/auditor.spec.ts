@@ -96,32 +96,36 @@ test.describe('auditor flow', () => {
     await page.getByRole('textbox', { name: 'NIK (16 digit)' }).fill(NIK);
     await page.getByRole('button', { name: 'Cari' }).click();
 
-    const reasonDialog = page.getByRole('dialog');
+    const reasonDialog = page.getByRole('dialog', { name: 'Alasan mencari log NIK' });
     await expect(reasonDialog).toBeVisible();
     await reasonDialog.getByRole('textbox').fill('Cek aduan W-2026-07');
     await reasonDialog.getByRole('button', { name: 'Cari' }).click();
 
-    await expect(page.getByRole('cell', { name: 'TRX-2026-0042' })).toBeVisible();
+    await expect(page.getByRole('link', { name: 'TRX-2026-0042' })).toBeVisible();
     await expectNoAxeViolations(page);
 
     // 2. Open the payload: a second, separately audited dialog.
-    await page.getByRole('button', { name: 'Payload' }).click();
-    const payloadDialog = page.getByRole('dialog');
+    await page.getByRole('button', { name: 'Lihat payload — TRX-2026-0042' }).click();
+    const payloadDialog = page.getByRole('dialog', { name: 'Alasan membuka payload' });
     await expect(payloadDialog).toBeVisible();
     await payloadDialog.getByRole('button', { name: 'Lihat payload' }).click();
+    // Section 13.2: once the payload is on screen the dialog is titled "Payload transaksi"; the
+    // reason-step title belongs to the step it names.
+    const opened = page.getByRole('dialog', { name: 'Payload transaksi' });
+    await expect(opened).toBeVisible();
     // The three data-contract blocks render read-only; `metadata` is empty in the stub.
-    await expect(payloadDialog.getByRole('heading', { name: 'Input' })).toBeVisible();
-    await expect(payloadDialog.getByText(/3175000000000001/)).toBeVisible();
-    await expect(payloadDialog.getByRole('heading', { name: 'Metadata' })).toBeVisible();
-    await expect(payloadDialog.getByText('Tidak tersedia.')).toBeVisible();
+    await expect(opened.getByRole('heading', { name: 'Input' })).toBeVisible();
+    await expect(opened.getByText(/3175000000000001/)).toBeVisible();
+    await expect(opened.getByRole('heading', { name: 'Metadata' })).toBeVisible();
+    await expect(opened.getByText('Tidak tersedia.')).toBeVisible();
     await expectNoAxeViolations(page);
     // The M3 dialog offers "Tutup" twice (header close and footer action); either closes it.
-    await payloadDialog.getByRole('button', { name: 'Tutup' }).first().click();
+    await opened.getByRole('button', { name: 'Tutup' }).first().click();
 
     // 3. Export: must be a POST (never a GET, which would log the NIK in the access log).
     const download = page.waitForEvent('download');
     await page.getByRole('button', { name: 'Ekspor hasil' }).click();
-    const exportDialog = page.getByRole('dialog');
+    const exportDialog = page.getByRole('dialog', { name: 'Alasan mencari log NIK' });
     await expect(exportDialog).toBeVisible();
     // The reason is pre-filled from the search, so confirm straight away.
     await expect(exportDialog.getByRole('textbox')).toHaveValue('Cek aduan W-2026-07');
@@ -141,10 +145,13 @@ test.describe('auditor flow', () => {
     await page.getByRole('textbox', { name: 'NIK (16 digit)' }).fill(NIK);
     await page.getByRole('button', { name: 'Cari' }).click();
 
-    const dialog = page.getByRole('dialog');
+    // Named, because the compact drawer is a dialog too and would make the locator ambiguous.
+    const dialog = page.getByRole('dialog', { name: 'Alasan mencari log NIK' });
     await expect(dialog).toBeVisible();
-    // The confirm stays disabled until the minimum reason length is met.
-    await expect(dialog.getByRole('button', { name: 'Cari' })).toBeDisabled();
+    // Section 8: submit stays enabled and reports the problem instead of being silently inert.
+    await expect(dialog.getByRole('button', { name: 'Cari' })).toBeEnabled();
+    await dialog.getByRole('button', { name: 'Cari' }).click();
+    await expect(dialog.getByText('Alasan wajib diisi dengan 10–500 karakter.')).toBeVisible();
     await dialog.getByRole('button', { name: 'Batal' }).click();
 
     expect(calls.filter((c) => c.url.includes('/auditor/log'))).toHaveLength(0);

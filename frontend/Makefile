@@ -116,8 +116,13 @@ gen-api-check: check-label
 build: check-label
 	$(HEAVY) pnpm exec vite build
 
+# The e2e suite needs the role seam (`?peran=`) that production builds must not have, so it builds
+# with the `playwright` mode; see `define` in vite.config.ts.
+build-e2e: check-label
+	$(HEAVY) pnpm exec vite build --mode playwright
+
 # e2e: Playwright (Chromium) against the built SPA served by `vite preview`, in the pinned
 # Playwright image. Full Compose stack arrives with the screens. The `build` prerequisite takes
 # the lock and releases it before this recipe runs, so the two never nest.
-e2e: check-label build
+e2e: check-label build-e2e
 	$(HEAVY_PW) ./node_modules/.bin/playwright test

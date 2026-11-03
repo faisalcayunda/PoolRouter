@@ -32,9 +32,17 @@ function NotFound(): ReactNode {
   );
 }
 
+/** `/log/<kode_transaksi>` — S11 opened on one transaction (section 7). */
+const LOG_DETAIL = /^\/log\/([^/]+)$/;
+
 /** Path → screen. Longest exact match wins; anything else renders the not-found panel. */
 export function ScreenForPath({ pathname }: { pathname: string }): ReactNode {
   const clean = pathname.replace(/\/+$/, '') || '/';
+  const logDetail = LOG_DETAIL.exec(clean);
+  if (logDetail) {
+    // The code is never a NIK (section 18.3), so it is safe to keep in the URL.
+    return <LogPageScreen initialCode={decodeURIComponent(logDetail[1] ?? '')} />;
+  }
   switch (clean) {
     case '/':
       return <LogPageScreen />;
@@ -53,15 +61,17 @@ export function ScreenForPath({ pathname }: { pathname: string }): ReactNode {
  * Screens sit under the role context so a shared layout does not re-read the session per screen.
  * `null` = no role-specific affordances until the session hook lands (handoff spec section 18.1).
  *
- * Until SHAA-202/SHAA-196 land the session hook, the assembled app has no way to assume a role,
- * so the auditor screens could never be driven end to end. A `?peran=` query parameter pins the
- * role for exactly that: the e2e suite sets it and nothing else does. It is a preview-only seam,
- * not a substitute for the session — the API stays the last guard for every role-gated action
- * (section 18.1), so a forged role buys no data from the server.
+ * Until the session hook lands the app cannot assume a role by itself, so the e2e suite needs a
+ * way to pin one. That seam is a **build flag**, not a query parameter:
+ * `import.meta.env.VITE_TEST_ROLE_SEAM` is replaced at build time by `vite.config.ts` (true only for
+ * the `playwright` and `test` modes) and is `false` in every production build, where the whole
+ * branch — and therefore the `?peran=` read itself — is dropped. Design review (SHAA-203) requires that a production URL cannot set the role; the API
+ * stays the last guard for every role-gated action either way (section 18.1).
  */
 const ROLES: readonly AdminRole[] = ['platform_admin', 'operator', 'auditor'];
 
 function roleFromSearch(search: string): AdminRole | null {
+  if (!import.meta.env.VITE_TEST_ROLE_SEAM) return null;
   const value = new URLSearchParams(search).get('peran');
   return ROLES.find((role) => role === value) ?? null;
 }

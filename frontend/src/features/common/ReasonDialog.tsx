@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button } from '../../components/m3/Button';
 import { Dialog } from '../../components/m3/Dialog';
@@ -18,6 +18,13 @@ export interface ReasonDialogProps {
   /** Pre-filled value; the caller decides whether to carry the search reason over. */
   initialReason?: string;
   confirmLabel: string;
+  /**
+   * Field label. Section 13.2 gives the payload dialog's reason step its own label
+   * ("Alasan membuka payload"), while S11/S12 keep the NIK search wording.
+   */
+  fieldLabel?: string;
+  /** Supporting hint under the field; defaults to the NIK search hint. */
+  fieldHint?: string;
   onConfirm: (reason: string) => void;
   onCancel: () => void;
   isSubmitting?: boolean;
@@ -36,6 +43,8 @@ export function ReasonDialog({
   body,
   initialReason = '',
   confirmLabel,
+  fieldLabel,
+  fieldHint,
   onConfirm,
   onCancel,
   isSubmitting = false,
@@ -44,6 +53,12 @@ export function ReasonDialog({
   const { t } = useTranslation();
   const [reason, setReason] = useState(initialReason);
   const [touched, setTouched] = useState(false);
+  // Section 8: pressing submit with an empty reason must show the error. Waiting for a keystroke
+  // would leave the button looking inert; this flag reports the problem straight away.
+  const [submitAttempted, setSubmitAttempted] = useState(false);
+  // One press must confirm once: the footer button drives the press itself, so it calls
+  // `confirmPress` directly and the form's `onSubmit` covers Enter. Both share one guard.
+  const submittingRef = useRef(false);
   // Opening is when the caller's `initialReason` becomes current: the field may have mounted long
   // before that value existed (the auditor screen sets it after the search), and
   // `useState(initialReason)` only reads it on the first render. Adjusting state during render is
@@ -58,8 +73,15 @@ export function ReasonDialog({
     if (isOpen) {
       setReason(initialReason);
       setTouched(false);
+      setSubmitAttempted(false);
     }
   }
+
+  // The duplicate-press guard is cleared when the dialog opens. A ref may not be written during
+  // render (react-hooks/refs), so it is done in an effect instead.
+  useEffect(() => {
+    if (isOpen) submittingRef.current = false;
+  }, [isOpen]);
 
   // Focus moves into the field when the dialog opens. `autoFocus` is banned by jsx-a11y
   // (no-autofocus) because it also fires on page load; this effect is scoped to `isOpen`.
@@ -71,19 +93,23 @@ export function ReasonDialog({
   }, [isOpen]);
 
   const trimmed = reason.trim();
-  const error = !touched
-    ? null
-    : trimmed.length === 0
-      ? t('nik.reason.error', { min: REASON_MIN })
-      : trimmed.length < REASON_MIN
-        ? t('nik.reason.error', { min: REASON_MIN })
-        : null;
+  // Section 8: the submit stays enabled and validation reports the problem, so both ends of the
+  // bound are errors the auditor can see — over-long text is no longer silently truncated.
+  const invalid = trimmed.length < REASON_MIN || trimmed.length > REASON_MAX;
+  const error =
+    !touched && !submitAttempted ? null : invalid ? t('log.payload.reason.error') : null;
+
+  function confirmPress() {
+    setTouched(true);
+    setSubmitAttempted(true);
+    if (invalid || isSubmitting || submittingRef.current) return;
+    submittingRef.current = true;
+    onConfirm(trimmed);
+  }
 
   function submit(event: FormEvent) {
     event.preventDefault();
-    setTouched(true);
-    if (trimmed.length < REASON_MIN) return;
-    onConfirm(trimmed);
+    confirmPress();
   }
 
   return (
@@ -94,28 +120,19 @@ export function ReasonDialog({
       }}
       title={title}
       closeLabel={t('common.action.close')}
-      footer={
-        <>
-          <Button variant="text" onPress={onCancel}>
-            {t('common.action.cancel')}
-          </Button>
-          <Button
-            variant="filled"
-            type="submit"
-            form="reason-form"
-            isDisabled={isSubmitting || trimmed.length < REASON_MIN}
-          >
-            {confirmLabel}
-          </Button>
-        </>
-      }
     >
+      {/*
+        One form around the body *and* the footer. The footer outlives the body in the DOM, so a
+        submit button there cannot reference a form id that has already closed: React Aria's dialog
+        renders the footer as a sibling of the content. Enter and the confirm button therefore both
+        submit this form, and section 8's "submit stays enabled, validation reports" holds.
+      */}
       <form id="reason-form" onSubmit={submit} className="flex flex-col gap-3">
         <p className="typescale-body-medium text-on-surface-variant">{body}</p>
         {submitError ? <InlineAlert tone="error">{submitError}</InlineAlert> : null}
         <TextField
           id={REASON_FIELD_ID}
-          label={t('nik.reason.field')}
+          label={fieldLabel ?? t('nik.reason.field')}
           value={reason}
           onChange={(value) => {
             setReason(value);
@@ -123,10 +140,23 @@ export function ReasonDialog({
           }}
           isInvalid={Boolean(error)}
           errorMessage={error ?? undefined}
-          description={t('nik.reason.help')}
+          description={fieldHint ?? t('nik.reason.help')}
           isRequired
-          maxLength={REASON_MAX}
         />
+        <div className="mt-4 flex justify-end gap-2">
+          <Button variant="text" onPress={onCancel}>
+            {t('common.action.cancel')}
+          </Button>
+          {/*
+            The press runs the check directly. React Aria drives presses through its own events and
+            never triggers a native form submission, so a `type="submit"` button outside the form
+            would be inert — and one linked by `form=` warns "form is not connected" once the
+            dialog unmounts mid-submit. Enter is handled by the form's own `onSubmit`.
+          */}
+          <Button variant="filled" onPress={confirmPress} isDisabled={isSubmitting}>
+            {confirmLabel}
+          </Button>
+        </div>
       </form>
     </Dialog>
   );

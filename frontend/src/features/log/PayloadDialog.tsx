@@ -167,10 +167,13 @@ export function PayloadDialog({
 
   return (
     <>
+      {/* Section 13.2 (S12b): the reason step is titled "Alasan membuka payload", and section 18.3
+          uses the same text as the field label. The payload step gets "Payload transaksi". */}
       <ReasonDialog
         isOpen={isOpen && phase === 'reason'}
-        title={t('log.payload.dialog_title')}
+        title={t('nik.payload.title')}
         body={t('log.payload.reason.supporting')}
+        fieldLabel={t('nik.payload.title')}
         initialReason={reasonDraft ?? initialReason}
         confirmLabel={t('log.payload.open')}
         isSubmitting={submitting}
@@ -190,7 +193,7 @@ export function PayloadDialog({
             onClose();
           }
         }}
-        title={t('nik.payload.title', { kode: kodeTransaksi })}
+        title={t('log.payload.dialog_title')}
         closeLabel={t('common.action.close')}
         footer={
           <Button
@@ -207,13 +210,24 @@ export function PayloadDialog({
         {phase === 'loading' ? <LoadingState label={t('common.state.loading')} /> : null}
 
         {phase === 'error' ? (
-          <InlineAlert tone="error" live="polite">
-            {purged
-              ? t('log.payload.error_purged')
-              : errorKode === 'jaringan'
-                ? t('error.network.load')
-                : t('risk.common.action_failed')}
-          </InlineAlert>
+          // A purged payload is a normal outcome ("Tidak tersedia." with the reason), not a
+          // retryable error (section 7 state matrix); only real failures get the error alert.
+          purged || errorKode === 'tanpa_input' ? (
+            <div className="flex flex-col gap-1" role="status" aria-live="polite">
+              <p className="typescale-body-large text-on-surface">
+                {t('log.payload.not_available')}
+              </p>
+              <p className="typescale-body-medium text-on-surface-variant">
+                {errorKode === 'tanpa_input'
+                  ? t('log.payload.rejected_no_input')
+                  : t('log.payload.error_purged')}
+              </p>
+            </div>
+          ) : (
+            <InlineAlert tone="error" live="polite">
+              {errorKode === 'jaringan' ? t('error.network.load') : t('risk.common.action_failed')}
+            </InlineAlert>
+          )
         ) : null}
 
         {phase === 'open' && payload ? (
@@ -225,8 +239,10 @@ export function PayloadDialog({
               <dl className="typescale-body-medium grid grid-cols-[auto_1fr] gap-x-4 gap-y-1">
                 <dt className="text-on-surface-variant">{t('log.col.code')}</dt>
                 <dd>{payload.kode_transaksi}</dd>
-                <dt className="text-on-surface-variant">{t('log.col.time')}</dt>
+                <dt className="text-on-surface-variant">{t('log.col.requested_at')}</dt>
                 <dd>{format.tanggalWaktu(payload.requested_at)}</dd>
+                <dt className="text-on-surface-variant">{t('log.col.request_id')}</dt>
+                <dd>{payload.request_id}</dd>
                 <dt className="text-on-surface-variant">{t('log.col.access')}</dt>
                 <dd>
                   <StatusLabel tone={accessTone(payload.status_akses)}>

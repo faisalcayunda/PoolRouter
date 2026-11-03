@@ -1,35 +1,27 @@
-import { useState, type ReactNode } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
-import { api, type ApiClient, type AuditCariRequest, type AuditAksesPage } from '../../api/client';
+import { api, type ApiClient, type AuditAksesPage, type AuditCariRequest } from '../../api/client';
 import { Button } from '../../components/m3/Button';
 import { Card } from '../../components/m3/Card';
-import { Select, SelectItem } from '../../components/m3/Select';
+import { Skeleton } from '../../components/m3/Skeleton';
 import { StatusLabel } from '../../components/m3/StatusLabel';
 import { useFormatter } from '../../i18n/useFormatter';
-import { labelOr } from '../../i18n/labelOr';
-import { DateRangeField, type DateRange } from '../common/DateRangeField';
-import { PageHeader, EmptyState, LoadingState, QueryError } from '../common/page';
-import { useQuery } from '../common/useQuery';
+import { enumLabel } from '../../i18n/enums';
+import {
+  DateRangeField,
+  formatTypedDate,
+  parseTypedDate,
+  type DateRange,
+  type DateRangeFieldErrors,
+} from '../common/DateRangeField';
+import { PageHeader, EmptyState, QueryError } from '../common/page';
 import { useDocumentTitle, useFocusOnMount } from '../common/a11y';
+import { useQuery } from '../common/useQuery';
 import { ScrollArea } from '../common/ScrollArea';
 
-/** The API rejects ranges over 31 days (section 18.3); the picker stays inside that bound. */
-const MAX_RANGE_DAYS = 31;
-
-/** Actions the audit table can name. Anything else shows its raw code rather than a blank cell. */
-const ACTIONS = [
-  'cari_nik',
-  'lihat_payload',
-  'lihat_audit',
-  'ekspor',
-  'ditolak',
-  'login',
-  'cari_log',
-] as const;
-
-function lastWeek(): DateRange {
+function lastDay(): DateRange {
   const now = new Date();
-  const start = new Date(now.getTime() - 7 * 24 * 3600 * 1000);
+  const start = new Date(now.getTime() - 24 * 3600 * 1000);
   const iso = (d: Date) => {
     const wib = new Date(d.getTime() + 7 * 3600 * 1000);
     return { date: wib.toISOString().slice(0, 10), time: wib.toISOString().slice(11, 16) };
@@ -37,18 +29,13 @@ function lastWeek(): DateRange {
   const s = iso(start);
   const e = iso(now);
   return {
+    from: `${s.date}T${s.time}:00+07:00`,
+    to: `${e.date}T${e.time}:59+07:00`,
     startDate: s.date,
     startTime: s.time,
     endDate: e.date,
     endTime: e.time,
-    from: `${s.date}T${s.time}:00+07:00`,
-    to: `${e.date}T${e.time}:00+07:00`,
   };
-}
-
-function withinDays(range: DateRange, days: number): boolean {
-  const span = (Date.parse(range.to) - Date.parse(range.from)) / 86_400_000;
-  return span <= days;
 }
 
 export interface AuditScreenProps {
@@ -56,156 +43,192 @@ export interface AuditScreenProps {
 }
 
 /**
- * S13 — Audit akses (auditor). Read-only by contract: the screen offers no edit or delete action
- * and the API has no endpoint for one (ADR-0003 rev 3 §3.6, append-only). Rows carry no NIK hash,
- * so nothing here can be re-joined to a person.
+ * S13 — Audit akses. Read-only: no edit or delete action exists (section 7).
+ *
+ * Columns follow what `searchAuditAkses` actually returns: time, user id, action, result and
+ * reason. The per-row role, filter and record count are not part of the admin contract in F0, so no
+ * column is rendered for them — an empty column reading "—" would be worse than omitting it.
  */
 export function AuditScreen({ client = api }: AuditScreenProps): ReactNode {
-  const { t, i18n: instance } = useTranslation();
+  const { t, i18n } = useTranslation();
   const format = useFormatter();
   const titleRef = useFocusOnMount<HTMLHeadingElement>();
   useDocumentTitle(t('title.page.audit'));
 
-  const [range, setRange] = useState<DateRange | null>(() => lastWeek());
-  const [aksi, setAksi] = useState<string>('semua');
+  const initial = useMemo(() => lastDay(), []);
+  const [range, setRange] = useState<DateRange>(initial);
+  const [typed, setTyped] = useState({
+    start: formatTypedDate(initial.startDate),
+    end: formatTypedDate(initial.endDate),
+  });
+  const [errors, setErrors] = useState<DateRangeFieldErrors>({});
   const [rangeError, setRangeError] = useState<string | null>(null);
-  const [submitted, setSubmitted] = useState<{ body: AuditCariRequest; key: string } | null>(null);
+  const [query, setQuery] = useState<AuditCariRequest>({ dari: initial.from, sampai: initial.to });
 
-  const query = useQuery<AuditAksesPage>(
-    (signal) => client.cariAuditAkses(submitted!.body, { signal }),
-    submitted?.key ?? 'idle',
-    { enabled: submitted !== null },
+  const audit = useQuery<AuditAksesPage>(
+    (signal) => client.cariAuditAkses(query, { signal }),
+    JSON.stringify(query),
   );
 
-  function submit() {
-    if (!range || !withinDays(range, MAX_RANGE_DAYS)) {
-      setRangeError(t('audit.error.range'));
+  const rows = audit.data?.baris ?? [];
+
+  function submit(event: React.FormEvent) {
+    event.preventDefault();
+    const next: DateRangeFieldErrors = {};
+    const startIso = parseTypedDate(typed.start);
+    const endIso = parseTypedDate(typed.end);
+    if (!startIso) next.startDate = t('common.date.format_error');
+    if (!endIso) next.endDate = t('common.date.format_error');
+    setErrors(next);
+    if (!startIso || !endIso) {
+      setRangeError(null);
+      return;
+    }
+    // The range itself is the query: the date fields are the source of truth on submit.
+    const from = range.startTime ? `${startIso}T${range.startTime}:00+07:00` : '';
+    const to = range.endTime ? `${endIso}T${range.endTime}:59+07:00` : '';
+    if (!from || !to || from > to) {
+      setRangeError(t('common.date.order_error'));
       return;
     }
     setRangeError(null);
-    const body: AuditCariRequest = {
-      dari: range.from,
-      sampai: range.to,
-      aksi: aksi === 'semua' ? null : aksi,
-    };
-    setSubmitted({ body, key: JSON.stringify(body) });
+    setQuery({ dari: from, sampai: to });
   }
 
-  const rows = query.status === 'success' ? query.data.baris : [];
-
   return (
-    <section className="flex flex-col gap-4">
+    <section className="flex w-full flex-col gap-6">
       <PageHeader
         title={t('audit.page.title')}
         subtitle={t('audit.page.subtitle')}
         titleRef={titleRef}
       />
 
-      <Card variant="outlined">
-        <form
-          className="flex flex-col gap-3"
-          onSubmit={(event) => {
-            event.preventDefault();
-            submit();
+      <form className="flex flex-col gap-4" onSubmit={submit}>
+        <DateRangeField
+          legend={t('audit.filter.range')}
+          description={t('audit.filter.range_help')}
+          value={range}
+          typed={typed}
+          onTypedChange={setTyped}
+          onChange={(next) => {
+            if (next) setRange(next);
+            setRangeError(null);
           }}
-          aria-label={t('audit.filter.action')}
-        >
-          <h2 className="sr-only">{t('audit.filter.action')}</h2>
-          <div className="flex flex-wrap items-start gap-3">
-            <Select
-              label={t('audit.filter.action')}
-              selectedKey={aksi}
-              onSelectionChange={(key) => {
-                if (key !== null) setAksi(String(key));
-              }}
-            >
-              <SelectItem id="semua">{t('common.action.all')}</SelectItem>
-              {ACTIONS.map((action) => (
-                <SelectItem key={action} id={action}>
-                  {labelOr(instance, `enum.aksi_audit.${action}`, action)}
-                </SelectItem>
-              ))}
-            </Select>
-            <DateRangeField
-              legend={t('audit.filter.range')}
-              description={t('audit.filter.range_help')}
-              value={range}
-              onChange={(next) => {
-                setRange(next);
-                if (next) setRangeError(null);
-              }}
-              errorMessage={rangeError}
-            />
-          </div>
-          <div className="flex flex-wrap items-center gap-3">
-            <Button variant="filled" type="submit">
-              {t('common.action.search')}
-            </Button>
-            <p className="typescale-body-small text-on-surface-variant">
-              {t('audit.page.subtitle')}
-            </p>
-          </div>
-        </form>
-      </Card>
+          errors={errors}
+          errorMessage={rangeError}
+        />
+        <div className="flex flex-wrap gap-2">
+          <Button type="submit">{t('common.action.search')}</Button>
+        </div>
+      </form>
 
-      <h2 className="sr-only">{t('audit.page.title')}</h2>
-
-      {query.status === 'error' ? <QueryError error={query.error} onRetry={query.reload} /> : null}
-      {query.status === 'loading' && submitted ? (
-        <LoadingState label={t('common.state.loading')} />
+      {audit.status === 'loading' ? (
+        <Card variant="outlined" className="flex flex-col gap-2">
+          <p className="sr-only">{t('common.state.loading')}</p>
+          {[0, 1, 2, 3].map((i) => (
+            <Skeleton key={i} className="h-10 w-full rounded-extra-small" />
+          ))}
+        </Card>
       ) : null}
 
-      {query.status === 'success' ? (
-        rows.length === 0 ? (
-          <EmptyState title={t('audit.empty.title')} body={t('audit.empty.body')} />
-        ) : (
-          <Card variant="filled" className="p-0">
-            <ScrollArea label={t('audit.page.title')}>
-              <table className="w-full border-collapse">
+      {audit.status === 'error' ? <QueryError error={audit.error} onRetry={audit.reload} /> : null}
+
+      {audit.status === 'success' && rows.length === 0 ? (
+        <EmptyState title={t('audit.empty.title')} body={t('audit.empty.body')} />
+      ) : null}
+
+      {rows.length > 0 ? (
+        <Card variant="outlined" className="p-0">
+          <ScrollArea label={t('audit.page.title')}>
+            <div className="table-card">
+              <table className="w-full border-collapse text-left">
                 <caption className="sr-only">{t('audit.page.title')}</caption>
                 <thead>
-                  <tr>
-                    <th scope="col" className="typescale-label-large px-4 py-3 text-left">
-                      {t('log.col.time')}
+                  <tr className="typescale-title-small text-on-surface-variant">
+                    <th
+                      scope="col"
+                      className="border-b border-outline-variant px-4 py-3 font-medium"
+                    >
+                      {t('audit.col.time')}
                     </th>
-                    <th scope="col" className="typescale-label-large px-4 py-3 text-left">
+                    <th
+                      scope="col"
+                      className="hide-md border-b border-outline-variant px-4 py-3 font-medium"
+                    >
                       {t('audit.col.user')}
                     </th>
-                    <th scope="col" className="typescale-label-large px-4 py-3 text-left">
+                    <th
+                      scope="col"
+                      className="border-b border-outline-variant px-4 py-3 font-medium"
+                    >
                       {t('audit.col.action')}
                     </th>
-                    <th scope="col" className="typescale-label-large px-4 py-3 text-left">
-                      {t('audit.col.action')}
+                    <th
+                      scope="col"
+                      className="border-b border-outline-variant px-4 py-3 font-medium"
+                    >
+                      {t('audit.col.result')}
                     </th>
-                    <th scope="col" className="typescale-label-large px-4 py-3 text-left">
-                      {t('nik.reason.title')}
+                    <th
+                      scope="col"
+                      className="border-b border-outline-variant px-4 py-3 font-medium"
+                    >
+                      {t('audit.col.reason')}
                     </th>
                   </tr>
                 </thead>
                 <tbody>
                   {rows.map((row) => (
-                    <tr key={row.audit_id} className="h-10">
-                      <td className="typescale-body-medium px-4">
+                    <tr
+                      key={row.audit_id}
+                      className="border-b border-outline-variant text-on-surface"
+                    >
+                      <td
+                        data-label={t('audit.col.time')}
+                        className="typescale-body-medium px-4 py-3 align-middle"
+                      >
                         {format.tanggalWaktu(row.dilakukan_pada)}
                       </td>
-                      <td className="typescale-body-medium px-4 font-mono">{row.pengguna_id}</td>
-                      <td className="typescale-body-medium px-4">
-                        {labelOr(instance, `enum.aksi_audit.${row.aksi}`, row.aksi)}
+                      <td
+                        data-label={t('audit.col.user')}
+                        className="hide-md typescale-body-medium px-4 py-3 align-middle"
+                      >
+                        {/* Section 13.2: the raw id is an identifier, labelled as one — never a name. */}
+                        <span className="break-all font-mono text-on-surface-variant">
+                          {row.pengguna_id}
+                        </span>
                       </td>
-                      <td className="typescale-body-medium px-4">
+                      <td
+                        data-label={t('audit.col.action')}
+                        className="typescale-body-medium px-4 py-3 align-middle"
+                      >
+                        {/* `labelOr` keeps an action outside the catalog from rendering as a raw key. */}
+                        {enumLabel(i18n, 'aksi_audit', row.aksi)}
+                      </td>
+                      <td
+                        data-label={t('audit.col.result')}
+                        className="typescale-body-medium px-4 py-3 align-middle"
+                      >
                         <StatusLabel tone={row.hasil === 'berhasil' ? 'success' : 'error'}>
-                          {labelOr(instance, `enum.hasil.${row.hasil}`, row.hasil)}
+                          {enumLabel(i18n, 'hasil', row.hasil)}
                         </StatusLabel>
                       </td>
-                      <td className="typescale-body-medium px-4">{row.alasan ?? '—'}</td>
+                      <td
+                        data-label={t('audit.col.reason')}
+                        className="typescale-body-medium px-4 py-3 align-middle"
+                      >
+                        {row.alasan ?? '—'}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
-            </ScrollArea>
-          </Card>
-        )
+            </div>
+          </ScrollArea>
+        </Card>
       ) : null}
+
+      <p className="typescale-body-small text-on-surface-variant">{t('audit.filter.note')}</p>
     </section>
   );
 }

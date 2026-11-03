@@ -1,4 +1,5 @@
 import { useState, type ReactNode } from 'react';
+import { Link } from 'react-aria-components';
 import { useTranslation } from 'react-i18next';
 import { api, type ApiClient, type KuotaTracker, type UpstreamPool } from '../../api/client';
 import { Button } from '../../components/m3/Button';
@@ -32,7 +33,7 @@ const TONE: Record<Level, 'success' | 'warning' | 'error'> = {
   out: 'error',
 };
 
-function PoolQuotaCard({ row }: { row: KuotaTracker }) {
+function PoolQuotaCard({ row, poolName }: { row: KuotaTracker; poolName?: string }) {
   const { t } = useTranslation();
   const format = useFormatter();
   const level = levelOf(row.kuota_efektif, row.sisa_periode);
@@ -48,10 +49,12 @@ function PoolQuotaCard({ row }: { row: KuotaTracker }) {
     <Card variant="outlined" className="flex flex-col gap-3">
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div className="flex flex-col">
-          <h2 className="typescale-title-medium">{row.upstream_pool_id.slice(0, 8)}</h2>
+          {/* Section 13.2: a card heading is a name, never a truncated UUID. Without a pool name
+              from the API the heading falls back to the catalog's generic pool label. */}
+          <h2 className="typescale-title-medium">{poolName ?? t('quota.page.pool_unknown')}</h2>
           <p className="typescale-body-small text-on-surface-variant">
             {t('quota.page.meta', {
-              nama_pool: row.upstream_pool_id.slice(0, 8),
+              nama_pool: poolName ?? t('quota.page.pool_unknown'),
               waktu: format.tanggalWaktu(row.dihitung_pada),
             })}
           </p>
@@ -60,7 +63,7 @@ function PoolQuotaCard({ row }: { row: KuotaTracker }) {
       </div>
 
       <div className="flex flex-col gap-1">
-        <p className="typescale-label-large">{t('quota.page.today')}</p>
+        <h3 className="typescale-title-small">{t('quota.page.today')}</h3>
         <p className="typescale-body-medium">
           {t('quota.page.used_left', {
             persen: Math.round(usedFraction * 100),
@@ -76,7 +79,7 @@ function PoolQuotaCard({ row }: { row: KuotaTracker }) {
       </div>
 
       <div className="flex flex-col gap-1">
-        <p className="typescale-label-large">{t('quota.page.sync_heading')}</p>
+        <h3 className="typescale-title-small">{t('quota.page.sync_heading')}</h3>
         <p className="typescale-body-medium">
           {t('quota.page.sync_used', {
             terpakai: row.terpakai_sync_jam_berjalan,
@@ -90,9 +93,9 @@ function PoolQuotaCard({ row }: { row: KuotaTracker }) {
       </div>
 
       <div className="flex flex-col gap-1">
-        <p className="typescale-label-large">
+        <h3 className="typescale-title-small">
           {t('quota.page.hour', { rentang: format.hourRange(startOfHour, endOfHour) })}
-        </p>
+        </h3>
         <p className="typescale-body-medium">
           {t('quota.page.of_total', {
             terpakai: row.terpakai_jam_berjalan,
@@ -119,6 +122,7 @@ export interface QuotaScreenProps {
  */
 export function QuotaScreen({ client = api }: QuotaScreenProps): ReactNode {
   const { t } = useTranslation();
+  const format = useFormatter();
   const titleRef = useFocusOnMount<HTMLHeadingElement>();
   useDocumentTitle(t('title.page.quota'));
 
@@ -130,7 +134,19 @@ export function QuotaScreen({ client = api }: QuotaScreenProps): ReactNode {
     `quota:${poolId}`,
   );
 
-  const rows = quota.status === 'success' ? quota.data : [];
+  /**
+   * Section 7: a failed reload keeps the last good numbers on screen with the timestamp they were
+   * read at. `useQuery` clears `data` on error, so the last successful result is remembered here.
+   */
+  const [snapshot, setSnapshot] = useState<{ rows: KuotaTracker[]; at: string } | null>(null);
+  const liveRows = quota.status === 'success' ? quota.data : [];
+  // Adjusting state while rendering (React's documented pattern) avoids an effect that would flash
+  // the error state for one frame before the snapshot is restored.
+  if (quota.status === 'success' && liveRows !== snapshot?.rows) {
+    setSnapshot({ rows: liveRows, at: new Date().toISOString() });
+  }
+  const staleSince = quota.status === 'error' && snapshot ? snapshot.at : null;
+  const rows = liveRows.length > 0 ? liveRows : (snapshot?.rows ?? []);
   const poolOptions = pools.status === 'success' ? pools.data : [];
 
   return (
@@ -148,19 +164,21 @@ export function QuotaScreen({ client = api }: QuotaScreenProps): ReactNode {
             }}
           >
             <Icon icon={icons.refresh} aria-hidden="true" />
-            {t('common.action.retry')}
+            {t('quota.page.reload')}
           </Button>
         }
       >
         <div className="flex flex-wrap items-end gap-3">
           <Select
-            label={t('quota.page.title')}
+            label={t('quota.page.pool_filter')}
             selectedKey={poolId}
             onSelectionChange={(key) => {
               if (key !== null) setPoolId(String(key));
             }}
           >
             <SelectItem id="semua">{t('common.action.all')}</SelectItem>
+            {/* The pool contract has no display name yet (F0), so each option carries its short
+                id; the card heading uses the catalog's generic label instead. */}
             {poolOptions.map((pool) => (
               <SelectItem key={pool.upstream_pool_id} id={pool.upstream_pool_id}>
                 {pool.upstream_pool_id.slice(0, 8)}
@@ -173,16 +191,32 @@ export function QuotaScreen({ client = api }: QuotaScreenProps): ReactNode {
       {quota.status === 'loading' ? <LoadingState label={t('common.state.loading')} /> : null}
       {quota.status === 'error' ? <QueryError error={quota.error} onRetry={quota.reload} /> : null}
 
-      {quota.status === 'success' ? (
-        rows.length === 0 ? (
+      {/* Stale data after a failed reload: the numbers stay, with the time they were last read. */}
+      {quota.status === 'error' && staleSince !== null && rows.length > 0 ? (
+        <p role="status" className="typescale-body-medium text-on-surface-variant">
+          {t('quota.page.stale', { waktu: format.tanggalWaktu(staleSince) })}
+        </p>
+      ) : null}
+
+      {rows.length > 0 ? (
+        <div className="grid grid-cols-1 gap-3 expanded:grid-cols-2">
+          {rows.map((row) => (
+            <PoolQuotaCard key={`${row.upstream_pool_id}-${row.periode_mulai}`} row={row} />
+          ))}
+        </div>
+      ) : quota.status === 'success' ? (
+        <div className="flex flex-col gap-2">
           <EmptyState title={t('upstream.empty.title')} body={t('upstream.empty.body')} />
-        ) : (
-          <div className="grid grid-cols-1 gap-3 expanded:grid-cols-2">
-            {rows.map((row) => (
-              <PoolQuotaCard key={`${row.upstream_pool_id}-${row.periode_mulai}`} row={row} />
-            ))}
+          {/* Section 7 empty state: point at the screen that creates the missing pool (S06). */}
+          <div>
+            <Link
+              href="/upstream"
+              className="m3-focus typescale-label-large rounded-small text-primary underline-offset-2 hover:underline"
+            >
+              {t('quota.page.empty_action')}
+            </Link>
           </div>
-        )
+        </div>
       ) : null}
 
       <p className="typescale-body-small text-on-surface-variant">{t('quota.page.note')}</p>

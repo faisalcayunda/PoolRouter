@@ -23,7 +23,10 @@ export const NAV_GROUPS: NavGroup[] = [
   {
     id: 'monitoring',
     labelKey: 'nav.group.monitoring',
-    items: [{ href: '/', labelKey: 'nav.drawer.log' }],
+    items: [
+      { href: '/', labelKey: 'nav.drawer.log' },
+      { href: '/kuota', labelKey: 'nav.drawer.quota' },
+    ],
   },
   {
     id: 'config',
