@@ -1,7 +1,14 @@
 # Desain kontrak OpenAPI PoolRouter F0 (downstream dan admin)
 
-Pemilik: Flik. Issue: SHAA-175 (induk SHAA-162). Status: **draf untuk review desain**, belum dikompilasi.
-Dokumen ini inventaris operasi sebelum handler `utoipa` ditulis. Setelah di-approve, `downstream-api.yaml` dan `admin-api.yaml` dibangkitkan dari kode (`openapi-gen`) dan harus cocok dengan dokumen ini.
+Pemilik: Flik. Issue: SHAA-175 (induk SHAA-162).
+
+> **Kepala dokumen: yang berlaku adalah YAML.** `downstream-api.yaml` dan
+> `admin-api.yaml` dibangkitkan dari kode (`openapi-gen`) dan diperiksa
+> `make openapi-check`. Dokumen ini catatan desain dan riwayat keputusan; bila
+> ada pertentangan, YAML dan ADR yang menang, bukan tabel di sini. Keputusan
+> review desain sudah ditutup: B-1/F-1 (mode ditentukan path, `upstream_pool_ids`,
+> `nama`, `prioritas` hanya baca), F-2 (`ttl_antrean_detik`), F-3 (peran PA/OP
+> pada quota tracker, read-only), F-5, F-6, dan U-1…U-11 (lihat §7).
 
 ## 0. Acuan yang dipakai
 
@@ -36,11 +43,19 @@ Penanda kolom **Sumber** di bawah: **S** = tertulis di acuan (dengan rujukan), *
 | Skema keamanan downstream | `oauth2` clientCredentials (`tokenUrl: /v1/oauth/token`, TTL 15 menit, tanpa refresh token) dan `apiKey` di header. **Nama header API key tidak ditetapkan acuan**; usulan `X-API-Key` (U-2) | R-05, ADR-0001 §5a.5 |
 | Skema keamanan admin | Cookie `__Host-pr_session` (`HttpOnly; Secure; SameSite=Strict`). Method selain GET/HEAD memeriksa `Origin` = `${POOLROUTER_UI_ORIGIN}` dan `Sec-Fetch-Site`; gagal → 403 | ADR-0003 rev 5 §3.6 |
 
-### 1.1 Daftar `kode` (enum `ProblemKode`)
+### 1.1 Daftar `kode` (enum terpisah per dokumen, D-2)
 
-Downstream, dari acuan: `validasi_gagal`, `metadata_tidak_valid`, `idempotency_key_konflik`, `kuota_habis`, `porsi_sync_habis`, `penolakan_berlebih`, `objek_nonaktif` (+ `jenis_objek` ∈ `endpoint|downstream_pool|upstream_pool|provider`), `tidak_bisa_dibatalkan`, `layanan_tidak_tersedia`, `retry_habis`, `provider_error_permanen`, `timeout_sync`. Usulan (U-1): `tidak_terautentikasi` (semua 401, supaya penyebab tidak bocor; rincian `alasan` ada di metrik MT-03), `tidak_ditemukan` (404), `idempotency_key_tidak_didukung` (sync + header, 400), `token_dibatasi` (429 endpoint token).
+`ProblemKode` **dipisah per dokumen** supaya menambah satu kode khusus admin tidak
+mengubah enum respons eksternal (yang akan ditandai oasdiff dan memaksa versi API
+baru). `docs/masalah.md` tetap **satu dokumen gabungan** berisi semua anchor.
+Kode baru selalu butuh perubahan enum dokumennya **dan** `masalah.md` sekaligus.
 
-Admin: daftar lengkap menjadi enum `ProblemKode` di `admin-api.yaml` (Addendum A §6.1). Dari acuan: `ekspor_terlalu_besar` (ADR-0003 §3.6d). Usulan: `kredensial_salah`, `login_dibatasi`, `origin_tidak_valid`, `akses_ditolak`, `pencarian_nik_dilarang`, `validasi_gagal`, `secret_dipakai`, `kredensial_dicabut`, `batas_kredensial`, `webhook_domain_tidak_diizinkan`, `webhook_tidak_https`, `metadata_wajib_hilang`, `tidak_ditemukan`. Enum final ditutup saat compile pertama karena `Problem.kode` di kode masih `String`.
+- `ProblemKodeDown` (16, `downstream-api.yaml`): `tidak_terautentikasi`, `token_dibatasi`, `validasi_gagal`, `metadata_tidak_valid`, `idempotency_key_tidak_didukung`, `idempotency_key_konflik`, `kuota_habis`, `porsi_sync_habis`, `penolakan_berlebih`, `objek_nonaktif` (+ `jenis_objek` ∈ `endpoint|downstream_pool|upstream_pool|provider`), `tidak_bisa_dibatalkan`, `layanan_tidak_tersedia`, `retry_habis`, `provider_error_permanen`, `timeout_sync`, `tidak_ditemukan`.
+- `ProblemKodeAdmin` (16, `admin-api.yaml`): `validasi_gagal`, `tidak_terautentikasi`, `tidak_ditemukan`, `layanan_tidak_tersedia`, `kredensial_salah`, `login_dibatasi`, `origin_tidak_valid`, `akses_ditolak`, `pencarian_nik_dilarang`, `secret_dipakai`, `kredensial_dicabut`, `batas_kredensial`, `webhook_domain_tidak_diizinkan`, `webhook_tidak_https`, `metadata_wajib_hilang`, `ekspor_terlalu_besar`.
+
+`ValidasiErrorDown` tidak memuat `posisi`; `ValidasiErrorAdmin` memuatnya
+(Addendum A §6.1). Uji `masalah_anchors` menjaga gabungan kedua enum == anchor
+`masalah.md`, dan setiap dokumen ⊆ anchor.
 
 ## 2. Downstream API (`downstream-api.yaml`)
 
@@ -81,9 +96,9 @@ Respons client: 2xx = `terkirim`; selain itu (termasuk 3xx, redirect tidak diiku
 
 | Butir | Contoh di spec | Tempat |
 |---|---|---|
-| R-05 | Respons `issueToken` (`expires_in: 900`, tanpa `refresh_token`); 429 `token_dibatasi` | `issueToken` |
-| R-09 | Webhook `done` berikut keempat header, dan contoh `cancelled` dengan `cancel_reason` | `webhooks.requestTerminal` |
-| R-10 | Satu contoh problem+json per `kode` pada tabel §2, termasuk 422 dengan `errors[{field, kode, batas?}]` dan 429 `penolakan_berlebih` dengan hanya empat field | Komponen `responses` |
+| R-05 | Contoh request `issueToken` (`grant_type=client_credentials`, `client_id`, `client_secret`) dan responsnya (`expires_in: 900`, `access_token` JWT mentah tanpa prefix `Bearer`, tanpa `refresh_token`); 429 `token_dibatasi` | `issueToken` |
+| R-09 | Webhook `requestTerminal`: contoh request `done` dan `cancelled` (dengan `cancel_reason`), masing-masing dengan contoh keempat header (`webhook-id`, `webhook-timestamp`, `webhook-signature`, `poolrouter-secret-versi`) | `requestTerminal` |
+| R-10 | Satu contoh problem+json per `kode` pada tabel §2, termasuk 422 dengan `errors[{field, kode, batas?}]` dan 429 `penolakan_berlebih` dengan hanya empat field. Contoh request `submitSync` dan `enqueueAsync`; `getRequest` punya contoh `queued`, `processing`, `done`, `failed` (dengan `failure_reason`), `cancelled`, dan `expired` | Komponen `responses`, `submitSync`, `enqueueAsync`, `getRequest` |
 | R-16 | Header `Cache-Control: no-store` di komponen `headers`, dirujuk semua respons | Komponen |
 | R-18 | Ekspor auditor → admin API (§3) | `exportLogAuditor` |
 
@@ -119,7 +134,7 @@ Sumber umum: peran PA (hak ubah), audit konfigurasi di setiap tulis (siapa, kapa
 | `listUpstreamPools` / `getUpstreamPool` | `GET /admin/v1/upstream-pools`, `…/{id}` | PA | — | 200; 404 |
 | `createUpstreamPool` / `updateUpstreamPool` | `POST /admin/v1/upstream-pools`, `PUT …/{id}` | PA | `provider_id`, `kuota_harian`, `rate_limit_per_jam`, `porsi_sync`, `margin_kuota` (0,001–0,200), `batas_percobaan` (1–5), `retry_backoff_base_detik`, `retry_backoff_cap_detik`, `retry_rasio`, `retry_min_per_jam`, `jendela_kuota` (`bergulir_24j`\|`kalender`), `reset_kuota_jam`, `reset_kuota_zona` (IANA), `jeda_min`, `jeda_maks`, `ambang_berdampingan`, `alasan` (wajib saat ubah) | 201/200; 422 di luar rentang KP-01, offset tetap pada zona, `kalender` tanpa sumber kepastian di `alasan`; `reset_kuota_*` berlaku di akhir periode (KP-02) |
 | `listDownstreamPools` / `getDownstreamPool` | `GET /admin/v1/downstream-pools`, `…/{id}` | PA | — | 200; 404 |
-| `createDownstreamPool` / `updateDownstreamPool` | `POST …`, `PUT …/{id}` | PA | `mode` (`sync`\|`async`), `ttl_antrean` (default 24 jam), `upstream_pool_id` (alokasi tunggal; tanpa reserved/shareable/prioritas) | 201/200; 422 |
+| `createDownstreamPool` / `updateDownstreamPool` | `POST …`, `PUT …/{id}` | PA | `nama` (wajib, unik), `ttl_antrean_detik` (default 24 jam), `upstream_pool_ids[]` (`minItems`/`maxItems` 1; alokasi tunggal), `alasan` wajib saat ubah. **Tanpa `mode`**: mode ditentukan path. Respons menambah `prioritas` (`readOnly`, selalu 1) | 201/200; 422 |
 | `listClients` / `getClient` | `GET /admin/v1/clients`, `…/{id}` | PA; CO hanya clientnya | — | 200; 404 |
 | `createClient` / `updateClient` | `POST /admin/v1/clients`, `PUT …/{id}` | PA | `nama`, `limiter_penolakan_burst` (1–1000, default 20), `limiter_penolakan_isi_ulang_per_detik` (0,10–100,00, default 1,00), `alasan` wajib saat ubah limiter | 201/200; 422 di luar rentang (L-04) |
 | `setClientEndpoints` | `PUT /admin/v1/clients/{id}/endpoints` | PA | `{endpoint_ids[]}` | 200; 422. Client tanpa penugasan → 404 saat memanggil downstream. **Bentuk penugasan client↔endpoint tidak ditetapkan acuan (U-7)** |
@@ -184,6 +199,14 @@ Ditranskripsi ke `crates/webserver/src/api/enums.rs` dari contract v0.7.10 (tanp
 | `CancelReason` | `dibatalkan_client`, `client_nonaktif`, `kredensial_nonaktif`, `endpoint_nonaktif`, `pool_nonaktif`, `provider_nonaktif` | §3.2.3 |
 | `RateLimitKode` | `kuota_habis`, `porsi_sync_habis`, `penolakan_berlebih` | ADR-0001 §5a.7 |
 | `BahasaUi` | `id`, `en` | Addendum A §7.2 |
+| `JendelaKuota` | `bergulir_24j`, `kalender` | KP-01; CHECK skema `main` |
+| `Peran` | `auditor`, `operator`, `platform_admin`, `client_owner` | contract §8.1 |
+| `StatusKredensial` | `aktif`, `kedaluwarsa`, `dicabut` | EN-02/EN-03 |
+| `HasilWebhook` | `terkirim`, `gagal_http`, `gagal_jaringan`, `ditolak_allowlist`, `gagal_internal` | CHECK skema `main` |
+| `KelasErrorWebhook` | `timeout`, `koneksi`, `rate_limit_provider`, `respons_tidak_valid`, `tls`, `provider_sementara` | contract §3.2.5 |
+
+`Me.peran`, `Credential.status`, `WebhookLog.hasil`, dan `WebhookLog.error_class`
+adalah **enum tertutup**, bukan `String`.
 
 Nilai `reject_reason` (`validasi_gagal`, `metadata_tidak_valid`, `kuota_habis`, `porsi_sync_habis`, `objek_nonaktif`) tidak menjadi enum sendiri; mereka muncul sebagai `kode` di `ProblemKode`.
 
@@ -220,24 +243,31 @@ Bukan story F0 di §7 v0.17, jadi tidak dipetakan: US-10 (F2), US-11 dan US-13 (
 
 ## 6. Yang dikerjakan dan belum
 
-Dikerjakan tanpa kompilasi di branch ini: dokumen ini, dan transkripsi enum `FailureReason`/`CancelReason`. **Belum pernah dikompilasi**: seluruh kode Rust di branch (generator, tipe `Problem`, stub `enqueueAsync`), `Cargo.lock` belum diperbarui. Handler `utoipa` untuk operasi di atas **tidak** ditulis sebelum ada compile pertama (arahan Shu).
+Sudah dikompilasi: generator `openapi-gen`, seluruh tipe `Problem`/`ProblemAdmin`,
+dan handler `utoipa` beserta stub yang mengembalikan 501. `make openapi` menghasilkan
+kedua YAML; `make test-rust` hijau. Gate penuh `make setup test lint` dijalankan pada
+hash yang di-review (lihat komentar issue untuk hash dan exit code per target).
 
-Stub `enqueueAsync` di `downstream.rs` masih memakai path `/v1/async`; akan diubah menjadi `/v1/endpoints/{endpoint_id}/async` setelah U-4 diputuskan.
+`enqueueAsync` memakai path `/v1/endpoints/{endpoint_id}/async` (U-4, diputuskan).
+Penolakan yang masih terbuka dicatat di tabel §7.
 
-## 7. Keputusan yang diminta di review
+## 7. Keputusan review (U-1…U-11 sudah ditutup)
 
-| # | Pertanyaan | Rekomendasi saya |
+Semua butir di bawah sudah diputuskan oleh Shu dan berlaku di YAML. Tabelnya
+dipertahankan sebagai riwayat keputusan, bukan permintaan baru.
+
+| # | Pertanyaan | Keputusan |
 |---|---|---|
-| U-1 | Daftar `kode` tambahan (§1.1), khususnya satu `tidak_terautentikasi` untuk semua 401 | Setuju satu kode; rincian penyebab hanya di metrik MT-03 |
-| U-2 | Nama header API key | `X-API-Key` |
-| U-3 | `issueToken` memakai problem+json (R-10) bukan `{"error": …}` RFC 6749 §5.2. Pustaka OAuth2 client standar membaca `error` | Problem+json plus field `error` kompatibel RFC 6749 di body. Butuh keputusan Shu karena menyentuh R-10 dan R-05 |
-| U-4 | Endpoint dipilih lewat path (`/v1/endpoints/{endpoint_id}/sync\|async`) bukan body. Sidik idempotensi memakai `downstream_endpoint_id`, dan kontrak input berbeda per endpoint | Path. Mengganti stub `/v1/async` di `4e7ea9e`; belum dipakai siapa pun. Pembatalan/polling di `/v1/requests/{queue_id}` |
-| U-5 | 202 untuk request baru, 200 untuk replay idempoten | Ya (acuan hanya membedakan "200 request lama") |
-| U-6 | Nama properti hasil: `hasil` | Ya; konsisten di sync, polling, dan webhook |
-| U-7 | Penugasan client ↔ endpoint/pool belum dimodelkan di acuan (US-06 hanya menyebut "client tidak di-assign ke pool → ditolak") | `setClientEndpoints` seperti di §3.2; Klaus perlu mengonfirmasi tabelnya |
-| U-8 | Kode untuk 429 "rate limit jam berjalan penuh" pada sync (BRD US-08 AC memisahkannya dari "porsi sync habis"), padahal `RateLimitKode` tertutup tiga nilai | Pakai `porsi_sync_habis` hanya untuk porsi, dan `kuota_habis` untuk rate limit penuh dengan `Retry-After` GCRA; ADR-0001 §5a.7 menyebut "429 tunggu token sync" di baris `porsi_sync_habis`, jadi bisa juga dipetakan ke situ. Perlu keputusan Shu, karena enum tertutup |
-| U-9 | Lokasi kesalahan template (US-01) di `errors[{field, kode, batas}]`: `batas` dibatasi "parameter angka aturan" | `field` = JSON pointer ke template, `batas: {baris, kolom}`. Perlu Shu karena menyentuh batasan Addendum A §6.1 |
-| U-10 | Daftar request milik client untuk CO (contract §8.1 menyebut status/hasil/webhook milik client-nya) tidak punya story F0 | Tidak dimasukkan. Fitcher: konfirmasi apakah layar UI membutuhkannya |
-| U-11 | Pembacaan audit konfigurasi di UI tidak ada di lingkup issue | Tidak dimasukkan |
+| U-1 | Daftar `kode` tambahan (§1.1), khususnya satu `tidak_terautentikasi` untuk semua 401 | **Diterima.** Satu kode; rincian penyebab hanya di metrik MT-03 |
+| U-2 | Nama header API key | **Diterima:** `X-API-Key` |
+| U-3 | `issueToken` memakai problem+json (R-10) bukan `{"error": …}` RFC 6749 §5.2 | **Diterima:** problem+json plus field `error` yang kompatibel RFC 6749 |
+| U-4 | Endpoint dipilih lewat path (`/v1/endpoints/{endpoint_id}/sync\|async`) bukan body. Sidik idempotensi memakai `downstream_endpoint_id`, dan kontrak input berbeda per endpoint | **Diterima:** path. `EndpointKontrak` tidak lagi memuat `mode_diizinkan`; mode ditentukan path |
+| U-5 | 202 untuk request baru, 200 untuk replay idempoten | **Diterima:** ya |
+| U-6 | Nama properti hasil: `hasil` | **Diterima:** `hasil`, konsisten di sync, polling, dan webhook |
+| U-7 | Penugasan client ↔ endpoint belum dimodelkan di acuan | **Diterima:** `setClientEndpoints`; `endpoint_ids` `minItems: 0`, set kosong mencabut semua penugasan |
+| U-8 | Kode untuk 429 "rate limit jam berjalan penuh" pada sync | **Diterima:** satu kode `porsi_sync_habis` untuk porsi sync maupun rate limit jam berjalan (satu kode, seperti enum tertutup `RateLimitKode`) |
+| U-9 | Lokasi kesalahan template di `errors[{field, kode, batas}]` | **Diterima:** `field` = nama field seperti yang dikirim; `batas` = parameter angka aturan (`type: number`) |
+| U-10 | Daftar request milik client untuk CO tidak punya story F0 | **Diterima:** tidak dimasukkan |
+| U-11 | Pembacaan audit konfigurasi di UI tidak ada di lingkup issue | **Diterima:** tidak dimasukkan |
 
 Cek terhadap UI (layar, copy) tidak saya lakukan di dokumen ini; itu bagian review Fitcher.

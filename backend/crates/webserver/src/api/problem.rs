@@ -1,8 +1,11 @@
 //! RFC 9457 `application/problem+json` (R-10, ADR-0001 section 5a.7).
 //!
-//! `kode` is a closed enum (`ProblemKode`); `type` is the stable anchor URL
-//! into `docs/masalah.md`. The anchor set of that document must equal
-//! `ProblemKode` — the equality is asserted by `api::tests::masalah_anchors`.
+//! `kode` is a closed enum per document (`ProblemKodeDown` / `ProblemKodeAdmin`);
+//! `type` is the stable anchor URL into `docs/masalah.md`. Each document's code
+//! set must be a subset of the anchors in that document — asserted by
+//! `api::tests::masalah_anchors`, which also checks that the two sets together
+//! equal the anchors. One code per anchor lives here; `docs/masalah.md` stays a
+//! single combined document shared by both APIs.
 
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
@@ -10,34 +13,36 @@ use uuid::Uuid;
 
 use super::enums::{ApiStatus, JenisObjek};
 
-/// Closed machine-readable code. One anchor in `docs/masalah.md` per value;
-/// `type` and `kode` are 1:1 (ADR-0001 section 5a.7).
+const ANCHOR: &str = "https://github.com/faisalcayunda/PoolRouter/blob/main/docs/masalah.md#";
+
+/// Downstream (external client) codes. Adding a value here changes the frozen
+/// external contract and needs an API version decision; admin-only codes must
+/// never be added to this enum.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
-pub enum ProblemKode {
-    // Downstream (all) and admin (session-based 401).
+pub enum ProblemKodeDown {
     TidakTerautentikasi,
-    /// Downstream 429: token bucket empty (hourly limit or 200 ms sync token).
+    /// 429: token throttle exhausted (60/minute per `client_id`, burst 10).
     TokenDibatasi,
     /// 400 (malformed JSON / unsupported grant) and 422 (field validation).
     ValidasiGagal,
-    /// 422: metadata fields do not match the endpoint contract.
+    /// 422: metadata keys do not match the endpoint contract.
     MetadataTidakValid,
     /// 400: `Idempotency-Key` sent on the sync path.
     IdempotencyKeyTidakDidukung,
     /// 422: same key, different fingerprint.
     IdempotencyKeyKonflik,
-    /// 429: period quota exhausted (`kuota_habis` only for the period window).
+    /// 429: period quota exhausted.
     KuotaHabis,
-    /// 429: sync portion or hourly limiter exhausted on the sync path.
+    /// 429: sync portion exhausted on the sync path.
     PorsiSyncHabis,
-    /// 429: rejection limiter (burst/isolation) engaged.
+    /// 429: rejection limiter engaged.
     PenolakanBerlebih,
-    /// 403 (endpoint) or 503 (pool/provider after enqueue).
+    /// 403 (endpoint) or 503 (pool/provider).
     ObjekNonaktif,
-    /// 409: cancel of a terminal request.
+    /// 409: cancel of a `processing` or terminal request.
     TidakBisaDibatalkan,
-    /// 503: Redis fail-closed or component down; always `Retry-After: 5`.
+    /// 503: Redis fail-closed; always `Retry-After: 5`.
     LayananTidakTersedia,
     /// 502: retry window exhausted.
     RetryHabis,
@@ -45,10 +50,87 @@ pub enum ProblemKode {
     ProviderErrorPermanen,
     /// 504: sync call did not finish in time.
     TimeoutSync,
-    /// 404: unknown resource.
+    /// 404: unknown resource or another client's resource.
     TidakDitemukan,
-    // Admin.
-    /// 401 on `POST /admin/v1/login`: wrong credentials.
+}
+
+impl ProblemKodeDown {
+    /// Every downstream value, in wire order.
+    pub const ALL: &'static [ProblemKodeDown] = &[
+        ProblemKodeDown::TidakTerautentikasi,
+        ProblemKodeDown::TokenDibatasi,
+        ProblemKodeDown::ValidasiGagal,
+        ProblemKodeDown::MetadataTidakValid,
+        ProblemKodeDown::IdempotencyKeyTidakDidukung,
+        ProblemKodeDown::IdempotencyKeyKonflik,
+        ProblemKodeDown::KuotaHabis,
+        ProblemKodeDown::PorsiSyncHabis,
+        ProblemKodeDown::PenolakanBerlebih,
+        ProblemKodeDown::ObjekNonaktif,
+        ProblemKodeDown::TidakBisaDibatalkan,
+        ProblemKodeDown::LayananTidakTersedia,
+        ProblemKodeDown::RetryHabis,
+        ProblemKodeDown::ProviderErrorPermanen,
+        ProblemKodeDown::TimeoutSync,
+        ProblemKodeDown::TidakDitemukan,
+    ];
+
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::TidakTerautentikasi => "tidak_terautentikasi",
+            Self::TokenDibatasi => "token_dibatasi",
+            Self::ValidasiGagal => "validasi_gagal",
+            Self::MetadataTidakValid => "metadata_tidak_valid",
+            Self::IdempotencyKeyTidakDidukung => "idempotency_key_tidak_didukung",
+            Self::IdempotencyKeyKonflik => "idempotency_key_konflik",
+            Self::KuotaHabis => "kuota_habis",
+            Self::PorsiSyncHabis => "porsi_sync_habis",
+            Self::PenolakanBerlebih => "penolakan_berlebih",
+            Self::ObjekNonaktif => "objek_nonaktif",
+            Self::TidakBisaDibatalkan => "tidak_bisa_dibatalkan",
+            Self::LayananTidakTersedia => "layanan_tidak_tersedia",
+            Self::RetryHabis => "retry_habis",
+            Self::ProviderErrorPermanen => "provider_error_permanen",
+            Self::TimeoutSync => "timeout_sync",
+            Self::TidakDitemukan => "tidak_ditemukan",
+        }
+    }
+
+    /// RFC 9457 `title`. Human summary; details live in `docs/masalah.md`.
+    pub fn title(&self) -> &'static str {
+        match self {
+            Self::TidakTerautentikasi => "Tidak terautentikasi",
+            Self::TokenDibatasi => "Token dibatasi",
+            Self::ValidasiGagal => "Validasi gagal",
+            Self::MetadataTidakValid => "Metadata tidak valid",
+            Self::IdempotencyKeyTidakDidukung => "Idempotency key tidak didukung",
+            Self::IdempotencyKeyKonflik => "Konflik idempotency key",
+            Self::KuotaHabis => "Kuota habis",
+            Self::PorsiSyncHabis => "Porsi sync habis",
+            Self::PenolakanBerlebih => "Penolakan berlebih",
+            Self::ObjekNonaktif => "Objek nonaktif",
+            Self::TidakBisaDibatalkan => "Tidak bisa dibatalkan",
+            Self::LayananTidakTersedia => "Layanan tidak tersedia",
+            Self::RetryHabis => "Retry habis",
+            Self::ProviderErrorPermanen => "Kesalahan provider permanen",
+            Self::TimeoutSync => "Timeout sync",
+            Self::TidakDitemukan => "Tidak ditemukan",
+        }
+    }
+
+    /// Stable `type` anchor (ADR-0001 section 5a.7).
+    pub fn type_url(&self) -> String {
+        format!("{ANCHOR}{}", self.as_str())
+    }
+}
+
+/// Admin (Web UI backend) codes. Not visible to external clients, so a new
+/// value here does not change the downstream contract.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ProblemKodeAdmin {
+    TidakTerautentikasi,
+    /// 401 on `POST /admin/v1/login`: wrong credentials, not distinguished.
     KredensialSalah,
     /// 429: login limiter engaged.
     LoginDibatasi,
@@ -72,119 +154,86 @@ pub enum ProblemKode {
     MetadataWajibHilang,
     /// 422: auditor export above the 10,000-row limit.
     EksporTerlaluBesar,
+    /// 400 (malformed JSON) and 422 (field/template validation).
+    ValidasiGagal,
+    /// 404: unknown resource.
+    TidakDitemukan,
+    /// 503: Redis fail-closed or component down.
+    LayananTidakTersedia,
 }
 
-impl ProblemKode {
-    /// Every value, used by `docs/masalah.md` anchor checks and tests.
-    pub const ALL: &'static [ProblemKode] = &[
-        ProblemKode::TidakTerautentikasi,
-        ProblemKode::TokenDibatasi,
-        ProblemKode::ValidasiGagal,
-        ProblemKode::MetadataTidakValid,
-        ProblemKode::IdempotencyKeyTidakDidukung,
-        ProblemKode::IdempotencyKeyKonflik,
-        ProblemKode::KuotaHabis,
-        ProblemKode::PorsiSyncHabis,
-        ProblemKode::PenolakanBerlebih,
-        ProblemKode::ObjekNonaktif,
-        ProblemKode::TidakBisaDibatalkan,
-        ProblemKode::LayananTidakTersedia,
-        ProblemKode::RetryHabis,
-        ProblemKode::ProviderErrorPermanen,
-        ProblemKode::TimeoutSync,
-        ProblemKode::TidakDitemukan,
-        ProblemKode::KredensialSalah,
-        ProblemKode::LoginDibatasi,
-        ProblemKode::OriginTidakValid,
-        ProblemKode::AksesDitolak,
-        ProblemKode::PencarianNikDilarang,
-        ProblemKode::SecretDipakai,
-        ProblemKode::KredensialDicabut,
-        ProblemKode::BatasKredensial,
-        ProblemKode::WebhookDomainTidakDiizinkan,
-        ProblemKode::WebhookTidakHttps,
-        ProblemKode::MetadataWajibHilang,
-        ProblemKode::EksporTerlaluBesar,
+impl ProblemKodeAdmin {
+    /// Every admin value, in wire order.
+    pub const ALL: &'static [ProblemKodeAdmin] = &[
+        ProblemKodeAdmin::TidakTerautentikasi,
+        ProblemKodeAdmin::KredensialSalah,
+        ProblemKodeAdmin::LoginDibatasi,
+        ProblemKodeAdmin::OriginTidakValid,
+        ProblemKodeAdmin::AksesDitolak,
+        ProblemKodeAdmin::PencarianNikDilarang,
+        ProblemKodeAdmin::SecretDipakai,
+        ProblemKodeAdmin::KredensialDicabut,
+        ProblemKodeAdmin::BatasKredensial,
+        ProblemKodeAdmin::WebhookDomainTidakDiizinkan,
+        ProblemKodeAdmin::WebhookTidakHttps,
+        ProblemKodeAdmin::MetadataWajibHilang,
+        ProblemKodeAdmin::EksporTerlaluBesar,
+        ProblemKodeAdmin::ValidasiGagal,
+        ProblemKodeAdmin::TidakDitemukan,
+        ProblemKodeAdmin::LayananTidakTersedia,
     ];
 
     pub fn as_str(&self) -> &'static str {
         match self {
-            ProblemKode::TidakTerautentikasi => "tidak_terautentikasi",
-            ProblemKode::TokenDibatasi => "token_dibatasi",
-            ProblemKode::ValidasiGagal => "validasi_gagal",
-            ProblemKode::MetadataTidakValid => "metadata_tidak_valid",
-            ProblemKode::IdempotencyKeyTidakDidukung => "idempotency_key_tidak_didukung",
-            ProblemKode::IdempotencyKeyKonflik => "idempotency_key_konflik",
-            ProblemKode::KuotaHabis => "kuota_habis",
-            ProblemKode::PorsiSyncHabis => "porsi_sync_habis",
-            ProblemKode::PenolakanBerlebih => "penolakan_berlebih",
-            ProblemKode::ObjekNonaktif => "objek_nonaktif",
-            ProblemKode::TidakBisaDibatalkan => "tidak_bisa_dibatalkan",
-            ProblemKode::LayananTidakTersedia => "layanan_tidak_tersedia",
-            ProblemKode::RetryHabis => "retry_habis",
-            ProblemKode::ProviderErrorPermanen => "provider_error_permanen",
-            ProblemKode::TimeoutSync => "timeout_sync",
-            ProblemKode::TidakDitemukan => "tidak_ditemukan",
-            ProblemKode::KredensialSalah => "kredensial_salah",
-            ProblemKode::LoginDibatasi => "login_dibatasi",
-            ProblemKode::OriginTidakValid => "origin_tidak_valid",
-            ProblemKode::AksesDitolak => "akses_ditolak",
-            ProblemKode::PencarianNikDilarang => "pencarian_nik_dilarang",
-            ProblemKode::SecretDipakai => "secret_dipakai",
-            ProblemKode::KredensialDicabut => "kredensial_dicabut",
-            ProblemKode::BatasKredensial => "batas_kredensial",
-            ProblemKode::WebhookDomainTidakDiizinkan => "webhook_domain_tidak_diizinkan",
-            ProblemKode::WebhookTidakHttps => "webhook_tidak_https",
-            ProblemKode::MetadataWajibHilang => "metadata_wajib_hilang",
-            ProblemKode::EksporTerlaluBesar => "ekspor_terlalu_besar",
+            Self::TidakTerautentikasi => "tidak_terautentikasi",
+            Self::KredensialSalah => "kredensial_salah",
+            Self::LoginDibatasi => "login_dibatasi",
+            Self::OriginTidakValid => "origin_tidak_valid",
+            Self::AksesDitolak => "akses_ditolak",
+            Self::PencarianNikDilarang => "pencarian_nik_dilarang",
+            Self::SecretDipakai => "secret_dipakai",
+            Self::KredensialDicabut => "kredensial_dicabut",
+            Self::BatasKredensial => "batas_kredensial",
+            Self::WebhookDomainTidakDiizinkan => "webhook_domain_tidak_diizinkan",
+            Self::WebhookTidakHttps => "webhook_tidak_https",
+            Self::MetadataWajibHilang => "metadata_wajib_hilang",
+            Self::EksporTerlaluBesar => "ekspor_terlalu_besar",
+            Self::ValidasiGagal => "validasi_gagal",
+            Self::TidakDitemukan => "tidak_ditemukan",
+            Self::LayananTidakTersedia => "layanan_tidak_tersedia",
         }
     }
 
     /// RFC 9457 `title`. Human summary; details live in `docs/masalah.md`.
     pub fn title(&self) -> &'static str {
         match self {
-            ProblemKode::TidakTerautentikasi => "Tidak terautentikasi",
-            ProblemKode::TokenDibatasi => "Token dibatasi",
-            ProblemKode::ValidasiGagal => "Validasi gagal",
-            ProblemKode::MetadataTidakValid => "Metadata tidak valid",
-            ProblemKode::IdempotencyKeyTidakDidukung => "Idempotency key tidak didukung",
-            ProblemKode::IdempotencyKeyKonflik => "Konflik idempotency key",
-            ProblemKode::KuotaHabis => "Kuota habis",
-            ProblemKode::PorsiSyncHabis => "Porsi sync habis",
-            ProblemKode::PenolakanBerlebih => "Penolakan berlebih",
-            ProblemKode::ObjekNonaktif => "Objek nonaktif",
-            ProblemKode::TidakBisaDibatalkan => "Tidak bisa dibatalkan",
-            ProblemKode::LayananTidakTersedia => "Layanan tidak tersedia",
-            ProblemKode::RetryHabis => "Retry habis",
-            ProblemKode::ProviderErrorPermanen => "Kesalahan provider permanen",
-            ProblemKode::TimeoutSync => "Timeout sync",
-            ProblemKode::TidakDitemukan => "Tidak ditemukan",
-            ProblemKode::KredensialSalah => "Kredensial salah",
-            ProblemKode::LoginDibatasi => "Login dibatasi",
-            ProblemKode::OriginTidakValid => "Origin tidak valid",
-            ProblemKode::AksesDitolak => "Akses ditolak",
-            ProblemKode::PencarianNikDilarang => "Pencarian NIK dilarang",
-            ProblemKode::SecretDipakai => "Secret masih dipakai",
-            ProblemKode::KredensialDicabut => "Kredensial masih dipakai",
-            ProblemKode::BatasKredensial => "Batas kredensial tercapai",
-            ProblemKode::WebhookDomainTidakDiizinkan => "Domain webhook tidak diizinkan",
-            ProblemKode::WebhookTidakHttps => "Webhook bukan https",
-            ProblemKode::MetadataWajibHilang => "Metadata wajib hilang",
-            ProblemKode::EksporTerlaluBesar => "Ekspor terlalu besar",
+            Self::TidakTerautentikasi => "Tidak terautentikasi",
+            Self::KredensialSalah => "Kredensial salah",
+            Self::LoginDibatasi => "Login dibatasi",
+            Self::OriginTidakValid => "Origin tidak valid",
+            Self::AksesDitolak => "Akses ditolak",
+            Self::PencarianNikDilarang => "Pencarian NIK dilarang",
+            Self::SecretDipakai => "Secret masih dipakai",
+            Self::KredensialDicabut => "Kredensial masih dipakai",
+            Self::BatasKredensial => "Batas kredensial tercapai",
+            Self::WebhookDomainTidakDiizinkan => "Domain webhook tidak diizinkan",
+            Self::WebhookTidakHttps => "Webhook bukan https",
+            Self::MetadataWajibHilang => "Metadata wajib hilang",
+            Self::EksporTerlaluBesar => "Ekspor terlalu besar",
+            Self::ValidasiGagal => "Validasi gagal",
+            Self::TidakDitemukan => "Tidak ditemukan",
+            Self::LayananTidakTersedia => "Layanan tidak tersedia",
         }
     }
 
     /// Stable `type` anchor (ADR-0001 section 5a.7).
     pub fn type_url(&self) -> String {
-        format!(
-            "https://github.com/faisalcayunda/PoolRouter/blob/main/docs/masalah.md#{}",
-            self.as_str()
-        )
+        format!("{ANCHOR}{}", self.as_str())
     }
 }
 
-/// Position inside the provider body template (U-9). Admin API only,
-/// validation of the template only.
+/// Position inside the provider body template. Admin API only, validation of
+/// the template only — downstream bodies never carry it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct Posisi {
     /// 1-based line in the body template.
@@ -195,20 +244,35 @@ pub struct Posisi {
     pub kolom: i64,
 }
 
-/// One failing input field. `errors[].kode` is a per-field validation code
+/// One failing input field, downstream. `kode` is a per-field validation code
 /// from Addendum A section 6.1; `batas` carries only the numeric rule
-/// parameter (never the rejected value). Template errors carry `posisi`.
+/// parameter (never the rejected value). Without `posisi`: template errors are
+/// an admin-only concept.
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
-pub struct ValidasiError {
+pub struct ValidasiErrorDown {
     /// Name of the rejected field exactly as sent (`TRESHOLD`, `NAMA_LGKAP`,
-    /// or the metadata key), or a JSON pointer for template errors (D6).
-    /// Names that do not match `^[A-Za-z0-9_]{1,64}$` are never echoed.
+    /// or the metadata key) (D6). Names that do not match
+    /// `^[A-Za-z0-9_]{1,64}$` are never echoed; they are only counted in
+    /// `jumlah_nama_tidak_cocok`.
     pub field: String,
     pub kode: String,
     /// Numeric rule parameter of the violated rule, if any.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub batas: Option<serde_json::Value>,
-    /// Template position (U-9). Admin API and template errors only.
+    pub batas: Option<f64>,
+}
+
+/// One failing field, admin. Field names are usually JSON pointers into the
+/// request body; template errors carry `posisi`.
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct ValidasiErrorAdmin {
+    /// Name of the rejected field exactly as sent, or a JSON pointer for
+    /// admin request bodies and template errors (D6).
+    pub field: String,
+    pub kode: String,
+    /// Numeric rule parameter of the violated rule, if any.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub batas: Option<f64>,
+    /// Template position. Admin API and template errors only.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub posisi: Option<Posisi>,
 }
@@ -238,24 +302,29 @@ impl From<JumlahNamaTidakCocok> for u32 {
     }
 }
 
-/// RFC 9457 problem body shared by every 4xx/5xx. `detail` never contains
-/// input values, NIK or secrets (R-16). Field names follow the contract:
-/// Indonesian on the wire except the fixed RFC members.
+/// RFC 9457 problem body for the downstream API. `detail` never contains input
+/// values, NIK or secrets (R-16). Field names follow the contract: Indonesian
+/// on the wire except the fixed RFC members.
+///
+/// Also the base of the admin body: both carry `type`, `title`, `status`,
+/// `kode`, `detail` and `errors`, which is what the client sees.
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct Problem {
     /// Stable anchor `https://github.com/faisalcayunda/PoolRouter/blob/main/docs/masalah.md#<kode>`.
     #[serde(rename = "type")]
     pub type_: String,
     pub title: String,
+    /// HTTP status, 400..=599.
+    #[schema(minimum = 400, maximum = 599)]
     pub status: u16,
-    pub kode: ProblemKode,
+    pub kode: ProblemKodeDown,
     /// Human explanation without sensitive values; absent when unneeded.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub detail: Option<String>,
     /// Failing fields; only on 422 `validasi_gagal` and `metadata_tidak_valid`
     /// bodies (D6). Entries are the names as sent, never their values.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub errors: Option<Vec<ValidasiError>>,
+    pub errors: Option<Vec<ValidasiErrorDown>>,
     /// Number of failing names that did not match `^[A-Za-z0-9_]{1,64}$` and
     /// are therefore not echoed, only counted (D6, R-16). Present only when at
     /// least one such name was rejected.
@@ -270,14 +339,13 @@ pub struct Problem {
     /// `queue_id` of the request the failure belongs to (502/504 bodies).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub request_id: Option<Uuid>,
-    /// RFC 6749 section 5.2 error for the token endpoint (U-3). Never sent
-    /// with a 429.
+    /// RFC 6749 section 5.2 error for the token endpoint. Never sent with a 429.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
 }
 
 impl Problem {
-    fn new(status: u16, kode: ProblemKode) -> Self {
+    fn new(kode: ProblemKodeDown, status: u16) -> Self {
         Self {
             type_: kode.type_url(),
             title: kode.title().into(),
@@ -293,34 +361,14 @@ impl Problem {
         }
     }
 
-    /// Body of the temporary 501 handler stubs. The stubs are replaced by the
-    /// real implementations without changing annotations (SHAA-175 note), so
-    /// this code never appears in the generated YAML.
+    /// Placeholder body of the 501 handler stubs.
     pub fn stub() -> Self {
-        let mut p = Self::new(501, ProblemKode::LayananTidakTersedia);
-        p.title = "Belum diimplementasikan".into();
-        p.detail = Some("Handler kontrak akan menggantikan stub ini.".into());
-        p
+        Self::new(ProblemKodeDown::ValidasiGagal, 501)
     }
 }
 
-#[cfg(test)]
-mod problem_tests {
-    use super::*;
-
-    /// `type` and `kode` are paired 1:1 and every `type` points at a stable
-    /// anchor in `docs/masalah.md` (ADR-0001 section 5a.7).
-    #[test]
-    fn type_url_matches_kode() {
-        for kode in ProblemKode::ALL {
-            assert_eq!(
-                kode.type_url(),
-                format!(
-                    "https://github.com/faisalcayunda/PoolRouter/blob/main/docs/masalah.md#{}",
-                    kode.as_str()
-                )
-            );
-        }
-        assert_eq!(ProblemKode::ALL.len(), 28);
+impl Default for Problem {
+    fn default() -> Self {
+        Self::stub()
     }
 }

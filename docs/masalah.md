@@ -11,21 +11,26 @@ Contoh di dokumen ini tidak memuat nilai input, NIK, atau secret (R-16).
 # tidak_terautentikasi
 
 401. Kredensial tidak valid, kedaluwarsa, atau tidak dikirim. Penyebab tidak
-dibedakan di body (U-1); rincian alasan hanya ada di metrik MT-03. Downstream:
+dibedakan di body; rincian alasan hanya ada di metrik MT-03. Downstream:
 `WWW-Authenticate: Bearer`. Tidak ada baris request dan tidak memotong kuota.
 
 # token_dibatasi
 
 429 khusus `POST /v1/oauth/token`. Limiter GCRA per `client_id` (60/menit,
 burst 10) atau per IP (120/menit) habis. Selalu dengan `Retry-After`; tanpa
-field `error` RFC 6749 (U-3).
+field `error` RFC 6749.
 
 # validasi_gagal
 
 400 (body bukan JSON yang sah / `unsupported_grant_type` pada token) atau 422
 (field tidak memenuhi aturan). 422 memuat `errors[]` per field; `batas` hanya
 memuat parameter aturan, bukan nilai yang ditolak (R-16). Contoh: field
-`TRESHOLD` di bawah minimum.
+`NAMA_LGKAP` yang wajib tetapi kosong, atau nilai `NIK` yang panjangnya di luar
+aturan. Nama field yang bentuknya tidak wajar (bukan `^[A-Za-z0-9_]{1,64}$`)
+tidak di-echo; jumlahnya dilaporkan di `jumlah_nama_tidak_cocok` (integer,
+minimal 1) dan field itu tidak muncul saat nilainya nol. Nama seperti
+`TRESHOLD` bukan field kontrak, sehingga ditolak sebagai field tidak dikenal
+(US-03), bukan sebagai nilai di bawah minimum.
 
 # metadata_tidak_valid
 
@@ -36,7 +41,7 @@ tidak di-echo.
 # idempotency_key_tidak_didukung
 
 400. Header `Idempotency-Key` dikirim ke path sinkron (`/sync`). Header hanya
-berlaku pada path asinkron (U-2).
+berlaku pada path asinkron.
 
 # idempotency_key_konflik
 
@@ -46,13 +51,15 @@ atau mengulang persis.
 
 # kuota_habis
 
-429. Kuota periode upstream pool (`bergulir24j` atau `kalender` setelah
-margin) sudah terpakai. Selalu dengan `Retry-After` (U-8).
+429. Kuota periode upstream pool (`bergulir_24j` atau `kalender` setelah
+margin) sudah terpakai. Selalu dengan `Retry-After`: sisa waktu sampai ember
+tertua keluar dari jendela (`bergulir_24j`) atau sampai `reset_kuota`
+berikutnya (`kalender`), dalam detik bulat minimal 1.
 
 # porsi_sync_habis
 
 429. Porsi sync atau rate limit jam berjalan upstream pool habis. Satu kode
-untuk keduanya (U-8). Selalu dengan `Retry-After`.
+untuk keduanya. Selalu dengan `Retry-After` menuju token limiter berikutnya.
 
 # penolakan_berlebih
 
@@ -97,12 +104,12 @@ waktu per percobaan). Body memuat `request_id`.
 # tidak_ditemukan
 
 404. Objek tidak dikenal. Pada endpoint downstream, resource milik client lain
-dan yang tidak ada tidak dibedakan; penolakan tercatat di log akses (U-1).
+dan yang tidak ada tidak dibedakan; penolakan tercatat di log akses.
 
 # kredensial_salah
 
 401 pada `POST /admin/v1/auth/login`. Username atau password salah; keduanya
-tidak dibedakan (U-1).
+tidak dibedakan.
 
 # login_dibatasi
 
@@ -133,7 +140,7 @@ provider tersebut (US-02).
 # kredensial_dicabut
 
 409. Kredensial masih dipakai endpoint aktif. Mengaktifkan ulang kredensial
-yang dicabut selalu 409 (U-54b); buat kredensial baru untuk mengganti.
+yang dicabut selalu 409; buat kredensial baru untuk mengganti.
 
 # batas_kredensial
 

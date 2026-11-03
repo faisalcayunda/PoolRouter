@@ -7,7 +7,7 @@ use utoipa::OpenApi;
 
 use crate::api::{
     admin, downstream,
-    problem::{JumlahNamaTidakCocok, ProblemKode},
+    problem::{JumlahNamaTidakCocok, ProblemKodeAdmin, ProblemKodeDown},
 };
 
 fn downstream_doc() -> Value {
@@ -244,7 +244,10 @@ fn masalah_path() -> std::path::PathBuf {
     }
 }
 
-/// 8: `docs/masalah.md` anchor set == ProblemKode (ADR-0001 section 5a.7).
+/// 8: `docs/masalah.md` stays one combined document, but the code sets are per
+/// document and disjoint where they must be (D-2, ADR-0001 section 5a.7):
+/// the union of both documents equals the anchors, and each document's set is
+/// a subset of the anchors.
 #[test]
 fn masalah_anchors() {
     let path = masalah_path();
@@ -254,20 +257,88 @@ fn masalah_anchors() {
         .filter_map(|line| line.strip_prefix("# "))
         .filter(|judul| *judul != "Kode masalah PoolRouter") // judul dokumen
         .collect();
-    let kode: std::collections::HashSet<&str> =
-        ProblemKode::ALL.iter().map(|k| k.as_str()).collect();
-    for k in &kode {
-        assert!(
-            anchor.contains(k),
-            "anchor #{k} tidak ada di docs/masalah.md"
-        );
+    let down: std::collections::HashSet<&str> =
+        ProblemKodeDown::ALL.iter().map(|k| k.as_str()).collect();
+    let admin: std::collections::HashSet<&str> =
+        ProblemKodeAdmin::ALL.iter().map(|k| k.as_str()).collect();
+
+    for (name, kode) in [("downstream", &down), ("admin", &admin)] {
+        for k in kode {
+            assert!(
+                anchor.contains(k),
+                "anchor #{k} ({name}) tidak ada di docs/masalah.md"
+            );
+        }
     }
+
+    let gabungan: std::collections::HashSet<&str> = down.union(&admin).copied().collect();
     for a in &anchor {
         assert!(
-            kode.contains(a),
-            "anchor #{a} di docs/masalah.md bukan ProblemKode"
+            gabungan.contains(a),
+            "anchor #{a} di docs/masalah.md bukan kode downstream maupun admin"
         );
     }
+    let yatim: Vec<&str> = anchor.difference(&gabungan).copied().collect();
+    assert!(
+        yatim.is_empty(),
+        "anchor tanpa kode di dokumen mana pun: {yatim:?}"
+    );
+}
+
+/// D-2: the downstream contract never exposes an admin-only code, and vice
+/// versa. Guards against re-merging the two enum sets.
+#[test]
+fn kode_admin_tidak_bocor_ke_downstream() {
+    use crate::api::{problem::ProblemKodeAdmin as A, problem::ProblemKodeDown as D};
+    let admin_only = [
+        A::KredensialSalah,
+        A::LoginDibatasi,
+        A::OriginTidakValid,
+        A::AksesDitolak,
+        A::PencarianNikDilarang,
+        A::SecretDipakai,
+        A::KredensialDicabut,
+        A::BatasKredensial,
+        A::WebhookDomainTidakDiizinkan,
+        A::WebhookTidakHttps,
+        A::MetadataWajibHilang,
+        A::EksporTerlaluBesar,
+    ];
+    let down: Vec<&str> = D::ALL.iter().map(|k| k.as_str()).collect();
+    for kode in admin_only {
+        assert!(
+            !down.contains(&kode.as_str()),
+            "kode admin #{} bocor ke kontrak downstream",
+            kode.as_str()
+        );
+    }
+    assert_eq!(
+        down.len(),
+        16,
+        "kontrak downstream memuat 16 kode (D-2): {down:?}"
+    );
+}
+
+/// D-2: `posisi` is an admin-only concept; the downstream `ValidasiError` must
+/// not carry it.
+#[test]
+fn posisi_tidak_ada_di_downstream() {
+    let doc = downstream_doc();
+    let err = &doc["components"]["schemas"]["ValidasiErrorDown"];
+    let props = err["properties"].as_object().expect("properti errors");
+    assert!(
+        !props.contains_key("posisi"),
+        "posisi bocor ke downstream: {props:?}"
+    );
+    let admin = admin_doc();
+    let err_admin = &admin["components"]["schemas"]["ValidasiErrorAdmin"];
+    assert!(
+        err_admin["properties"]
+            .as_object()
+            .expect("properti errors admin")
+            .contains_key("posisi"),
+        "posisi harus ada di admin"
+    );
 }
 
 /// 9: sync path does not advertise Idempotency-Key (U-2).

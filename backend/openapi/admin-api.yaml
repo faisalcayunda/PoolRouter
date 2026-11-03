@@ -294,6 +294,13 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/SesiStatus'
+              examples:
+                sesi:
+                  summary: Sesi aktif; seluruh field wajib
+                  value:
+                    absolut_berakhir_pada: 2026-11-06T18:00:00Z
+                    idle_berakhir_pada: 2026-11-06T10:30:00Z
+                    waktu_server: 2026-11-06T10:00:00Z
         '401':
           $ref: '#/components/responses/Problem401Admin'
       security:
@@ -318,6 +325,13 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/SesiStatus'
+              examples:
+                sesi:
+                  summary: Idle digeser ke +30 menit; absolut tidak berubah
+                  value:
+                    absolut_berakhir_pada: 2026-11-06T18:00:00Z
+                    idle_berakhir_pada: 2026-11-06T10:30:00Z
+                    waktu_server: 2026-11-06T10:00:00Z
         '401':
           $ref: '#/components/responses/Problem401Admin'
         '403':
@@ -1457,7 +1471,9 @@ paths:
     get:
       tags:
       - admin
-      summary: 'Quota tracker (US-12; KP-07): numbers from the DB, not Redis.'
+      summary: |-
+        Quota tracker (US-12; KP-07): numbers from the DB, not Redis. Read-only;
+        available to `platform_admin` and `operator`.
       operationId: getQuotaTracker
       parameters:
       - name: upstream_pool_id
@@ -1469,7 +1485,7 @@ paths:
           format: uuid
       responses:
         '200':
-          description: Baris pelacak kuota per pool/periode
+          description: Baris pelacak kuota per pool/periode; read-only (PA, OP)
           headers:
             Cache-Control:
               schema:
@@ -2274,16 +2290,6 @@ components:
         aktif:
           type: boolean
       additionalProperties: false
-    ApiStatus:
-      type: string
-      description: Status exposed by polling and webhook (ADR-0001 section 4.1). Never goes backwards.
-      enum:
-      - queued
-      - processing
-      - done
-      - failed
-      - expired
-      - cancelled
     AuditAksesBaris:
       type: object
       description: One `audit_akses` row (no `nik_hmac`).
@@ -2439,9 +2445,9 @@ components:
             type: string
             format: uuid
           description: |-
-            Complete assignment; replaces the previous set. Empty means the client
-            has no endpoints (downstream then answers 404).
-          minItems: 1
+            Complete assignment; replaces the previous set. An empty set revokes
+            every assignment, so the client then receives 404 from every endpoint.
+          minItems: 0
       additionalProperties: false
     Credential:
       type: object
@@ -2467,9 +2473,7 @@ components:
           - 'null'
           format: date-time
         status:
-          type: string
-          description: '`aktif` | `kedaluwarsa` | `dicabut`.'
-          example: aktif
+          $ref: '#/components/schemas/StatusKredensial'
     CredentialCreate:
       type: object
       description: |-
@@ -2512,13 +2516,14 @@ components:
     DownstreamPool:
       type: object
       description: |-
-        Downstream pool entity (F-1: `prioritas` is read-only and derived from the
-        allocation; it is not part of create/update bodies).
+        Downstream pool entity. `prioritas` is derived by the allocation: read-only
+        here, always 1 in F0.
       required:
       - downstream_pool_id
-      - mode
-      - ttl_antrean
-      - upstream_pool_id
+      - nama
+      - ttl_antrean_detik
+      - upstream_pool_ids
+      - prioritas
       - aktif
       properties:
         aktif:
@@ -2526,22 +2531,31 @@ components:
         downstream_pool_id:
           type: string
           format: uuid
-        mode:
-          $ref: '#/components/schemas/Mode'
-        ttl_antrean:
+        nama:
+          type: string
+        prioritas:
           type: integer
           format: int64
-        upstream_pool_id:
-          type: string
-          format: uuid
+          description: Derived priority; read-only, always 1 in F0.
+          example: 1
+          readOnly: true
+        ttl_antrean_detik:
+          type: integer
+          format: int64
+        upstream_pool_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
     DownstreamPoolConfig:
       type: object
       description: |-
-        Downstream pool configuration body (US-06; F-1: single upstream
-        allocation, no reserved/shareable/prioritas in the body).
+        Downstream pool create/update body. Mode is not here: the path decides it
+        (a downstream pool serves both `/sync` and `/async`). `prioritas` is derived
+        by the allocation and never writable.
       required:
-      - mode
-      - upstream_pool_id
+      - nama
+      - upstream_pool_ids
       properties:
         alasan:
           type:
@@ -2550,21 +2564,28 @@ components:
           description: Reason; required on update.
           maxLength: 500
           minLength: 10
-        mode:
-          $ref: '#/components/schemas/Mode'
-          description: 'sync|async (F-1: the mode lives here, not on the endpoint).'
-        ttl_antrean:
+        nama:
+          type: string
+          description: Pool name; unique across downstream pools (schema `NOT NULL UNIQUE`).
+          example: BGN MPM
+        ttl_antrean_detik:
           type:
           - integer
           - 'null'
           format: int64
-          description: Queue TTL in seconds; default 86_400 (24 hours).
+          description: |-
+            Queue TTL in seconds; default 86_400 (24 hours). Column
+            `ttl_antrean_detik`.
           example: 86400
-          minimum: 60
-        upstream_pool_id:
-          type: string
-          format: uuid
-          description: The one upstream pool serving this downstream pool.
+          minimum: 1
+        upstream_pool_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+          description: The upstream pools serving this downstream pool. Exactly one in F0.
+          maxItems: 1
+          minItems: 1
       additionalProperties: false
     EksporRequest:
       type: object
@@ -2688,11 +2709,20 @@ components:
         jumlah_failed:
           type: integer
           format: int64
+    HasilWebhook:
+      type: string
+      description: Webhook delivery outcome (schema CHECK on `webhook_log.hasil`).
+      enum:
+      - terkirim
+      - gagal_http
+      - gagal_jaringan
+      - ditolak_allowlist
+      - gagal_internal
     JendelaKuota:
       type: string
       description: Periode kuota upstream pool (ADR-0001 section 3a.5).
       enum:
-      - bergulir24j
+      - bergulir_24j
       - kalender
     JenisKredensial:
       type: string
@@ -2717,6 +2747,18 @@ components:
         Count of failing names that are withheld instead of echoed (D6). A count of
         zero is never emitted: the field is absent when no name was withheld.
       minimum: 1
+    KelasErrorWebhook:
+      type: string
+      description: |-
+        Failure class of a webhook delivery (contract section 3.3). `provider_sementara`
+        comes from rev 9 (contract v0.7.5 section 11 item 32c).
+      enum:
+      - timeout
+      - koneksi
+      - rate_limit_provider
+      - respons_tidak_valid
+      - tls
+      - provider_sementara
     KuotaTracker:
       type: object
       description: 'One quota tracker row (US-12; KP-07: numbers from the DB, not Redis).'
@@ -2879,7 +2921,7 @@ components:
           type: string
     LogPage:
       type: object
-      description: Paginated log result (F-4, F-2).
+      description: Paginated log result.
       required:
       - baris
       - di_luar_retensi_online
@@ -2890,7 +2932,7 @@ components:
             $ref: '#/components/schemas/LogBaris'
         di_luar_retensi_online:
           type: boolean
-          description: 'true: older rows live in cold storage and are not in this page (F-2).'
+          description: 'true: older rows live in cold storage and are not in this page.'
         kursor:
           type:
           - string
@@ -2934,8 +2976,8 @@ components:
         peran:
           type: array
           items:
-            type: string
-          description: Role names from contract section 8.1.
+            $ref: '#/components/schemas/Peran'
+          description: Role granted to this user (contract section 8.1).
         username:
           type: string
           example: auditor_01
@@ -2978,12 +3020,6 @@ components:
           example: string
         wajib:
           type: boolean
-    Mode:
-      type: string
-      description: Path mode of a downstream endpoint (U-4). Not writable in request bodies.
-      enum:
-      - sync
-      - async
     NikCariRequest:
       type: object
       description: |-
@@ -3081,11 +3117,21 @@ components:
           format: date-time
         status_akses:
           type: string
+    Peran:
+      type: string
+      description: |-
+        Admin role (contract section 8.1). Closed set; the schema enforces one role
+        per user with `client_id` only for `client_owner`.
+      enum:
+      - auditor
+      - operator
+      - platform_admin
+      - client_owner
     Posisi:
       type: object
       description: |-
-        Position inside the provider body template (U-9). Admin API only,
-        validation of the template only.
+        Position inside the provider body template. Admin API only, validation of
+        the template only — downstream bodies never carry it.
       required:
       - baris
       - kolom
@@ -3143,12 +3189,11 @@ components:
         bahasa_ui:
           $ref: '#/components/schemas/BahasaUi'
       additionalProperties: false
-    Problem:
+    ProblemAdmin:
       type: object
       description: |-
-        RFC 9457 problem body shared by every 4xx/5xx. `detail` never contains
-        input values, NIK or secrets (R-16). Field names follow the contract:
-        Indonesian on the wire except the fixed RFC members.
+        RFC 9457 problem body for every admin 4xx/5xx. `detail` never contains
+        input values, NIK or secrets (R-16).
       required:
       - type
       - title
@@ -3159,23 +3204,13 @@ components:
           type:
           - string
           - 'null'
-          description: Human explanation without sensitive values; absent when unneeded.
-        error:
-          type:
-          - string
-          - 'null'
-          description: |-
-            RFC 6749 section 5.2 error for the token endpoint (U-3). Never sent
-            with a 429.
         errors:
           type:
           - array
           - 'null'
           items:
-            $ref: '#/components/schemas/ValidasiError'
-          description: |-
-            Failing fields; only on 422 `validasi_gagal` and `metadata_tidak_valid`
-            bodies (D6). Entries are the names as sent, never their values.
+            $ref: '#/components/schemas/ValidasiErrorAdmin'
+          description: Failing fields; only on 422 `validasi_gagal` and `metadata_tidak_valid`.
         jenis_objek:
           oneOf:
           - $ref: '#/components/schemas/JenisObjek'
@@ -3184,55 +3219,34 @@ components:
         jumlah_nama_tidak_cocok:
           oneOf:
           - $ref: '#/components/schemas/JumlahNamaTidakCocok'
-            description: |-
-              Number of failing names that did not match `^[A-Za-z0-9_]{1,64}$` and
-              are therefore not echoed, only counted (D6, R-16). Present only when at
-              least one such name was rejected.
+            description: Withheld-name count (D6); same rule as the downstream body.
           - type: 'null'
         kode:
-          $ref: '#/components/schemas/ProblemKode'
+          $ref: '#/components/schemas/ProblemKodeAdmin'
         request_id:
           type:
           - string
           - 'null'
           format: uuid
-          description: '`queue_id` of the request the failure belongs to (502/504 bodies).'
+          description: '`request_id` the failure belongs to, when the operation names one.'
         status:
           type: integer
           format: int32
-          minimum: 0
-        status_api:
-          oneOf:
-          - $ref: '#/components/schemas/ApiStatus'
-            description: Current API status; only on 409 `tidak_bisa_dibatalkan`.
-          - type: 'null'
+          description: HTTP status, 400..=599.
+          maximum: 599
+          minimum: 400
         title:
           type: string
         type:
           type: string
           description: Stable anchor `https://github.com/faisalcayunda/PoolRouter/blob/main/docs/masalah.md#<kode>`.
-    ProblemKode:
+    ProblemKodeAdmin:
       type: string
       description: |-
-        Closed machine-readable code. One anchor in `docs/masalah.md` per value;
-        `type` and `kode` are 1:1 (ADR-0001 section 5a.7).
+        Admin (Web UI backend) codes. Not visible to external clients, so a new
+        value here does not change the downstream contract.
       enum:
       - tidak_terautentikasi
-      - token_dibatasi
-      - validasi_gagal
-      - metadata_tidak_valid
-      - idempotency_key_tidak_didukung
-      - idempotency_key_konflik
-      - kuota_habis
-      - porsi_sync_habis
-      - penolakan_berlebih
-      - objek_nonaktif
-      - tidak_bisa_dibatalkan
-      - layanan_tidak_tersedia
-      - retry_habis
-      - provider_error_permanen
-      - timeout_sync
-      - tidak_ditemukan
       - kredensial_salah
       - login_dibatasi
       - origin_tidak_valid
@@ -3245,6 +3259,9 @@ components:
       - webhook_tidak_https
       - metadata_wajib_hilang
       - ekspor_terlalu_besar
+      - validasi_gagal
+      - tidak_ditemukan
+      - layanan_tidak_tersedia
     Provider:
       type: object
       description: Provider entity (list/get/update/activate responses).
@@ -3396,7 +3413,9 @@ components:
           description: 'true: masked in UI.'
     SesiStatus:
       type: object
-      description: Session state (rev 5 section 3.6f). All fields required, UTC date-time.
+      description: |-
+        Session state (rev 5 section 3.6f). All fields required, UTC date-time.
+        Closed object: no extra members.
       required:
       - idle_berakhir_pada
       - absolut_berakhir_pada
@@ -3411,6 +3430,14 @@ components:
         waktu_server:
           type: string
           format: date-time
+      additionalProperties: false
+    StatusKredensial:
+      type: string
+      description: Credential lifecycle state (contract EN-02/EN-03, schema `status`).
+      enum:
+      - aktif
+      - kedaluwarsa
+      - dicabut
     UpstreamAktifTerakhir:
       type: object
       description: Last-active-upstream detail in a preview (section 3a.10).
@@ -3551,30 +3578,32 @@ components:
           format: double
           example: 0.5
       additionalProperties: false
-    ValidasiError:
+    ValidasiErrorAdmin:
       type: object
       description: |-
-        One failing input field. `errors[].kode` is a per-field validation code
-        from Addendum A section 6.1; `batas` carries only the numeric rule
-        parameter (never the rejected value). Template errors carry `posisi`.
+        One failing field, admin. Field names are usually JSON pointers into the
+        request body; template errors carry `posisi`.
       required:
       - field
       - kode
       properties:
         batas:
+          type:
+          - number
+          - 'null'
+          format: double
           description: Numeric rule parameter of the violated rule, if any.
         field:
           type: string
           description: |-
-            Name of the rejected field exactly as sent (`TRESHOLD`, `NAMA_LGKAP`,
-            or the metadata key), or a JSON pointer for template errors (D6).
-            Names that do not match `^[A-Za-z0-9_]{1,64}$` are never echoed.
+            Name of the rejected field exactly as sent, or a JSON pointer for
+            admin request bodies and template errors (D6).
         kode:
           type: string
         posisi:
           oneOf:
           - $ref: '#/components/schemas/Posisi'
-            description: Template position (U-9). Admin API and template errors only.
+            description: Template position. Admin API and template errors only.
           - type: 'null'
     WebhookConfig:
       type: object
@@ -3617,12 +3646,11 @@ components:
       - hasil
       properties:
         error_class:
-          type:
-          - string
-          - 'null'
+          oneOf:
+          - $ref: '#/components/schemas/KelasErrorWebhook'
+          - type: 'null'
         hasil:
-          type: string
-          description: '`terkirim` (2xx) | `gagal` (anything else; no retry in F0).'
+          $ref: '#/components/schemas/HasilWebhook'
         http_status:
           type:
           - integer
@@ -3666,7 +3694,7 @@ components:
       content:
         application/problem+json:
           schema:
-            $ref: '#/components/schemas/Problem'
+            $ref: '#/components/schemas/ProblemAdmin'
           examples:
             validasi_gagal:
               summary: JSON tidak dapat diurai
@@ -3685,7 +3713,7 @@ components:
       content:
         application/problem+json:
           schema:
-            $ref: '#/components/schemas/Problem'
+            $ref: '#/components/schemas/ProblemAdmin'
           examples:
             kredensial_salah:
               summary: Username atau password salah (tidak dibedakan)
@@ -3711,7 +3739,7 @@ components:
       content:
         application/problem+json:
           schema:
-            $ref: '#/components/schemas/Problem'
+            $ref: '#/components/schemas/ProblemAdmin'
           examples:
             akses_ditolak:
               summary: Peran tidak termasuk kolom Peran operasi
@@ -3744,7 +3772,7 @@ components:
       content:
         application/problem+json:
           schema:
-            $ref: '#/components/schemas/Problem'
+            $ref: '#/components/schemas/ProblemAdmin'
           examples:
             tidak_ditemukan:
               summary: Id atau kode transaksi tidak dikenal
@@ -3763,7 +3791,7 @@ components:
       content:
         application/problem+json:
           schema:
-            $ref: '#/components/schemas/Problem'
+            $ref: '#/components/schemas/ProblemAdmin'
           examples:
             batas_kredensial:
               summary: Sudah ada dua kredensial aktif
@@ -3797,7 +3825,7 @@ components:
       content:
         application/problem+json:
           schema:
-            $ref: '#/components/schemas/Problem'
+            $ref: '#/components/schemas/ProblemAdmin'
           examples:
             ekspor_terlalu_besar:
               summary: Lebih dari 10.000 baris; tanpa berkas, baris audit ditolak (R-18)
@@ -3857,7 +3885,7 @@ components:
       content:
         application/problem+json:
           schema:
-            $ref: '#/components/schemas/Problem'
+            $ref: '#/components/schemas/ProblemAdmin'
           examples:
             login_dibatasi:
               summary: 5 kali gagal dalam 15 menit

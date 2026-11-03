@@ -4,6 +4,8 @@
 pub mod admin;
 pub mod downstream;
 pub mod enums;
+pub mod header;
 pub mod problem;
+pub mod problem_admin;
 #[cfg(test)]
 mod tests;

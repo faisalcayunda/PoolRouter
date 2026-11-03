@@ -14,9 +14,11 @@ use utoipa::{OpenApi, ToSchema};
 use utoipa_axum::{router::OpenApiRouter, routes};
 use uuid::Uuid;
 
-use super::downstream::Mode;
-use super::enums::{BahasaUi, JendelaKuota, JenisKredensial, RuleJenis};
-use super::problem::Problem;
+use super::enums::{
+    BahasaUi, HasilWebhook, JendelaKuota, JenisKredensial, KelasErrorWebhook, Peran, RuleJenis,
+    StatusKredensial,
+};
+use super::problem_admin::ProblemAdmin as Problem;
 
 // ---------------------------------------------------------------------------
 // Schemas
@@ -38,8 +40,8 @@ pub struct Me {
     pub pengguna_id: Uuid,
     #[schema(example = "auditor_01")]
     pub username: String,
-    /// Role names from contract section 8.1.
-    pub peran: Vec<String>,
+    /// Role granted to this user (contract section 8.1).
+    pub peran: Vec<Peran>,
     /// Set only for `client_owner` sessions.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub client_id: Option<Uuid>,
@@ -55,7 +57,9 @@ pub struct PreferensiUpdate {
 }
 
 /// Session state (rev 5 section 3.6f). All fields required, UTC date-time.
+/// Closed object: no extra members.
 #[derive(Debug, Clone, Serialize, ToSchema)]
+#[serde(deny_unknown_fields)]
 pub struct SesiStatus {
     pub idle_berakhir_pada: DateTime<Utc>,
     pub absolut_berakhir_pada: DateTime<Utc>,
@@ -213,33 +217,40 @@ pub struct UpstreamPool {
     pub aktif: bool,
 }
 
-/// Downstream pool configuration body (US-06; F-1: single upstream
-/// allocation, no reserved/shareable/prioritas in the body).
+/// Downstream pool create/update body. Mode is not here: the path decides it
+/// (a downstream pool serves both `/sync` and `/async`). `prioritas` is derived
+/// by the allocation and never writable.
 #[derive(Debug, Clone, Deserialize, ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct DownstreamPoolConfig {
-    /// sync|async (F-1: the mode lives here, not on the endpoint).
-    pub mode: Mode,
-    /// Queue TTL in seconds; default 86_400 (24 hours).
+    /// Pool name; unique across downstream pools (schema `NOT NULL UNIQUE`).
+    #[schema(example = "BGN MPM")]
+    pub nama: String,
+    /// Queue TTL in seconds; default 86_400 (24 hours). Column
+    /// `ttl_antrean_detik`.
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[schema(minimum = 60, example = 86400)]
-    pub ttl_antrean: Option<i64>,
-    /// The one upstream pool serving this downstream pool.
-    pub upstream_pool_id: Uuid,
+    #[schema(minimum = 1, example = 86400)]
+    pub ttl_antrean_detik: Option<i64>,
+    /// The upstream pools serving this downstream pool. Exactly one in F0.
+    #[schema(min_items = 1, max_items = 1)]
+    pub upstream_pool_ids: Vec<Uuid>,
     /// Reason; required on update.
     #[serde(skip_serializing_if = "Option::is_none")]
     #[schema(min_length = 10, max_length = 500)]
     pub alasan: Option<String>,
 }
 
-/// Downstream pool entity (F-1: `prioritas` is read-only and derived from the
-/// allocation; it is not part of create/update bodies).
+/// Downstream pool entity. `prioritas` is derived by the allocation: read-only
+/// here, always 1 in F0.
 #[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct DownstreamPool {
     pub downstream_pool_id: Uuid,
-    pub mode: Mode,
-    pub ttl_antrean: i64,
-    pub upstream_pool_id: Uuid,
+    pub nama: String,
+    pub ttl_antrean_detik: i64,
+    pub upstream_pool_ids: Vec<Uuid>,
+    /// Derived priority; read-only, always 1 in F0.
+    #[schema(example = 1, read_only)]
+    pub prioritas: i64,
     pub aktif: bool,
 }
 
@@ -278,9 +289,9 @@ pub struct Client {
 #[derive(Debug, Clone, Deserialize, ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct ClientEndpoints {
-    /// Complete assignment; replaces the previous set. Empty means the client
-    /// has no endpoints (downstream then answers 404).
-    #[schema(min_items = 1)]
+    /// Complete assignment; replaces the previous set. An empty set revokes
+    /// every assignment, so the client then receives 404 from every endpoint.
+    #[schema(min_items = 0)]
     pub endpoint_ids: Vec<Uuid>,
 }
 
@@ -289,9 +300,7 @@ pub struct ClientEndpoints {
 pub struct Credential {
     pub credential_id: Uuid,
     pub jenis: JenisKredensial,
-    /// `aktif` | `kedaluwarsa` | `dicabut`.
-    #[schema(example = "aktif")]
-    pub status: String,
+    pub status: StatusKredensial,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub kedaluwarsa_at: Option<DateTime<Utc>>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -354,12 +363,11 @@ pub struct WebhookSecret {
 pub struct WebhookLog {
     pub request_id: Uuid,
     pub sent_at: DateTime<Utc>,
-    /// `terkirim` (2xx) | `gagal` (anything else; no retry in F0).
-    pub hasil: String,
+    pub hasil: HasilWebhook,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub http_status: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub error_class: Option<String>,
+    pub error_class: Option<KelasErrorWebhook>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub secret_versi: Option<i64>,
 }
@@ -538,13 +546,13 @@ pub struct LogBaris {
     pub client_nama: String,
 }
 
-/// Paginated log result (F-4, F-2).
+/// Paginated log result.
 #[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct LogPage {
     pub baris: Vec<LogBaris>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub kursor: Option<String>,
-    /// true: older rows live in cold storage and are not in this page (F-2).
+    /// true: older rows live in cold storage and are not in this page.
     pub di_luar_retensi_online: bool,
 }
 
@@ -849,7 +857,8 @@ async fn update_preferensi(
     responses(
         (status = 200, description = "Status sesi; idle tidak digeser", body = SesiStatus, headers(
             ("Cache-Control" = String, description = "Selalu no-store (R-16)")
-        )
+        ),
+            examples(("sesi" = (summary = "Sesi aktif; seluruh field wajib", value = json!({"idle_berakhir_pada": "2026-11-06T10:30:00Z", "absolut_berakhir_pada": "2026-11-06T18:00:00Z", "waktu_server": "2026-11-06T10:00:00Z"}))))
         ),
         (status = 401, response = Problem401Admin)
     ),
@@ -869,7 +878,8 @@ async fn get_sesi() -> (StatusCode, Json<Problem>) {
     responses(
         (status = 200, description = "Idle di-reset; batas absolut tetap; tanpa Set-Cookie", body = SesiStatus, headers(
             ("Cache-Control" = String, description = "Selalu no-store (R-16)")
-        )
+        ),
+            examples(("sesi" = (summary = "Idle digeser ke +30 menit; absolut tidak berubah", value = json!({"idle_berakhir_pada": "2026-11-06T10:30:00Z", "absolut_berakhir_pada": "2026-11-06T18:00:00Z", "waktu_server": "2026-11-06T10:00:00Z"}))))
         ),
         (status = 401, response = Problem401Admin),
         (status = 403, response = Problem403Admin)
@@ -2139,7 +2149,8 @@ async fn aktifkan_provider(
     stub()
 }
 
-/// Quota tracker (US-12; KP-07): numbers from the DB, not Redis.
+/// Quota tracker (US-12; KP-07): numbers from the DB, not Redis. Read-only;
+/// available to `platform_admin` and `operator`.
 #[utoipa::path(
     get,
     path = "/admin/v1/kuota",
@@ -2147,7 +2158,7 @@ async fn aktifkan_provider(
     tag = "admin",
     params(("upstream_pool_id" = Option<Uuid>, Query, description = "Filter satu upstream pool")),
     responses(
-        (status = 200, description = "Baris pelacak kuota per pool/periode", body = [KuotaTracker], headers(
+        (status = 200, description = "Baris pelacak kuota per pool/periode; read-only (PA, OP)", body = [KuotaTracker], headers(
             ("Cache-Control" = String, description = "Selalu no-store (R-16)")
         )
         ),
@@ -2380,9 +2391,10 @@ impl utoipa::Modify for SecurityAddon {
         LogCariRequest, LogBaris, LogPage, LogEntry,
         NikCariRequest, PayloadOpenRequest, PayloadView, EksporRequest,
         AuditCariRequest, AuditAksesBaris, AuditAksesPage,
-        Mode, BahasaUi, JendelaKuota, JenisKredensial, RuleJenis,
-        super::problem::ProblemKode, super::problem::Problem,
-        super::problem::ValidasiError, super::problem::Posisi, super::enums::JenisObjek
+        BahasaUi, JendelaKuota, JenisKredensial, RuleJenis,
+        super::problem::ProblemKodeAdmin, super::problem_admin::ProblemAdmin,
+        super::problem::ValidasiErrorAdmin, super::problem::Posisi,
+        super::problem::JumlahNamaTidakCocok, super::enums::JenisObjek
     ), responses(
         Problem401Admin, Problem403Admin, Problem400Admin, Problem404Admin,
         Problem422Admin, Problem429Admin, Problem409Admin
