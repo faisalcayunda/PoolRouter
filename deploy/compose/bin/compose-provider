@@ -7,7 +7,9 @@
 #   PODMAN_COMPOSE_PROVIDER=deploy/compose/bin/compose-provider podman compose ...
 #
 # Variabel opsional:
-#   PODMAN_VM_SOCKET  path socket API Podman di sisi VM (default: dari `podman info`)
+#   PODMAN_VM_SOCKET      path socket API Podman di sisi VM (default: dari `podman info`)
+#   POOLROUTER_EXTRA_MOUNTS  daftar dir absolut (dipisah `:`) yang dipasang read-only di
+#                            path yang sama, mis. file env dan direktori secret di luar repo
 set -eu
 
 # Image CLI Docker (klien Compose saja, bukan engine). Tag dan digest di-pin.
@@ -20,12 +22,26 @@ else
   VM_SOCK=$(podman info --format '{{.Host.RemoteSocket.Path}}' | sed 's#^unix://##')
 fi
 
+EXTRA_MOUNTS=""
+OLD_IFS=$IFS; IFS=:
+for dir in ${POOLROUTER_EXTRA_MOUNTS:-}; do
+  [ -n "$dir" ] || continue
+  if [ ! -d "$dir" ]; then
+    echo "compose-provider: peringatan: $dir bukan direktori, dilewati" >&2
+    continue
+  fi
+  EXTRA_MOUNTS="$EXTRA_MOUNTS -v $dir:$dir:ro"
+done
+IFS=$OLD_IFS
+
 # --security-opt label=disable: socket API milik user VM tidak bisa diakses
 # dari label SELinux default container (diuji 2026-11-03).
+# shellcheck disable=SC2086  # EXTRA_MOUNTS sengaja dipecah menjadi argumen -v
 exec podman run --rm -i \
   --security-opt label=disable \
   -e DOCKER_HOST=unix:///var/run/docker.sock \
   -v "$VM_SOCK:/var/run/docker.sock" \
   -v "$PROJECT_DIR:$PROJECT_DIR" \
+  $EXTRA_MOUNTS \
   -w "$PROJECT_DIR" \
   "$COMPOSE_CLI_IMAGE" compose "$@"

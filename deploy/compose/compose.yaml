@@ -38,9 +38,17 @@ services:
   rabbitmq:
     image: docker.io/library/rabbitmq:4-management-alpine@sha256:89a52c69f937d258e8cf1e13a008131e28990c30fc0dfa8a94037a418f4415b8
     profiles: ["bundled-infra"]
+    # RabbitMQ 4 menolak *_FILE (RABBITMQ_DEFAULT_PASS_FILE). Password dibaca dari secret
+    # saat start, lalu entrypoint resmi dijalankan. Lihat docs/runbook/deploy.md.
+    # Berjalan langsung sebagai user image (rabbitmq, 100:101) tanpa root, supaya tidak
+    # ada chown/su-exec. Owner volume mengikuti image saat volume dibuat.
+    user: "100:101"
+    entrypoint:
+      - /bin/sh
+      - -c
+      - export RABBITMQ_DEFAULT_PASS="$$(cat /run/secrets/rabbitmq_password)"; exec docker-entrypoint.sh rabbitmq-server
     environment:
       RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:?isi RABBITMQ_USER di file env}
-      RABBITMQ_DEFAULT_PASS_FILE: /run/secrets/rabbitmq_password
     secrets: [rabbitmq_password]
     volumes:
       - rabbitmq_data:/var/lib/rabbitmq

@@ -14,10 +14,15 @@ CONTAINER_ENGINE ?= podman
 PROJECT ?= poolrouter-$(ENV)
 COMPOSE_DIR := deploy/compose
 ENV_FILE ?= $(COMPOSE_DIR)/env/$(ENV).env
-COMPOSE_FILES := -f $(COMPOSE_DIR)/compose.yaml -f $(COMPOSE_DIR)/compose.$(ENV).yaml
+# EXTRA_COMPOSE_FILES: override tambahan, mis. label harness uji (deploy/compose/test/).
+EXTRA_COMPOSE_FILES ?=
+COMPOSE_FILES := -f $(COMPOSE_DIR)/compose.yaml -f $(COMPOSE_DIR)/compose.$(ENV).yaml $(addprefix -f ,$(EXTRA_COMPOSE_FILES))
 COMPOSE_PROFILES ?= bundled-infra
 # Provider P3 (Docker Compose v2 dari container). Variabel ini hanya dibaca oleh podman.
-COMPOSE_ENV := PODMAN_COMPOSE_PROVIDER=$(CURDIR)/$(COMPOSE_DIR)/bin/compose-provider
+# Provider membaca file env dan direktori secret dari luar repo lewat mount read-only.
+SECRETS_DIR := $(shell sed -n 's/^POOLROUTER_SECRETS_DIR=//p' "$(ENV_FILE)" 2>/dev/null | head -n 1)
+EXTRA_MOUNTS := $(abspath $(dir $(ENV_FILE))):$(SECRETS_DIR)
+COMPOSE_ENV := PODMAN_COMPOSE_PROVIDER=$(CURDIR)/$(COMPOSE_DIR)/bin/compose-provider POOLROUTER_EXTRA_MOUNTS=$(EXTRA_MOUNTS)
 COMPOSE := $(COMPOSE_ENV) $(CONTAINER_ENGINE) compose -p $(PROJECT) $(COMPOSE_FILES) --env-file $(ENV_FILE)
 LINT_ENV_FILES := $(COMPOSE_DIR)/env/dev.env.example
 IMAGE_TAG ?= dev
