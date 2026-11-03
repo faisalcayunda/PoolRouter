@@ -185,9 +185,8 @@ CREATE TRIGGER request_status_history_append_only BEFORE UPDATE OR DELETE ON req
 CREATE FUNCTION tg_request_punya_history() RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public AS $$
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM request_status_history h
-                   WHERE h.request_id = NEW.request_id AND h.status_dari IS NOT DISTINCT FROM
-                         (SELECT status FROM request WHERE request_id = NEW.request_id)
-                     AND h.status_ke = NEW.status AND h.terjadi_at >= transaction_timestamp()) THEN
+                   WHERE h.request_id = NEW.request_id AND h.status_ke = NEW.status
+                     AND h.terjadi_at >= transaction_timestamp()) THEN
     RAISE EXCEPTION 'request % berstatus % tanpa baris request_status_history yang cocok (T-04)', NEW.request_id, NEW.status
       USING ERRCODE = 'integrity_constraint_violation';
   END IF;
