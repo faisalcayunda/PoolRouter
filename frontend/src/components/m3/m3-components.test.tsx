@@ -8,11 +8,8 @@ import { IconButton } from './IconButton';
 import { Radio, RadioGroup } from './Radio';
 import { Switch } from './Switch';
 import { TextField } from './TextField';
-import { Badge } from './Badge';
-import { ProgressBar } from './ProgressBar';
 import { Skeleton } from './Skeleton';
 import { Divider } from './Divider';
-import { EmptyState } from './EmptyState';
 
 describe('Button (M3 F0 variants)', () => {
   it('renders a button with accessible name and fires onPress', async () => {
@@ -135,22 +132,7 @@ describe('Chip', () => {
   });
 });
 
-describe('Badge', () => {
-  it('renders with the provided text', () => {
-    render(<Badge>3 baru</Badge>);
-    expect(screen.getByText('3 baru')).toBeInTheDocument();
-  });
-});
-
-describe('ProgressBar', () => {
-  it('exposes progressbar role and value', () => {
-    render(<ProgressBar aria-label="Progres provisioning" value={40} />);
-    const bar = screen.getByRole('progressbar', { name: 'Progres provisioning' });
-    expect(bar).toHaveAttribute('aria-valuenow', '40');
-  });
-});
-
-describe('Skeleton / Divider / EmptyState', () => {
+describe('Skeleton / Divider', () => {
   it('skeleton is hidden from assistive tech', () => {
     const { container } = render(<Skeleton className="h-4 w-40" />);
     expect(container.firstElementChild).toHaveAttribute('aria-hidden', 'true');
@@ -159,14 +141,5 @@ describe('Skeleton / Divider / EmptyState', () => {
   it('divider has separator role', () => {
     render(<Divider />);
     expect(screen.getByRole('separator')).toBeInTheDocument();
-  });
-
-  it('empty state renders title and action', () => {
-    render(
-      <EmptyState title="Belum ada perangkat" body="Tambahkan perangkat pertama Anda." action={<Button>Tambah</Button>} />,
-    );
-    expect(screen.getByText('Belum ada perangkat')).toBeInTheDocument();
-    expect(screen.getByText('Tambahkan perangkat pertama Anda.')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Tambah' })).toBeInTheDocument();
   });
 });

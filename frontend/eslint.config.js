@@ -33,4 +33,15 @@ export default tseslint.config(
     },
   },
   { files: ['*.config.{js,ts}', 'scripts/**'], languageOptions: { globals: { ...globals.node } } },
+  // Playwright specs: `test`/`expect` come from @playwright/test, not Vitest.
+  {
+    files: ['e2e/**/*.ts'],
+    languageOptions: { globals: { ...globals.node } },
+    rules: {
+      // Playwright fixtures take a callback parameter literally named `use`;
+      // it is not React's `use`, so the hook rules do not apply here.
+      'react-hooks/rules-of-hooks': 'off',
+      'react-hooks/exhaustive-deps': 'off',
+    },
+  },
 );

@@ -5,7 +5,8 @@ export type IconButtonVariant = 'standard' | 'filled' | 'filled-tonal' | 'outlin
 
 const VARIANT: Record<IconButtonVariant, string> = {
   standard: 'text-on-surface-variant',
-  filled: 'bg-primary text-on-primary data-[disabled]:bg-on-surface/12 data-[disabled]:text-on-surface/38',
+  filled:
+    'bg-primary text-on-primary data-[disabled]:bg-on-surface/12 data-[disabled]:text-on-surface/38',
   'filled-tonal':
     'bg-secondary-container text-on-secondary-container data-[disabled]:bg-on-surface/12 data-[disabled]:text-on-surface/38',
   outlined:

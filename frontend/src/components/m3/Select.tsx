@@ -12,8 +12,7 @@ import type { ReactNode } from 'react';
 import { cx } from './cx';
 import { Icon, icons } from '../../icons';
 
-export interface SelectProps<T extends object>
-  extends Omit<RacSelectProps<T>, 'className'> {
+export interface SelectProps<T extends object> extends Omit<RacSelectProps<T>, 'className'> {
   className?: string;
   label?: ReactNode;
   /** Items for the underlying ListBox (RAC dynamic collection). */
@@ -30,12 +29,7 @@ export function Select<T extends object>({
   ...props
 }: SelectProps<T>) {
   return (
-    <RacSelect
-      {...props}
-      className={cx('flex flex-col gap-1',
-        className,
-      )}
-    >
+    <RacSelect {...props} className={cx('flex flex-col gap-1', className)}>
       {label ? <Label>{label}</Label> : null}
       <RacButton className="m3-state m3-focus typescale-body-large flex h-14 w-64 items-center justify-between rounded-extra-small border border-outline bg-surface px-4 text-on-surface data-[focused]:border-2 data-[focused]:border-primary data-[pressed]:border-2 data-[pressed]:border-primary">
         <SelectValue className="data-[placeholder]:text-on-surface-variant" />

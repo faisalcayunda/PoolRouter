@@ -61,7 +61,10 @@ export function activeHref(pathname: string): string | undefined {
   for (const group of NAV_GROUPS) {
     for (const item of group.items) {
       if (item.href === '/') continue;
-      if ((pathname === item.href || pathname.startsWith(`${item.href}/`)) && (!best || item.href.length > best.length)) {
+      if (
+        (pathname === item.href || pathname.startsWith(`${item.href}/`)) &&
+        (!best || item.href.length > best.length)
+      ) {
         best = item.href;
       }
     }

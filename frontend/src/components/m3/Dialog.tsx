@@ -8,7 +8,7 @@ import {
 import type { ReactNode } from 'react';
 import { cx } from './cx';
 import { IconButton } from './IconButton';
-import { icons } from '../../icons';
+import { Icon, icons } from '../../icons';
 
 export interface DialogProps extends ModalOverlayProps {
   /** Dialog title; the caller supplies catalog text (Addendum A 4). */
@@ -16,8 +16,8 @@ export interface DialogProps extends ModalOverlayProps {
   /** Optional visually hidden description for aria-describedby. */
   description?: ReactNode;
   variant?: 'basic' | 'full-screen';
-  onCloseLabel?: string;
-  onDismiss?: () => void;
+  /** Accessible name of the close button; catalog text, never empty (§7.5). */
+  closeLabel: string;
   footer?: ReactNode;
   children: ReactNode;
 }
@@ -25,13 +25,16 @@ export interface DialogProps extends ModalOverlayProps {
 /**
  * M3 dialog (basic and full-screen) with scrim, focus trap and Esc dismissal.
  * Full-screen covers the viewport below the expanded window size class (§7.1).
+ *
+ * Open state belongs to the caller: `DialogTrigger` around it, or `isOpen` +
+ * `onOpenChange` for a controlled dialog. Every dismissal (Esc, scrim, close
+ * button) funnels through that one callback.
  */
 export function Dialog({
   title,
   description,
   variant = 'basic',
-  onCloseLabel,
-  onDismiss,
+  closeLabel,
   footer,
   children,
   ...props
@@ -53,26 +56,19 @@ export function Dialog({
             : 'h-full w-full rounded-none',
         )}
       >
-        {({ close }: { close: () => void }) => (
+        {({ close }) => (
           <>
             <div className="flex items-start justify-between gap-2">
               <Heading slot="title" className="typescale-headline-small text-on-surface">
                 {title}
               </Heading>
-              {onDismiss ? (
-                <IconButton
-                  aria-label={onCloseLabel ?? ''}
-                  icon-position="end"
-                  onPress={() => {
-                    onDismiss();
-                    close();
-                  }}
-                >
-                  <IconClose />
-                </IconButton>
-              ) : null}
+              <IconButton aria-label={closeLabel} icon-position="end" onPress={close}>
+                <Icon icon={icons.close} />
+              </IconButton>
             </div>
-            {description ? <p className="typescale-body-medium text-on-surface-variant">{description}</p> : null}
+            {description ? (
+              <p className="typescale-body-medium text-on-surface-variant">{description}</p>
+            ) : null}
             <div className="typescale-body-medium min-h-0 flex-1 overflow-auto text-on-surface-variant">
               {children}
             </div>
@@ -83,12 +79,6 @@ export function Dialog({
     </Modal>
   );
 }
-
-function IconClose() {
-  return <Icon icon={icons.close} />;
-}
-
-import { Icon } from '../../icons';
 
 /** Convenience wrapper so dialogs can be opened by a trigger button. */
 export function DialogTrigger(props: React.ComponentProps<typeof RacDialogTrigger>) {

@@ -3,6 +3,8 @@ import { useTranslation } from 'react-i18next';
 import { Link } from 'react-aria-components';
 import { cx } from '../components/m3/cx';
 import { IconButton } from '../components/m3/IconButton';
+import { NavigationDrawer } from '../components/m3/NavigationDrawer';
+import { TopAppBar } from '../components/m3/TopAppBar';
 import { Icon, icons } from '../icons';
 import { activeHref, NAV_GROUPS } from './nav';
 
@@ -66,8 +68,9 @@ export interface AppShellProps {
  * Application shell: skip link, top app bar, navigation drawer and content area.
  *
  * Window size classes (ADR-0003 5.1):
- * - compact / medium (< 840 px): the drawer is modal, opened from the menu button.
- * - expanded and up (>= 840 px): the drawer is permanently visible.
+ * - compact / medium (< 840 px): the drawer is `NavigationDrawer variant="modal"`,
+ *   opened from the menu button.
+ * - expanded and up (>= 840 px): `NavigationDrawer variant="standard"`, always visible.
  */
 export function AppShell({ pathname = '/', children }: AppShellProps) {
   const { t } = useTranslation();
@@ -79,15 +82,6 @@ export function AppShell({ pathname = '/', children }: AppShellProps) {
   // avoids a state-sync effect and can never show a stale open drawer after resizing.
   const isModalDrawerOpen = drawerOpen && !isExpanded;
 
-  useEffect(() => {
-    if (!isModalDrawerOpen) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') closeDrawer();
-    };
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  }, [isModalDrawerOpen, closeDrawer]);
-
   return (
     <div className="min-h-dvh bg-surface text-on-surface">
       <a
@@ -97,45 +91,27 @@ export function AppShell({ pathname = '/', children }: AppShellProps) {
         {t('nav.skip_link')}
       </a>
 
-      <header className="flex h-16 items-center gap-2 border-b border-on-surface/12 px-2">
-        {!isExpanded && (
-          <IconButton
-            aria-label={t('nav.drawer.open_menu')}
-            onClick={() => setDrawerOpen(true)}
-          >
-            <Icon icon={icons.menu} />
-          </IconButton>
-        )}
-        <span className="typescale-title-large font-brand px-2 text-primary">
-          {t('common.app.name')}
-        </span>
-      </header>
+      <TopAppBar
+        className="h-16 border-b border-on-surface/12 px-2"
+        leading={
+          isExpanded ? undefined : (
+            <IconButton aria-label={t('nav.drawer.open_menu')} onClick={() => setDrawerOpen(true)}>
+              <Icon icon={icons.menu} />
+            </IconButton>
+          )
+        }
+        title={<span className="font-brand px-2 text-primary">{t('common.app.name')}</span>}
+      />
 
       <div className="flex">
-        {isExpanded ? (
-          <aside className="w-72 shrink-0 border-r border-on-surface/12 p-3">
-            <DrawerNav pathname={pathname} />
-          </aside>
-        ) : (
-          isModalDrawerOpen && (
-            <div className="fixed inset-0 z-40 flex">
-              <button
-                type="button"
-                aria-label={t('common.action.close')}
-                onClick={closeDrawer}
-                className="absolute inset-0 bg-on-surface/32"
-              />
-              <aside
-                role="dialog"
-                aria-modal="true"
-                aria-label={t('nav.drawer.aria')}
-                className="relative z-10 w-72 bg-surface-container p-3 shadow-level1"
-              >
-                <DrawerNav pathname={pathname} onNavigate={closeDrawer} />
-              </aside>
-            </div>
-          )
-        )}
+        <NavigationDrawer
+          variant={isExpanded ? 'standard' : 'modal'}
+          aria-label={t('nav.drawer.aria')}
+          isOpen={isModalDrawerOpen}
+          onOpenChange={(open) => setDrawerOpen(open)}
+        >
+          <DrawerNav pathname={pathname} onNavigate={isExpanded ? undefined : closeDrawer} />
+        </NavigationDrawer>
 
         <main id="main-content" tabIndex={-1} className="min-w-0 flex-1 p-4">
           <Suspense fallback={<p className="typescale-body-medium">{t('common.state.loading')}</p>}>

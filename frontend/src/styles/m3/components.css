@@ -43,8 +43,32 @@
     opacity: 0.5;
   }
 }
+/* Indeterminate progress (LinearProgress/CircularProgress): transform-only, no layout thrash. */
+.m3-indeterminate-bar {
+  animation: m3-indeterminate 1.8s var(--md-sys-motion-easing-standard) infinite;
+}
+@keyframes m3-indeterminate {
+  0% {
+    transform: translateX(-100%);
+    width: 40%;
+  }
+  100% {
+    transform: translateX(250%);
+    width: 40%;
+  }
+}
+.m3-spin {
+  animation: m3-spin 1.2s linear infinite;
+}
+@keyframes m3-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
 @media (prefers-reduced-motion: reduce) {
-  .m3-skeleton {
+  .m3-skeleton,
+  .m3-indeterminate-bar,
+  .m3-spin {
     animation: none;
   }
 }

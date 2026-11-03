@@ -21,8 +21,16 @@ export function DataTable({ className, ...props }: Class<TableProps>) {
   return <RacTable {...props} className={cx('w-full border-collapse text-left', className)} />;
 }
 
-export function DataTableHeader<T extends object>({ className, ...props }: Class<TableHeaderProps<T>>) {
-  return <TableHeader {...props} className={cx('typescale-title-small text-on-surface-variant', className)} />;
+export function DataTableHeader<T extends object>({
+  className,
+  ...props
+}: Class<TableHeaderProps<T>>) {
+  return (
+    <TableHeader
+      {...props}
+      className={cx('typescale-title-small text-on-surface-variant', className)}
+    />
+  );
 }
 
 export function DataTableColumn({ className, ...props }: Class<ColumnProps>) {
@@ -56,5 +64,7 @@ export function DataTableRow<T extends object>({ className, ...props }: Class<Ro
 }
 
 export function DataTableCell({ className, ...props }: Class<CellProps>) {
-  return <Cell {...props} className={cx('typescale-body-medium px-4 py-3 align-middle', className)} />;
+  return (
+    <Cell {...props} className={cx('typescale-body-medium px-4 py-3 align-middle', className)} />
+  );
 }
