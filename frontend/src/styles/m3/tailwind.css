@@ -1,0 +1,180 @@
+/* Tailwind 4 theme: maps utilities onto the M3 tokens only (ADR-0003 3.5). Default colour, radius and breakpoint scales are removed. */
+@import "tailwindcss";
+@import "./color.css";
+@import "./tokens.css";
+@import "./components.css";
+
+@theme inline {
+  --color-*: initial;
+  --breakpoint-*: initial;
+  --radius-*: initial;
+  --shadow-*: initial;
+  --font-*: initial;
+  --font-sans: var(--md-ref-typeface-plain);
+  --font-brand: var(--md-ref-typeface-brand);
+  --color-transparent: transparent;
+  --color-current: currentColor;
+  --color-primary: var(--md-sys-color-primary);
+  --color-on-primary: var(--md-sys-color-on-primary);
+  --color-primary-container: var(--md-sys-color-primary-container);
+  --color-on-primary-container: var(--md-sys-color-on-primary-container);
+  --color-secondary: var(--md-sys-color-secondary);
+  --color-on-secondary: var(--md-sys-color-on-secondary);
+  --color-secondary-container: var(--md-sys-color-secondary-container);
+  --color-on-secondary-container: var(--md-sys-color-on-secondary-container);
+  --color-tertiary: var(--md-sys-color-tertiary);
+  --color-on-tertiary: var(--md-sys-color-on-tertiary);
+  --color-tertiary-container: var(--md-sys-color-tertiary-container);
+  --color-on-tertiary-container: var(--md-sys-color-on-tertiary-container);
+  --color-error: var(--md-sys-color-error);
+  --color-on-error: var(--md-sys-color-on-error);
+  --color-error-container: var(--md-sys-color-error-container);
+  --color-on-error-container: var(--md-sys-color-on-error-container);
+  --color-surface: var(--md-sys-color-surface);
+  --color-on-surface: var(--md-sys-color-on-surface);
+  --color-on-surface-variant: var(--md-sys-color-on-surface-variant);
+  --color-surface-container-lowest: var(--md-sys-color-surface-container-lowest);
+  --color-surface-container-low: var(--md-sys-color-surface-container-low);
+  --color-surface-container: var(--md-sys-color-surface-container);
+  --color-surface-container-high: var(--md-sys-color-surface-container-high);
+  --color-surface-container-highest: var(--md-sys-color-surface-container-highest);
+  --color-surface-dim: var(--md-sys-color-surface-dim);
+  --color-surface-bright: var(--md-sys-color-surface-bright);
+  --color-inverse-surface: var(--md-sys-color-inverse-surface);
+  --color-inverse-on-surface: var(--md-sys-color-inverse-on-surface);
+  --color-inverse-primary: var(--md-sys-color-inverse-primary);
+  --color-outline: var(--md-sys-color-outline);
+  --color-outline-variant: var(--md-sys-color-outline-variant);
+  --color-scrim: var(--md-sys-color-scrim);
+  --color-shadow: var(--md-sys-color-shadow);
+  --color-success: var(--md-sys-color-success);
+  --color-on-success: var(--md-sys-color-on-success);
+  --color-success-container: var(--md-sys-color-success-container);
+  --color-on-success-container: var(--md-sys-color-on-success-container);
+  --color-warning: var(--md-sys-color-warning);
+  --color-on-warning: var(--md-sys-color-on-warning);
+  --color-warning-container: var(--md-sys-color-warning-container);
+  --color-on-warning-container: var(--md-sys-color-on-warning-container);
+  --color-info: var(--md-sys-color-info);
+  --color-on-info: var(--md-sys-color-on-info);
+  --color-info-container: var(--md-sys-color-info-container);
+  --color-on-info-container: var(--md-sys-color-on-info-container);
+  --breakpoint-medium: 600px;
+  --breakpoint-expanded: 840px;
+  --breakpoint-large: 1200px;
+  --breakpoint-xlarge: 1600px;
+  --radius-none: var(--md-sys-shape-corner-none);
+  --radius-extra-small: var(--md-sys-shape-corner-extra-small);
+  --radius-small: var(--md-sys-shape-corner-small);
+  --radius-medium: var(--md-sys-shape-corner-medium);
+  --radius-large: var(--md-sys-shape-corner-large);
+  --radius-extra-large: var(--md-sys-shape-corner-extra-large);
+  --radius-full: var(--md-sys-shape-corner-full);
+  --shadow-level0: none;
+  --shadow-level1: 0 1px 2px 0 color-mix(in srgb, var(--md-sys-color-shadow) 30%, transparent), 0 1px 3px 1px color-mix(in srgb, var(--md-sys-color-shadow) 15%, transparent);
+  --shadow-level2: 0 1px 2px 0 color-mix(in srgb, var(--md-sys-color-shadow) 30%, transparent), 0 2px 6px 2px color-mix(in srgb, var(--md-sys-color-shadow) 15%, transparent);
+  --shadow-level3: 0 1px 3px 0 color-mix(in srgb, var(--md-sys-color-shadow) 30%, transparent), 0 4px 8px 3px color-mix(in srgb, var(--md-sys-color-shadow) 15%, transparent);
+  --shadow-level4: 0 2px 3px 0 color-mix(in srgb, var(--md-sys-color-shadow) 30%, transparent), 0 6px 10px 4px color-mix(in srgb, var(--md-sys-color-shadow) 15%, transparent);
+  --shadow-level5: 0 4px 4px 0 color-mix(in srgb, var(--md-sys-color-shadow) 30%, transparent), 0 8px 12px 6px color-mix(in srgb, var(--md-sys-color-shadow) 15%, transparent);
+}
+
+@utility typescale-headline-large {
+  font-family: var(--md-sys-typescale-headline-large-font);
+  font-size: var(--md-sys-typescale-headline-large-size);
+  line-height: var(--md-sys-typescale-headline-large-line-height);
+  font-weight: var(--md-sys-typescale-headline-large-weight);
+  letter-spacing: var(--md-sys-typescale-headline-large-tracking);
+}
+
+@utility typescale-headline-medium {
+  font-family: var(--md-sys-typescale-headline-medium-font);
+  font-size: var(--md-sys-typescale-headline-medium-size);
+  line-height: var(--md-sys-typescale-headline-medium-line-height);
+  font-weight: var(--md-sys-typescale-headline-medium-weight);
+  letter-spacing: var(--md-sys-typescale-headline-medium-tracking);
+}
+
+@utility typescale-headline-small {
+  font-family: var(--md-sys-typescale-headline-small-font);
+  font-size: var(--md-sys-typescale-headline-small-size);
+  line-height: var(--md-sys-typescale-headline-small-line-height);
+  font-weight: var(--md-sys-typescale-headline-small-weight);
+  letter-spacing: var(--md-sys-typescale-headline-small-tracking);
+}
+
+@utility typescale-title-large {
+  font-family: var(--md-sys-typescale-title-large-font);
+  font-size: var(--md-sys-typescale-title-large-size);
+  line-height: var(--md-sys-typescale-title-large-line-height);
+  font-weight: var(--md-sys-typescale-title-large-weight);
+  letter-spacing: var(--md-sys-typescale-title-large-tracking);
+}
+
+@utility typescale-title-medium {
+  font-family: var(--md-sys-typescale-title-medium-font);
+  font-size: var(--md-sys-typescale-title-medium-size);
+  line-height: var(--md-sys-typescale-title-medium-line-height);
+  font-weight: var(--md-sys-typescale-title-medium-weight);
+  letter-spacing: var(--md-sys-typescale-title-medium-tracking);
+}
+
+@utility typescale-title-small {
+  font-family: var(--md-sys-typescale-title-small-font);
+  font-size: var(--md-sys-typescale-title-small-size);
+  line-height: var(--md-sys-typescale-title-small-line-height);
+  font-weight: var(--md-sys-typescale-title-small-weight);
+  letter-spacing: var(--md-sys-typescale-title-small-tracking);
+}
+
+@utility typescale-body-large {
+  font-family: var(--md-sys-typescale-body-large-font);
+  font-size: var(--md-sys-typescale-body-large-size);
+  line-height: var(--md-sys-typescale-body-large-line-height);
+  font-weight: var(--md-sys-typescale-body-large-weight);
+  letter-spacing: var(--md-sys-typescale-body-large-tracking);
+}
+
+@utility typescale-body-medium {
+  font-family: var(--md-sys-typescale-body-medium-font);
+  font-size: var(--md-sys-typescale-body-medium-size);
+  line-height: var(--md-sys-typescale-body-medium-line-height);
+  font-weight: var(--md-sys-typescale-body-medium-weight);
+  letter-spacing: var(--md-sys-typescale-body-medium-tracking);
+}
+
+@utility typescale-body-small {
+  font-family: var(--md-sys-typescale-body-small-font);
+  font-size: var(--md-sys-typescale-body-small-size);
+  line-height: var(--md-sys-typescale-body-small-line-height);
+  font-weight: var(--md-sys-typescale-body-small-weight);
+  letter-spacing: var(--md-sys-typescale-body-small-tracking);
+}
+
+@utility typescale-label-large {
+  font-family: var(--md-sys-typescale-label-large-font);
+  font-size: var(--md-sys-typescale-label-large-size);
+  line-height: var(--md-sys-typescale-label-large-line-height);
+  font-weight: var(--md-sys-typescale-label-large-weight);
+  letter-spacing: var(--md-sys-typescale-label-large-tracking);
+}
+
+@utility typescale-label-medium {
+  font-family: var(--md-sys-typescale-label-medium-font);
+  font-size: var(--md-sys-typescale-label-medium-size);
+  line-height: var(--md-sys-typescale-label-medium-line-height);
+  font-weight: var(--md-sys-typescale-label-medium-weight);
+  letter-spacing: var(--md-sys-typescale-label-medium-tracking);
+}
+
+@utility typescale-label-small {
+  font-family: var(--md-sys-typescale-label-small-font);
+  font-size: var(--md-sys-typescale-label-small-size);
+  line-height: var(--md-sys-typescale-label-small-line-height);
+  font-weight: var(--md-sys-typescale-label-small-weight);
+  letter-spacing: var(--md-sys-typescale-label-small-tracking);
+}
+
+@layer base {
+  html { font-family: var(--md-ref-typeface-plain); background: var(--md-sys-color-surface); color: var(--md-sys-color-on-surface); }
+  :focus-visible { outline: var(--md-sys-state-focus-indicator-thickness) solid var(--md-sys-color-secondary); outline-offset: var(--md-sys-state-focus-indicator-outer-offset); }
+}

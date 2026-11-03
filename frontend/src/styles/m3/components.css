@@ -1,0 +1,28 @@
+/* Shared M3 interaction styles, built only from --md-sys-* tokens. */
+.m3-state { position: relative; isolation: isolate; }
+.m3-state::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: currentColor;
+  opacity: 0;
+  pointer-events: none;
+  z-index: -1;
+  transition: opacity var(--md-sys-motion-duration-short2) var(--md-sys-motion-easing-standard);
+}
+.m3-state[data-hovered]::before { opacity: var(--md-sys-state-hover-state-layer-opacity); }
+.m3-state[data-focus-visible]::before { opacity: var(--md-sys-state-focus-state-layer-opacity); }
+.m3-state[data-pressed]::before { opacity: var(--md-sys-state-pressed-state-layer-opacity); }
+.m3-state[data-disabled]::before { opacity: 0; }
+.m3-focus[data-focus-visible], .m3-focus:focus-visible {
+  outline: var(--md-sys-state-focus-indicator-thickness) solid var(--md-sys-color-secondary);
+  outline-offset: var(--md-sys-state-focus-indicator-outer-offset);
+}
+.m3-disabled[data-disabled] {
+  color: color-mix(in srgb, var(--md-sys-color-on-surface) 38%, transparent);
+  cursor: default;
+}
+.m3-skeleton { animation: m3-pulse 1.5s var(--md-sys-motion-easing-standard) infinite; }
+@keyframes m3-pulse { 50% { opacity: 0.5; } }
+@media (prefers-reduced-motion: reduce) { .m3-skeleton { animation: none; } }
