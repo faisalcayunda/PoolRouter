@@ -22,8 +22,12 @@ jobs:
   gate:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    # Node sama dengan frontend/.nvmrc (24.22.2) dan NODE_IMAGE di frontend/Makefile. Digest sama dengan Makefile.
     container:
-      image: docker.io/library/node:22-bookworm-slim@sha256:4b150b48b4116e2a22f2c39cc27025fbf4f153e2078fd3b14d159fdb5c7279da
+      image: docker.io/library/node:24.22.2-bookworm-slim@sha256:c86ecead9e55a5210ac1727de38a4ca840bf03dcaf34dc9749addbf383b1920c
+    # Runner GitHub tidak memakai Podman: target memakai Node di container, tanpa check-label (SHAA-197).
+    env:
+      FRONTEND_RUNNER: local
     steps:
       - name: Checkout
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2

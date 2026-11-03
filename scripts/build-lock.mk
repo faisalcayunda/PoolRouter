@@ -4,7 +4,8 @@
 # Pemakaian di stack:
 #   HEAVY = $(BUILD_LOCK_SH) run -- <perintah podman run dengan BUILD_LOCK_OPTS>   (RUNNER=podman)
 #   HEAVY = $(RUN)                                                               (RUNNER=native, tanpa kunci)
-# Target compile memakai $(HEAVY); setup, fmt, clean, dan db-test tidak.
+# Target compile memakai $(HEAVY). Backend: setup, fmt, clean, dan db-test tidak dikunci.
+# Frontend: setup (pnpm install), test, build, dan e2e dikunci; lint, fmt, i18n-check, dan clean tidak.
 #
 # Dua hal wajib di setiap run kunci: nama tetap (BUILD_LOCK_NAME) dan label shaal.build=heavy.
 # Keduanya dipakai script untuk mengenali kunci dan untuk membersihkan kunci basi.
