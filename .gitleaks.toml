@@ -10,9 +10,12 @@ useDefault = true
 [allowlist]
 description = "Contoh sintetis yang sudah dinilai: token contoh OpenAPI/Rust dan fixture lint"
 # 1) Token contoh sintetis di dokumentasi OpenAPI dan anotasi Rust (header ES256 + payload sub=client,
-#    signature 12 karakter, bukan token nyata). Dicocokkan persis, bukan pola JWT umum.
+#    signature 12 karakter, bukan token nyata). Dicocokkan persis per-ruas ke nilai yang dinilai Ridley,
+#    BUKAN pola JWT umum: signature = 11 karakter literal + karakter terakhir literal, tanpa wildcard
+#    selebar apa pun. Signature lain (isi atau panjang berbeda) tetap terdeteksi; bukti negatif N1-N4
+#    ada di komentar SHAA-207. Nilai signature sengaja tidak ditulis utuh di sini.
 regexes = [
-  '''^eyJhbGciOiJFUzI1NiJ9\.eyJzdWIiOiJjbGllbnQifQ\.[A-Za-z0-9_-]{12}$''',
+  '''^eyJhbGciOiJFUzI1NiJ9\.eyJzdWIiOiJjbGllbnQifQ\.[A-Za-z0-9_-]{11}l$''',
 ]
 # 2) Fixture pelanggaran lint compose (sengaja salah; berisi digest, bukan kredensial). Satu berkas saja.
 paths = [
