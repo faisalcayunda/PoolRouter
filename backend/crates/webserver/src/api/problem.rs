@@ -261,9 +261,9 @@ pub struct ValidasiErrorDown {
     /// `jumlah_nama_tidak_cocok`.
     pub field: String,
     pub kode: String,
-    /// Numeric rule parameter of the violated rule, if any. Optional: absent
-    /// when the rule has no numeric parameter (for example `wajib` or an
-    /// unknown rule). When present the value is always a number, never `null`.
+    /// Parameter angka aturan yang dilanggar, bila ada. Opsional: tidak ada bila
+    /// aturan tidak punya parameter angka (misalnya `wajib` atau aturan yang tidak
+    /// dikenal). Bila ada, nilainya selalu angka, tidak pernah `null`.
     #[serde(skip_serializing_if = "Option::is_none")]
     #[schema(value_type = f64)]
     pub batas: Option<f64>,
@@ -334,16 +334,20 @@ pub struct Problem {
     pub detail: Option<String>,
     /// Field yang gagal validasi; hanya pada body 422 `validasi_gagal` dan
     /// `metadata_tidak_valid`. Isinya nama field seperti yang dikirim, tidak pernah
-    /// nilainya.
+    /// nilainya. Tidak ada bila tidak ada field yang gagal; tidak pernah `null`.
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[schema(nullable = false)]
     pub errors: Option<Vec<ValidasiErrorDown>>,
     /// Jumlah nama yang gagal validasi karena tidak cocok dengan
     /// `^[A-Za-z0-9_]{1,64}$`, sehingga hanya dihitung dan tidak dikembalikan. Field
-    /// ini ada hanya bila sedikitnya satu nama seperti itu ditolak.
+    /// ini ada hanya bila sedikitnya satu nama seperti itu ditolak; tidak pernah
+    /// `null`.
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[schema(nullable = false)]
     pub jumlah_nama_tidak_cocok: Option<JumlahNamaTidakCocok>,
-    /// Jenis objek yang nonaktif; hanya pada `objek_nonaktif`.
+    /// Jenis objek yang nonaktif; hanya pada `objek_nonaktif`, tidak pernah `null`.
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[schema(nullable = false)]
     pub jenis_objek: Option<JenisObjek>,
     /// Status API terkini; hanya pada 409 `tidak_bisa_dibatalkan`.
     #[serde(skip_serializing_if = "Option::is_none")]

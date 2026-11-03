@@ -19,6 +19,8 @@ pub enum ApiStatus {
 
 /// `failure_reason` sebuah permintaan berstatus `failed`. Daftar nilai tertutup
 /// dan tampil ke klien; `kode` pada body 502/504 sinkron sama dengan nilai ini.
+/// `timeout_sync` hanya muncul pada permintaan sinkron; permintaan asinkron yang
+/// gagal sementara, termasuk karena batas waktu, berakhir `retry_habis`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum FailureReason {

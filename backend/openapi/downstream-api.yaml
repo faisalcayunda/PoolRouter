@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: PoolRouter Downstream API
-  description: API publik PoolRouter untuk klien BGN. Error memakai RFC 9457 problem+json dengan daftar `kode` tertutup; rincian tiap kode, termasuk `batas`, ada di docs/masalah.md. Semua respons selalu `no-store`; respons tidak boleh disimpan cache.
+  description: API publik PoolRouter untuk klien BGN. Error memakai RFC 9457 problem+json dengan daftar `kode` tertutup; arti setiap `kode` tercantum di Dokumentasi Teknis PoolRouter, bagian 12, dan `type` adalah pengenal tetap yang tidak wajib dibuka. Semua respons selalu `no-store`; respons tidak boleh disimpan cache.
   license:
     name: UNLICENSED
     identifier: UNLICENSED
@@ -127,7 +127,6 @@ paths:
                       kode: field_tak_dikenal
                     - field: NAMA_LGKAP
                       kode: field_tak_dikenal
-                    jumlah_nama_tidak_cocok: 1
                     kode: validasi_gagal
                     status: 422
                     title: Validasi gagal
@@ -387,7 +386,6 @@ paths:
                       kode: field_tak_dikenal
                     - field: NAMA_LGKAP
                       kode: field_tak_dikenal
-                    jumlah_nama_tidak_cocok: 1
                     kode: validasi_gagal
                     status: 422
                     title: Validasi gagal
@@ -912,6 +910,8 @@ components:
       description: |-
         `failure_reason` sebuah permintaan berstatus `failed`. Daftar nilai tertutup
         dan tampil ke klien; `kode` pada body 502/504 sinkron sama dengan nilai ini.
+        `timeout_sync` hanya muncul pada permintaan sinkron; permintaan asinkron yang
+        gagal sementara, termasuk karena batas waktu, berakhir `retry_habis`.
       enum:
       - retry_habis
       - provider_error_permanen
@@ -1026,28 +1026,23 @@ components:
             Kode `error` menurut RFC 6749 untuk token endpoint. Tidak pernah dikirim
             bersama 429.
         errors:
-          type:
-          - array
-          - 'null'
+          type: array
           items:
             $ref: '#/components/schemas/ValidasiErrorDown'
           description: |-
             Field yang gagal validasi; hanya pada body 422 `validasi_gagal` dan
             `metadata_tidak_valid`. Isinya nama field seperti yang dikirim, tidak pernah
-            nilainya.
+            nilainya. Tidak ada bila tidak ada field yang gagal; tidak pernah `null`.
         jenis_objek:
-          oneOf:
-          - $ref: '#/components/schemas/JenisObjek'
-            description: Jenis objek yang nonaktif; hanya pada `objek_nonaktif`.
-          - type: 'null'
+          $ref: '#/components/schemas/JenisObjek'
+          description: Jenis objek yang nonaktif; hanya pada `objek_nonaktif`, tidak pernah `null`.
         jumlah_nama_tidak_cocok:
-          oneOf:
-          - $ref: '#/components/schemas/JumlahNamaTidakCocok'
-            description: |-
-              Jumlah nama yang gagal validasi karena tidak cocok dengan
-              `^[A-Za-z0-9_]{1,64}$`, sehingga hanya dihitung dan tidak dikembalikan. Field
-              ini ada hanya bila sedikitnya satu nama seperti itu ditolak.
-          - type: 'null'
+          $ref: '#/components/schemas/JumlahNamaTidakCocok'
+          description: |-
+            Jumlah nama yang gagal validasi karena tidak cocok dengan
+            `^[A-Za-z0-9_]{1,64}$`, sehingga hanya dihitung dan tidak dikembalikan. Field
+            ini ada hanya bila sedikitnya satu nama seperti itu ditolak; tidak pernah
+            `null`.
         kode:
           $ref: '#/components/schemas/ProblemKodeDown'
         request_id:
@@ -1240,9 +1235,9 @@ components:
           type: number
           format: double
           description: |-
-            Numeric rule parameter of the violated rule, if any. Optional: absent
-            when the rule has no numeric parameter (for example `wajib` or an
-            unknown rule). When present the value is always a number, never `null`.
+            Parameter angka aturan yang dilanggar, bila ada. Opsional: tidak ada bila
+            aturan tidak punya parameter angka (misalnya `wajib` atau aturan yang tidak
+            dikenal). Bila ada, nilainya selalu angka, tidak pernah `null`.
         field:
           type: string
           description: |-
