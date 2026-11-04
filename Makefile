@@ -11,7 +11,7 @@
 
 ENV ?= dev
 CONTAINER_ENGINE ?= podman
-# JOBS diteruskan ke build-arg image backend. Default 1 cocok untuk VM Podman 2 CPU / 3,7 GiB (SHAA-222). CI memberi JOBS=2 eksplisit.
+# JOBS diteruskan ke build-arg image backend. Default 1 cocok untuk VM Podman 2 CPU / 3,7 GiB (ARC-222). CI memberi JOBS=2 eksplisit.
 JOBS ?= 1
 PROJECT ?= poolrouter-$(ENV)
 COMPOSE_DIR := deploy/compose
@@ -66,15 +66,15 @@ compose-lint:
 	COMPOSE_DIR="$(COMPOSE_DIR)" \
 	sh $(COMPOSE_DIR)/lint/compose-lint.sh
 
-# compose-test-dind: bukti V3 di Docker Engine sementara (harness DinD, butuh SHAA_ISSUE dan ENV_FILE).
+# compose-test-dind: bukti V3 di Docker Engine sementara (harness DinD, butuh ARC_ISSUE dan ENV_FILE).
 compose-test-dind:
-	SHAA_ISSUE="$(SHAA_ISSUE)" ENV_FILE="$(ENV_FILE)" PROFILES="$(EFF_PROFILES)" \
+	ARC_ISSUE="$(ARC_ISSUE)" ENV_FILE="$(ENV_FILE)" PROFILES="$(EFF_PROFILES)" \
 	sh $(COMPOSE_DIR)/test/dind.sh
 
 # image: membangun image dari Containerfile dengan engine terpilih (Addendum §3.2).
 # Compose tidak dipakai untuk build di staging dan produksi.
 image:
-	@test -f backend/Containerfile || { echo "backend/Containerfile belum ada (menunggu SHAA-175)" >&2; exit 2; }
+	@test -f backend/Containerfile || { echo "backend/Containerfile belum ada (menunggu ARC-175)" >&2; exit 2; }
 	$(CONTAINER_ENGINE) build -f backend/Containerfile --build-arg JOBS=$(JOBS) -t localhost/poolrouter-backend:$(IMAGE_TAG) backend
 
 # image-frontend: image nginx + build statis frontend (ADR-0003 §3.9), konteks frontend/.
@@ -85,21 +85,20 @@ image-frontend:
 # Repo gate (ADR-0003 section 5): `make setup test lint` from the repo root.
 # Each stack keeps its own Makefile; these targets only delegate. frontend/ is
 # included once it has a Makefile, so adding it needs no change here.
-# Lihat backend/Makefile: resep dengan efek samping memakai $(SUBMAKE), bukan $(MAKE), supaya `make -n` aman (SHAA-398).
+# Lihat backend/Makefile: resep dengan efek samping memakai $(SUBMAKE), bukan $(MAKE), supaya `make -n` aman (ARC-398).
 SUBMAKE = $(MAKE)
 STACKS := backend $(if $(wildcard frontend/Makefile),frontend)
 
-.PHONY: help setup test lint fmt clean push-main test-dry-run
+.PHONY: help setup test lint fmt clean test-dry-run
 
 help:
-	@echo "gate resmi: make setup test lint RUNNER=docker FRONTEND_RUNNER=docker CONTAINER_LABEL=shaal.issue=SHAA-<n>; push: make push-main dengan variabel yang sama"
-	@echo "targets: setup test lint fmt clean (gate repo, delegasi ke stack); test-dry-run (uji regresi make -n, tanpa Docker); push-main (gate penuh lalu push ke main, wajib CONTAINER_LABEL=shaal.issue=SHAA-<n>); compose-up compose-down compose-ps compose-logs compose-config compose-migrate compose-lint compose-test-dind image image-frontend"
+	@echo "gate resmi: make setup test lint RUNNER=docker FRONTEND_RUNNER=docker CONTAINER_LABEL=arctiva.issue=ARC-<n>"
+	@echo "targets: setup test lint fmt clean (gate repo, delegasi ke stack); test-dry-run (uji regresi make -n, tanpa Docker); compose-up compose-down compose-ps compose-logs compose-config compose-migrate compose-lint compose-test-dind image image-frontend"
+	@echo "Push: tidak ada jalur push dari Makefile. Semua perubahan masuk lewat PR ke main (CLAUDE.md)."
 
-# push-main: satu-satunya jalur push ke main (CLAUDE.md). Gate penuh harus hijau pada hash yang di-push (SHAA-328).
-push-main:
-	@RUNNER="$(RUNNER)" FRONTEND_RUNNER="$(FRONTEND_RUNNER)" CONTAINER_LABEL="$(CONTAINER_LABEL)" MAKE="$(SUBMAKE)" sh scripts/push-main.sh
+# push-main dihapus: Arctiva tidak mengizinkan push langsung ke main (CLAUDE.md). Semua perubahan lewat PR.
 
-# test-dry-run: bukti `make -n` tidak menyentuh engine kontainer (stub docker/podman di PATH, SHAA-398).
+# test-dry-run: bukti `make -n` tidak menyentuh engine kontainer (stub docker/podman di PATH, ARC-398).
 test-dry-run:
 	@sh scripts/test-dry-run.sh
 

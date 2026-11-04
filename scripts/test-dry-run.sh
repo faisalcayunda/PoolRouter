@@ -1,5 +1,5 @@
 #!/bin/sh
-# Uji regresi SHAA-398: `make -n` pada gate resmi tidak boleh memanggil docker atau podman.
+# Uji regresi ARC-398: `make -n` pada gate resmi tidak boleh memanggil docker atau podman.
 # Stub pencatat di PATH menulis setiap panggilan ke log; log harus kosong dan exit harus 0.
 # Tidak butuh Docker sungguhan. Jalankan: make test-dry-run (dari akar repo).
 set -eu
@@ -27,12 +27,22 @@ run() {
 		echo "lulus: $name exit=0, log stub kosong"
 	fi
 }
-V="RUNNER=docker FRONTEND_RUNNER=docker CONTAINER_LABEL=shaal.issue=SHAA-398"
+V="RUNNER=docker FRONTEND_RUNNER=docker CONTAINER_LABEL=arctiva.issue=ARC-398"
 # shellcheck disable=SC2086
 run "setup test lint" setup test lint $V
 # shellcheck disable=SC2086
 run "backend uji-redis check-disk" -C backend uji-redis $V
-# shellcheck disable=SC2086
-# REMOTE palsu: bila regresi, push-main.sh gagal di git fetch dan tidak sampai push.
-run "push-main" push-main $V REMOTE=shaa398-dry-run-tidak-ada
+# push-main sudah dihapus (CLAUDE.md: push ke main hanya lewat PR). Target yang tidak ada harus ditolak make.
+run_absen() {
+	set +e
+	(cd "$root" && PATH="$tmp/bin:$PATH" make -n "$@" > "$tmp/out" 2>&1)
+	rc=$?
+	set -e
+	if [ "$rc" -eq 0 ] || [ -s "$log" ]; then
+		echo "GAGAL: target $* seharusnya tidak ada (exit=$rc)"; tail -20 "$tmp/out"; fail=1; : > "$log"
+	else
+		echo "lulus: target $* tidak ada, exit=$rc, log stub kosong"
+	fi
+}
+run_absen push-main
 exit "$fail"

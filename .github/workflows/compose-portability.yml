@@ -29,7 +29,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
-      SHAA_ISSUE: SHAA-207
+      ARC_ISSUE: ARC-207
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -79,7 +79,7 @@ jobs:
           out="$RUNNER_TEMP/v3-harness.out"
           rc=0
           sudo env "PATH=$PATH" make compose-test-dind \
-            CONTAINER_ENGINE=podman SHAA_ISSUE="$SHAA_ISSUE" ENV_FILE="$ENV_FILE" \
+            CONTAINER_ENGINE=podman ARC_ISSUE="$ARC_ISSUE" ENV_FILE="$ENV_FILE" \
             > "$out" 2>&1 || rc=$?
           cat "$out"
           exit "$rc"
@@ -137,10 +137,10 @@ jobs:
       - name: Bersihkan resource berlabel (selalu)
         if: always()
         run: |
-          sudo podman rm -f -v --filter "label=shaal.issue=$SHAA_ISSUE" >/dev/null 2>&1 || true
-          sudo podman volume prune -f --filter "label=shaal.issue=$SHAA_ISSUE" >/dev/null 2>&1 || true
-          sudo podman network prune -f --filter "label=shaal.issue=$SHAA_ISSUE" >/dev/null 2>&1 || true
-          left=$(sudo podman ps -a --filter "label=shaal.issue=$SHAA_ISSUE" -q | wc -l | tr -d ' ')
+          sudo podman rm -f -v --filter "label=arctiva.issue=$ARC_ISSUE" >/dev/null 2>&1 || true
+          sudo podman volume prune -f --filter "label=arctiva.issue=$ARC_ISSUE" >/dev/null 2>&1 || true
+          sudo podman network prune -f --filter "label=arctiva.issue=$ARC_ISSUE" >/dev/null 2>&1 || true
+          left=$(sudo podman ps -a --filter "label=arctiva.issue=$ARC_ISSUE" -q | wc -l | tr -d ' ')
           echo "CLEANUP left_containers=$left"
           rm -rf "$RUNNER_TEMP/poolrouter-secrets" "$RUNNER_TEMP/poolrouter.env"
 

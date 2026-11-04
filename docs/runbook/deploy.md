@@ -84,7 +84,7 @@ Healthcheck bawaan:
 - `postgres`: `pg_isready` terhadap `POSTGRES_USER` dan `POSTGRES_DB`
 - `redis`: `redis-cli ping` dengan `REDISCLI_AUTH` dari secret (tidak lewat argumen)
 - `rabbitmq`: `rabbitmq-diagnostics -q ping`
-- `backend-webserver`: `webserver healthcheck` (probe lokal lewat subcommand binary, ADR-0001 §11.2). Subcommand ini ada di lingkup SHAA-175 (Flik). Sampai ada di image, service ini tidak akan `healthy`. Probe TCP tidak dipakai: image runtime tidak punya shell atau `nc`, dan probe TCP akan memasukkan alat yang harus dicabut lagi. `backend-controller` dan `backend-worker` belum punya healthcheck; ditambahkan di Bagian 2.
+- `backend-webserver`: `webserver healthcheck` (probe lokal lewat subcommand binary, ADR-0001 §11.2). Subcommand ini ada di lingkup ARC-175 (Flik). Sampai ada di image, service ini tidak akan `healthy`. Probe TCP tidak dipakai: image runtime tidak punya shell atau `nc`, dan probe TCP akan memasukkan alat yang harus dicabut lagi. `backend-controller` dan `backend-worker` belum punya healthcheck; ditambahkan di Bagian 2.
 - `frontend`: `wget` ke port 8080 di dalam container. Verifikasi pada Bagian 2 bahwa image nginx-unprivileged memiliki `wget`.
 
 ### Upgrade (staging dan prod)
@@ -118,21 +118,21 @@ Target ini menjalankan `run --rm migrate`, memakai `CONTAINER_ENGINE` yang sama 
 
 Dua kasus berbeda. Jangan campur.
 
-**(a) Resource run agent (berlabel `shaal.issue`).** Dihapus setelah setiap run agent, lalu dicek kosong dengan filter yang sama:
+**(a) Resource run agent (berlabel `arctiva.issue`).** Dihapus setelah setiap run agent, lalu dicek kosong dengan filter yang sama:
 
 ```sh
-podman rm -f -v --filter label=shaal.issue=<SHAA-n>
-podman volume prune -f --filter label=shaal.issue=<SHAA-n>
-podman network prune -f --filter label=shaal.issue=<SHAA-n>
+podman rm -f -v --filter label=arctiva.issue=<ARC-n>
+podman volume prune -f --filter label=arctiva.issue=<ARC-n>
+podman network prune -f --filter label=arctiva.issue=<ARC-n>
 
-podman ps -a --filter label=shaal.issue=<SHAA-n>
-podman volume ls --filter label=shaal.issue=<SHAA-n>
-podman network ls --filter label=shaal.issue=<SHAA-n>
+podman ps -a --filter label=arctiva.issue=<ARC-n>
+podman volume ls --filter label=arctiva.issue=<ARC-n>
+podman network ls --filter label=arctiva.issue=<ARC-n>
 ```
 
 Ketiga perintah terakhir harus tidak menampilkan apa pun.
 
-**(b) Volume stack dev owner (tidak berlabel `shaal.issue`).** Ini data milik owner. Hanya dihapus atas keputusan owner, dengan perintah eksplisit per nama volume:
+**(b) Volume stack dev owner (tidak berlabel `arctiva.issue`).** Ini data milik owner. Hanya dihapus atas keputusan owner, dengan perintah eksplisit per nama volume:
 
 ```sh
 make compose-down ENV=dev ENV_FILE=deploy/compose/env/dev.env
@@ -164,10 +164,10 @@ Exit code 0 berarti lulus. Hasil render disimpan di `deploy/compose/lint/.render
 ### Harness DinD (V3)
 
 ```sh
-make compose-test-dind SHAA_ISSUE=SHAA-<n> ENV_FILE=<file env di luar repo>
+make compose-test-dind ARC_ISSUE=ARC-<n> ENV_FILE=<file env di luar repo>
 ```
 
-Harness menjalankan `docker:27-dind` dengan `--privileged` sebagai container sementara berlabel `shaal.issue`, lalu menaikkan stack `bundled-infra` lewat klien Compose di container CLI. Smoke test sama dengan V2: `psql`, `redis-cli`, dan `rabbitmq-diagnostics`. Lulus jika semua service healthy dan ketiga smoke test exit 0. Di akhir run, harness menghapus stack di dalam DinD dan memeriksa tiga perintah pembersihan (a) di atas.
+Harness menjalankan `docker:27-dind` dengan `--privileged` sebagai container sementara berlabel `arctiva.issue`, lalu menaikkan stack `bundled-infra` lewat klien Compose di container CLI. Smoke test sama dengan V2: `psql`, `redis-cli`, dan `rabbitmq-diagnostics`. Lulus jika semua service healthy dan ketiga smoke test exit 0. Di akhir run, harness menghapus stack di dalam DinD dan memeriksa tiga perintah pembersihan (a) di atas.
 
 Jika DinD tidak bisa berjalan di Podman rootless, catat kegagalannya di komentar issue. Bukti V4 di GitHub Actions menggantikan V3 (fallback ADR-0001 Addendum §8).
 
@@ -196,24 +196,24 @@ Jika DinD tidak bisa berjalan di Podman rootless, catat kegagalannya di komentar
 Bagian ini belum final. Keputusan berikut menunggu owner dan ADR infrastruktur terpisah (ADR-0001 Addendum §9):
 
 - Host target dan arsitektur CPU (asumsi `linux/amd64`, Q-A2).
-- Bundled atau managed PostgreSQL, Redis, dan RabbitMQ (`POOLROUTER_DB_HOST`, `POOLROUTER_REDIS_HOST`, `POOLROUTER_RABBITMQ_HOST` kosong di template prod). Nilai `POOLROUTER_DB_SSLMODE` ditetapkan bersama ADR hosting PostgreSQL (SHAA-211). Template memakai `require` sebagai placeholder.
+- Bundled atau managed PostgreSQL, Redis, dan RabbitMQ (`POOLROUTER_DB_HOST`, `POOLROUTER_REDIS_HOST`, `POOLROUTER_RABBITMQ_HOST` kosong di template prod). Nilai `POOLROUTER_DB_SSLMODE` ditetapkan bersama ADR hosting PostgreSQL (ARC-211). Template memakai `require` sebagai placeholder.
 - Reverse proxy atau load balancer di depan port 8080, serta TLS.
 - Registry mirror BGN untuk produksi (digest disalin dengan `skopeo copy --preserve-digests`).
 - Restart setelah reboot host dan rotasi log di Docker rootful (sudah diatur di compose; verifikasi di host target).
 
 ## Batasan saat ini
 
-- Service backend, frontend, dan mock Dukcapil sudah didefinisikan, tetapi image-nya dibangun di Bagian 2 (SHAA-207 Containerfile). Sampai itu, profile `app` dan `mock` tidak bisa dinyalakan.
+- Service backend, frontend, dan mock Dukcapil sudah didefinisikan, tetapi image-nya dibangun di Bagian 2 (ARC-207 Containerfile). Sampai itu, profile `app` dan `mock` tidak bisa dinyalakan.
 - **Profile `app` (sementara, Bagian 1 saja):** diterima Shu (D-1) karena image backend dan frontend belum ada. Wajib dicabut di Bagian 2 pada commit yang memasang digest image backend dan frontend di env. Setelah itu `compose-up` biasa menaikkan stack penuh (Addendum §8 V2). Dependensi app ke service infra harus tetap valid saat `bundled-infra` mati (managed).
-- Subcommand `webserver healthcheck` dan konvensi `*_FILE` ada di lingkup backend SHAA-175 (Flik). Sampai ada, healthcheck backend tidak akan `healthy`.
-- Role database `pr_*` dan `poolrouter_owner` belum dibuat oleh stack bundled. Stack hanya membuat `POSTGRES_USER`. Pembuatan role dan password dari file secret ada di SHAA-193.
+- Subcommand `webserver healthcheck` dan konvensi `*_FILE` ada di lingkup backend ARC-175 (Flik). Sampai ada, healthcheck backend tidak akan `healthy`.
+- Role database `pr_*` dan `poolrouter_owner` belum dibuat oleh stack bundled. Stack hanya membuat `POSTGRES_USER`. Pembuatan role dan password dari file secret ada di ARC-193.
 - Service `backend-cli` (ADR-0003 §3.6c, role `ADMIN_API`) belum didefinisikan. Menunggu image di Bagian 2.
 - Nama variabel `POOLROUTER_DB_*`, `POOLROUTER_REDIS_*`, dan `POOLROUTER_RABBITMQ_*` mengikuti kontrak env backend v1 (final, Shu). Perubahannya hanya lewat revisi kontrak.
 - Job CI V4 (`compose-portability`) diserahkan ke Tessai.
 
 ## Rujukan
 
-- ADR-0001 Addendum A (`docs/adr/0001-addendum-a-deploy-engine-agnostic.md` setelah masuk main; sampai saat itu lampiran di SHAA-190)
-- Kontrak env backend PoolRouter v1 (lampiran SHAA-207; final, Shu)
-- SHAA-207 (sub-issue K2), SHAA-190 (induk K-38)
-- `shaal-playbook` bagian 6, `shaal-eng-standards` bagian 8
+- ADR-0001 Addendum A (`docs/adr/0001-addendum-a-deploy-engine-agnostic.md` setelah masuk main; sampai saat itu lampiran di ARC-190)
+- Kontrak env backend PoolRouter v1 (lampiran ARC-207; final, Shu)
+- ARC-207 (sub-issue K2), ARC-190 (induk K-38)
+- `arctiva-playbook` bagian 6, `shaal-eng-standards` bagian 8

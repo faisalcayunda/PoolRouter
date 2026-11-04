@@ -1,28 +1,51 @@
-# PoolRouter: aturan git
+# PoolRouter: aturan repo Arctiva
 
-Aturan ini mengikat semua agent dan kontributor. Standar teknis umum ada di skill `shaal-eng-standards`; kalau bertentangan, file ini yang berlaku.
+Aturan ini mengikat semua agent dan kontributor Arctiva di repo ini, dan menggantikan aturan
+workspace Shaal yang sudah obsolete. Standar teknis Arctiva ada di skill `arctiva-eng-standards`;
+kalau bertentangan, file ini yang berlaku.
 
-Dasar wewenang: keputusan owner K-34 dan K-35 (2026-11-03, dicatat Fitcher di SHAA-179 dan SHAA-182). Squad Engineering boleh commit, push, dan membuat branch sendiri di repo ini, termasuk push langsung ke `main` tanpa PR. Konfirmasi owner per aksi git (`shaal-eng-standards` §0/§2) tidak diperlukan. Setiap push ke `main` di-review Ridley post-hoc. Force-push ke `main` dan secret di repo tetap dilarang.
+Dasar wewenang: keputusan Operator (Faisal Nugraha Cayunda) pada 5 November 2026 WIB — Arctiva
+mengambil alih pengembangan PoolRouter dari workspace Shaal. Spec: `takeover-shaal`.
 
-## Branch dan push
-- Satu branch per pekerjaan: `agent/<nama-agent>/<issue>`, contoh `agent/flik/shaa-200`.
-- Push ke branch milik sendiri atau langsung ke `main` (fast-forward, tanpa force). Branch orang lain tidak disentuh.
-- Dilarang: force push ke `main`, rebase atau reset branch milik orang lain, menghapus branch milik orang lain, dan menambah remote.
+Beda pokok dengan aturan lama: **tidak ada push langsung ke `main`.** Setiap perubahan masuk lewat
+pull request yang sudah lulus gate. Konfirmasi owner per aksi git tidak diperlukan di luar aturan ini;
+force-push ke `main` dan secret di repo tetap dilarang.
 
-## Pull request dan merge
-- PR ke `main` tidak wajib. Perubahan boleh di-push langsung ke `main`.
-- Ridley me-review post-hoc hash commit di `main` setelah pelaksana (Flik atau Viktor) me-mention. Temuan blocking diperbaiki dengan push lanjutan ke `main`.
-- Sebelum push ke `main`: rebase atau merge `main` terbaru ke branch kerja (`shaal-eng-standards` §6).
-- Push ke `main` hanya lewat `make push-main CONTAINER_LABEL=shaal.issue=SHAA-<n>`. Gate penuh `make setup test lint` wajib exit 0 pada hash persis yang di-push. `cargo check`, test parsial, dan `git diff --check` bukan pengganti gate.
-- Gate tidak bisa dijalankan (kunci, timeout, tool tidak ada) berarti tidak push. Pekerjaan tetap di branch, lalu dilaporkan di issue.
-- Laporan push ke `main` wajib mengutip blok bukti dari `make push-main`. Push tanpa bukti adalah temuan blocking di review post-hoc Ridley.
-- `main` merah: pemilik commit pemicu memperbaikinya dengan prioritas di atas pekerjaan lain. Pengecualian satu-satunya: commit perbaikan untuk `main` yang merah boleh di-push bila gate pada hash itu tidak menambah kegagalan baru dibanding `main`. Issue perbaikannya disebut di pesan commit, dan pengecualian ini dicatat di laporan.
-- Board of Directors tidak commit, push, atau merge.
+## Branch dan PR
+- Satu branch per pekerjaan: `agent/<nama-agent>/<issue>`, contoh `agent/<nama-agent>/arc-123`.
+- Nama branch, judul PR, dan pesan commit memakai id issue Arctiva (`ARC-<n>`), bukan id Shaal.
+- `main` hanya menerima merge commit dari PR yang sudah lulus gate. Push langsung ke `main`,
+  termasuk `git push origin HEAD:main`, ditolak oleh reviewer dan harus di-revert.
+- Force-push hanya boleh di branch kerja milik sendiri, tidak pernah di `main`.
+- Sebelum PR: rebase atau merge `main` terbaru ke branch kerja.
 
-## Rahasia dan data
-- Tidak ada secret di repo. Konfigurasi lewat environment variable, dan placeholder ditulis `${VAR}`. `.env` di-gitignore; yang boleh di-commit hanya template `*.example`.
-- Data NIK hanya sintetis.
+## Gate wajib
+- Gate penuh `make setup`, `make test`, `make lint` wajib exit 0 pada hash persis yang di-PR-kan.
+  `cargo check`, test parsial, dan `git diff --check` bukan pengganti gate.
+- Gate dijalankan dengan engsel kontainer yang dipin:
+  `make setup test lint RUNNER=docker FRONTEND_RUNNER=docker CONTAINER_LABEL=arctiva.issue=ARC-<n>`.
+- PR tidak di-merge kalau gate merah, konflik belum selesai, atau diff memuat secret.
 
-## Struktur dan stack
-- Struktur folder, stack, dan gate (`Makefile`) ditetapkan lewat ADR SHAA-178 dan ditambahkan lewat commit ke `main`.
-- Kode, identifier, dan pesan commit ditulis dalam Bahasa Inggris. Dokumen di `docs/` ditulis dalam Bahasa Indonesia.
+## Label gate `arctiva.issue`
+- Setiap container, volume, dan network yang dibuat untuk satu issue **wajib** berlabel
+  `arctiva.issue=ARC-<n>` (satu label per issue). Label `arctiva.issue` menggantikan label Shaal
+  `shaal.issue=SHAA-<n>`; label lama tidak dipakai lagi.
+- `make -C backend ...` dan `make -C frontend ...` dengan runner kontainer gagal di target
+  `check-label` kalau `CONTAINER_LABEL` kosong atau tidak berbentuk `arctiva.issue=ARC-<n>`.
+- Kunci build bersama memakai label `arctiva.build=heavy` di container `arctiva-build-heavy`;
+  jalankan satu build berat per waktu.
+- Pembersihan hanya boleh menyasar resource dengan label milik issue ini
+  (`--filter label=arctiva.issue=ARC-<n>`). Prune global (`docker system prune`,
+  `docker volume prune`, `docker image prune -a`) dan `docker rm` tanpa filter label dilarang.
+- Resource milik layanan lain di host (mis. `arctiva-hindsight` berlabel `arctiva.service=hindsight`,
+  `dokploy-traefik`) tidak boleh disentuh.
+
+## Hal yang tidak boleh dilakukan
+- Push langsung ke `main` (jalur `make push-main` sudah dihapus).
+- Force-push ke `main`, menulis secret ke repo atau ke log CI.
+- Menghapus atau merename branch milik agent lain tanpa kesepakatan dengan pemiliknya.
+
+## Bahasa dan gaya
+- Komentar kode, pesan commit, dan dokumen repo memakai bahasa Indonesia untuk teks penjelas;
+  istilah teknis, nama target, dan path tetap bahasa Inggris.
+- Pesan commit: `feat|fix|test|docs|chore(<scope>): <ringkas> (ARC-<n>)`.

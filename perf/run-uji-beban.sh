@@ -1,5 +1,5 @@
 #!/bin/sh
-# Satu run uji beban SHAA-205 (lokal, Podman, data sintetis).
+# Satu run uji beban ARC-205 (lokal, Podman, data sintetis).
 #
 # Pemakaian (contoh, dari akar repo):
 #   RUN_NAME=sync-lat2s-r1 MODE=sync LAT_MS=2000 RATE=11.6 DURATION=10m \
@@ -7,7 +7,7 @@
 #   ENDPOINT_ID=<uuid> POOLROUTER_API_KEY=... GATEWAY_NET=<nama-network-gateway> \
 #     sh perf/run-uji-beban.sh
 #
-# Yang dibuat dan dihapus di akhir run (semua berlabel shaal.issue=SHAA-205):
+# Yang dibuat dan dihapus di akhir run (semua berlabel arctiva.issue=ARC-205):
 #   - network sementara, container mock Dukcapil, container k6
 # Yang tidak disentuh: resource tanpa label ini, termasuk gateway dan layanan lain.
 #
@@ -18,7 +18,7 @@
 
 set -eu
 
-LABEL=shaal.issue=SHAA-205
+LABEL=arctiva.issue=ARC-205
 REPO=$(cd "$(dirname "$0")/.." && pwd -P)
 WORKDIR=$(dirname "$REPO")
 RUN_NAME=${RUN_NAME:?isi RUN_NAME, mis. sync-lat2s-r1}
@@ -40,7 +40,7 @@ K6_IMAGE=docker.io/grafana/k6@sha256:76f864063eb66a2d2b5c5a0be00cb9effa3ea9dc3bd
 : "${POOLROUTER_API_KEY:?isi POOLROUTER_API_KEY dari environment}"
 
 cleanup() {
-  # Pola bersih di shaal-playbook bagian 6: hanya resource berlabel shaal.issue=SHAA-205.
+  # Pola bersih di arctiva-playbook bagian 6: hanya resource berlabel arctiva.issue=ARC-205.
   podman rm -f -v --filter label="$LABEL" >/dev/null 2>&1 || true
   podman volume prune -f --filter label="$LABEL" >/dev/null 2>&1 || true
   podman network prune -f --filter label="$LABEL" >/dev/null 2>&1 || true
