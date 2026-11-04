@@ -163,17 +163,34 @@ Puncak pemakaian: 5G (image 2.2G, target dan cache sekitar 2.5G). Angka ini peng
 
 ## Root Docker gate (SHAA-379)
 
-Gate akar menjalankan verifikasi seluruh stack (backend dan frontend). Dua perintah yang tersedia dari akar repo:
+Gate resmi (keputusan SHAA-380), dari akar repo:
 
 ```sh
-# Verifikasi lokal tanpa push (setup, test, lint untuk backend dan frontend):
-RUNNER=docker FRONTEND_RUNNER=docker CONTAINER_LABEL=shaal.issue=SHAA-<n> make setup test lint
-
-# Gate penuh seluruh stack lalu push fast-forward ke main:
-RUNNER=docker FRONTEND_RUNNER=docker CONTAINER_LABEL=shaal.issue=SHAA-<n> make push-main
+make setup test lint RUNNER=docker FRONTEND_RUNNER=docker CONTAINER_LABEL=shaal.issue=SHAA-<n>
 ```
 
-Perintah `push-main` di atas adalah satu-satunya perintah gate akar untuk push ke `main`. Perintah ini menjalankan gate backend dan frontend (`setup`, `test`, `lint`), dan hanya melakukan push bila setiap target keluar dengan exit code 0.
+Push ke `main` (gate penuh dulu, lalu push fast-forward; variabel sama):
+
+```sh
+make push-main RUNNER=docker FRONTEND_RUNNER=docker CONTAINER_LABEL=shaal.issue=SHAA-<n>
+```
+
+Variabel juga dapat diletakkan di depan perintah (mis. `RUNNER=docker FRONTEND_RUNNER=docker CONTAINER_LABEL=shaal.issue=SHAA-<n> make push-main`). `push-main` adalah satu-satunya jalur push ke `main`. Ia menjalankan gate backend dan frontend (`setup`, `test`, `lint`) dan hanya push bila semua target exit 0.
+
+### `make -n` aman sebagai bukti
+
+Sejak SHAA-398, `make -n` pada gate di atas tidak memanggil `docker` atau `podman`.
+GNU make tetap mengeksekusi baris resep yang memuat teks `$(MAKE)` walau dengan `-n`;
+karena itu resep dengan efek samping container memakai `SUBMAKE = $(MAKE)` dan menulis
+`$(SUBMAKE)`. Jangan menulis `$(MAKE)` langsung di resep seperti itu. Resep delegasi
+akar (`$(MAKE) -C $$s $@`) sengaja tetap `$(MAKE)` agar `-n` diteruskan ke stack.
+
+Uji regresi (tanpa Docker, stub pencatat `docker`/`podman` di `PATH`; gagal bila log
+stub tidak kosong):
+
+```sh
+make test-dry-run
+```
 
 ### Pengukuran disk frontend (2026-11-04, sandbox instabox, /data 20G)
 
