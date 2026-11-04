@@ -3748,10 +3748,10 @@ components:
           type: integer
           format: int64
           description: |-
-            Daily upstream quota, 1..=1_000_000 (KP-01). Required: no default, so a
-            create must state the quota it wants.
-          example: 750
-          maximum: 1000000
+            Daily upstream quota, at least 1 with no upper bound (range kept as it
+            was before SHAA-280). Required: no default, so a create must state the
+            quota it wants.
+          example: 500
           minimum: 1
         margin_kuota:
           type: number
@@ -3777,11 +3777,11 @@ components:
           type: integer
           format: int64
           description: |-
-            Upstream rate limit per hour, 1..=10_000 (KP-01). Required: no default.
-            Also caps `jeda_min`/`jeda_maks` at `floor(3_600_000 / rate_limit_per_jam)`
+            Upstream rate limit per hour, at least 1 with no upper bound (range kept
+            as it was before SHAA-280). Required: no default. Also caps
+            `jeda_min`/`jeda_maks` at `floor(3_600_000 / rate_limit_per_jam)`
             milliseconds.
-          example: 120
-          maximum: 10000
+          example: 60
           minimum: 1
         reset_kuota_jam:
           type: integer
