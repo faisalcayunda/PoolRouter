@@ -328,7 +328,12 @@ impl UpstreamPoolConfig {
 
         // Single-field ranges (KP-01 + Sisipan H for the jeda triad).
         rentang_min(&mut errors, "kuota_harian", self.kuota_harian, 1);
-        rentang_min(&mut errors, "rate_limit_per_jam", self.rate_limit_per_jam, 1);
+        rentang_min(
+            &mut errors,
+            "rate_limit_per_jam",
+            self.rate_limit_per_jam,
+            1,
+        );
         rentang(&mut errors, "batas_percobaan", self.batas_percobaan, 1, 5);
         rentang(
             &mut errors,
