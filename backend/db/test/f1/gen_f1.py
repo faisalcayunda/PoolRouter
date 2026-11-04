@@ -50,12 +50,14 @@ Q_SKALA = 1000
 # Tanggal lahir fiktif: tanggal tetap yang jelas bukan tanggal lahir orang nyata.
 TGL_LAHIR_FIKTIF = ["1901-01-01", "1902-02-02", "1903-03-03", "1904-04-04"]
 # Akun uji. Seed TOTP TIDAK dibuat generator; dibaca dari ${TOTP_TEST_SEED} saat runtime.
+# Daftar dari rencana uji v0.2 rev 1 §7 (Hanna). Dua owner untuk isolasi antar client (T-06B-09).
 AKUN_UJI = [
-    ("mfa-u1", "auditor", "auditor"),
-    ("mfa-u2", "platform_admin_1", "platform_admin"),
-    ("mfa-u3", "platform_admin_2", "platform_admin"),
-    ("mfa-u4", "operator", "operator"),
-    ("mfa-u5", "client_owner", "client_owner"),
+    ("mfa-u1", "uji-auditor-01", "auditor"),
+    ("mfa-u2", "uji-admin-01", "platform_admin"),
+    ("mfa-u3", "uji-admin-02", "platform_admin"),
+    ("mfa-u4", "uji-operator-01", "operator"),
+    ("mfa-u5", "uji-owner-a", "client_owner"),
+    ("mfa-u6", "uji-owner-b", "client_owner"),
 ]
 
 # Kunci unik per berkas keluaran (contract: request_id, webhook_delivery_id, batch+request, dst).
@@ -188,7 +190,7 @@ def scen_d3(g):
     rows.append([uid("wh-6"), batas, "", "gagal"])   # webhook_not_before NULL setelah percobaan ke-6
     g.add("webhook_jadwal.csv", kol, rows)
 
-    # Jalur cepat dengan batas retry 3 (T-06B-01): fixture terpisah, jadwal 6 percobaan tidak diubah.
+    # Jalur cepat dengan batas retry 3 (T-06B-01, webhook-retry-3 di §7 rev 1): fixture terpisah, jadwal 6 percobaan tidak diubah.
     cepat = []
     for n in range(1, BATAS_RETRY_CEPAT):
         cepat.append([uid(f"wh-cepat-{n}"), n, ts(30 * n), "retry"])
