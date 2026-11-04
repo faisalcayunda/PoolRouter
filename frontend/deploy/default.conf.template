@@ -1,0 +1,44 @@
+# Server tunggal UI + admin API (ADR-0003 §3.9). Dirender dengan envsubst (hanya POOLROUTER_*).
+server {
+  listen 8080 default_server;
+  listen [::]:8080 default_server;
+  server_name _;
+
+  root /usr/share/nginx/html;
+  index index.html;
+
+  # Allowlist IP admin: hanya diisi di POOLROUTER_ENV=poc (R-12); kosong di lingkungan lain.
+  include /tmp/nginx-conf/allowlist.inc;
+
+  # Admin API: path diteruskan apa adanya. Host, Origin, dan Sec-Fetch-Site tidak diubah;
+  # pemeriksaan CSRF dan Origin dilakukan backend. Cache-Control dari backend (no-store)
+  # tidak ditimpa: nginx tidak menambah atau menghapusnya.
+  location /admin/v1/ {
+    proxy_pass http://${POOLROUTER_ADMIN_API_UPSTREAM};
+    proxy_http_version 1.1;
+    proxy_set_header Host $http_host;
+    proxy_set_header X-Forwarded-For $remote_addr;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header Connection "";
+    include /etc/nginx/poolrouter/security-headers.conf;
+  }
+
+  # Aset ber-hash dari Vite boleh di-cache lama. File yang tidak ada: 404, bukan index.html.
+  location /assets/ {
+    try_files $uri =404;
+    add_header Cache-Control "public, max-age=31536000, immutable" always;
+    include /etc/nginx/poolrouter/security-headers.conf;
+  }
+
+  location = /index.html {
+    add_header Cache-Control "no-cache" always;
+    include /etc/nginx/poolrouter/security-headers.conf;
+  }
+
+  # Fallback SPA: rute apa pun yang bukan berkas jatuh ke index.html (no-cache lewat location di atas).
+  location / {
+    try_files $uri $uri/ /index.html;
+    add_header Cache-Control "no-cache" always;
+    include /etc/nginx/poolrouter/security-headers.conf;
+  }
+}

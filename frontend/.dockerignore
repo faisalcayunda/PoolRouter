@@ -1,0 +1,15 @@
+# Konteks build frontend (ADR-0003 §3.9). Jangan kirim hasil build, cache, atau berkas rahasia.
+.git
+**/.git
+node_modules
+**/node_modules
+dist
+coverage
+test-results
+playwright-report
+.cache
+**/.cache
+.pnpm-store
+.env
+.env.*
+e2e

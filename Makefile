@@ -32,7 +32,7 @@ COMPOSE := $(COMPOSE_ENV) $(CONTAINER_ENGINE) compose -p $(PROJECT) $(COMPOSE_FI
 LINT_ENV_FILES := $(COMPOSE_DIR)/env/dev.env.example
 IMAGE_TAG ?= dev
 
-.PHONY: check-env compose-up compose-down compose-ps compose-logs compose-config compose-migrate compose-lint compose-test-dind image
+.PHONY: check-env compose-up compose-down compose-ps compose-logs compose-config compose-migrate compose-lint compose-test-dind image image-frontend
 
 check-env:
 	@case "$(ENV)" in dev|staging|prod) ;; *) echo "ENV harus dev, staging, atau prod" >&2; exit 2 ;; esac
@@ -77,6 +77,11 @@ image:
 	@test -f backend/Containerfile || { echo "backend/Containerfile belum ada (menunggu SHAA-175)" >&2; exit 2; }
 	$(CONTAINER_ENGINE) build -f backend/Containerfile --build-arg JOBS=$(JOBS) -t localhost/poolrouter-backend:$(IMAGE_TAG) backend
 
+# image-frontend: image nginx + build statis frontend (ADR-0003 §3.9), konteks frontend/.
+image-frontend:
+	@test -f frontend/Containerfile || { echo "frontend/Containerfile tidak ada" >&2; exit 2; }
+	$(CONTAINER_ENGINE) build -f frontend/Containerfile -t localhost/poolrouter-frontend:$(IMAGE_TAG) frontend
+
 # Repo gate (ADR-0003 section 5): `make setup test lint` from the repo root.
 # Each stack keeps its own Makefile; these targets only delegate. frontend/ is
 # included once it has a Makefile, so adding it needs no change here.
@@ -88,7 +93,7 @@ STACKS := backend $(if $(wildcard frontend/Makefile),frontend)
 
 help:
 	@echo "gate resmi: make setup test lint RUNNER=docker FRONTEND_RUNNER=docker CONTAINER_LABEL=shaal.issue=SHAA-<n>; push: make push-main dengan variabel yang sama"
-	@echo "targets: setup test lint fmt clean (gate repo, delegasi ke stack); test-dry-run (uji regresi make -n, tanpa Docker); push-main (gate penuh lalu push ke main, wajib CONTAINER_LABEL=shaal.issue=SHAA-<n>); compose-up compose-down compose-ps compose-logs compose-config compose-migrate compose-lint compose-test-dind image"
+	@echo "targets: setup test lint fmt clean (gate repo, delegasi ke stack); test-dry-run (uji regresi make -n, tanpa Docker); push-main (gate penuh lalu push ke main, wajib CONTAINER_LABEL=shaal.issue=SHAA-<n>); compose-up compose-down compose-ps compose-logs compose-config compose-migrate compose-lint compose-test-dind image image-frontend"
 
 # push-main: satu-satunya jalur push ke main (CLAUDE.md). Gate penuh harus hijau pada hash yang di-push (SHAA-328).
 push-main:

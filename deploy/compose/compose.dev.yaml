@@ -19,6 +19,11 @@ services:
       POOLROUTER_SEED_PASSWORD_FILE: /run/secrets/poolrouter_seed_password
     secrets: [poolrouter_seed_password]
 
+  frontend:
+    build:
+      context: ../../frontend
+      dockerfile: Containerfile
+
   backend-controller:
     environment:
       POOLROUTER_DB_SSLMODE: disable

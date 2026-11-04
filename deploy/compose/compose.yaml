@@ -198,6 +198,15 @@ services:
   frontend:
     image: ${POOLROUTER_FRONTEND_IMAGE:?isi POOLROUTER_FRONTEND_IMAGE di file env}
     profiles: ["app"]
+    # Satu origin (ADR-0003 §3.9): nginx mem-proxy /admin/v1/ ke listener admin API webserver
+    # (POOLROUTER_ADMIN_API_ADDR, SHAA-196). Allowlist IP hanya dibaca bila POOLROUTER_ENV=poc.
+    environment:
+      POOLROUTER_ENV: ${POOLROUTER_ENV:?isi POOLROUTER_ENV di file env}
+      POOLROUTER_ADMIN_API_UPSTREAM: ${POOLROUTER_ADMIN_API_UPSTREAM:-backend-webserver:8082}
+      POOLROUTER_ADMIN_IP_ALLOWLIST: ${POOLROUTER_ADMIN_IP_ALLOWLIST:-}
+    depends_on:
+      backend-webserver:
+        condition: service_healthy
     ports:
       - "${POOLROUTER_BIND_ADDR:-127.0.0.1}:${POOLROUTER_HTTP_PORT:-8080}:8080"
     healthcheck:

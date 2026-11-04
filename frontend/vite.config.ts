@@ -20,7 +20,20 @@ export default defineConfig(({ mode }) => ({
     // into the bundle, so the production build has no `?peran=` read at all.
     'import.meta.env.VITE_TEST_ROLE_SEAM': JSON.stringify(mode === 'playwright' || mode === 'test'),
   },
-  server: { host: true, port: 5173 },
+  server: {
+    host: true,
+    port: 5173,
+    // Admin API on the same origin as the UI (ADR-0003 section 3.9): in dev the Vite server proxies
+    // the prefix, as nginx does in the image. `changeOrigin: false` keeps the browser's `Host` and
+    // `Origin` intact so the backend's CSRF and Origin checks see the real values. The target is
+    // non-secret and can be overridden with POOLROUTER_ADMIN_API_PROXY_TARGET.
+    proxy: {
+      '/admin/v1': {
+        target: process.env.POOLROUTER_ADMIN_API_PROXY_TARGET ?? 'http://127.0.0.1:8082',
+        changeOrigin: false,
+      },
+    },
+  },
   preview: { host: true, port: 4173 },
   test: {
     environment: 'jsdom',
