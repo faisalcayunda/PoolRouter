@@ -8,6 +8,8 @@ SHELL := /bin/sh
 
 # Runner frontend: podman, docker, atau local. Default mengikuti RUNNER seperti DB_ENGINE di backend
 # (SHAA-373, keputusan Shu). FRONTEND_RUNNER=local menjalankan Node di host, hanya bila dipilih eksplisit.
+# RUNNER ?= sama dengan backend/Makefile; penjaga di bawah harus punya nilai default saat parse.
+RUNNER ?= podman
 FRONTEND_RUNNER ?= $(if $(filter docker,$(RUNNER)),docker,podman)
 # Engine kontainer untuk FRONTEND_RUNNER=podman atau docker. Dipakai juga oleh kunci build (BUILD_LOCK_ENGINE).
 CONTAINER_ENGINE := $(if $(filter docker,$(FRONTEND_RUNNER)),docker,podman)
