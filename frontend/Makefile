@@ -105,8 +105,20 @@ i18n-types: check-label $(CHECK_DISK)
 fmt: check-label
 	$(PNPM) exec prettier --write .
 
+# clean (SHAA-391): node_modules dan .cache dibuat container sebagai root, jadi rm dari host gagal
+# Permission denied. Container berlabel menghapusnya; yang di-mount hanya direktori frontend checkout ini.
+# Nama yang dihapus ditulis literal. Penjaga: cwd harus /work dan berisi package.json. Tidak memakai kunci build.
+# FRONTEND_RUNNER=local (CI): rm host dengan penjaga yang sama terhadap direktori ini.
+CLEAN_PATHS := node_modules .cache dist coverage test-results playwright-report
+ifneq ($(filter podman docker,$(FRONTEND_RUNNER)),)
 clean: check-label
-	rm -rf dist coverage test-results playwright-report node_modules/.vite
+	$(CONTAINER_ENGINE) run --rm --label $(CONTAINER_LABEL) -v "$(CURDIR)":/work -w /work $(NODE_IMAGE) \
+		sh -c 'set -eu; [ "$$(pwd -P)" = /work ] && [ -f /work/package.json ] || { echo "clean: bukan direktori frontend, berhenti" >&2; exit 1; }; rm -rf -- $(CLEAN_PATHS)'
+else
+clean:
+	@set -eu; d=$$(pwd -P); [ -f "$$d/package.json" ] && [ -e "$$d/../.git" ] || { echo "clean: bukan direktori frontend checkout, berhenti" >&2; exit 1; }; \
+	cd "$$d"; rm -rf -- $(CLEAN_PATHS)
+endif
 
 # gen-api: ADR-0003 section 4.2. backend/openapi/admin-api.yaml is owned by the backend stack.
 gen-api: check-label

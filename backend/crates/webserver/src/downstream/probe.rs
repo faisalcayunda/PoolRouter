@@ -29,7 +29,7 @@ const READY_BUDGET: Duration = Duration::from_secs(2);
 /// `webserver healthcheck` total budget; must stay under 3 s (SHAA-198 AC).
 pub const HEALTHCHECK_TIMEOUT: Duration = Duration::from_millis(2500);
 
-type BoxFut<'a> = Pin<Box<dyn Future<Output = Result<(), String>> + Send + 'a>>;
+pub type BoxFut<'a> = Pin<Box<dyn Future<Output = Result<(), String>> + Send + 'a>>;
 
 /// Dependency readiness: PostgreSQL and Redis (`pr:siap` matches). The error
 /// text is logged, never returned to the caller.

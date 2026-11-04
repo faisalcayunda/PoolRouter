@@ -539,7 +539,10 @@ where
         Kesiapan::Siap { .. } => Ok(None),
         Kesiapan::PerluRebuild { run_id, .. } => {
             match bangun_ulang(koneksi, &run_id, sumber, sekarang).await? {
-                HasilRebuild::Dibangun(ringkasan) => Ok(Some(ringkasan)),
+                HasilRebuild::Dibangun(ringkasan) => {
+                    super::metrik::redis_rebuild(super::metrik::Komponen::Controller);
+                    Ok(Some(ringkasan))
+                }
                 HasilRebuild::SudahSiap | HasilRebuild::DikerjakanLain => Ok(None),
             }
         }

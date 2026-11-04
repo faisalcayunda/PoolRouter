@@ -502,3 +502,83 @@ async fn retry_budget_jendela_satu_jam() {
         "{r:?}"
     );
 }
+
+/// The store reports the catalogue metrics of section 5a.9 on its own, with
+/// closed labels (no request_id, no NIK).
+#[tokio::test]
+#[ignore = "butuh Redis: make -C backend uji-redis"]
+async fn metrik_kuota_dicatat_oleh_store() {
+    if lewati() {
+        return;
+    }
+    let recorder = metrics_exporter_prometheus::PrometheusBuilder::new().build_recorder();
+    let handle = recorder.handle();
+    // Thread-local recorder: `#[tokio::test]` runs on the current thread.
+    let _penjaga = metrics::set_default_local_recorder(&recorder);
+
+    let mut c = koneksi().await;
+    redis::cmd("FLUSHALL")
+        .query_async::<()>(&mut c)
+        .await
+        .unwrap();
+    let store = KuotaRedis::baru(c.clone())
+        .await
+        .unwrap()
+        .dengan_komponen(poolrouter_core::kuota::metrik::Komponen::Webserver);
+    let k = ctx("pool-m", 100);
+
+    // Not ready: fail-closed counter.
+    assert!(matches!(
+        store.intake(&k, false, "c").await,
+        Err(GalatStore::BelumSiap)
+    ));
+    let run_id = baca_run_id(&mut c).await.unwrap();
+    bangun_ulang(&mut c, &run_id, &Kosong, Utc::now())
+        .await
+        .unwrap();
+
+    // Slot that expires: TTL 1 ms, then the count finds it gone.
+    assert!(
+        store
+            .ambil_token(&k, &permintaan("req-m", 10, 1_000))
+            .await
+            .unwrap()
+            .diberikan()
+    );
+    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    let t = store.tambah_attempts(&k, "req-m", 1).await.unwrap();
+    assert!(!t.boleh_memanggil_upstream());
+
+    // Retry budget refusal.
+    let mut p = permintaan("rt-0", 1_000_000, 60_000_000);
+    p.jendela_rate[0].t_mikro = 1;
+    p.rasio_retry = 0.0;
+    p.retry_min = 0;
+    p.nomor_percobaan = 2;
+    assert!(matches!(
+        store.ambil_token(&k, &p).await.unwrap(),
+        HasilToken::RetryBudgetHabis(_)
+    ));
+
+    // Quota read and rejection limiter.
+    store.baca(&k).await.unwrap();
+    store
+        .ambil_token_penolakan("client-m", ISI_ULANG_PENOLAKAN_MIKRO, BURST_PENOLAKAN)
+        .await
+        .unwrap();
+
+    let out = handle.render();
+    for harap in [
+        r#"poolrouter_redis_failclosed_total{komponen="webserver"} 1"#,
+        r#"poolrouter_slot_kedaluwarsa_total{upstream_pool_id="pool-m"}"#,
+        r#"poolrouter_retry_budget_habis_total{upstream_pool_id="pool-m"} 1"#,
+        r#"poolrouter_kuota_terpakai{upstream_pool_id="pool-m"}"#,
+        r#"poolrouter_kuota_efektif{upstream_pool_id="pool-m"} 100"#,
+        r#"poolrouter_limiter_penolakan_token{client_id="client-m"} 19"#,
+    ] {
+        assert!(out.contains(harap), "tidak ada: {harap}\n{out}");
+    }
+    for terlarang in ["req-m", "rt-0"] {
+        assert!(!out.contains(terlarang), "label bocor: {terlarang}");
+    }
+}

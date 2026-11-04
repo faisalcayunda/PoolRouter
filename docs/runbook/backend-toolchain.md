@@ -109,7 +109,7 @@ Container toolchain harus berlabel `shaal.issue=<ISSUE>`. Container tanpa label 
 ## Membersihkan
 
 - Container sementara dihapus otomatis (`podman run --rm`). Jika ada sisa, cek dengan `podman ps -a --filter label=shaal.issue=<ISSUE>` dan hapus hanya container dengan label issue sendiri.
-- Hapus cache checkout dari akar repo: `rm -rf -- backend/.cache` (akan memasang ulang `cargo-deny` dan crate saat `setup` berikutnya).
+- Membersihkan workdir yang sudah selesai: jalankan `make clean CONTAINER_LABEL=shaal.issue=<ISSUE>` dari akar checkout. Target ini menghapus `backend/target`, `backend/.cache`, `frontend/node_modules`, dan `frontend/.cache` serta direktori build frontend (`dist`, `coverage`, `test-results`, `playwright-report`) di dalam container berlabel yang hanya me-mount direktori `backend` atau `frontend` checkout itu. Artefak itu dibuat container sebagai root, jadi `rm` dari host gagal `Permission denied`; jangan menghapusnya dengan `rm` host atau `sudo`. Container-nya `--rm`, tidak ada image atau volume yang disentuh, dan target ini tidak memakai kunci build (boleh jalan saat `shaal-build-heavy` aktif). Setelah itu cek `podman ps -a --filter label=shaal.issue=<ISSUE>` kosong. `setup` berikutnya memasang ulang `cargo-deny`, crate, dan `node_modules`.
 - Jangan menghentikan `podman machine` atau container yang tidak berlabel issue sendiri tanpa koordinasi dengan pemiliknya.
 
 ## Mengganti versi cargo-deny

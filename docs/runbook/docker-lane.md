@@ -108,6 +108,37 @@ Semua path diatur di `backend/Makefile` (blok `SHARED_*`), tidak ada yang di-har
 
 Sebelum migrasi, `backend/target` dan `backend/.cache` lama ada di `/data` dan berlipat per workdir; sesudahnya hanya ada satu cargo-home di `/data` dan satu target di `/`.
 
+### Cache bersama antar-checkout dan batas ukuran (SHAA-394)
+
+Satu salinan per host, dipakai semua checkout. Tidak ada lagi toolchain atau registry di `backend/.cache` (`RUNNER=docker`).
+
+| Isi | Lokasi (host) | Batas | Penjaga |
+| --- | --- | --- | --- |
+| rustup, registry/git Cargo, cargo-deny | `/data/workspace/shaal-build/cargo-home/{cargo,rustup}` | `SHARED_CARGO_HOME_LIMIT_MB` = 2560 MB (terukur 2026-11-04: 1315 MB) | `check-disk` berhenti, tidak menghapus apa pun |
+| store pnpm frontend | tidak dibagi: tetap per checkout di `frontend/.cache/pnpm-store` | lihat keputusan di bawah | `make -C frontend clean` per checkout |
+| `backend/target` | `/var/tmp/shaal-build/poolrouter-target` | lihat bagian SHAA-390 | `check-disk` |
+
+Konkurensi:
+
+- Penulisan registry Cargo memakai lock bawaan Cargo (`.package-cache`) pada cargo-home bersama. Dua container yang hanya membaca tidak saling merusak.
+- Salinan toolchain rustup, `cargo fetch`, pemasangan cargo-deny, dan `pnpm install` jalan lewat `HEAVY`, yaitu di bawah kunci `shaal-build-heavy` (antre FIFO, SHAA-395). Pembaruan toolchain tidak bisa terjadi di luar kunci.
+- Checkout kedua: `setup` menemukan `rustup/toolchains` dan `cargo-deny` sudah ada, `cargo fetch` tidak mengunduh apa pun. `du backend/.cache` hanya berisi sisa lokal (kunci/oasdiff).
+
+Membersihkan (target eksplisit, terpisah dari `clean`):
+
+```sh
+# registry/git Cargo saja (toolchain dan cargo-deny tetap); setup berikutnya mengisi ulang
+RUNNER=docker CONTAINER_LABEL=shaal.issue=SHAA-<n> make -C backend clean-cache-shared
+# termasuk toolchain rustup dan cargo-deny
+RUNNER=docker CONTAINER_LABEL=shaal.issue=SHAA-<n> make -C backend clean-cache-shared CLEAN_TOOLCHAIN=1
+```
+
+Kedua target backend jalan di bawah kunci heavy dan hanya menghapus path tetap di dalam mount cache bersama. `make -C backend clean` tetap hanya menghapus artefak checkout itu dan tidak menyentuh cache bersama.
+
+Migrasi dari `backend/.cache` lama: cukup `make -C backend clean` per checkout (menghapus `.cache/cargo` dan `.cache/rustup` lama).
+
+**Keputusan pnpm (lingkup 5, diukur 2026-11-04):** store pnpm tidak dibagi. Di checkout dengan store dan `node_modules` pada satu mount (`/work`), file `node_modules/.pnpm` punya link count 2 (hardlink ke store lokal), jadi total sekitar 440 MB per checkout tanpa duplikasi. Store bersama di mount terpisah gagal `link()` (EXDEV), pnpm menyalin file (link count 1), dan malah menambah sekitar 400 MB di `/data`. Angka "419 MB per checkout" adalah store yang sudah berbagi inode dengan `node_modules`, bukan duplikat. Pembersihan: `make -C frontend clean` di checkout selesai.
+
 ### Kepemilikan file
 
 Container gate (cargo, rustup, cargo-deny) berjalan dengan uid:gid host, jadi isi target dan cargo-home bersama dimiliki user host dan bisa dihapus tanpa sudo. Sisa lama yang dimiliki root (dari sebelum SHAA-390) dihapus lewat `make -C backend clean` di workdir pemiliknya.

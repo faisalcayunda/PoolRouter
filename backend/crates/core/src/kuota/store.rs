@@ -37,6 +37,7 @@ use chrono::{DateTime, Utc};
 use redis::aio::ConnectionLike;
 use redis::{Script, Value};
 
+use super::metrik::{self, Komponen};
 use super::pemulihan::{
     JendelaRate, KUNCI_SIAP, baca_run_id, kunci_antre, kunci_attempts, kunci_ember, kunci_retry,
     kunci_rl, kunci_slot, kunci_tolak, member_slot, nomor_ember_absolut, periksa_pool,
@@ -365,6 +366,7 @@ pub struct KuotaRedis<C> {
     koneksi: C,
     skrip: Arc<KumpulanSkrip>,
     run_id: Arc<RwLock<String>>,
+    komponen: Komponen,
 }
 
 impl<C: Clone> Clone for KuotaRedis<C> {
@@ -373,6 +375,7 @@ impl<C: Clone> Clone for KuotaRedis<C> {
             koneksi: self.koneksi.clone(),
             skrip: Arc::clone(&self.skrip),
             run_id: Arc::clone(&self.run_id),
+            komponen: self.komponen,
         }
     }
 }
@@ -389,7 +392,15 @@ where
             koneksi,
             skrip: Arc::new(KumpulanSkrip::baru()),
             run_id: Arc::new(RwLock::new(run_id)),
+            komponen: Komponen::default(),
         })
+    }
+
+    /// Which process this store reports as in the `komponen` label of its
+    /// fail-closed metric.
+    pub fn dengan_komponen(mut self, komponen: Komponen) -> Self {
+        self.komponen = komponen;
+        self
     }
 
     /// The `run_id` currently sent to the scripts.
@@ -430,9 +441,16 @@ where
         for a in &arg {
             panggilan.arg(a);
         }
-        let jawab: Vec<Value> = panggilan.invoke_async(&mut c).await?;
+        let jawab: Vec<Value> = match panggilan.invoke_async(&mut c).await {
+            Ok(j) => j,
+            Err(e) => {
+                metrik::redis_failclosed(self.komponen);
+                return Err(e.into());
+            }
+        };
         match jawab.first().map(teks).transpose()?.as_deref() {
             Some("belum_siap") => {
+                metrik::redis_failclosed(self.komponen);
                 self.segarkan_run_id().await?;
                 Err(GalatStore::BelumSiap)
             }
@@ -606,6 +624,13 @@ where
                 isi_porsi: angka(j.get(6))?,
             })
         };
+        // Slots the script cleaned by TTL, whatever the decision was.
+        if let Ok(st) = status() {
+            metrik::slot_kedaluwarsa(&ctx.pool_id, st.kedaluwarsa.max(0) as u64);
+        }
+        if kode == "retry_budget_habis" {
+            metrik::retry_budget_habis(&ctx.pool_id);
+        }
         match kode.as_str() {
             "ok" => Ok(HasilToken::Diberikan(status()?)),
             "kuota_habis" => Ok(HasilToken::KuotaHabis(status()?)),
@@ -693,9 +718,12 @@ where
                     kuota,
                 })
             }
-            "slot_kedaluwarsa" => Ok(HasilTambah::SlotKedaluwarsa {
-                attempts: angka(j.get(1))?,
-            }),
+            "slot_kedaluwarsa" => {
+                metrik::slot_kedaluwarsa(&ctx.pool_id, 1);
+                Ok(HasilTambah::SlotKedaluwarsa {
+                    attempts: angka(j.get(1))?,
+                })
+            }
             lain => Err(galat_skrip(lain)),
         }
     }
@@ -734,12 +762,16 @@ where
         ];
         let j = self.jalankan(&self.skrip.baca, kunci, arg).await?;
         match teks(&j[0])?.as_str() {
-            "ok" => Ok(Bacaan {
-                terpakai: angka(j.get(1))?,
-                attempts: angka(j.get(2))?,
-                slot_aktif: angka(j.get(3))?,
-                retry_after_detik: angka(j.get(4))?.max(0) as u64,
-            }),
+            "ok" => {
+                let bacaan = Bacaan {
+                    terpakai: angka(j.get(1))?,
+                    attempts: angka(j.get(2))?,
+                    slot_aktif: angka(j.get(3))?,
+                    retry_after_detik: angka(j.get(4))?.max(0) as u64,
+                };
+                metrik::kuota_dibaca(&ctx.pool_id, bacaan.terpakai, ctx.kuota_efektif);
+                Ok(bacaan)
+            }
             lain => Err(galat_skrip(lain)),
         }
     }
@@ -755,12 +787,17 @@ where
         let arg = vec![isi_ulang_mikro.to_string(), burst.to_string()];
         let j = self.jalankan(&self.skrip.tolak, kunci, arg).await?;
         match teks(&j[0])?.as_str() {
-            "lolos" => Ok(HasilPenolakan::Lolos {
-                sisa_token: angka(j.get(1))?,
-            }),
-            "dibatasi" => Ok(HasilPenolakan::Dibatasi {
-                tunggu_mikro: angka(j.get(1))?,
-            }),
+            "lolos" => {
+                let sisa_token = angka(j.get(1))?;
+                metrik::limiter_token(client_id, sisa_token);
+                Ok(HasilPenolakan::Lolos { sisa_token })
+            }
+            "dibatasi" => {
+                metrik::limiter_token(client_id, 0);
+                Ok(HasilPenolakan::Dibatasi {
+                    tunggu_mikro: angka(j.get(1))?,
+                })
+            }
             lain => Err(galat_skrip(lain)),
         }
     }
