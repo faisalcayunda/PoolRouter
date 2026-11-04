@@ -3,8 +3,11 @@ import { useTranslation } from 'react-i18next';
 import { api, type ApiClient, type AuditAksesPage, type AuditCariRequest } from '../../api/client';
 import { Button } from '../../components/m3/Button';
 import { Card } from '../../components/m3/Card';
+import { Pagination } from '../../components/m3/Pagination';
+import { Select, SelectItem } from '../../components/m3/Select';
 import { Skeleton } from '../../components/m3/Skeleton';
 import { StatusLabel } from '../../components/m3/StatusLabel';
+import idMessages from '../../i18n/messages/id.json';
 import { useFormatter } from '../../i18n/useFormatter';
 import { enumLabel } from '../../i18n/enums';
 import {
@@ -38,6 +41,9 @@ function lastDay(): DateRange {
   };
 }
 
+/** Actions the catalog can name; the filter offers exactly these (`enum.aksi_audit`). */
+const AKSI_VALUES = Object.keys(idMessages.enum.aksi_audit);
+
 export interface AuditScreenProps {
   client?: ApiClient;
 }
@@ -65,9 +71,17 @@ export function AuditScreen({ client = api }: AuditScreenProps): ReactNode {
   const [rangeError, setRangeError] = useState<string | null>(null);
   const [query, setQuery] = useState<AuditCariRequest>({ dari: initial.from, sampai: initial.to });
 
+  const [aksi, setAksi] = useState('semua');
+  // One entry per page visited: `[null]` is page 1, later entries are the `kursor` of the previous
+  // response. Applying a new filter or range starts the trail over.
+  const [cursors, setCursors] = useState<(string | null)[]>([null]);
+  const page = cursors.length;
+  const cursor = cursors[cursors.length - 1] ?? null;
+  const request: AuditCariRequest = cursor ? { ...query, kursor: cursor } : query;
+
   const audit = useQuery<AuditAksesPage>(
-    (signal) => client.cariAuditAkses(query, { signal }),
-    JSON.stringify(query),
+    (signal) => client.cariAuditAkses(request, { signal }),
+    JSON.stringify(request),
   );
 
   const rows = audit.data?.baris ?? [];
@@ -92,7 +106,8 @@ export function AuditScreen({ client = api }: AuditScreenProps): ReactNode {
       return;
     }
     setRangeError(null);
-    setQuery({ dari: from, sampai: to });
+    setQuery(aksi === 'semua' ? { dari: from, sampai: to } : { dari: from, sampai: to, aksi });
+    setCursors([null]);
   }
 
   return (
@@ -117,6 +132,21 @@ export function AuditScreen({ client = api }: AuditScreenProps): ReactNode {
           errors={errors}
           errorMessage={rangeError}
         />
+        <Select
+          label={t('audit.filter.action')}
+          selectedKey={aksi}
+          onSelectionChange={(key) => {
+            if (key !== null) setAksi(String(key));
+          }}
+          className="md:w-64"
+        >
+          <SelectItem id="semua">{t('common.action.all')}</SelectItem>
+          {AKSI_VALUES.map((value) => (
+            <SelectItem key={value} id={value}>
+              {enumLabel(i18n, 'aksi_audit', value)}
+            </SelectItem>
+          ))}
+        </Select>
         <div className="flex flex-wrap gap-2">
           <Button type="submit">{t('common.action.search')}</Button>
         </div>
@@ -226,6 +256,23 @@ export function AuditScreen({ client = api }: AuditScreenProps): ReactNode {
             </div>
           </ScrollArea>
         </Card>
+      ) : null}
+
+      {audit.status === 'success' && (page > 1 || audit.data.kursor) ? (
+        <div className="flex justify-end">
+          <Pagination
+            page={page}
+            pageCount={audit.data.kursor ? page + 1 : page}
+            onPageChange={(next) => {
+              if (next < page) setCursors((trail) => trail.slice(0, -1));
+              else if (audit.data.kursor) setCursors((trail) => [...trail, audit.data.kursor!]);
+            }}
+            prevLabel={t('common.pagination.prev_page')}
+            nextLabel={t('common.pagination.next_page')}
+            label={t('audit.page.title')}
+            rangeText={t('common.pagination.page_current', { ke: page })}
+          />
+        </div>
       ) : null}
 
       <p className="typescale-body-small text-on-surface-variant">{t('audit.filter.note')}</p>
