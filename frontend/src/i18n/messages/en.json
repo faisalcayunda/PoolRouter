@@ -76,7 +76,8 @@
       "page_range": "{{dari, number}}–{{sampai, number}} of {{total, number}}",
       "prev_page": "Previous page",
       "next_page": "Next page",
-      "page_number": "Page {{ke}} of {{total}}"
+      "page_number": "Page {{ke}} of {{total}}",
+      "page_current": "Page {{ke}}"
     },
     "empty": {
       "logs": {
@@ -308,7 +309,7 @@
       "help": "Only saved providers are listed."
     },
     "daily_quota": {
-      "help": "Counted per day according to the reset time [pending OQ-03]."
+      "help": "Counted per day according to the reset time (reset time setting to follow)."
     },
     "sync_share": {
       "help": "When sync traffic is low, async may use the remainder. Sync above the share is rejected with 429."
@@ -372,7 +373,7 @@
       "breadcrumb": "Downstream pool › {{nama}} › Endpoint",
       "add": "Add field",
       "info": "Metadata is recorded in the transaction log for feedback data. It isn't sent to Dukcapil.",
-      "note": "A request without a required field is rejected before it uses quota. Adding an optional field doesn't make older requests fail. The final field list is pending the data contract (SHAA-166, OQ-19)."
+      "note": "A request without a required field is rejected before it uses quota. Adding an optional field doesn't make older requests fail. The final field list follows once the data contract is agreed."
     },
     "col": {
       "name": "Field name",
@@ -497,7 +498,7 @@
       "hour": "Current hour ({{rentang}})",
       "sync_heading": "Sync share",
       "sync_used": "Sync used {{terpakai, number}} of the {{persen, number}}% limit",
-      "note": "Figures count attempts to Dukcapil. Differences from the transaction log: reconciliation is pending OQ-12.",
+      "note": "Figures are counted from attempts to Dukcapil, including retries and failed calls. Differences from the transaction log can occur.",
       "reload": "Reload",
       "pool_filter": "Pool",
       "pool_unknown": "Upstream pool",

@@ -15,6 +15,7 @@ import { InlineAlert } from '../../components/m3/InlineAlert';
 import { Icon, icons } from '../../icons';
 import { IconButton } from '../../components/m3/IconButton';
 import { Card } from '../../components/m3/Card';
+import { Pagination } from '../../components/m3/Pagination';
 import { StatusLabel } from '../../components/m3/StatusLabel';
 import { TextField } from '../../components/m3/TextField';
 import { useFormatter } from '../../i18n/useFormatter';
@@ -91,13 +92,25 @@ export function NikSearchScreen({ client = api }: NikSearchScreenProps): ReactNo
    * a new audited action, and the snapshot it returns may have moved on.
    */
   const [run, setRun] = useState(0);
+  /**
+   * Cursor trail, one entry per page visited: `[null]` is page 1, and each later entry is the
+   * `kursor` the previous response returned. A page turn only moves along this trail and re-sends the
+   * submitted body (same `alasan`), so it never reopens the reason dialog; a fresh search resets it.
+   */
+  const [cursors, setCursors] = useState<(string | null)[]>([null]);
+  const page = cursors.length;
+  const cursor = cursors[cursors.length - 1] ?? null;
 
   const nikValid = /^\d{16}$/.test(nik.trim());
   const nikError = nikTouched && !nikValid ? t('nik.page.error') : null;
 
   const query = useQuery<LogPage>(
-    (signal) => client.cariLogNik(submitted!.body, { signal, alasan: submitted!.body.alasan }),
-    `${submitted?.key ?? 'idle'}#${run}`,
+    (signal) =>
+      client.cariLogNik(cursor ? { ...submitted!.body, kursor: cursor } : submitted!.body, {
+        signal,
+        alasan: submitted!.body.alasan,
+      }),
+    `${submitted?.key ?? 'idle'}#${run}#${cursors.length}:${cursor ?? ''}`,
     { enabled: submitted !== null },
   );
 
@@ -123,6 +136,7 @@ export function NikSearchScreen({ client = api }: NikSearchScreenProps): ReactNo
       alasan: nextReason,
     };
     setSubmitted({ body, key: JSON.stringify(body) });
+    setCursors([null]);
     setRun((n) => n + 1);
   }
 
@@ -346,6 +360,23 @@ export function NikSearchScreen({ client = api }: NikSearchScreenProps): ReactNo
             </ScrollArea>
           </Card>
         )
+      ) : null}
+
+      {query.status === 'success' && (page > 1 || query.data.kursor) ? (
+        <div className="flex justify-end">
+          <Pagination
+            page={page}
+            pageCount={query.data.kursor ? page + 1 : page}
+            onPageChange={(next) => {
+              if (next < page) setCursors((trail) => trail.slice(0, -1));
+              else if (query.data.kursor) setCursors((trail) => [...trail, query.data.kursor!]);
+            }}
+            prevLabel={t('common.pagination.prev_page')}
+            nextLabel={t('common.pagination.next_page')}
+            label={t('nik.page.title')}
+            rangeText={t('common.pagination.page_current', { ke: page })}
+          />
+        </div>
       ) : null}
 
       <ReasonDialog
