@@ -58,7 +58,7 @@
     },
     "webhook_klien.csv": {
       "baris": 4,
-      "sha256": "96f29bbb26678ddd903edab17aa092a0952012caaf2f64515c0e1d8d2b4b5c90"
+      "sha256": "0f15052c2e9577aa46cfb29cb3b60a9fb2af089b2510f4d4e0cfe5ae22392801"
     }
   },
   "contract": "data-contract-poolrouter-log-v0.9.5-final",

@@ -1,5 +1,5 @@
-webhook_delivery_id,percobaan_ke,webhook_not_before,client_id,hasil_tanggung_jawab
-768ea23d-4ce4-57a0-bcc8-e51adc7c7877,1,2026-11-04T00:00:30Z,client-a,retry
-57390473-ce08-5363-a0f1-371ab66ab05a,2,2026-11-04T00:01:00Z,client-a,gagal
-d7c2d280-f0e5-54b7-9497-7defec9905ad,1,2026-11-04T00:00:30Z,client-b,retry
-993242f3-c703-5abe-a4bb-7ff52bdcb468,2,2026-11-04T00:01:00Z,client-b,gagal
+webhook_delivery_id,percobaan_ke,webhook_not_before,client_id,owner_pengguna_id,hasil_tanggung_jawab
+768ea23d-4ce4-57a0-bcc8-e51adc7c7877,1,2026-11-04T00:00:30Z,client-a,c6305123-4b9b-5a7e-9b77-d9b4a1942dbd,retry
+57390473-ce08-5363-a0f1-371ab66ab05a,2,2026-11-04T00:01:00Z,client-a,c6305123-4b9b-5a7e-9b77-d9b4a1942dbd,gagal
+d7c2d280-f0e5-54b7-9497-7defec9905ad,1,2026-11-04T00:00:30Z,client-b,fd7339ae-0584-5333-b69f-ab8496a06917,retry
+993242f3-c703-5abe-a4bb-7ff52bdcb468,2,2026-11-04T00:01:00Z,client-b,fd7339ae-0584-5333-b69f-ab8496a06917,gagal
