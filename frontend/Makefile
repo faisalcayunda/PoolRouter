@@ -34,7 +34,10 @@ ifneq ($(filter podman docker,$(FRONTEND_RUNNER)),)
 # paths written relative to frontend/ resolve as they do on the host: ../docs for
 # the ADR a test asserts against, ../backend/openapi for gen-api. Mounting only
 # frontend/ silently broke both.
-RUN_OPTS = $(CONTAINER_ENGINE) run --rm --memory $(CONTAINER_MEMORY) --label $(CONTAINER_LABEL) \
+# Docker lane (SHAA-408): container runs as the host uid:gid, so node_modules and .cache are owned by the
+# host user and check-disk can GC them without sudo. Podman keeps its rootless mapping (no --user).
+FRONTEND_USER_OPTS = $(if $(filter docker,$(FRONTEND_RUNNER)),--user $(shell id -u):$(shell id -g),)
+RUN_OPTS = $(CONTAINER_ENGINE) run --rm --memory $(CONTAINER_MEMORY) --label $(CONTAINER_LABEL) $(FRONTEND_USER_OPTS) \
 	-v "$(CURDIR)/..":/work -w /work/frontend \
 	-e COREPACK_HOME=$(PNPM_HOME_DIR) -e COREPACK_ENABLE_DOWNLOAD_PROMPT=0 -e CI=1 $(CACHE_ENV)
 RUN = $(RUN_OPTS) $(NODE_CMD)

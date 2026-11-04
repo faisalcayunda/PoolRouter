@@ -62,6 +62,42 @@ check_root() {
   (( free >= need )) || die "bebas / di bawah ambang; run berhenti. Jangan diakali, lapor blocker."
 }
 
+# GC checkout (SHAA-408): hapus node_modules dan .cache frontend di checkout Multica yang issue-nya
+# sudah done/cancelled DAN HEAD-nya sudah menjadi ancestor main. Checkout issue aktif, status yang
+# tidak terbaca, dan HEAD yang belum di main tidak disentuh. Dipanggil hanya saat check di bawah ambang.
+WORKSPACES_ROOT="${WORKSPACES_ROOT:-/data/home/multica_workspaces}"
+
+gc_checkouts() {
+  local repo dir issue status head rc=0 removed=0
+  command -v multica >/dev/null 2>&1 || { echo "gc-checkouts: CLI multica tidak ada; dilewati" >&2; return 0; }
+  command -v jq >/dev/null 2>&1 || { echo "gc-checkouts: jq tidak ada; dilewati" >&2; return 0; }
+  shopt -s nullglob
+  for repo in "$WORKSPACES_ROOT"/*/shaa-*/workdir/PoolRouter; do
+    [[ -d "$repo/frontend" && -e "$repo/.git" ]] || continue
+    dir="$(basename "$(dirname "$(dirname "$repo")")")"    # shaa-<n>-<hash>
+    issue="SHAA-$(sed -E 's/^shaa-([0-9]+)-.*/\1/' <<<"$dir")"
+    [[ "$issue" =~ ^SHAA-[0-9]+$ ]] || continue
+    status="$(multica issue get "$issue" --output json 2>/dev/null | jq -r '.status // empty' 2>/dev/null || true)"
+    if [[ "$status" != "done" && "$status" != "cancelled" ]]; then
+      echo "gc-checkouts: lewati $issue (status='${status:-tidak terbaca}')"; continue
+    fi
+    head="$(git -C "$repo" rev-parse HEAD 2>/dev/null || true)"
+    if [[ -z "$head" ]] || ! git -C "$repo" merge-base --is-ancestor "$head" main 2>/dev/null; then
+      echo "gc-checkouts: lewati $issue (HEAD belum di main)"; continue
+    fi
+    for p in frontend/node_modules frontend/.cache; do
+      [[ -e "$repo/$p" ]] || continue
+      if rm -rf -- "$repo/$p" 2>/dev/null; then
+        echo "gc-checkouts: hapus $repo/$p ($issue, $status)"; removed=$((removed + 1))
+      else
+        echo "gc-checkouts: gagal hapus $repo/$p (milik root? jalankan make -C frontend clean)" >&2; rc=1
+      fi
+    done
+  done
+  echo "gc-checkouts: selesai, $removed path dihapus"
+  return "$rc"
+}
+
 check() {
   local root_dir free_root free_data
   root_dir="$(docker info --format '{{.DockerRootDir}}')"
@@ -70,7 +106,14 @@ check() {
   echo "docker root: $root_dir, bebas ${free_root}G (ambang ${MIN_FREE_ROOT_GB}G)"
   echo "/data: bebas ${free_data}G (ambang ${MIN_FREE_DATA_GB}G)"
   if (( free_root < MIN_FREE_ROOT_GB )) || (( free_data < MIN_FREE_DATA_GB )); then
-    die "ruang kosong di bawah ambang; run berhenti. Jangan diakali, lapor blocker."
+    echo "di bawah ambang: jalankan GC checkout yang sudah selesai"
+    gc_checkouts || true
+    free_root="$(free_gb "$root_dir")"
+    free_data="$(free_gb /data)"
+    echo "setelah GC: docker root bebas ${free_root}G, /data bebas ${free_data}G"
+  fi
+  if (( free_root < MIN_FREE_ROOT_GB )) || (( free_data < MIN_FREE_DATA_GB )); then
+    die "ruang kosong di bawah ambang sesudah GC; run berhenti. Jangan diakali, lapor blocker."
   fi
   [[ -d "$SHARED_CARGO_HOME" ]] && check_cargo_home
   [[ -d "$(dirname "$SHARED_TARGET_DIR")" ]] && check_root
@@ -97,5 +140,6 @@ case "${1:-}" in
   check) check ;;
   cleanup) cleanup "${2:-}" ;;
   builder-prune) builder_prune ;;
-  *) die "pakai: check | cleanup <SHAA-n> | builder-prune" ;;
+  gc-checkouts) gc_checkouts ;;
+  *) die "pakai: check | cleanup <SHAA-n> | builder-prune | gc-checkouts" ;;
 esac
