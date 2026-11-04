@@ -1186,8 +1186,12 @@ components:
           type:
           - string
           - 'null'
-          description: Alternative to HTTP Basic; secret must not appear in URLs.
-          example: bgn-mpm-prod
+          format: uuid
+          description: |-
+            UUID of the client. Alternative to HTTP Basic; the secret must not
+            appear in URLs. A value that is not a UUID is answered 401, like any
+            other wrong credential.
+          example: 0193b8a2-7c4e-7d10-8a3f-5e6b7c8d9e0f
         client_secret:
           type:
           - string

@@ -2,7 +2,7 @@
 # juga menjalankan `oasdiff breaking` terhadap baseline eksplisit OASDIFF_BASE
 # (SHAA-278 D1-D6, SHAA-279; oasdiff ter-pin, backend/Makefile): downstream-api
 # gagal jika breaking, admin-api hanya ::warning::. `gen-api-check` dan `tsc`
-# belum dipasang: menunggu sub-issue frontend (ADR-0004 section 4.1).
+# berjalan di frontend.yml (SHAA-281), yang juga terpicu oleh perubahan admin-api.yaml.
 # Trigger pull_request belum ada. Kalau ditambahkan nanti, baseline-nya
 # `github.event.pull_request.base.sha`.
 name: contract

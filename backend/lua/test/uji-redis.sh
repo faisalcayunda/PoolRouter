@@ -13,7 +13,9 @@ set -eu
 
 ENGINE=${CONTAINER_ENGINE:-podman}
 ISSUE=${SHAA_ISSUE:-SHAA-195}
-PORT=${UJI_REDIS_PORT:-16391}
+# Port acak per proses supaya dua lane paralel di VM yang sama tidak bertabrakan
+# (review 225be8d, non-blocking 4); UJI_REDIS_PORT menimpanya.
+PORT=${UJI_REDIS_PORT:-$((20000 + $$ % 20000))}
 MAKE_CMD=${1:?target make untuk cargo test belum diberikan}
 IMAGE=${REDIS_IMAGE:-docker.io/library/redis:7-alpine@sha256:8da19c7399dca900c6822a1cf30f9d2285585e2c4b457ff4095b0f4500054d3f}
 NAME="poolrouter-redistest-$$"

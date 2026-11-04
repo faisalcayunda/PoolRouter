@@ -19,8 +19,10 @@
 //!   an error or as `belum_siap`; the mapping to a problem code stays in one
 //!   place outside this module.
 
+pub mod metrik;
 pub mod pemulihan;
 pub mod periode;
+pub mod store;
 
 pub use periode::{
     AturanReset, GalatKuota, JUMLAH_EMBER_HARIAN, KalenderZona, MENIT_EMBER, Periode, ZonaTetap,

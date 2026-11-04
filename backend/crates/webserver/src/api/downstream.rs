@@ -26,9 +26,13 @@ use super::problem::Problem;
 pub struct TokenRequest {
     /// Nilai tetap `client_credentials`.
     pub grant_type: String,
-    /// Alternative to HTTP Basic; secret must not appear in URLs.
+    /// UUID of the client. Alternative to HTTP Basic; the secret must not
+    /// appear in URLs. A value that is not a UUID is answered 401, like any
+    /// other wrong credential.
+    // Kept as a string in the Rust type so the handler, not the extractor,
+    // decides the answer (401, not 400/422) (SHAA-198 U-12).
     #[serde(default)]
-    #[schema(example = "bgn-mpm-prod")]
+    #[schema(format = Uuid, example = "0193b8a2-7c4e-7d10-8a3f-5e6b7c8d9e0f")]
     pub client_id: Option<String>,
     #[serde(default)]
     pub client_secret: Option<String>,

@@ -58,7 +58,7 @@ pub enum GalatPemulihan {
 
 /// Pool ids go into the key between braces (a hash tag), so they may not
 /// contain anything that changes how the key parses.
-fn periksa_pool(pool: &str) -> Result<(), GalatPemulihan> {
+pub(super) fn periksa_pool(pool: &str) -> Result<(), GalatPemulihan> {
     let sah = !pool.is_empty()
         && pool
             .chars()
@@ -102,6 +102,12 @@ pub fn kunci_rl(pool: &str, jenis: &str, porsi_sync: bool) -> String {
     } else {
         format!("pr:rl:{{{pool}}}:{jenis}")
     }
+}
+
+/// `pr:tolak:{<client_id>}`, the rejection limiter of one client (ADR-0002 rev 5
+/// D6). Separate from every pool key.
+pub fn kunci_tolak(client: &str) -> String {
+    format!("pr:tolak:{{{client}}}")
 }
 
 /// Slot member `<request_id>:<nomor_percobaan>` (D1.2). One function, so a slot
@@ -212,14 +218,35 @@ pub struct KeadaanPool {
     pub porsi_sync: f64,
 }
 
-/// PostgreSQL facts for a rebuild. Implemented over `sqlx` by the controller;
-/// tests implement it with fixed data.
+/// PostgreSQL facts for a rebuild. The `sqlx` implementation lives in
+/// `core::kuota` as well (decision Shu, SHAA-195, 2026-11-04 07:39 UTC): the
+/// controller only calls [`pulihkan_bila_perlu`], and the webserver reads the
+/// same queries for the quota tracker. Tests implement it with fixed data.
 pub trait SumberRebuild {
     /// The facts for every active upstream pool, as of `sekarang`.
     fn keadaan(
         &self,
         sekarang: DateTime<Utc>,
     ) -> impl Future<Output = Result<Vec<KeadaanPool>, GalatPemulihan>> + Send;
+}
+
+/// Mutual exclusion between concurrent rebuilders (review 225be8d, blocking 1).
+/// Held only while one rebuild reads its facts and writes; it expires on its own
+/// if the holder dies, so a crashed controller cannot wedge recovery.
+pub const KUNCI_REBUILD: &str = "pr:rebuild";
+const TTL_KUNCI_REBUILD_MS: i64 = 30_000;
+
+/// Outcome of [`bangun_ulang`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum HasilRebuild {
+    /// This call rebuilt Redis and wrote `pr:siap`.
+    Dibangun(RingkasanRebuild),
+    /// `pr:siap` already equals `run_id` (another rebuild finished first). Nothing
+    /// was written: state that is live now is newer than any fact read earlier.
+    SudahSiap,
+    /// Another rebuild holds [`KUNCI_REBUILD`]. Nothing was written; try again on
+    /// the next tick.
+    DikerjakanLain,
 }
 
 /// What a rebuild wrote, for logs and the `poolrouter_redis_rebuild_total`
@@ -306,11 +333,8 @@ async fn waktu_redis_mikro<C: ConnectionLike>(koneksi: &mut C) -> Result<i64, Ga
     Ok(detik * 1_000_000 + mikro)
 }
 
-/// Rebuild the quota state for `run_id` and mark Redis ready.
-///
-/// Fail-closed by construction: nothing here makes the scripts accept `run_id`
-/// before the last command, so a failure at any point leaves Redis in the
-/// "not ready" state it was already in. The caller retries.
+/// Read the facts and write the quota state plus `pr:siap` (see
+/// [`bangun_ulang`] for the guards around it).
 ///
 /// What it writes per pool (section 5a.2 point 3, D1.2, D2.6):
 /// - `attempts:{pool}:{periode_mulai}` = max(snapshot, log count);
@@ -322,7 +346,7 @@ async fn waktu_redis_mikro<C: ConnectionLike>(koneksi: &mut C) -> Result<i64, Ga
 ///
 /// Existing keys of these kinds are deleted first, because after a promotion a
 /// replica may hold partial or stale values.
-pub async fn bangun_ulang<C, S>(
+async fn tulis_rebuild<C, S>(
     koneksi: &mut C,
     run_id: &str,
     sumber: &S,
@@ -332,14 +356,6 @@ where
     C: ConnectionLike,
     S: SumberRebuild,
 {
-    let aktual = baca_run_id(koneksi).await?;
-    if aktual != run_id {
-        return Err(GalatPemulihan::RunIdBerubah {
-            awal: run_id.to_owned(),
-            sekarang: aktual,
-        });
-    }
-
     let pool = sumber.keadaan(sekarang).await?;
     for k in &pool {
         periksa_keadaan(k)?;
@@ -412,22 +428,13 @@ where
             }
         }
     }
+    // `pr:siap` is the last command of the same MULTI/EXEC as the writes, so
+    // there is no instant at which the state is built but not marked, or marked
+    // but not built. If Redis failed over between the `run_id` check and this
+    // EXEC, the marker names a `run_id` that is no longer live and the scripts
+    // keep answering `belum_siap` (fail-closed); the next tick rebuilds again.
+    pipa.cmd("SET").arg(KUNCI_SIAP).arg(run_id).ignore();
     pipa.query_async::<()>(koneksi).await?;
-
-    // The run_id may have changed while we were writing (second failover). Mark
-    // ready only for the Redis we actually rebuilt.
-    let setelah = baca_run_id(koneksi).await?;
-    if setelah != run_id {
-        return Err(GalatPemulihan::RunIdBerubah {
-            awal: run_id.to_owned(),
-            sekarang: setelah,
-        });
-    }
-    redis::cmd("SET")
-        .arg(KUNCI_SIAP)
-        .arg(run_id)
-        .query_async::<()>(koneksi)
-        .await?;
 
     Ok(RingkasanRebuild {
         run_id: run_id.to_owned(),
@@ -436,8 +443,89 @@ where
     })
 }
 
+/// Rebuild the quota state for `run_id` and mark Redis ready, unless somebody
+/// else already did or is doing it.
+///
+/// Two rebuilders may race (two controllers, or a standby that takes over
+/// mid-tick). Without a guard the slower one would overwrite state that is
+/// already serving: `DEL pr:slot:*` drops claimed slots (concurrency above
+/// `maks_konkurensi`) and the GCRA keys go back to "one token", both toward
+/// M-02 (review 225be8d, blocking 1). So, in order:
+///
+/// 1. the live `run_id` must still be `run_id`;
+/// 2. take [`KUNCI_REBUILD`] (`SET NX PX`); if held, return `DikerjakanLain`;
+/// 3. **only then** read `pr:siap`: if it already equals `run_id`, return
+///    `SudahSiap` without reading or writing anything else;
+/// 4. read the facts and write everything plus `pr:siap` in one MULTI/EXEC;
+/// 5. release the lock (best effort; it also expires by itself).
+///
+/// The check in step 3 happens under the lock, and the lock is released only
+/// after `pr:siap` is written, so a rebuilder that takes the lock later always
+/// sees the marker of the one before it. This module does not depend on a
+/// single leader controller (that guard is SHAA-199).
+///
+/// Clocks: the bucket window uses `sekarang` (application clock, the same one
+/// that stamps `requested_at`), while slot scores and TATs use the Redis `TIME`
+/// because the scripts compare them with that clock. The two differ by NTP
+/// skew only, which section 5a.1 already accepts.
+///
+/// Fail-closed by construction: if anything fails before the EXEC, Redis stays
+/// "not ready" and the caller retries.
+pub async fn bangun_ulang<C, S>(
+    koneksi: &mut C,
+    run_id: &str,
+    sumber: &S,
+    sekarang: DateTime<Utc>,
+) -> Result<HasilRebuild, GalatPemulihan>
+where
+    C: ConnectionLike,
+    S: SumberRebuild,
+{
+    let aktual = baca_run_id(koneksi).await?;
+    if aktual != run_id {
+        return Err(GalatPemulihan::RunIdBerubah {
+            awal: run_id.to_owned(),
+            sekarang: aktual,
+        });
+    }
+
+    let diambil: Option<String> = redis::cmd("SET")
+        .arg(KUNCI_REBUILD)
+        .arg(run_id)
+        .arg("NX")
+        .arg("PX")
+        .arg(TTL_KUNCI_REBUILD_MS)
+        .query_async(koneksi)
+        .await?;
+    if diambil.is_none() {
+        return Ok(HasilRebuild::DikerjakanLain);
+    }
+
+    let hasil = async {
+        let tercatat: Option<String> = redis::cmd("GET")
+            .arg(KUNCI_SIAP)
+            .query_async(koneksi)
+            .await?;
+        if tercatat.as_deref() == Some(run_id) {
+            return Ok(HasilRebuild::SudahSiap);
+        }
+        tulis_rebuild(koneksi, run_id, sumber, sekarang)
+            .await
+            .map(HasilRebuild::Dibangun)
+    }
+    .await;
+
+    // Release even when the rebuild failed, so the retry does not wait for the
+    // TTL. A failed release only delays the next attempt by the TTL.
+    let _ = redis::cmd("DEL")
+        .arg(KUNCI_REBUILD)
+        .query_async::<()>(koneksi)
+        .await;
+    hasil
+}
+
 /// One controller tick: if Redis is not ready for its live `run_id`, rebuild it.
-/// Returns `None` when nothing needed doing.
+/// Returns `None` when nothing needed doing or another rebuild is in charge.
 pub async fn pulihkan_bila_perlu<C, S>(
     koneksi: &mut C,
     sumber: &S,
@@ -449,9 +537,15 @@ where
 {
     match periksa_kesiapan(koneksi).await? {
         Kesiapan::Siap { .. } => Ok(None),
-        Kesiapan::PerluRebuild { run_id, .. } => bangun_ulang(koneksi, &run_id, sumber, sekarang)
-            .await
-            .map(Some),
+        Kesiapan::PerluRebuild { run_id, .. } => {
+            match bangun_ulang(koneksi, &run_id, sumber, sekarang).await? {
+                HasilRebuild::Dibangun(ringkasan) => {
+                    super::metrik::redis_rebuild(super::metrik::Komponen::Controller);
+                    Ok(Some(ringkasan))
+                }
+                HasilRebuild::SudahSiap | HasilRebuild::DikerjakanLain => Ok(None),
+            }
+        }
     }
 }
 
@@ -491,6 +585,7 @@ mod tests {
         assert_eq!(kunci_rl("p1", "tps", false), "pr:rl:{p1}:tps");
         assert_eq!(kunci_rl("p1", "tph", true), "pr:rl:{p1}:tph:sync");
         assert_eq!(member_slot("req-1", 2), "req-1:2");
+        assert_eq!(kunci_tolak("c1"), "pr:tolak:{c1}");
     }
 
     #[test]
