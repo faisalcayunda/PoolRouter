@@ -77,7 +77,7 @@ cmd_run() {
 }
 
 cmd_status() {
-	if "$ENGINE" container exists "$NAME" 2>/dev/null; then
+	if "$ENGINE" container inspect "$NAME" >/dev/null 2>&1; then
 		echo "dipegang: $(holder_text)"
 	else
 		echo "bebas: tidak ada container $NAME"
@@ -85,7 +85,7 @@ cmd_status() {
 }
 
 cmd_clean() {
-	if ! "$ENGINE" container exists "$NAME" 2>/dev/null; then
+	if ! "$ENGINE" container inspect "$NAME" >/dev/null 2>&1; then
 		echo "build-lock: tidak ada kunci"
 		return 0
 	fi

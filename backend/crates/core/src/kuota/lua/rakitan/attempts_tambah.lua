@@ -3,9 +3,18 @@
 -- Bentuk inilah yang dimuat ke Redis; berkas sumber tidak boleh dimuat langsung.
 -- Buat ulang: make -C backend lua-rakit. Gate: make -C backend lua-rakit-check.
 
--- Naikkan counter percobaan sesudah baris log percobaan commit (§5, §5a.1
--- butir 7). Dipanggil sekali per percobaan, setelah pemanggilan upstream
--- selesai mengembalikan jawaban yang dicatat.
+-- Naikkan counter percobaan sesudah baris log percobaan commit dan SEBELUM
+-- panggilan ke upstream (§5 "counter percobaan upstream dipersistenkan";
+-- arah sebaliknya, INCR dulu, menghitung pesan duplikat yang tidak pernah
+-- dipanggil). Dipanggil sekali per percobaan. Hasil `slot_kedaluwarsa` berarti
+-- pemanggil TIDAK boleh memanggil upstream (review 370c692, non-blocking 3).
+--
+-- Perilaku yang disengaja (review 370c692, non-blocking 2): antara skrip ini
+-- dan `slot_lepas.lua`, satu percobaan terhitung dua kali, sekali di
+-- `terpakai` (sudah di-INCR) dan sekali di `slot_aktif` (slot belum dilepas).
+-- Itu menyimpang ke sisi konservatif untuk M-02 dan paling banyak sebesar
+-- `maks_konkurensi`; uji `percobaan dihitung dua kali sampai slot dilepas`
+-- mengunci perilakunya.
 --
 -- Slot diverifikasi lebih dulu: percobaan tanpa slot sah tidak boleh
 -- menaikkan counter apa pun. Itu menutup celah "proses macet lalu hidup lagi

@@ -79,7 +79,7 @@ fi
 rc_gate=0
 for t in $GATE_TARGETS; do
 	echo "==> push-main: $MAKE $t"
-	$MAKE "$t" "CONTAINER_LABEL=$LABEL"
+	$MAKE "$t" "RUNNER=${RUNNER:-podman}" "FRONTEND_RUNNER=${FRONTEND_RUNNER:-podman}" "CONTAINER_LABEL=$LABEL"
 	rc=$?
 	RC_LINES="$RC_LINES$t=$rc
 "

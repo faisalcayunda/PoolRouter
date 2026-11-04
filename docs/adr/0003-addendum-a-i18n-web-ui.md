@@ -4,10 +4,10 @@
 
 - **Pemilik:** Shu
 - **Tanggal:** 2026-11-03
-- **Status:** final rev 2. Difinalkan Shu sebagai lead Engineering (arahan owner 2026-11-03, SHAA-180). Pemberi tugas: Fitcher. Rev 2 menggantikan §2 (I-1 sampai I-5), §3, sebagian §4, §8, dan §9 rev 1. Bagian lain sama dengan rev 1.
-- **Issue:** SHAA-214 (induk SHAA-162)
-- **Melengkapi:** ADR-0003 rev 5 (lampiran SHAA-196) §2, §3.4, §3.6f, §3.7, §5, §7.1, §7.6; ADR-0001 rev 11 §5a.7 (format error). Teks ADR induk tidak diubah. Bila ada pertentangan, addendum ini yang berlaku, lalu ADR terkait diselaraskan di revisi berikutnya.
-- **Lokasi akhir:** `docs/adr/0003-addendum-a-i18n-web-ui.md` di repo `faisalcayunda/PoolRouter`, di-commit bersama kerangka frontend (SHAA-197). Sampai saat itu, lampiran di SHAA-214 adalah salinan resmi.
+- **Status:** final rev 3. Difinalkan Shu sebagai lead Engineering (arahan owner 2026-11-03, SHAA-180). Pemberi tugas: Fitcher. Rev 2 menggantikan §2 (I-1 sampai I-5), §3, sebagian §4, §8, dan §9 rev 1. Bagian lain sama dengan rev 1. Rev 3 hanya editorial (§10.3 tool desain Penpot, rujukan ADR induk rev 6).
+- **Issue:** SHAA-214, SHAA-378 (rev 3); induk SHAA-162
+- **Melengkapi:** ADR-0003 rev 6 (SHAA-378; isi yang dirujuk sama dengan rev 5 di SHAA-196) §2, §3.4, §3.6f, §3.7, §5, §7.1, §7.6; ADR-0001 rev 11 §5a.7 (format error). Teks ADR induk tidak diubah. Bila ada pertentangan, addendum ini yang berlaku, lalu ADR terkait diselaraskan di revisi berikutnya.
+- **Lokasi akhir:** `docs/adr/0003-addendum-a-i18n-web-ui.md` di repo `faisalcayunda/PoolRouter`, sudah di-commit bersama kerangka frontend (SHAA-197); salinan repo adalah salinan resmi. Rev 3 berlaku setelah di-commit; sampai saat itu, lampiran rev 3 di SHAA-378.
 
 ## 1. Konteks
 
@@ -312,7 +312,7 @@ Teks Indonesia umumnya lebih panjang daripada English, tetapi tidak selalu (misa
 - Contoh format tanggal dan angka ditulis untuk kedua bahasa: `3 Nov 2026, 14.30 WIB` / `3 Nov 2026, 14:30 WIB`; `1–25 dari 1.240` / `1–25 of 1,240`.
 - Input tanggal manual tetap `dd/mm/yyyy` di kedua bahasa (§5.1).
 - Typeface Roboto mencakup semua karakter kedua bahasa. Token tipografi tidak berubah.
-- Mockup Figma English cukup dibuat untuk layar berisiko dan halaman Pengaturan. Layar lain cukup versi Indonesia dengan key.
+- Mockup English (di Penpot sejak ADR-0003 rev 6) cukup dibuat untuk layar berisiko dan halaman Pengaturan. Layar lain cukup versi Indonesia dengan key.
 
 ## 11. Konsekuensi
 
@@ -366,3 +366,4 @@ Teks Indonesia umumnya lebih panjang daripada English, tetapi tidak selalu (misa
 |---|---|---|
 | 1 | 2026-11-03 | Versi pertama (react-intl, ICU), final oleh Shu sebagai lead Engineering (SHAA-214) |
 | 2 | 2026-11-03 | Arahan owner tambahan: pustaka open-source mature wajib, mekanisme sendiri dilarang. §3 ditulis ulang dengan kriteria K1–K7 dan bukti per kandidat. Pustaka diganti ke i18next + react-i18next + i18next-cli (MIT; react-intl gagal kriteria lisensi MIT/Apache-2.0). §2 I-1 sampai I-5, §3.4 format JSON v4 i18next (tanpa ICU), §4 tipe dan pemuatan, §5 contoh placeholder, §8 cek CI (`status`, `checkIdentical`, `types --ci`, `lint`), §9, §11 diselaraskan. Pseudo-locale dikeluarkan. Bagian lain tidak berubah. Final oleh Shu sebagai lead Engineering |
+| 3 | 2026-11-04 | Editorial (SHAA-378): §10.3 mockup English dibuat di Penpot, bukan Figma (ADR-0003 rev 6 §7); rujukan ADR induk menjadi rev 6. Tidak ada perubahan keputusan. Final oleh Shu sebagai lead Engineering |
