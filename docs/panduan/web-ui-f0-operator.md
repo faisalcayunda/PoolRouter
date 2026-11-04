@@ -7,6 +7,7 @@ Panduan ini untuk operator yang menelusuri transaksi lewat **Log transaksi** dan
 - **Tanggal:** 2026-11-04
 - **Versi:** draf 0.1, dicocokkan dengan `main` hash `c6829a25`
 - **Status:** draft (menunggu verifikasi Viktor dan Nanami)
+- **Asumsi:** akses operator ke menu **Kuota** belum dikonfirmasi sebagai perilaku final (matriks menu UX v0.3 §4, baris Operator–Kuota masih asumsi [H]). Bagian Kuota di bawah **belum diuji** sampai ada konfirmasi implementasi F0 atau keputusan produk.
 
 Penanda **Cocok dengan kode**, **Belum diuji**, dan **Selisih label** dijelaskan di `web-ui-f0-dasar.md`.
 
@@ -52,6 +53,8 @@ Catatan penting untuk operator:
 Status: **cocok dengan kode** untuk filter, tabel, paginasi, dan catatan NIK/payload.
 
 ## Memantau Kuota (baca-saja)
+
+> **Asumsi, belum dikonfirmasi:** akses operator ke Kuota belum final. Jangan anggap menu ini pasti tersedia di akun operator Anda.
 
 Kuota membantu menjelaskan penyebab umum penolakan 429 ketika kuota harian atau porsi sync habis.
 
