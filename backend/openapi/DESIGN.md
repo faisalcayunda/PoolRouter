@@ -135,6 +135,7 @@ Sumber umum: peran PA (hak ubah), audit konfigurasi di setiap tulis (siapa, kapa
 | `createUpstreamPool` / `updateUpstreamPool` | `POST /admin/v1/upstream-pools`, `PUT …/{id}` | PA | `provider_id`, `kuota_harian`, `rate_limit_per_jam`, `porsi_sync`, `margin_kuota` (0,001–0,200), `batas_percobaan` (1–5), `retry_backoff_base_detik`, `retry_backoff_cap_detik`, `retry_rasio`, `retry_min_per_jam`, `jendela_kuota` (`bergulir_24j`\|`kalender`), `reset_kuota_jam`, `reset_kuota_zona` (IANA), `jeda_min`, `jeda_maks`, `ambang_berdampingan`, `alasan` (wajib saat ubah) | 201/200; 422 di luar rentang KP-01, offset tetap pada zona, `kalender` tanpa sumber kepastian di `alasan`; `reset_kuota_*` berlaku di akhir periode (KP-02) |
 | `listDownstreamPools` / `getDownstreamPool` | `GET /admin/v1/downstream-pools`, `…/{id}` | PA | — | 200; 404 |
 | `createDownstreamPool` / `updateDownstreamPool` | `POST …`, `PUT …/{id}` | PA | `nama` (wajib, unik), `ttl_antrean_detik` (default 24 jam), `upstream_pool_ids[]` (`minItems`/`maxItems` 1; alokasi tunggal), `alasan` wajib saat ubah. **Tanpa `mode`**: mode ditentukan path. Respons menambah `prioritas` (`readOnly`, selalu 1) | 201/200; 422 |
+
 | `listClients` / `getClient` | `GET /admin/v1/clients`, `…/{id}` | PA; CO hanya clientnya | — | 200; 404 |
 | `createClient` / `updateClient` | `POST /admin/v1/clients`, `PUT …/{id}` | PA | `nama`, `limiter_penolakan_burst` (1–1000, default 20), `limiter_penolakan_isi_ulang_per_detik` (0,10–100,00, default 1,00), `alasan` wajib saat ubah limiter | 201/200; 422 di luar rentang (L-04) |
 | `setClientEndpoints` | `PUT /admin/v1/clients/{id}/endpoints` | PA | `{endpoint_ids[]}` | 200; 422. Client tanpa penugasan → 404 saat memanggil downstream. **Bentuk penugasan client↔endpoint tidak ditetapkan acuan (U-7)** |
@@ -147,6 +148,38 @@ Sumber umum: peran PA (hak ubah), audit konfigurasi di setiap tulis (siapa, kapa
 | `listWebhookAllowlist` / `putWebhookAllowlistEntry` / `deleteWebhookAllowlistEntry` | `GET`, `PUT`, `DELETE /admin/v1/webhook-allowlist[/{domain}]` | PA | `{aktif}` | 200/204; 422 |
 | `listEndpoints` / `getEndpoint` | `GET /admin/v1/endpoints`, `…/{id}` | PA | — | 200; 404 |
 | `createEndpoint` / `updateEndpoint` | `POST /admin/v1/endpoints`, `PUT …/{id}` | PA | `provider_id`, `downstream_pool_id`, `parameter_literal` (termasuk `TRESHOLD`), `log_mode`, `metadata_fields[]` (`nama_field`, `tipe`, `wajib`, `nilai_diizinkan?`, `aturan_validasi?`, `klasifikasi`, `kirim_ke_data_balikan`, `deskripsi`), `config_schema_version: 1`, `alasan` | 201/200 (menaikkan `endpoint_config_version`); 422: rujukan `{{endpoint.*}}` tanpa literal, endpoint Dukcapil tanpa `status_penerima_manfaat` (`metadata_wajib_hilang`, M-R1), field tak dikenal |
+| `listEndpoints` / `getEndpoint` | `GET /admin/v1/endpoints`, `…/{id}` | PA | — | 200; 404 |
+| `createEndpoint` / `updateEndpoint` | `POST /admin/v1/endpoints`, `PUT …/{id}` | PA | `provider_id`, `downstream_pool_id`, `parameter_literal` (termasuk `TRESHOLD`), `log_mode`, `metadata_fields[]` (`nama_field`, `tipe`, `wajib`, `nilai_diizinkan?`, `aturan_validasi?`, `klasifikasi`, `kirim_ke_data_balikan`, `deskripsi`), `config_schema_version: 1`, `alasan` | 201/200 (menaikkan `endpoint_config_version`); 422: rujukan `{{endpoint.*}}` tanpa literal, endpoint Dukcapil tanpa `status_penerima_manfaat` (`metadata_wajib_hilang`, M-R1), field tak dikenal |
+
+
+
+`UpstreamPoolConfig` membawa rentang KP-01 eksplisit sejak SHAA-280 (ADR-0001 §5a). Angka di bawah adalah keputusan Shu (2026-11-03) dan **final**; `KP01` di `backend/crates/webserver/src/api/tests.rs` menguji tabel ini terhadap dokumen yang di-generate, jadi mengubah satu batas berarti mengubah keduanya.
+
+`jeda_min`, `jeda_maks`, `ambang_berdampingan`, `kuota_harian`, `rate_limit_per_jam`, `porsi_sync`, dan `provider_id` **wajib diisi tanpa `default`**: `POST` harus menyebut nilainya, dan `PUT` (penggantian penuh) tidak boleh mengisi field yang hilang dengan nilai bawaan server.
+
+| Field | `minimum`–`maximum` | `default` |
+|---|---|---|
+| `kuota_harian` | ≥ 1, tanpa maksimum (seperti sebelum SHAA-280) | — (wajib) |
+| `rate_limit_per_jam` | ≥ 1, tanpa maksimum (seperti sebelum SHAA-280) | — (wajib) |
+| `porsi_sync` | 0–1 | — (wajib) |
+| `margin_kuota` | 0,001–0,200 | 0,01 |
+| `batas_percobaan` | 1–5 | 3 |
+| `retry_backoff_base_detik` | 1–300 | 5 |
+| `retry_backoff_cap_detik` | 1–3600, dan ≥ `retry_backoff_base_detik` (batas silang) | 300 |
+| `retry_rasio` | 0–0,5 | 0,1 |
+| `retry_min_per_jam` | 0–10.000 | 20 |
+| `reset_kuota_jam` | 0–23 | 0 |
+| `jeda_min` | 0–60.000, dan ≤ `floor(3.600.000 / rate_limit_per_jam)` (batas silang) | — (wajib) |
+| `jeda_maks` | 0–60.000, dan ≤ `floor(3.600.000 / rate_limit_per_jam)`, serta ≥ `jeda_min` (batas silang) | — (wajib) |
+| `ambang_berdampingan` | ≥ 1, tanpa maksimum | — (wajib) |
+
+`floor(3.600.000 / rate_limit_per_jam)` adalah jarak rata-rata antar-permintaan yang diizinkan batas per jam, jadi jeda yang lebih panjang akan menurunkan pool di bawah `rate_limit_per_jam` dengan sendirinya. Batas statis 60.000 di atas hanya plafon untuk `rate_limit_per_jam` ≥ 60; pada 36.000 batas jedanya 100 ms. Contoh batas silang lain: `retry_backoff_cap_detik` tidak boleh di bawah `retry_backoff_base_detik`, dan `jeda_maks` tidak boleh di bawah `jeda_min`.
+
+Batas silang di atas tidak bisa dinyatakan lewat `minimum`/`maximum` JSON Schema, jadi ditulis di `description` tiap field dan di `description` skema, lalu ditegakkan fungsi murni `UpstreamPoolConfig::validate() -> Result<(), Vec<FieldError>>` di `admin.rs` (satu `FieldError { field, message }` per field; semua pelanggaran dikembalikan sekaligus). Fungsi itu sudah ada dan ber-unit test; **wiring ke handler `create_upstream_pool`/`update_upstream_pool` (masih stub) menyusul di SHAA-175**, yang akan memetakan `Vec<FieldError>` ke 422.
+
+`reset_kuota_zona` hanya punya `default: Asia/Jakarta` (tanpa rentang); `alasan` tanpa `default` (konteks, bukan setelan). `example` sengaja berbeda dari `default` agar tidak terbaca sebagai nilai yang dipakai server saat field kosong; entitas baca `UpstreamPool` tidak memuat `default`. Diuji `e2e_upstream_pool`, `upstream_pool_tanpa_default`, `validate_pool_*` (`backend/crates/webserver/src/api/tests.rs`).
+
+
 
 ### 3.3 Penonaktifan dan reaktivasi K-20 (ADR-0001 §3a; contract EN-01…EN-09)
 
@@ -251,7 +284,7 @@ hash yang di-review (lihat komentar issue untuk hash dan exit code per target).
 `enqueueAsync` memakai path `/v1/endpoints/{endpoint_id}/async` (U-4, diputuskan).
 Penolakan yang masih terbuka dicatat di tabel §7.
 
-## 7. Keputusan review (U-1…U-11 sudah ditutup)
+## 7. Keputusan review (U-1…U-15 sudah ditutup)
 
 Semua butir di bawah sudah diputuskan oleh Shu dan berlaku di YAML. Tabelnya
 dipertahankan sebagai riwayat keputusan, bukan permintaan baru.
@@ -269,5 +302,11 @@ dipertahankan sebagai riwayat keputusan, bukan permintaan baru.
 | U-9 | Lokasi kesalahan template di `errors[{field, kode, batas}]` | **Diterima:** `field` = nama field seperti yang dikirim; `batas` = parameter angka aturan (`type: number`) |
 | U-10 | Daftar request milik client untuk CO tidak punya story F0 | **Diterima:** tidak dimasukkan |
 | U-11 | Pembacaan audit konfigurasi di UI tidak ada di lingkup issue | **Diterima:** tidak dimasukkan |
+| U-12 | Bentuk `client_id` di kabel (SHAA-198 bagian 1b) | **Diputuskan Shu:** UUID `client.client_id`, bukan `client.nama` (nama bisa diubah dan berspasi). `sub` JWT dan label metrik `client_id` memakai UUID yang sama. `TokenRequest.client_id` mendapat `format: uuid`. `client_id` yang tidak bisa di-parse → 401 `tidak_terautentikasi` tanpa query DB |
+| U-13 | Format API key dan lookup | **Diputuskan Shu:** `pr_<credential_id 32 hex>_<secret 256 bit base64url>`. `kunci_hash` = SHA-256 atas bagian secret saja. Lookup dari `credential_id`, bandingkan waktu-konstan; format rusak → 401 tanpa query DB. Lolos bila jenis API key, aktif, `kedaluwarsa_at` > now, dan client aktif. Client secret: lookup dari `client_id`, argon2id terhadap ≤ 2 kredensial aktif yang belum kedaluwarsa. Pembangkit dan parser satu kali di `core::kredensial` (dipakai juga SHAA-196); `CredentialSecret.secret` untuk API key berisi string `pr_…` lengkap |
+| U-14 | Kunci JWT dan `kid` | **Diputuskan Shu:** `POOLROUTER_JWT_SIGNING_KEY_FILE` berisi PEM PKCS#8; Ed25519 → EdDSA (default), P-256 → ES256, jenis lain → gagal start. `kid` = JWK thumbprint RFC 7638 (SHA-256, base64url). `POOLROUTER_JWT_VERIFY_KEY_FILE` opsional, PEM kunci publik, untuk rotasi (§5a.5). Algoritma diambil dari kunci, bukan header; `kid` tak dikenal → 401; leeway 60 s |
+| U-15 | Alamat dan throttle token | **Diputuskan Shu:** `POOLROUTER_API_ADDR` default `127.0.0.1:8081`, `POOLROUTER_ADMIN_ADDR` default `127.0.0.1:9090`; compose men-set `0.0.0.0` di jaringan internal tanpa port host untuk 9090. Throttle endpoint token wajib di Redis untuk F0 (kunci terpisah per `client_id` dan per IP; Redis mati → 503 fail-closed). `gcra.rs` in-process hanya transisi sampai bagian 2; R-05 (throttle) baru diklaim lulus setelah bagian 2 |
+
+Sumber U-12…U-15: keputusan Shu, komentar `01a1a57e-a4df-7720-b3af-2410e5c74294` di SHAA-198 (2026-11-04 07.38 UTC). Akan masuk revisi ADR-0001 §5a.5 berikutnya.
 
 Cek terhadap UI (layar, copy) tidak saya lakukan di dokumen ini; itu bagian review Fitcher.

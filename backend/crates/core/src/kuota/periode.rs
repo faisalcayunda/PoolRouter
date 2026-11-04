@@ -157,7 +157,28 @@ pub fn periode_untuk<Z: KalenderZona>(
         });
     }
 
-    let mut mulai = pertama.berlaku_mulai;
+    // Every `berlaku_mulai` is a period boundary: a change is scheduled at the
+    // end of the running period and the walk below ends a period at the next
+    // `berlaku_mulai` at the latest (KP-02). So the period containing
+    // `requested_at` can be found by starting at the newest rule that already
+    // applies, instead of at the first rule of a chain that may be years old
+    // (review 370c692, non-blocking 6). `periode_dari_awal` below is the
+    // slow reference the tests compare against.
+    let awal = riwayat
+        .iter()
+        .rposition(|aturan| aturan.berlaku_mulai <= requested_at)
+        .map_or(pertama.berlaku_mulai, |i| riwayat[i].berlaku_mulai);
+    telusuri(requested_at, riwayat, awal)
+}
+
+/// Walk periods forward from `mulai`, a known period boundary, to the one that
+/// contains `requested_at`.
+fn telusuri<Z: KalenderZona>(
+    requested_at: DateTime<Utc>,
+    riwayat: &[AturanReset<Z>],
+    awal: DateTime<Utc>,
+) -> Result<Periode, GalatKuota> {
+    let mut mulai = awal;
     for _ in 0..BATAS_LANGKAH {
         let posisi = posisi_aturan(riwayat, mulai);
         let aturan = riwayat.get(posisi).ok_or(GalatKuota::TidakKonvergen)?;
@@ -570,5 +591,110 @@ mod tests {
     fn indeks_ember_menolak_jumlah_nol() {
         let galat = indeks_ember(utc("2026-11-03T03:00:00Z"), 0).expect_err("harus galat");
         assert_eq!(galat, GalatKuota::JumlahEmberTidakSah(0));
+    }
+
+    #[test]
+    fn jendela_24_jam_selalu_144_ember_dan_ember_145_di_luar() {
+        // Not derived from the production formula: the bucket numbers of two
+        // instants exactly 24 h apart differ by 144, wherever they fall in the
+        // bucket, so a window of `JUMLAH_EMBER_HARIAN` = 145 buckets always
+        // holds the instant 24 h ago and never the one 24 h 10 min ago
+        // (review 370c692, non-blocking 1).
+        for detik in [
+            0,
+            1,
+            599,
+            600,
+            601,
+            3_599,
+            86_399,
+            1_793_000_123,
+            1_793_000_599,
+        ] {
+            let t = DateTime::from_timestamp(1_700_000_000 + detik, 0).expect("instan sah");
+            let sekarang = nomor_ember(t).expect("nomor");
+            let sehari = nomor_ember(t - Duration::hours(24)).expect("nomor");
+            let lebih = nomor_ember(t - Duration::hours(24) - Duration::minutes(MENIT_EMBER))
+                .expect("nomor");
+            assert_eq!(sekarang - sehari, 144, "t = {t}");
+            assert_eq!(sekarang - lebih, 145, "t = {t}");
+            let batas = sekarang - (i64::from(JUMLAH_EMBER_HARIAN) - 1);
+            assert!(sehari >= batas, "24 jam lalu harus di dalam jendela");
+            assert!(lebih < batas, "24 jam 10 menit lalu harus di luar jendela");
+        }
+    }
+
+    use proptest::prelude::*;
+
+    /// A random chain of reset rules. Every rule starts after the previous one,
+    /// with random reset time and a fixed-offset zone.
+    fn rantai() -> impl Strategy<Value = Vec<AturanReset<ZonaTetap>>> {
+        let aturan = (
+            1_i64..2_000,
+            0_u32..24,
+            prop::sample::select(vec![0_i32, 1, 2]),
+            0_u32..2,
+        );
+        (
+            1_700_000_000_i64..1_800_000_000,
+            prop::collection::vec(aturan, 1..5),
+        )
+            .prop_map(|(awal, daftar)| {
+                let mut t = awal;
+                daftar
+                    .into_iter()
+                    .map(|(jarak_jam, jam_reset, zona, menit)| {
+                        t += jarak_jam * 3_600;
+                        let detik = [7, 8, 9][zona as usize] * 3_600;
+                        AturanReset::baru(
+                            DateTime::from_timestamp(t, 0).expect("instan sah"),
+                            NaiveTime::from_hms_opt(jam_reset, menit * 30, 0).expect("jam sah"),
+                            ZonaTetap::dari_detik(detik).expect("offset sah"),
+                        )
+                    })
+                    .collect()
+            })
+    }
+
+    proptest! {
+        // The period chain is gap-free, non-overlapping, at most a day long,
+        // contains the instant asked for, and the jump to the newest rule gives
+        // exactly what the walk from the first rule gives (blocking-free
+        // non-blocking 6 of review 370c692).
+        #[test]
+        fn rantai_periode_bersambung_tanpa_tumpang_tindih(
+            riwayat in rantai(),
+            selisih in 0_i64..(400 * 86_400),
+        ) {
+            let pertama = riwayat[0].berlaku_mulai;
+            let t = pertama + Duration::seconds(selisih);
+
+            let p = periode_untuk(t, &riwayat).expect("periode ada");
+            prop_assert!(p.mulai <= t && t < p.selesai);
+            prop_assert!(p.selesai > p.mulai);
+            prop_assert!(p.selesai - p.mulai <= Duration::hours(24));
+
+            // Same answer as the slow reference.
+            let acuan = telusuri(t, &riwayat, pertama).expect("acuan ada");
+            prop_assert_eq!(p, acuan);
+
+            // No gap and no overlap with the next period...
+            let berikut = periode_untuk(p.selesai, &riwayat).expect("berikut ada");
+            prop_assert_eq!(berikut.mulai, p.selesai);
+            // ...nor with the previous one.
+            if p.mulai > pertama {
+                let sebelum = periode_untuk(p.mulai - Duration::seconds(1), &riwayat)
+                    .expect("sebelum ada");
+                prop_assert_eq!(sebelum.selesai, p.mulai);
+            }
+            // Every rule start is a period start.
+            for aturan in &riwayat {
+                if aturan.berlaku_mulai <= t {
+                    let di_batas = periode_untuk(aturan.berlaku_mulai, &riwayat)
+                        .expect("batas ada");
+                    prop_assert_eq!(di_batas.mulai, aturan.berlaku_mulai);
+                }
+            }
+        }
     }
 }
