@@ -115,7 +115,7 @@ Satu salinan per host, dipakai semua checkout. Tidak ada lagi toolchain atau reg
 | Isi | Lokasi (host) | Batas | Penjaga |
 | --- | --- | --- | --- |
 | rustup, registry/git Cargo, cargo-deny | `/data/workspace/shaal-build/cargo-home/{cargo,rustup}` | `SHARED_CARGO_HOME_LIMIT_MB` = 2560 MB (terukur 2026-11-04: 1315 MB) | `check-disk` berhenti, tidak menghapus apa pun |
-| store pnpm dan cache npm frontend | `/data/workspace/shaal-build/pnpm/{store,npm}` (`SHARED_PNPM_DIR`) | tidak ada batas otomatis; terukur 419 MB per checkout (8 checkout = 3,3 GB), jadi dibagi | dibersihkan eksplisit |
+| store pnpm frontend | tidak dibagi: tetap per checkout di `frontend/.cache/pnpm-store` | lihat keputusan di bawah | `make -C frontend clean` per checkout |
 | `backend/target` | `/var/tmp/shaal-build/poolrouter-target` | lihat bagian SHAA-390 | `check-disk` |
 
 Konkurensi:
@@ -131,13 +131,13 @@ Membersihkan (target eksplisit, terpisah dari `clean`):
 RUNNER=docker CONTAINER_LABEL=shaal.issue=SHAA-<n> make -C backend clean-cache-shared
 # termasuk toolchain rustup dan cargo-deny
 RUNNER=docker CONTAINER_LABEL=shaal.issue=SHAA-<n> make -C backend clean-cache-shared CLEAN_TOOLCHAIN=1
-# store pnpm bersama
-FRONTEND_RUNNER=docker CONTAINER_LABEL=shaal.issue=SHAA-<n> make -C frontend clean-cache-shared
 ```
 
-Keduanya jalan di bawah kunci heavy dan hanya menghapus path tetap di dalam mount cache bersama. `make -C backend clean` tetap hanya menghapus artefak checkout itu dan tidak menyentuh cache bersama.
+Kedua target backend jalan di bawah kunci heavy dan hanya menghapus path tetap di dalam mount cache bersama. `make -C backend clean` tetap hanya menghapus artefak checkout itu dan tidak menyentuh cache bersama.
 
-Migrasi dari `backend/.cache` lama: cukup `make -C backend clean` per checkout (menghapus `.cache/cargo` dan `.cache/rustup` lama). Untuk frontend, `frontend/.cache/pnpm-store` dan `frontend/.cache/npm` lama dihapus oleh pemilik checkout (`rm -rf frontend/.cache/pnpm-store frontend/.cache/npm`; file root-owned lewat `docker run --rm -v <checkout>:/work -w /work node:... rm -rf ...` hanya di workdir sendiri).
+Migrasi dari `backend/.cache` lama: cukup `make -C backend clean` per checkout (menghapus `.cache/cargo` dan `.cache/rustup` lama).
+
+**Keputusan pnpm (lingkup 5, diukur 2026-11-04):** store pnpm tidak dibagi. Di checkout dengan store dan `node_modules` pada satu mount (`/work`), file `node_modules/.pnpm` punya link count 2 (hardlink ke store lokal), jadi total sekitar 440 MB per checkout tanpa duplikasi. Store bersama di mount terpisah gagal `link()` (EXDEV), pnpm menyalin file (link count 1), dan malah menambah sekitar 400 MB di `/data`. Angka "419 MB per checkout" adalah store yang sudah berbagi inode dengan `node_modules`, bukan duplikat. Pembersihan: `make -C frontend clean` di checkout selesai.
 
 ### Kepemilikan file
 
