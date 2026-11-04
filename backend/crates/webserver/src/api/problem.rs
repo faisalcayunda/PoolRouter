@@ -362,7 +362,7 @@ pub struct Problem {
 }
 
 impl Problem {
-    fn new(kode: ProblemKodeDown, status: u16) -> Self {
+    pub(crate) fn new(kode: ProblemKodeDown, status: u16) -> Self {
         Self {
             type_: kode.type_url(),
             title: kode.title().into(),
