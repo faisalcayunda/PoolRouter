@@ -42,7 +42,7 @@ psql_su() { $ENGINE exec -i "$NAME" psql -U postgres -h 127.0.0.1 --no-psqlrc -q
 echo "==> secrets and role bootstrap"
 $ENGINE exec "$NAME" sh -c '
   umask 077; mkdir -p /tmp/sec
-  for r in poolrouter_owner pr_api pr_admin_api pr_controller pr_worker pr_webhook pr_job_balikan pr_job_arsip pr_restore; do
+  for r in poolrouter_owner pr_api pr_admin_api pr_controller pr_worker pr_webhook pr_job_balikan pr_job_arsip pr_restore pr_blend; do
     od -An -N18 -tx1 /dev/urandom | tr -d " \n" > /tmp/sec/$r
   done'
 $ENGINE exec "$NAME" mkdir -p /tmp/db
@@ -85,6 +85,12 @@ $ENGINE exec -e POOLROUTER_SECRETS_DIR=/tmp/sec -e PGUSER=postgres -e PGHOST=127
   "$NAME" sh /tmp/db/bootstrap.sh poolrouter_rb
 dump_schema() { $ENGINE exec -e PGPASSWORD="$SU_PW" "$NAME" pg_dump -U postgres -h 127.0.0.1 -s --no-comments -d poolrouter_rb | grep -v -E '^.(un)?restrict '; }
 rollback_all() {
+  # F3 first (it sits on top of F1); skipped when an earlier, refused attempt already removed it
+  if [ "$(psql_su -d poolrouter_rb -t -A -c "SELECT to_regclass('blend') IS NOT NULL")" = "t" ]; then
+    for f in 2 1; do
+      { echo "SET ROLE poolrouter_owner;"; cat "$rb_dir"/2026110500000${f}_*.down.sql; } | psql_su -d poolrouter_rb -1 || return 1
+    done
+  fi
   for f in 4 3 2 1; do
     { echo "SET ROLE poolrouter_owner;"; cat "$rb_dir"/2026110400000${f}_*.down.sql; } | psql_su -d poolrouter_rb -1 || return 1
   done
@@ -103,6 +109,13 @@ apply_migrations poolrouter_rb '20261104*'
   || { echo "FAIL: MF-07 session revocation" >&2; exit 1; }
 echo "MF-07: sessions of the platform admin revoked, the other session kept: ok"
 psql_su -d poolrouter_rb -c "DELETE FROM admin_session; DELETE FROM admin_user_peran; DELETE FROM admin_user"
+apply_migrations poolrouter_rb '20261105*'
+# F3 data: the F3 rollback refuses (Klaus + owner approval), and the schema stays in place
+psql_su -d poolrouter_rb -c "INSERT INTO gerbang_blend_peristiwa (jenis, nilai_flag, sebab_tertutup, instance) VALUES ('gerbang_blend_ditutup', NULL, 'flag_bukan_true', 'rb')"
+if { echo "SET ROLE poolrouter_owner;"; cat "$rb_dir"/20261105000001_*.down.sql; } | psql_su -d poolrouter_rb -1 2>/dev/null; then
+  echo "FAIL: F3 rollback ran although F3 data exists" >&2; exit 1; fi
+echo "F3 rollback refuses while F3 data exists: ok"
+{ echo "SET ROLE poolrouter_owner; SET poolrouter.izinkan_hapus_data_f3 = 'ya'; ALTER TABLE gerbang_blend_peristiwa DISABLE TRIGGER gerbang_blend_peristiwa_append_only;"; echo "DELETE FROM gerbang_blend_peristiwa;"; } | psql_su -d poolrouter_rb -1
 # with F1 data the rollback must refuse and leave everything in place
 psql_su -d poolrouter_rb -c "INSERT INTO admin_user (pengguna_id, username, password_hash) VALUES ('00000000-0000-7000-8000-0000000000a1', 'rb-user', '\$argon2id\$synthetic');
   INSERT INTO pengguna_mfa (pengguna_id, secret_ciphertext, secret_dek_terbungkus, secret_nonce, kek_id, status)
@@ -116,4 +129,6 @@ f0_after=$(dump_schema)
 echo "rollback leaves the F0 schema identical: ok"
 apply_migrations poolrouter_rb '20261104*'
 echo "F1 applies again after rollback: ok"
+apply_migrations poolrouter_rb '20261105*'
+echo "F3 applies again after rollback: ok"
 echo "DB TESTS PASSED"
