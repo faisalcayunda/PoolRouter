@@ -47,6 +47,9 @@ pub async fn start(
     component: crate::config::Component,
     args: &[String],
 ) -> std::process::ExitCode {
+    if args.iter().any(|a| a == "healthcheck") {
+        return healthcheck().await;
+    }
     if !args.iter().any(|a| a == "--check")
         && let Err(err) = crate::config::Config::from_env(component)
     {
@@ -56,6 +59,31 @@ pub async fn start(
     }
     run_skeleton(name, args).await;
     std::process::ExitCode::SUCCESS
+}
+
+/// Probe the component's local admin readiness endpoint.  This deliberately
+/// runs before normal configuration loading: compose uses it to decide whether
+/// the process is ready, and the endpoint itself performs dependency checks.
+async fn healthcheck() -> std::process::ExitCode {
+    let address =
+        std::env::var("POOLROUTER_ADMIN_ADDR").unwrap_or_else(|_| "127.0.0.1".to_string());
+    let port = std::env::var("POOLROUTER_ADMIN_PORT").unwrap_or_else(|_| "9090".to_string());
+    healthcheck_at(&format!("{address}:{port}")).await
+}
+
+async fn healthcheck_at(address: &str) -> std::process::ExitCode {
+    let url = format!("http://{address}/readyz");
+    let client = match reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(2))
+        .build()
+    {
+        Ok(client) => client,
+        Err(_) => return std::process::ExitCode::from(1),
+    };
+    match client.get(url).send().await {
+        Ok(response) if response.status().is_success() => std::process::ExitCode::SUCCESS,
+        _ => std::process::ExitCode::from(1),
+    }
 }
 
 /// Skeleton entry point used by the binaries until the real services land.
@@ -88,6 +116,18 @@ mod tests {
         )
         .await
         .expect("--check must not block");
+    }
+
+    #[tokio::test]
+    async fn healthcheck_uses_bounded_probe() {
+        // A closed local port must fail promptly rather than hang.
+        let result = tokio::time::timeout(
+            std::time::Duration::from_secs(3),
+            healthcheck_at("127.0.0.1:1"),
+        )
+        .await;
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), std::process::ExitCode::from(1));
     }
 
     #[tokio::test]
