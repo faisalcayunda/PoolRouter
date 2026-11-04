@@ -7,6 +7,9 @@ SHELL := /bin/sh
 .NOTPARALLEL:
 
 RUNNER ?= podman
+# Sub-make lewat variabel perantara: GNU make menjalankan baris resep yang memuat teks `$(MAKE)` walau dengan -n (SHAA-398).
+# Jangan tulis `$(MAKE)` langsung di resep yang punya efek samping container; uji: `make test-dry-run` di akar.
+SUBMAKE = $(MAKE)
 # Engine kontainer untuk RUNNER=podman atau RUNNER=docker. Docker dipakai lane Docker (SHAA-373, keputusan Luca).
 CONTAINER_ENGINE := $(if $(filter docker,$(RUNNER)),docker,podman)
 export BUILD_LOCK_ENGINE := $(CONTAINER_ENGINE)
@@ -102,20 +105,21 @@ ifeq ($(RUNNER),docker)
 	@mkdir -p "$(SHARED_TARGET_DIR)" "$(SHARED_CARGO_HOME)/cargo" "$(SHARED_CARGO_HOME)/rustup"
 	@SHARED_CARGO_HOME="$(SHARED_CARGO_HOME)" SHARED_CARGO_HOME_LIMIT_MB="$(SHARED_CARGO_HOME_LIMIT_MB)" \
 	  SHARED_TARGET_DIR="$(SHARED_TARGET_DIR)" SHARED_TARGET_LIMIT_MB="$(SHARED_TARGET_LIMIT_MB)" ROOT_MIN_FREE_MB="$(ROOT_MIN_FREE_MB)" \
-	  CLEAN_SHARED_CMD='$(MAKE) --no-print-directory clean-shared' ../scripts/docker-lane.sh check
+	  CLEAN_SHARED_CMD='$(SUBMAKE) --no-print-directory clean-shared' ../scripts/docker-lane.sh check
 else
 	@true
 endif
 
 ifneq ($(filter podman docker,$(RUNNER)),)
 check-label:
-	@echo "$(CONTAINER_LABEL)" | grep -Eq '^shaal\.issue=SHAA-[0-9]+$$' || { echo "CONTAINER_LABEL wajib shaal.issue=SHAA-<n> untuk RUNNER=podman (contoh: make -C backend lint CONTAINER_LABEL=shaal.issue=SHAA-222)" >&2; exit 2; }
+	@echo "$(CONTAINER_LABEL)" | grep -Eq '^shaal\.issue=SHAA-[0-9]+$$' || { echo "CONTAINER_LABEL wajib shaal.issue=SHAA-<n> untuk RUNNER=$(RUNNER) (contoh: make -C backend lint CONTAINER_LABEL=shaal.issue=SHAA-222)" >&2; exit 2; }
 else
 check-label:
 endif
 
 help:
-	@echo "targets: setup test test-rust db-test uji-lua lua-rakit lua-rakit-check lint fmt clean openapi openapi-check build-lock-status build-lock-clean (RUNNER=podman|native)"
+	@echo "targets: setup test test-rust db-test uji-lua lua-rakit lua-rakit-check lint fmt clean openapi openapi-check build-lock-status build-lock-clean (RUNNER=podman|docker|native)"
+	@echo "gate resmi (dari akar): make setup test lint RUNNER=docker FRONTEND_RUNNER=docker CONTAINER_LABEL=shaal.issue=SHAA-<n>"
 
 # Fetch the locked dependency set and install the pinned cargo-deny. Toolchain copy, fetch dan install cargo-deny
 # menulis ke cache bersama, jadi jalan di bawah kunci shaal-build-heavy (SHAA-394); checkout kedua hanya
@@ -178,7 +182,7 @@ uji-lua: check-label $(CHECK_DISK) lua-rakit-check
 # menjangkaunya; `uji-redis-cargo` menjalankan uji `#[ignore]` di crate core lewat kunci build.
 uji-redis: check-label $(CHECK_DISK)
 	CONTAINER_ENGINE=$(LUA_ENGINE) SHAA_ISSUE=$(patsubst shaal.issue=%,%,$(CONTAINER_LABEL)) \
-	sh lua/test/uji-redis.sh "$(MAKE) uji-redis-cargo RUNNER=$(RUNNER) CONTAINER_LABEL=$(CONTAINER_LABEL)"
+	sh lua/test/uji-redis.sh "$(SUBMAKE) uji-redis-cargo RUNNER=$(RUNNER) CONTAINER_LABEL=$(CONTAINER_LABEL)"
 
 uji-redis-cargo: BUILD_LOCK_OPTS += --network host -e POOLROUTER_TEST_REDIS -e POOLROUTER_TEST_FASE -e POOLROUTER_TEST_RUN_ID_LAMA
 uji-redis-cargo: check-label $(CHECK_DISK)

@@ -160,18 +160,38 @@ Puncak pemakaian: 5G (image 2.2G, target dan cache sekitar 2.5G). Angka ini peng
 
 - Dengan 20G, lane hanya muat satu gate backend. Gate frontend (`pnpm install`) belum diukur dan butuh ruang lebih.
 - Resize `/data` ke 40G masih rekomendasi untuk jangka panjang.
-- Gate penuh `make setup test lint` di akar repo belum ada target setup/test/lint di Makefile akar. Gate yang dijalankan adalah target backend di atas.
 
 ## Root Docker gate (SHAA-379)
 
-Gate akar (menjalankan seluruh lane dan push fast-forward):
+Gate resmi (keputusan SHAA-380), dari akar repo:
 
 ```sh
-RUNNER=docker FRONTEND_RUNNER=docker CONTAINER_LABEL=shaal.issue=SHAA-379 make push-main
+make setup test lint RUNNER=docker FRONTEND_RUNNER=docker CONTAINER_LABEL=shaal.issue=SHAA-<n>
 ```
 
-This is the only root gate command. It runs the backend and frontend gates and
-pushes only after every target exits zero.
+Push ke `main` (gate penuh dulu, lalu push fast-forward; variabel sama):
+
+```sh
+make push-main RUNNER=docker FRONTEND_RUNNER=docker CONTAINER_LABEL=shaal.issue=SHAA-<n>
+```
+
+`push-main` adalah satu-satunya jalur push ke `main`. Ia menjalankan gate backend dan
+frontend dan hanya push bila semua target exit 0.
+
+### `make -n` aman sebagai bukti
+
+Sejak SHAA-398, `make -n` pada gate di atas tidak memanggil `docker` atau `podman`.
+GNU make tetap mengeksekusi baris resep yang memuat teks `$(MAKE)` walau dengan `-n`;
+karena itu resep dengan efek samping container memakai `SUBMAKE = $(MAKE)` dan menulis
+`$(SUBMAKE)`. Jangan menulis `$(MAKE)` langsung di resep seperti itu. Resep delegasi
+akar (`$(MAKE) -C $$s $@`) sengaja tetap `$(MAKE)` agar `-n` diteruskan ke stack.
+
+Uji regresi (tanpa Docker, stub pencatat `docker`/`podman` di `PATH`; gagal bila log
+stub tidak kosong):
+
+```sh
+make test-dry-run
+```
 
 Catat sebelum dan sesudah gate: `df -h /data`; ukuran `frontend/node_modules` dan
 store pnpm; ukuran image Node pinned dan image Playwright pinned (`docker images`),

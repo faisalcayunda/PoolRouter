@@ -238,4 +238,12 @@ describe('S11 log transaksi', () => {
     ).toBeInTheDocument();
     expect(client.cariLog).toHaveBeenCalledTimes(1);
   });
+
+  it('shows the request time once: no second column repeats requested_at', async () => {
+    renderWithI18n(<LogPageScreen client={stubClient()} />);
+
+    await screen.findByRole('link', { name: 'TRX-2026-0001' });
+    expect(screen.getAllByRole('columnheader', { name: 'Waktu' })).toHaveLength(1);
+    expect(screen.queryByRole('columnheader', { name: 'Diminta pada' })).not.toBeInTheDocument();
+  });
 });

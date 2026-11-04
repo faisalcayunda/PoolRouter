@@ -316,4 +316,59 @@ describe('payload dialog', () => {
     expect(await screen.findByText('Payload sudah dihapus.')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /coba lagi/i })).not.toBeInTheDocument();
   });
+
+  it('turns pages with the response cursor and the same reason, without a new dialog', async () => {
+    const cariLogNik = vi
+      .fn()
+      .mockResolvedValueOnce({ ...PAGE, kursor: 'cur-2' })
+      .mockResolvedValueOnce({ ...PAGE, kursor: null });
+    const client = stubClient({ cariLogNik });
+    renderWithI18n(<NikSearchScreen client={client} />);
+
+    await fillNikAndSearch('Audit aduan W-2026-07');
+    await screen.findByText('TRX-2026-0042');
+    expect(cariLogNik.mock.calls[0]![0].kursor).toBeUndefined();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Halaman berikutnya' }));
+
+    await waitFor(() => expect(cariLogNik).toHaveBeenCalledTimes(2));
+    const second = cariLogNik.mock.calls[1]![0];
+    expect(second.kursor).toBe('cur-2');
+    expect(second.alasan).toBe('Audit aduan W-2026-07');
+    expect(second.nik).toBe(NIK);
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    // The NIK never reaches the page title or any accessible label of the pager.
+    expect(document.title).not.toContain(NIK);
+    const pager = screen.getByRole('navigation');
+    expect(pager.getAttribute('aria-label')).not.toContain(NIK);
+    expect(pager.textContent).not.toContain(NIK);
+    expect(window.location.href).not.toContain(NIK);
+    expect(screen.getByRole('button', { name: 'Halaman berikutnya' })).toBeDisabled();
+  });
+
+  it('resets the cursor and asks for the reason again when the NIK changes', async () => {
+    const cariLogNik = vi.fn().mockResolvedValue({ ...PAGE, kursor: 'cur-2' });
+    renderWithI18n(<NikSearchScreen client={stubClient({ cariLogNik })} />);
+
+    await fillNikAndSearch();
+    await screen.findByText('TRX-2026-0042');
+    await userEvent.click(screen.getByRole('button', { name: 'Halaman berikutnya' }));
+    await waitFor(() => expect(cariLogNik).toHaveBeenCalledTimes(2));
+
+    await userEvent.clear(screen.getByLabelText('NIK (16 digit)'));
+    await userEvent.type(screen.getByLabelText('NIK (16 digit)'), '3175000000000002');
+    await userEvent.click(screen.getByRole('button', { name: 'Cari' }));
+    // A new search needs a reason again.
+    const dialog = await screen.findByRole('dialog');
+    await userEvent.type(
+      within(dialog).getByLabelText('Alasan (minimal 10 karakter)'),
+      'Audit aduan W-2026-08',
+    );
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Cari' }));
+
+    await waitFor(() => expect(cariLogNik).toHaveBeenCalledTimes(3));
+    const third = cariLogNik.mock.calls[2]![0];
+    expect(third.kursor).toBeUndefined();
+    expect(third.nik).toBe('3175000000000002');
+  });
 });
