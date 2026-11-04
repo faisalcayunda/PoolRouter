@@ -8,9 +8,13 @@
     "kelebihan_u64": 20,
     "reserved_exact_A": 40,
     "shareable_exact_B": 30,
-    "upstream_pool_Q": 100
+    "skala_reserved_total": 750,
+    "upstream_pool_Q": 100,
+    "upstream_pool_Q_skala": 1000
   },
   "d3_webhook": {
+    "batas_retry_cepat": 3,
+    "client_webhook": 2,
     "jitter_rentang": [
       0.8,
       1.2
@@ -24,7 +28,8 @@
   "d6_arsip": {
     "arsip_log": 50,
     "restore_ada_nik": "0034128392238228",
-    "restore_tidak_ada_baris": 0
+    "restore_tidak_ada_baris": 0,
+    "sentinel_nik": "0000000000009999"
   },
   "d7_mfa": {
     "pemulihan": 10,

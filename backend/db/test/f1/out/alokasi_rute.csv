@@ -5,3 +5,7 @@ upstream_pool_id,downstream_pool_id,alokasi_jenis,alokasi_nilai,sifat,boleh_pinj
 32191cc0-bd57-53b2-9f21-891d6b916dfd,976d59b6-5e1c-55c4-b67a-847113e0f429,exact,70.00,reserved,false,U-64a
 32191cc0-bd57-53b2-9f21-891d6b916dfd,8e290df3-0160-5acc-b7ea-ae385715907b,exact,50.00,reserved,false,U-64a
 51f10409-9182-5499-b651-b478ba114ca8,afe81d87-82c6-5f48-9b07-a3fcedc70259,,,,false,U-65
+a4d6e226-32e3-512a-a1e9-0a0909892bdd,4bf524e7-c60d-5d5d-99a8-a3da88dadb0b,exact,400.00,reserved,false,T-05B-SKALA
+a4d6e226-32e3-512a-a1e9-0a0909892bdd,1c34664e-e5af-5318-9112-0d761d8168bd,exact,350.00,reserved,false,T-05B-SKALA
+a4d6e226-32e3-512a-a1e9-0a0909892bdd,3d8adbae-36d7-5f43-acaf-6e34256d1094,exact,200.00,shareable,true,T-05B-SKALA
+a4d6e226-32e3-512a-a1e9-0a0909892bdd,6b734954-10a6-50fc-9d58-66bfd05722da,,,,true,T-05B-SKALA

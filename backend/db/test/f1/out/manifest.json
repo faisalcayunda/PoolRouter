@@ -1,8 +1,8 @@
 {
   "berkas": {
     "alokasi_rute.csv": {
-      "baris": 6,
-      "sha256": "9864a08d4970e0c8f3f6b7c8407ca98db41d26fca4201b049db363dfd302b62b"
+      "baris": 10,
+      "sha256": "6d00b442e3b20ec8b0f8ff6b7f2eb23f835387661cd80f8d2464e101971ad036"
     },
     "arsip_log.csv": {
       "baris": 50,
@@ -18,7 +18,7 @@
     },
     "data_balikan_item.csv": {
       "baris": 250,
-      "sha256": "f6e1ddbd2a8dc66a8b0fc36afae45429d74ba938c1bca195991a2d860bb08213"
+      "sha256": "b0a74178fa6d035c988723e6bda31f7b224fabaab37e78cf7bf5da3493c5314f"
     },
     "mfa_kode_daftar.csv": {
       "baris": 3,
@@ -29,8 +29,8 @@
       "sha256": "2d957bb40012e38c68b01730057967713442b0f6f960579ce2c30b10c4b5279b"
     },
     "mfa_pengguna.csv": {
-      "baris": 1,
-      "sha256": "4136097afc5f4233239985b5bb67599dcdd5207268c24b70fa351649cf067b5c"
+      "baris": 5,
+      "sha256": "89d86c48089d2de932e77ed1c42160d776b460be6f879c9da4c0acf63abe5763"
     },
     "mfa_totp_vektor.csv": {
       "baris": 6,
@@ -40,13 +40,25 @@
       "baris": 14,
       "sha256": "c70437aa7bf76d1530799835e8c5092259b80620825900801e4e00016b3e28b6"
     },
+    "sentinel_nik.csv": {
+      "baris": 1,
+      "sha256": "ab6ce829b2daca39b68332722f16fe975f6169ed29c7aaed70ae8eab7adfcaa9"
+    },
     "webhook_jadwal.csv": {
       "baris": 6,
       "sha256": "d6debc5220f8d502cd8935350abbc25eb914bce61451d4d57ec80648b07cdc8f"
     },
+    "webhook_jadwal_cepat.csv": {
+      "baris": 3,
+      "sha256": "1966b3a8f2156b196b67c11cc8bdee346ef32e598a63f9fed73c8418adbd219a"
+    },
     "webhook_klasifikasi.csv": {
       "baris": 11,
       "sha256": "f8c8be29f6958c804981ae6d6ac2e119b7baef28321bb952c6433ddf6b54618e"
+    },
+    "webhook_klien.csv": {
+      "baris": 4,
+      "sha256": "96f29bbb26678ddd903edab17aa092a0952012caaf2f64515c0e1d8d2b4b5c90"
     }
   },
   "contract": "data-contract-poolrouter-log-v0.9.5-final",

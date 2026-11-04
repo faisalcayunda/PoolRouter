@@ -40,6 +40,23 @@ NS = uuid.UUID("6f1c2a52-0000-4000-8000-00000000f1f1")       # namespace uuid5 t
 HMAC_KEY_FIXTURE = b"SINTETIS-ONLY-f1-fixture-not-a-secret"
 
 MAX_RETRY_ALLOWED = 6
+# Sentinel NIK sintetis untuk gate PR (T-13-08, U-89). Generator tidak pernah
+# menghasilkan NIK acak yang sama dengan sentinel.
+SENTINEL_NIK = "0000000000009999"
+# Batas retry jalur cepat (T-06B-01), fixture terpisah dari jadwal 6 percobaan.
+BATAS_RETRY_CEPAT = 3
+# Kapasitas upstream untuk uji skala (T-05B-01, T-05B-07).
+Q_SKALA = 1000
+# Tanggal lahir fiktif: tanggal tetap yang jelas bukan tanggal lahir orang nyata.
+TGL_LAHIR_FIKTIF = ["1901-01-01", "1902-02-02", "1903-03-03", "1904-04-04"]
+# Akun uji. Seed TOTP TIDAK dibuat generator; dibaca dari ${TOTP_TEST_SEED} saat runtime.
+AKUN_UJI = [
+    ("mfa-u1", "auditor", "auditor"),
+    ("mfa-u2", "platform_admin_1", "platform_admin"),
+    ("mfa-u3", "platform_admin_2", "platform_admin"),
+    ("mfa-u4", "operator", "operator"),
+    ("mfa-u5", "client_owner", "client_owner"),
+]
 
 # Kunci unik per berkas keluaran (contract: request_id, webhook_delivery_id, batch+request, dst).
 KUNCI_UNIK = {
@@ -67,7 +84,7 @@ def ts(delta_seconds=0):
 class Gen:
     def __init__(self):
         self.rng = random.Random(SEED)
-        self.niks = set()
+        self.niks = {SENTINEL_NIK}
         self.tables = {}   # nama -> (kolom, [baris])
         self.jitter_cek = []  # (jadwal nominal, tunda hasil) per percobaan retry
 
@@ -126,15 +143,24 @@ def scen_d2(g):
     g.add("alokasi_rute.csv", kol_rute,
           [[uid("up-Q3"), uid("dp-D3"), "", "", "", "false", "U-65"]])
 
+    # Skala Q = 1000 (T-05B-01, T-05B-07): dua downstream reserved, satu shareable.
+    skala = [[uid("up-Q1000"), uid("dp-S1"), "exact", "400.00", "reserved", "false", "T-05B-SKALA"],
+             [uid("up-Q1000"), uid("dp-S2"), "exact", "350.00", "reserved", "false", "T-05B-SKALA"],
+             [uid("up-Q1000"), uid("dp-S3"), "exact", "200.00", "shareable", "true", "T-05B-SKALA"],
+             [uid("up-Q1000"), uid("dp-S4"), "", "", "", "true", "T-05B-SKALA"]]
+    g.add("alokasi_rute.csv", kol_rute, skala)
+
     # Expected results (dihitung di sini, bukan dari implementasi).
     reserved_exact = 40
     a_sisa = q - reserved_exact - 30   # sisa setelah B: C menghabiskan sisa
     return {
         "upstream_pool_Q": q,
+        "upstream_pool_Q_skala": Q_SKALA,
         "reserved_exact_A": reserved_exact,
         "shareable_exact_B": 30,
         "a_sisa_u61": a_sisa,             # U-61: a_sisa = 30
         "kelebihan_u64": 120 - 100,       # Σ = 120, Q = 100 -> kelebihan 20
+        "skala_reserved_total": 750,      # 400 + 350 <= 1000
     }
 
 
@@ -162,6 +188,21 @@ def scen_d3(g):
     rows.append([uid("wh-6"), batas, "", "gagal"])   # webhook_not_before NULL setelah percobaan ke-6
     g.add("webhook_jadwal.csv", kol, rows)
 
+    # Jalur cepat dengan batas retry 3 (T-06B-01): fixture terpisah, jadwal 6 percobaan tidak diubah.
+    cepat = []
+    for n in range(1, BATAS_RETRY_CEPAT):
+        cepat.append([uid(f"wh-cepat-{n}"), n, ts(30 * n), "retry"])
+    cepat.append([uid(f"wh-cepat-{BATAS_RETRY_CEPAT}"), BATAS_RETRY_CEPAT, "", "gagal"])
+    g.add("webhook_jadwal_cepat.csv", kol, cepat)
+
+    # Dua client webhook (T-06B-03, T-06B-09, T-06B-10): riwayat harus terisolasi per client.
+    klien = []
+    for cid, tag in (("client-a", "A"), ("client-b", "B")):
+        for n in range(1, 3):
+            klien.append([uid(f"wh-{tag}-{n}"), n, ts(30 * n), cid, "retry" if n == 1 else "gagal"])
+    g.add("webhook_klien.csv", ["webhook_delivery_id", "percobaan_ke", "webhook_not_before",
+                                "client_id", "hasil_tanggung_jawab"], klien)
+
     # Klasifikasi retry (U-67): 5xx/408/429/jaringan di-retry; sisanya tidak.
     kol_k = ["kelas", "status_contoh", "di_retry"]
     klas = [["gagal_http_5xx", "500", "true"], ["gagal_http_5xx", "503", "true"],
@@ -173,17 +214,19 @@ def scen_d3(g):
     g.add("webhook_klasifikasi.csv", kol_k, klas)
     # Tidak mengunci nilai tunda: hanya rentang jitter dan jumlah percobaan.
     return {"percobaan_retry": len(jadwal), "jitter_rentang": [0.8, 1.2],
-            "klasifikasi_baris": len(klas)}
+            "klasifikasi_baris": len(klas), "batas_retry_cepat": BATAS_RETRY_CEPAT,
+            "client_webhook": 2}
 
 
 # ------------------------------------------------------- D4 data balikan (DB-*)
 def scen_d4(g):
     n = 250   # contract §6.1: ukuran batch fixture N = 250
-    kol = ["batch_id", "request_id", "nik", "tanggal_request", "nama_sintetis", "skenario"]
+    kol = ["batch_id", "request_id", "nik", "tanggal_request", "nama_sintetis", "tanggal_lahir", "skenario"]
     batch = uid("batch-1")
     rows = []
     for i in range(n):
-        rows.append([batch, uid(f"db-item-{i}"), g.nik(), "2026-11-03", nama_sintetis(i), "U-DB"])
+        rows.append([batch, uid(f"db-item-{i}"), g.nik(), "2026-11-03", nama_sintetis(i),
+                     TGL_LAHIR_FIKTIF[i % len(TGL_LAHIR_FIKTIF)], "U-74"])
     g.add("data_balikan_item.csv", kol, rows)
     g.add("data_balikan_batch.csv",
           ["batch_id", "status", "jumlah_item", "config_schema_version"],
@@ -207,13 +250,15 @@ def scen_d6(g):
           ["restore_id", "nik_tersamar", "status", "skenario"],
           [[uid("rst-ada"), ada[-4:], "selesai", "U-76a"],
            [uid("rst-tidak-ada"), "9999", "selesai", "U-76b"]])
+    # Sentinel NIK untuk gate PR (T-13-08, U-89): satu baris, sengaja tidak dibuat acak.
+    g.add("sentinel_nik.csv", ["nik", "skenario"], [[SENTINEL_NIK, "T-13-08"]])
     return {"arsip_log": len(rows), "restore_ada_nik": ada,
-            "restore_tidak_ada_baris": 0}
+            "restore_tidak_ada_baris": 0, "sentinel_nik": SENTINEL_NIK}
 
 
 # ---------------------------------------------------------------- D7 MFA (MF-*)
 def totp(secret_b32, t_detik, langkah=30, digit=6):
-    # RFC 6238 dengan HMAC-SHA1 (U-79, vektor Lampiran B).
+    # RFC6238-PUBLIC-VECTOR: RFC 6238 dengan HMAC-SHA1 (U-79, vektor Lampiran B).
     key = base64.b32decode(secret_b32)
     counter = int(t_detik // langkah)
     digest = hmac.new(key, struct.pack(">Q", counter), hashlib.sha1).digest()
@@ -223,11 +268,14 @@ def totp(secret_b32, t_detik, langkah=30, digit=6):
 
 
 def scen_d7(g):
-    # Rahasia RFC 6238 "12345678901234567890" dalam base32 (sintetis, dari vektor standar).
+    # RFC6238-PUBLIC-VECTOR: "12345678901234567890" dalam base32, nilai publik
+    # Lampiran B RFC 6238 (bukan secret). Hanya untuk membuktikan algoritma (U-79).
     secret = "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ"
     kol_u = ["pengguna_id", "status", "langkah_terakhir", "secret_ciphertext_palsu", "skenario"]
+    # Akun uji (auditor, dua platform admin, operator, client owner). Seed TOTP
+    # akun-akun ini TIDAK ditulis di sini: kolom berisi referensi ${TOTP_TEST_SEED}.
     g.add("mfa_pengguna.csv", kol_u,
-          [[uid("mfa-u1"), "aktif", 0, "SINTETIS-PLACEHOLDER", "U-79"]])
+          [[uid(pid), "aktif", 0, "${TOTP_TEST_SEED}", peran] for pid, _nama, peran in AKUN_UJI])
     # Vektor RFC 6238 SHA-1 (T = 59, 1111111109, ...) dihitung ulang dan dibandingkan
     # dengan nilai standar RFC: 94287082, 07081804, 14050471, 89005924, 69279037, 65353130.
     vektor = [(59, "94287082"), (1111111109, "07081804"), (1111111111, "14050471"),
@@ -265,6 +313,23 @@ def validasi(g):
             vals = [tuple(r[i] for i in idx) for r in rows]
             if len(vals) != len(set(vals)):
                 errs.append(f"{nama}: kunci {kunci} tidak unik")
+    # Sentinel harus tepat satu di berkas sentinel_nik.csv dan tidak muncul di tempat lain.
+    sen = g.tables.get("sentinel_nik.csv", ([], []))[1]
+    if [r[0] for r in sen] != [SENTINEL_NIK]:
+        errs.append("sentinel: harus tepat satu baris di sentinel_nik.csv")
+    for nama, (kol, rows) in g.tables.items():
+        if nama == "sentinel_nik.csv":
+            continue
+        for r in rows:
+            if SENTINEL_NIK in r:
+                errs.append(f"sentinel: muncul di {nama}")
+                break
+    # Tanggal lahir harus dari daftar fiktif.
+    for nama, (kol, rows) in g.tables.items():
+        if "tanggal_lahir" in kol:
+            idx = kol.index("tanggal_lahir")
+            if any(r[idx] not in TGL_LAHIR_FIKTIF for r in rows):
+                errs.append(f"{nama}: tanggal lahir bukan fiktif")
     # Alokasi: Σ exact reserved <= Q pada U-61 (40+30 = 70 <= 100).
     # Jitter: tunda berada dalam nominal × [0,8; 1,2] (toleransi pembulatan 1 s).
     for kasar, tunda in g.jitter_cek:
