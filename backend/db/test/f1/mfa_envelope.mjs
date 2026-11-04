@@ -2,6 +2,9 @@
 // Dipanggil oleh load_f1.py dengan stdin JSON; secret tidak pernah masuk argumen proses.
 //   node mfa_envelope.mjs            -> stdin {seed, kek_hex, kek_id, pengguna_ids}; stdout JSON per akun
 //   node mfa_envelope.mjs --self-test -> round-trip, tamper, dan KEK salah harus ditolak
+// CATATAN: bentuk envelope ini adalah bentuk uji buatan loader F1, bukan format produksi. Bila implementasi
+// aplikasi sudah ada, bentuk ini harus diselaraskan (urutan nonce/tag, AAD, dan nama kek_id) agar fixture tidak
+// menyimpang dari format produksi (review Ridley, SHAA-335 butir 2).
 // Format: DEK acak 32 byte; secret_ciphertext = AES-256-GCM(DEK, nonce 12 byte, seed) + tag 16 byte;
 // secret_nonce = nonce itu; secret_dek_terbungkus = nonce 12 byte || AES-256-GCM(KEK, nonce, DEK) + tag.
 import crypto from 'node:crypto';
