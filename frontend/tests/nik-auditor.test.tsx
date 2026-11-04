@@ -9,6 +9,10 @@ import { renderWithI18n } from './render';
 
 const NIK = '3175000000000001';
 
+// SHAA-406: the gate runs beside other lanes' builds, so every per-key timer is wall-clock
+// time the 5 s test limit cannot absorb. `delay: null` types without scheduling between keys.
+const user = userEvent.setup({ delay: null });
+
 const PAGE: LogPage = {
   baris: [
     {
@@ -39,12 +43,16 @@ function stubClient(overrides: Partial<ApiClient> = {}): ApiClient {
 }
 
 async function fillNikAndSearch(reason = 'Audit aduan W-2026-07') {
-  await userEvent.type(screen.getByLabelText('NIK (16 digit)'), NIK);
-  await userEvent.click(screen.getByRole('button', { name: 'Cari' }));
+  const nikField = screen.getByLabelText('NIK (16 digit)');
+  await user.click(nikField);
+  await user.paste(NIK);
+  await user.click(screen.getByRole('button', { name: 'Cari' }));
 
   const dialog = await screen.findByRole('dialog');
-  await userEvent.type(within(dialog).getByLabelText('Alasan (minimal 10 karakter)'), reason);
-  await userEvent.click(within(dialog).getByRole('button', { name: 'Cari' }));
+  const reasonField = within(dialog).getByLabelText('Alasan (minimal 10 karakter)');
+  await user.click(reasonField);
+  await user.paste(reason);
+  await user.click(within(dialog).getByRole('button', { name: 'Cari' }));
 }
 
 describe('S12 pencarian log per NIK', () => {
@@ -67,7 +75,7 @@ describe('S12 pencarian log per NIK', () => {
 
     // Same filters, but a second audited action: the second request is not swallowed as a
     // duplicate of the first one's key.
-    await userEvent.clear(screen.getByLabelText('NIK (16 digit)'));
+    await user.clear(screen.getByLabelText('NIK (16 digit)'));
     await fillNikAndSearch();
     expect(await screen.findAllByText('Pencarian dicatat')).toHaveLength(2);
     expect(client.cariLogNik).toHaveBeenCalledTimes(2);
@@ -90,8 +98,8 @@ describe('S12 pencarian log per NIK', () => {
     const client = stubClient();
     renderWithI18n(<NikSearchScreen client={client} />);
 
-    await userEvent.type(screen.getByLabelText('NIK (16 digit)'), '31750');
-    await userEvent.click(screen.getByRole('button', { name: 'Cari' }));
+    await user.type(screen.getByLabelText('NIK (16 digit)'), '31750');
+    await user.click(screen.getByRole('button', { name: 'Cari' }));
 
     expect(await screen.findByText('Masukkan NIK 16 digit.')).toBeInTheDocument();
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
@@ -102,8 +110,8 @@ describe('S12 pencarian log per NIK', () => {
     renderWithI18n(<NikSearchScreen client={stubClient()} />);
 
     const field = screen.getByLabelText('NIK (16 digit)');
-    await userEvent.click(field);
-    await userEvent.paste('3175 0000 0000 0001');
+    await user.click(field);
+    await user.paste('3175 0000 0000 0001');
 
     expect(field).toHaveValue(NIK);
   });
@@ -112,16 +120,16 @@ describe('S12 pencarian log per NIK', () => {
     const client = stubClient();
     renderWithI18n(<NikSearchScreen client={client} />);
 
-    await userEvent.type(screen.getByLabelText('NIK (16 digit)'), NIK);
-    await userEvent.click(screen.getByRole('button', { name: 'Cari' }));
+    await user.type(screen.getByLabelText('NIK (16 digit)'), NIK);
+    await user.click(screen.getByRole('button', { name: 'Cari' }));
 
     const dialog = await screen.findByRole('dialog');
     const confirm = within(dialog).getByRole('button', { name: 'Cari' });
     // Section 8: submit stays enabled; pressing it reports the problem instead of doing nothing.
     expect(confirm).toBeEnabled();
 
-    await userEvent.type(within(dialog).getByLabelText('Alasan (minimal 10 karakter)'), 'pendek');
-    await userEvent.click(confirm);
+    await user.type(within(dialog).getByLabelText('Alasan (minimal 10 karakter)'), 'pendek');
+    await user.click(confirm);
     expect(
       await within(dialog).findByText('Alasan wajib diisi dengan 10–500 karakter.'),
     ).toBeInTheDocument();
@@ -168,11 +176,8 @@ describe('payload dialog', () => {
     );
 
     const dialog = await screen.findByRole('dialog');
-    await userEvent.type(
-      within(dialog).getByLabelText('Alasan membuka payload'),
-      'Cek aduan W-2026-07',
-    );
-    await userEvent.click(within(dialog).getByRole('button', { name: 'Lihat payload' }));
+    await user.type(within(dialog).getByLabelText('Alasan membuka payload'), 'Cek aduan W-2026-07');
+    await user.click(within(dialog).getByRole('button', { name: 'Lihat payload' }));
 
     // Catalog v0.14 supplies the §18.3 payload block copy (SHAA-285).
     expect(await screen.findByText('Ringkasan transaksi')).toBeInTheDocument();
@@ -199,11 +204,8 @@ describe('payload dialog', () => {
     );
 
     const dialog = await screen.findByRole('dialog');
-    await userEvent.type(
-      within(dialog).getByLabelText('Alasan membuka payload'),
-      'Cek aduan W-2026-07',
-    );
-    await userEvent.click(within(dialog).getByRole('button', { name: 'Lihat payload' }));
+    await user.type(within(dialog).getByLabelText('Alasan membuka payload'), 'Cek aduan W-2026-07');
+    await user.click(within(dialog).getByRole('button', { name: 'Lihat payload' }));
 
     // The NIK did render inside the Input JSON block, so the assertions below are not vacuous.
     expect(await screen.findByText('Ringkasan transaksi')).toBeInTheDocument();
@@ -257,17 +259,17 @@ describe('payload dialog', () => {
     renderWithI18n(<Harness />);
 
     const reasonDialog = await screen.findByRole('dialog');
-    await userEvent.type(
+    await user.type(
       within(reasonDialog).getByLabelText('Alasan membuka payload'),
       'Cek aduan W-2026-07',
     );
-    await userEvent.click(within(reasonDialog).getByRole('button', { name: 'Lihat payload' }));
+    await user.click(within(reasonDialog).getByRole('button', { name: 'Lihat payload' }));
 
     // Close while the request is still in flight (the payload dialog shows the loading state).
     await screen.findByText('Memuat…');
     // Both dialogs stay mounted, so scope to the close button that sits next to the loading line.
     const [closeButton] = screen.getAllByRole('button', { name: 'Tutup' });
-    await userEvent.click(closeButton!);
+    await user.click(closeButton!);
     expect(vi.mocked(client.bukaPayload).mock.calls[0]![1]?.signal).toBeInstanceOf(AbortSignal);
 
     // The response arrives after the close: it must be ignored, not rendered.
@@ -276,17 +278,17 @@ describe('payload dialog', () => {
     expect(screen.queryByText('Ringkasan transaksi')).not.toBeInTheDocument();
 
     // Reopen for another transaction: the reason dialog comes first and A's payload is nowhere.
-    await userEvent.click(screen.getByRole('button', { name: 'pilih-trx-b' }));
+    await user.click(screen.getByRole('button', { name: 'pilih-trx-b' }));
     const reopened = await screen.findByRole('dialog');
     expect(within(reopened).getByLabelText('Alasan membuka payload')).toHaveValue('');
     expect(screen.queryByText('Ringkasan transaksi')).not.toBeInTheDocument();
     expect(screen.queryByText('TRX-2026-0042')).not.toBeInTheDocument();
 
-    await userEvent.type(
+    await user.type(
       within(reopened).getByLabelText('Alasan membuka payload'),
       'Cek aduan W-2026-08',
     );
-    await userEvent.click(within(reopened).getByRole('button', { name: 'Lihat payload' }));
+    await user.click(within(reopened).getByRole('button', { name: 'Lihat payload' }));
     expect(await screen.findByText('Ringkasan transaksi')).toBeInTheDocument();
     expect(vi.mocked(client.bukaPayload).mock.calls[1]![0]).toEqual({
       kode_transaksi: 'TRX-2026-0099',
@@ -311,7 +313,7 @@ describe('payload dialog', () => {
     );
 
     const dialog = await screen.findByRole('dialog');
-    await userEvent.click(within(dialog).getByRole('button', { name: 'Lihat payload' }));
+    await user.click(within(dialog).getByRole('button', { name: 'Lihat payload' }));
 
     expect(await screen.findByText('Payload sudah dihapus.')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /coba lagi/i })).not.toBeInTheDocument();
@@ -329,7 +331,7 @@ describe('payload dialog', () => {
     await screen.findByText('TRX-2026-0042');
     expect(cariLogNik.mock.calls[0]![0].kursor).toBeUndefined();
 
-    await userEvent.click(screen.getByRole('button', { name: 'Halaman berikutnya' }));
+    await user.click(screen.getByRole('button', { name: 'Halaman berikutnya' }));
 
     await waitFor(() => expect(cariLogNik).toHaveBeenCalledTimes(2));
     const second = cariLogNik.mock.calls[1]![0];
@@ -352,19 +354,19 @@ describe('payload dialog', () => {
 
     await fillNikAndSearch();
     await screen.findByText('TRX-2026-0042');
-    await userEvent.click(screen.getByRole('button', { name: 'Halaman berikutnya' }));
+    await user.click(screen.getByRole('button', { name: 'Halaman berikutnya' }));
     await waitFor(() => expect(cariLogNik).toHaveBeenCalledTimes(2));
 
-    await userEvent.clear(screen.getByLabelText('NIK (16 digit)'));
-    await userEvent.type(screen.getByLabelText('NIK (16 digit)'), '3175000000000002');
-    await userEvent.click(screen.getByRole('button', { name: 'Cari' }));
+    await user.clear(screen.getByLabelText('NIK (16 digit)'));
+    await user.click(screen.getByLabelText('NIK (16 digit)'));
+    await user.paste('3175000000000002');
+    await user.click(screen.getByRole('button', { name: 'Cari' }));
     // A new search needs a reason again.
     const dialog = await screen.findByRole('dialog');
-    await userEvent.type(
-      within(dialog).getByLabelText('Alasan (minimal 10 karakter)'),
-      'Audit aduan W-2026-08',
-    );
-    await userEvent.click(within(dialog).getByRole('button', { name: 'Cari' }));
+    const reason = within(dialog).getByLabelText('Alasan (minimal 10 karakter)');
+    await user.click(reason);
+    await user.paste('Audit aduan W-2026-08');
+    await user.click(within(dialog).getByRole('button', { name: 'Cari' }));
 
     await waitFor(() => expect(cariLogNik).toHaveBeenCalledTimes(3));
     const third = cariLogNik.mock.calls[2]![0];

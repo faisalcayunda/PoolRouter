@@ -43,5 +43,10 @@ export default defineConfig(({ mode }) => ({
     // e2e/ is Playwright's (make e2e); Vitest must not pick those specs up.
     exclude: ['e2e/**', 'node_modules/**', 'dist/**'],
     css: false,
+    // SHAA-406: gate runs beside other lanes' builds; jsdom + React 19 wall-clock tests need headroom.
+    // Default 5 s is insufficient under host CPU contention (load average ~4 on 4 cores).
+    // Worst case measured: 3.4 s per file quiet / ~5 s at incident load; 30 s gives 6x margin
+    // for the 16 workers on 4 cores while other lanes build.
+    testTimeout: 30_000,
   },
 }));
