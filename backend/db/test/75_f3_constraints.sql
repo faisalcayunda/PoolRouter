@@ -29,6 +29,18 @@ BEGIN
 END $$;
 
 -- ================================================================ happy path and BL-02 (atomic creation)
+-- A terminal blend cannot be inserted directly (tg_blend_transisi: initial status berjalan or rejected), so the fixture clones a
+-- running blend and moves it to the target state with an UPDATE; the constraints under test fire on that UPDATE.
+CREATE OR REPLACE FUNCTION t.blend_klon(p jsonb) RETURNS void LANGUAGE plpgsql AS $$
+DECLARE r blend;
+BEGIN
+  r := jsonb_populate_record(NULL::blend, p);
+  INSERT INTO blend SELECT (jsonb_populate_record(NULL::blend, p || jsonb_build_object('status', 'berjalan', 'failure_reason', NULL, 'cancel_reason', NULL,
+    'anak_penentu_request_id', NULL, 'completed_at', NULL, 'webhook_status', NULL, 'ringkasan_komponen', NULL, 'output_payload', NULL))).*;
+  UPDATE blend SET status = r.status, failure_reason = r.failure_reason, cancel_reason = r.cancel_reason, anak_penentu_request_id = r.anak_penentu_request_id,
+    completed_at = r.completed_at, webhook_status = r.webhook_status, ringkasan_komponen = r.ringkasan_komponen, output_payload = r.output_payload WHERE blend_id = r.blend_id;
+END $$;
+
 BEGIN;
 SELECT t.jalan_commit($$SELECT t.f3_siapkan()$$, 'BL-02: blend, two children and the history rows are accepted in one transaction');
 ROLLBACK;
@@ -87,9 +99,9 @@ ROLLBACK;
 
 BEGIN;
 SELECT t.f3_siapkan();
-INSERT INTO blend (blend_id, client_id, credential_id, endpoint_blend_id, endpoint_blend_config_version, mode, status, reject_reason, reject_http_status, gerbang_dasar_hukum, batas_waktu_at, requested_at)
+INSERT INTO blend (blend_id, client_id, credential_id, endpoint_blend_id, endpoint_blend_config_version, mode, status, reject_reason, reject_http_status, gerbang_dasar_hukum, batas_waktu_at, requested_at, completed_at)
   VALUES ('b3000000-0000-7000-8000-000000000003', '10000000-0000-7000-8000-000000000001', '11000000-0000-7000-8000-000000000001',
-          'e3000000-0000-7000-8000-000000000001', 1, 'sync', 'rejected', 'kuota_habis', 429, 'tidak_berlaku', now(), now());
+          'e3000000-0000-7000-8000-000000000001', 1, 'sync', 'rejected', 'kuota_habis', 429, 'tidak_berlaku', now(), now(), now());
 INSERT INTO blend_status_history (blend_id, seq, status_dari, status_ke, alasan, aktor) VALUES ('b3000000-0000-7000-8000-000000000003', 1, NULL, 'rejected', 'kuota_habis', 'webserver');
 SELECT t.gagal($$SELECT t.buat_request(jsonb_build_object('blend_id','b3000000-0000-7000-8000-000000000003','ttl_expires_at',now() + interval '1 day'))$$, '23514',
   'BL-03 g / DQ-60 f: a rejected blend has no children');
@@ -126,19 +138,19 @@ ROLLBACK;
 BEGIN;
 SELECT t.f3_siapkan();
 CREATE TEMP TABLE b_uji AS SELECT * FROM blend WHERE blend_id = 'b3000000-0000-7000-8000-000000000001';
-SELECT t.jalan($$INSERT INTO blend SELECT (b).* FROM (SELECT jsonb_populate_record(NULL::blend, to_jsonb(u) || jsonb_build_object('blend_id', gen_random_uuid(), 'status', 'failed',
+SELECT t.jalan($$SELECT t.blend_klon(to_jsonb(u) || jsonb_build_object('blend_id', gen_random_uuid(), 'status', 'failed',
   'failure_reason', 'retry_habis', 'anak_penentu_request_id', 'f3000000-0000-7000-8000-0000000000a1', 'completed_at', now(), 'webhook_status', 'menunggu',
-  'ringkasan_komponen', '[{"nama_komponen":"dukcapil","request_id":"f3000000-0000-7000-8000-0000000000a1","status_api":"failed","failure_reason":"retry_habis"}]'::jsonb)) AS b FROM b_uji u) x$$,
+  'ringkasan_komponen', '[{"nama_komponen":"dukcapil","request_id":"f3000000-0000-7000-8000-0000000000a1","status_api":"failed","failure_reason":"retry_habis"}]'::jsonb)) FROM b_uji u$$,
   'DQ-62 f: a summary with the four allowed keys is accepted');
-SELECT t.gagal($$INSERT INTO blend SELECT (b).* FROM (SELECT jsonb_populate_record(NULL::blend, to_jsonb(u) || jsonb_build_object('blend_id', gen_random_uuid(), 'status', 'failed',
+SELECT t.gagal($$SELECT t.blend_klon(to_jsonb(u) || jsonb_build_object('blend_id', gen_random_uuid(), 'status', 'failed',
   'failure_reason', 'retry_habis', 'anak_penentu_request_id', 'f3000000-0000-7000-8000-0000000000a1', 'completed_at', now(), 'webhook_status', 'menunggu',
-  'ringkasan_komponen', '[{"nama_komponen":"dukcapil","nik":"0000000000000007"}]'::jsonb)) AS b FROM b_uji u) x$$, '23514', 'DQ-62 f: a summary key other than the four is refused');
-SELECT t.gagal($$INSERT INTO blend SELECT (b).* FROM (SELECT jsonb_populate_record(NULL::blend, to_jsonb(u) || jsonb_build_object('blend_id', gen_random_uuid(), 'status', 'failed',
+  'ringkasan_komponen', '[{"nama_komponen":"dukcapil","nik":"0000000000000007"}]'::jsonb)) FROM b_uji u$$, '23514', 'DQ-62 f: a summary key other than the four is refused');
+SELECT t.gagal($$SELECT t.blend_klon(to_jsonb(u) || jsonb_build_object('blend_id', gen_random_uuid(), 'status', 'failed',
   'failure_reason', 'retry_habis', 'anak_penentu_request_id', 'f3000000-0000-7000-8000-0000000000a1', 'completed_at', now(), 'webhook_status', 'menunggu',
-  'ringkasan_komponen', '[{"nama_komponen":"0000000000000007"}]'::jsonb)) AS b FROM b_uji u) x$$, '23514', 'DQ-62 f: a 16-digit value in the summary is refused');
-SELECT t.gagal($$INSERT INTO blend SELECT (b).* FROM (SELECT jsonb_populate_record(NULL::blend, to_jsonb(u) || jsonb_build_object('blend_id', gen_random_uuid(), 'status', 'failed',
+  'ringkasan_komponen', '[{"nama_komponen":"0000000000000007"}]'::jsonb)) FROM b_uji u$$, '23514', 'DQ-62 f: a 16-digit value in the summary is refused');
+SELECT t.gagal($$SELECT t.blend_klon(to_jsonb(u) || jsonb_build_object('blend_id', gen_random_uuid(), 'status', 'failed',
   'failure_reason', 'retry_habis', 'anak_penentu_request_id', 'f3000000-0000-7000-8000-0000000000a1', 'completed_at', now(), 'webhook_status', 'menunggu',
-  'ringkasan_komponen', NULL)) AS b FROM b_uji u) x$$, '23514', 'a terminal blend other than rejected has a summary');
+  'ringkasan_komponen', NULL)) FROM b_uji u$$, '23514', 'a terminal blend other than rejected has a summary');
 -- failed needs the deciding child (BL-05); output only for done (BP-04); webhook shape
 SELECT t.gagal($$UPDATE blend SET status = 'failed', failure_reason = 'retry_habis', completed_at = now(), webhook_status = 'menunggu', ringkasan_komponen = '[]' $$, '23514',
   'BL-05: failed without anak_penentu_request_id is refused');
@@ -153,7 +165,7 @@ ROLLBACK;
 -- T-04 history and T-05 terminal immutability, BL-05 consistency at the close
 BEGIN;
 SELECT t.f3_siapkan();
-UPDATE request SET status = 'expired', completed_at = now() WHERE blend_id = 'b3000000-0000-7000-8000-000000000001';
+UPDATE request SET status = 'expired', completed_at = now(), webhook_status = 'tidak_dikirim' WHERE blend_id = 'b3000000-0000-7000-8000-000000000001';
 INSERT INTO request_status_history (request_id, seq, status_dari, status_ke, alasan, aktor)
   SELECT request_id, 2, 'queued', 'expired', NULL, 'controller' FROM request WHERE blend_id = 'b3000000-0000-7000-8000-000000000001';
 SELECT t.gagal_commit($$UPDATE blend SET status = 'expired', completed_at = now(), ringkasan_komponen = '[]', webhook_status = 'menunggu'$$, '23000',
@@ -162,7 +174,7 @@ ROLLBACK;
 
 BEGIN;
 SELECT t.f3_siapkan();
-UPDATE request SET status = 'expired', completed_at = now() WHERE blend_id = 'b3000000-0000-7000-8000-000000000001';
+UPDATE request SET status = 'expired', completed_at = now(), webhook_status = 'tidak_dikirim' WHERE blend_id = 'b3000000-0000-7000-8000-000000000001';
 INSERT INTO request_status_history (request_id, seq, status_dari, status_ke, alasan, aktor)
   SELECT request_id, 2, 'queued', 'expired', NULL, 'controller' FROM request WHERE blend_id = 'b3000000-0000-7000-8000-000000000001';
 SELECT t.jalan_commit($$UPDATE blend SET status = 'expired', completed_at = now(), ringkasan_komponen = '[]', webhook_status = 'menunggu' WHERE blend_id = 'b3000000-0000-7000-8000-000000000001';
@@ -177,8 +189,9 @@ ROLLBACK;
 -- DQ-61 (c)(d): cancelled needs zero attempts; expired needs no attempts and no failed / cancelled / done child; done needs all done
 BEGIN;
 SELECT t.f3_siapkan();
-UPDATE request SET status = 'in_flight', attempt_count = 1, dispatched_at = now(), first_attempt_at = now() WHERE request_id = 'f3000000-0000-7000-8000-0000000000a1';
-UPDATE request SET status = 'cancelled', cancel_reason = 'dibatalkan_client', cancelled_by = 'client', completed_at = now() WHERE request_id = 'f3000000-0000-7000-8000-0000000000a2';
+UPDATE request SET status = 'dispatched', dispatched_at = now() WHERE request_id = 'f3000000-0000-7000-8000-0000000000a1';
+UPDATE request SET status = 'in_flight', attempt_count = 1, first_attempt_at = now() WHERE request_id = 'f3000000-0000-7000-8000-0000000000a1';
+UPDATE request SET status = 'cancelled', cancel_reason = 'dibatalkan_client', cancelled_by = 'client', completed_at = now(), webhook_status = 'tidak_dikirim' WHERE request_id = 'f3000000-0000-7000-8000-0000000000a2';
 SELECT t.gagal_commit($$UPDATE blend SET status = 'cancelled', cancel_reason = 'dibatalkan_client', cancelled_by = 'client', completed_at = now(), ringkasan_komponen = '[]', webhook_status = 'menunggu'$$,
   '23000', 'DQ-61 c / BL-06: cancelled blend with a child that already has an attempt is refused');
 ROLLBACK;
@@ -189,7 +202,8 @@ SELECT t.gagal_commit($$UPDATE blend SET status = 'done', completed_at = now(), 
 ROLLBACK;
 BEGIN;
 SELECT t.f3_siapkan();
-UPDATE request SET status = 'in_flight', attempt_count = 1, dispatched_at = now(), first_attempt_at = now() WHERE request_id = 'f3000000-0000-7000-8000-0000000000a1';
+UPDATE request SET status = 'dispatched', dispatched_at = now() WHERE request_id = 'f3000000-0000-7000-8000-0000000000a1';
+UPDATE request SET status = 'in_flight', attempt_count = 1, first_attempt_at = now() WHERE request_id = 'f3000000-0000-7000-8000-0000000000a1';
 SELECT t.gagal_commit($$UPDATE blend SET status = 'expired', completed_at = now(), ringkasan_komponen = '[]', webhook_status = 'menunggu'$$,
   '23000', 'DQ-61 d: expired blend with attempts is refused');
 ROLLBACK;
@@ -231,7 +245,8 @@ SELECT t.f3_siapkan(false);
 UPDATE endpoint_blend SET status = 'aktif' WHERE endpoint_blend_id = 'e3000000-0000-7000-8000-000000000001';
 SELECT t.gagal($$UPDATE provider SET butuh_dasar_hukum_blend = true WHERE provider_id = '20000000-0000-7000-8000-000000000001'$$, '23514',
   'G-4 / GB-02 point 2: the marker cannot go false -> true while an active blend uses the provider');
-SELECT t.jalan($$UPDATE provider SET butuh_dasar_hukum_blend = true WHERE provider_id = '20000000-0000-7000-8000-000000000002'$$,
+INSERT INTO provider (provider_id, nama, data_balikan_aktif) VALUES ('20000000-0000-7000-8000-000000000003', 'prov-tak-terpakai', false);
+SELECT t.jalan($$UPDATE provider SET butuh_dasar_hukum_blend = true WHERE provider_id = '20000000-0000-7000-8000-000000000003'$$,
   'G-4 does not touch a provider that no active blend uses');
 UPDATE endpoint_blend SET status = 'nonaktif' WHERE endpoint_blend_id = 'e3000000-0000-7000-8000-000000000001';
 SELECT t.jalan($$UPDATE provider SET butuh_dasar_hukum_blend = true WHERE provider_id = '20000000-0000-7000-8000-000000000001'$$, 'G-4: after deactivation the marker may be set');
@@ -288,6 +303,8 @@ SELECT t.gagal($$INSERT INTO audit_gerbang_blend (jenis, nilai_flag, dasar_hukum
   'DQ-63 i: dibuka without dasar_hukum_ref is refused');
 SELECT t.gagal($$INSERT INTO audit_gerbang_blend (jenis, nilai_flag, dasar_hukum_ref, instance) VALUES ('gerbang_blend_dibuka', 'false', 'DOC-X', 'i9')$$, '23514',
   'DQ-63 i: dibuka needs nilai_flag = true');
+-- BEFORE ROW triggers fire ahead of CHECKs: reopen the gate so that the pair changes and the CHECKs below are the ones that refuse
+SELECT fn_catat_gerbang_blend('true', 'DOC-UJI-3', 'i1');
 SELECT t.gagal($$INSERT INTO audit_gerbang_blend (jenis, nilai_flag, instance) VALUES ('gerbang_blend_ditutup', 'false', 'i9')$$, '23514', 'DQ-63 i: ditutup needs sebab_tertutup');
 SELECT t.gagal($$INSERT INTO audit_gerbang_blend (jenis, nilai_flag, sebab_tertutup, instance) VALUES ('gerbang_blend_ditutup', 'true', 'flag_bukan_true', 'i9')$$, '23514',
   'sebab_tertutup matches the raw flag (true without reference = rujukan_kosong)');
@@ -300,15 +317,15 @@ BEGIN;
 SELECT t.f3_siapkan();
 CREATE TEMP TABLE b_uji AS SELECT * FROM blend WHERE blend_id = 'b3000000-0000-7000-8000-000000000001';
 -- an async done blend completed 2 days ago (polling window 1 day) and a sync one completed just now with a payload
-INSERT INTO blend SELECT (b).* FROM (SELECT jsonb_populate_record(NULL::blend, to_jsonb(u) || jsonb_build_object('blend_id', 'b3000000-0000-7000-8000-0000000000d1', 'status', 'done',
+SELECT t.blend_klon(to_jsonb(u) || jsonb_build_object('blend_id', 'b3000000-0000-7000-8000-0000000000d1', 'status', 'done',
   'requested_at', now() - interval '3 days', 'batas_waktu_at', now() - interval '2 days', 'completed_at', now() - interval '2 days', 'webhook_status', 'terkirim',
-  'output_payload', '{"dukcapil":{"x":1}}'::jsonb, 'ringkasan_komponen', '[]'::jsonb)) AS b FROM b_uji u) x;
-INSERT INTO blend SELECT (b).* FROM (SELECT jsonb_populate_record(NULL::blend, to_jsonb(u) || jsonb_build_object('blend_id', 'b3000000-0000-7000-8000-0000000000d2', 'status', 'done',
+  'output_payload', '{"dukcapil":{"x":1}}'::jsonb, 'ringkasan_komponen', '[]'::jsonb)) FROM b_uji u;
+SELECT t.blend_klon(to_jsonb(u) || jsonb_build_object('blend_id', 'b3000000-0000-7000-8000-0000000000d2', 'status', 'done',
   'requested_at', now() - interval '1 hour', 'batas_waktu_at', now() + interval '1 hour', 'completed_at', now() - interval '1 hour', 'webhook_status', 'terkirim',
-  'output_payload', '{"dukcapil":{"x":1}}'::jsonb, 'ringkasan_komponen', '[]'::jsonb)) AS b FROM b_uji u) x;
-INSERT INTO blend SELECT (b).* FROM (SELECT jsonb_populate_record(NULL::blend, to_jsonb(u) || jsonb_build_object('blend_id', 'b3000000-0000-7000-8000-0000000000d3', 'status', 'done', 'mode', 'sync',
+  'output_payload', '{"dukcapil":{"x":1}}'::jsonb, 'ringkasan_komponen', '[]'::jsonb)) FROM b_uji u;
+SELECT t.blend_klon(to_jsonb(u) || jsonb_build_object('blend_id', 'b3000000-0000-7000-8000-0000000000d3', 'status', 'done', 'mode', 'sync',
   'ttl_polling_detik', NULL, 'requested_at', now() - interval '1 minute', 'batas_waktu_at', now() + interval '1 hour', 'completed_at', now() - interval '1 minute',
-  'webhook_status', 'tidak_dikirim', 'output_payload', '{"a":1}'::jsonb, 'ringkasan_komponen', '[]'::jsonb)) AS b FROM b_uji u) x;
+  'webhook_status', 'tidak_dikirim', 'output_payload', '{"a":1}'::jsonb, 'ringkasan_komponen', '[]'::jsonb)) FROM b_uji u;
 SELECT t.ok(fn_purge_blend_payload() = 2, 'BP-01 / BP-02: the async blend past its window and the sync blend are purged, the async one inside its window is kept');
 SELECT t.ok((SELECT output_payload IS NULL AND payload_purged_at IS NOT NULL FROM blend WHERE blend_id = 'b3000000-0000-7000-8000-0000000000d1'), 'BP-01: payload NULL and payload_purged_at set');
 SELECT t.ok((SELECT output_payload IS NOT NULL FROM blend WHERE blend_id = 'b3000000-0000-7000-8000-0000000000d2'), 'BP-01: payload kept until completed_at + ttl_polling_detik (S-05)');

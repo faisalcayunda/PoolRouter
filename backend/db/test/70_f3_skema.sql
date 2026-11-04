@@ -64,5 +64,5 @@ SELECT t.ok((SELECT nilai FROM f3_enum WHERE tabel = 'blend' AND conname = 'blen
   'blend.reject_reason = the F0 set + gerbang_blend_tertutup only');
 SELECT t.ok(NOT EXISTS (SELECT 1 FROM f3_enum WHERE tabel = 'request' AND 'gerbang_blend_tertutup' = ANY (nilai)),
   'gerbang_blend_tertutup appears in no request constraint (F0 enum untouched)');
-SELECT t.ok(NOT ('gerbang_blend_tertutup' = ANY ((SELECT nilai FROM f3_enum WHERE tabel = 'blend' AND conname = 'blend_failure_reason_check'))),
+SELECT t.ok(NOT EXISTS (SELECT 1 FROM f3_enum WHERE tabel = 'blend' AND conname = 'blend_failure_reason_check' AND 'gerbang_blend_tertutup' = ANY (nilai)),
   'gerbang_blend_tertutup is not a failure_reason');

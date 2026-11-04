@@ -35,7 +35,8 @@ SELECT t.ok(NOT has_any_column_privilege('pr_job_balikan', 'blend', 'SELECT') AN
         AND NOT has_any_column_privilege('pr_job_arsip', 'blend', 'UPDATE'),
   'the F1 job roles keep no write access to the F3 tables');
 SELECT t.ok(NOT has_function_privilege('pr_worker', 'fn_catat_gerbang_blend(text, text, text)', 'EXECUTE') AND NOT has_function_privilege('pr_admin_api', 'fn_purge_blend_payload(integer)', 'EXECUTE')
-        AND NOT has_function_privilege('PUBLIC', 'fn_purge_blend_payload(integer)', 'EXECUTE') AND NOT has_function_privilege('PUBLIC', 'fn_catat_gerbang_blend(text, text, text)', 'EXECUTE'),
+        AND NOT EXISTS (SELECT 1 FROM pg_proc p, aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) a
+                        WHERE p.proname IN ('fn_purge_blend_payload', 'fn_catat_gerbang_blend') AND a.grantee = 0 AND a.privilege_type = 'EXECUTE'),
   'F3 functions are executable only by the roles that need them (not PUBLIC)');
 SELECT t.ok(has_function_privilege('pr_controller', 'fn_purge_blend_payload(integer)', 'EXECUTE') AND has_function_privilege('pr_api', 'fn_catat_gerbang_blend(text, text, text)', 'EXECUTE'),
   'the purge runs as pr_controller and the gate trail is written by the webserver process');
@@ -58,7 +59,7 @@ SELECT t.gagal($$UPDATE request SET status = 'cancelled'$$, '42501', 'pr_blend: 
 SELECT t.gagal('DELETE FROM blend', '42501', 'pr_blend: no DELETE on blend');
 SELECT t.gagal($$UPDATE blend SET client_id = client_id$$, '42501', 'pr_blend: cannot touch identity columns of blend');
 SELECT t.jalan($$UPDATE blend SET output_payload = NULL WHERE false$$, 'pr_blend: writes the blend result columns');
-SELECT t.jalan($$INSERT INTO blend_status_history (blend_id, seq, status_dari, status_ke, aktor) SELECT blend_id, 2, 'berjalan', 'berjalan', 'controller' WHERE false$$, 'pr_blend: writes blend_status_history');
+SELECT t.jalan($$INSERT INTO blend_status_history (blend_id, seq, status_dari, status_ke, aktor) SELECT blend_id, 2, 'berjalan', 'berjalan', 'controller' FROM blend WHERE false$$, 'pr_blend: writes blend_status_history');
 ROLLBACK;
 
 BEGIN;

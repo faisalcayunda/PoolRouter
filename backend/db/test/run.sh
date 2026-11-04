@@ -130,7 +130,7 @@ apply_migrations poolrouter_rb '20261105*'
   || { echo "FAIL: exactly one migrasi entry per provider in provider_penanda_audit" >&2; exit 1; }
 echo "initial marker values and migrasi entries (one per provider, no affected blends): ok"
 # F3 data: the F3 rollback refuses (Klaus + owner approval), and the schema stays in place
-psql_su -d poolrouter_rb -c "INSERT INTO audit_gerbang_blend (jenis, nilai_flag, sebab_tertutup, instance) VALUES ('gerbang_blend_ditutup', NULL, 'flag_bukan_true', 'rb')"
+psql_su -d poolrouter_rb -c "INSERT INTO audit_gerbang_blend (jenis, nilai_flag, dasar_hukum_ref, instance) VALUES ('gerbang_blend_dibuka', 'true', 'DOC-RB', 'rb')"
 if { echo "SET ROLE poolrouter_owner;"; cat "$rb_dir"/20261105000001_*.down.sql; } | psql_su -d poolrouter_rb -1 2>/dev/null; then
   echo "FAIL: F3 rollback ran although F3 data exists" >&2; exit 1; fi
 echo "F3 rollback refuses while F3 data exists: ok"
