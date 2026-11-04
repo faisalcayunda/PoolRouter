@@ -142,7 +142,7 @@ fmt: check-label $(CHECK_DISK)
 
 clean: check-label
 	$(RUN) cargo clean
-	rm -rf -- .cache/cargo/registry/cache
+	$(RUN) rm -rf -- .cache/cargo/registry/cache
 
 # OpenAPI is generated from code (ADR-0004 section 4.1, utoipa code-first).
 openapi: check-label $(CHECK_DISK)
