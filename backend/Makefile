@@ -46,6 +46,9 @@ SHARED_TARGET_DIR ?= /var/tmp/shaal-build/poolrouter-target
 SHARED_CARGO_HOME ?= /data/workspace/shaal-build/cargo-home
 # Batas ukuran target bersama (MB): di atasnya check-disk menjalankan clean-shared di bawah kunci.
 SHARED_TARGET_LIMIT_MB ?= 2560
+# Batas ukuran cargo-home + rustup bersama di /data (MB, SHAA-394). Dilewati => check-disk gagal (exit non-nol),
+# tidak menghapus apa pun; bersihkan dengan `make clean-cache-shared` (eksplisit, di bawah kunci).
+SHARED_CARGO_HOME_LIMIT_MB ?= 2560
 # Sisa bebas minimum di / untuk sistem (MB), di luar ruang tumbuh target sampai batasnya.
 ROOT_MIN_FREE_MB ?= 2048
 
@@ -85,7 +88,7 @@ WORK_DIR := $(if $(filter podman docker,$(RUNNER)),/work,$(CURDIR))
 # Repo root on the execution side (/repo is the read-only mount in the podman container).
 REPO_DIR := $(if $(filter podman docker,$(RUNNER)),/repo,$(CURDIR)/..)
 
-.PHONY: help check-label check-disk clean-shared setup test test-rust db-test uji-lua uji-redis uji-redis-cargo lua-rakit lua-rakit-check lint fmt clean openapi openapi-check
+.PHONY: help check-label check-disk clean-shared clean-cache-shared setup test test-rust db-test uji-lua uji-redis uji-redis-cargo lua-rakit lua-rakit-check lint fmt clean openapi openapi-check
 
 # Podman toolchain containers must carry the owning issue label, so untracked containers cannot appear (SHAA-222).
 # Docker lane: cek ruang kosong sebelum target apa pun yang memakai container (SHAA-373).
@@ -93,7 +96,8 @@ CHECK_DISK := $(if $(filter docker,$(RUNNER)),check-disk,)
 check-disk:
 ifeq ($(RUNNER),docker)
 	@mkdir -p "$(SHARED_TARGET_DIR)" "$(SHARED_CARGO_HOME)/cargo" "$(SHARED_CARGO_HOME)/rustup"
-	@SHARED_TARGET_DIR="$(SHARED_TARGET_DIR)" SHARED_TARGET_LIMIT_MB="$(SHARED_TARGET_LIMIT_MB)" ROOT_MIN_FREE_MB="$(ROOT_MIN_FREE_MB)" \
+	@SHARED_CARGO_HOME="$(SHARED_CARGO_HOME)" SHARED_CARGO_HOME_LIMIT_MB="$(SHARED_CARGO_HOME_LIMIT_MB)" \
+	  SHARED_TARGET_DIR="$(SHARED_TARGET_DIR)" SHARED_TARGET_LIMIT_MB="$(SHARED_TARGET_LIMIT_MB)" ROOT_MIN_FREE_MB="$(ROOT_MIN_FREE_MB)" \
 	  CLEAN_SHARED_CMD='$(MAKE) --no-print-directory clean-shared' ../scripts/docker-lane.sh check
 else
 	@true
@@ -109,11 +113,13 @@ endif
 help:
 	@echo "targets: setup test test-rust db-test uji-lua lua-rakit lua-rakit-check lint fmt clean openapi openapi-check build-lock-status build-lock-clean (RUNNER=podman|native)"
 
-# Fetch the locked dependency set and install the pinned cargo-deny.
+# Fetch the locked dependency set and install the pinned cargo-deny. Toolchain copy, fetch dan install cargo-deny
+# menulis ke cache bersama, jadi jalan di bawah kunci shaal-build-heavy (SHAA-394); checkout kedua hanya
+# menemukan toolchain dan registry sudah ada dan tidak mengunduh ulang.
 setup: check-label $(CHECK_DISK)
 	$(if $(filter docker,$(RUNNER)),,mkdir -p .cache/cargo .cache/rustup)
-	$(RUN) sh -c "[ -d $(CT_RUSTUP_HOME)/toolchains ] || cp -a /usr/local/rustup/. $(CT_RUSTUP_HOME)/; cargo fetch --locked"
-	$(RUN) sh -c 'set -eu; \
+	$(HEAVY) sh -c "[ -d $(CT_RUSTUP_HOME)/toolchains ] || cp -a /usr/local/rustup/. $(CT_RUSTUP_HOME)/; cargo fetch --locked"
+	$(HEAVY) sh -c 'set -eu; \
 	if cargo deny --version 2>/dev/null | grep -q "$(CARGO_DENY_VERSION)"; then exit 0; fi; \
 	arch=$$(uname -m); \
 	case "$$arch" in \
@@ -195,6 +201,13 @@ clean: check-label
 clean-shared: check-label
 	@mkdir -p "$(SHARED_TARGET_DIR)" "$(SHARED_CARGO_HOME)/cargo" "$(SHARED_CARGO_HOME)/rustup"
 	$(HEAVY) cargo clean
+
+# Pembersihan cache bersama (registry, git, dan opsional toolchain), eksplisit dan di bawah kunci heavy (SHAA-394).
+# Tanpa argumen: hanya cache registry/git yang bisa diunduh ulang (setup berikutnya mengisi lagi). Toolchain rustup
+# dan cargo-deny hanya dihapus dengan CLEAN_TOOLCHAIN=1. Path tetap di dalam mount bersama, tanpa glob ke luar.
+clean-cache-shared: check-label
+	@mkdir -p "$(SHARED_TARGET_DIR)" "$(SHARED_CARGO_HOME)/cargo" "$(SHARED_CARGO_HOME)/rustup"
+	$(HEAVY) sh -c 'rm -rf -- $(CT_CARGO_HOME)/registry $(CT_CARGO_HOME)/git $(if $(CLEAN_TOOLCHAIN),$(CT_CARGO_HOME)/bin $(CT_RUSTUP_HOME)/toolchains $(CT_RUSTUP_HOME)/settings.toml $(CT_RUSTUP_HOME)/update-hashes)'
 else
 clean: check-label
 	$(RUN) cargo clean
@@ -202,6 +215,9 @@ clean: check-label
 
 clean-shared:
 	@echo "clean-shared hanya untuk RUNNER=docker" >&2; exit 2
+
+clean-cache-shared:
+	@echo "clean-cache-shared hanya untuk RUNNER=docker" >&2; exit 2
 endif
 
 # OpenAPI is generated from code (ADR-0004 section 4.1, utoipa code-first).
