@@ -2,5 +2,6 @@
 //! Contracts live in `crate::api`; this module implements them.
 
 pub mod gcra;
+pub mod jwt;
 pub mod layers;
 pub mod probe;

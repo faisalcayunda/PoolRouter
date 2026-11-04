@@ -2560,9 +2560,11 @@ name = "poolrouter-webserver"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "aws-lc-rs",
  "axum",
  "axum-extra",
  "chrono",
+ "jsonwebtoken",
  "metrics",
  "metrics-exporter-prometheus",
  "poolrouter-core",
