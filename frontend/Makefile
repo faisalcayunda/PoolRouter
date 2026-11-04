@@ -115,8 +115,8 @@ gen-api: check-label
 
 gen-api-check: check-label
 	@test -f ../backend/openapi/admin-api.yaml || { echo "gen-api-check: ../backend/openapi/admin-api.yaml does not exist yet; skipped" >&2; exit 0; }
-	$(MAKE) gen-api
-	git diff --exit-code -- src/api/schema.gen.ts
+	$(PNPM) exec openapi-typescript ../backend/openapi/admin-api.yaml -o .cache/schema.gen.check.ts
+	diff -u src/api/schema.gen.ts .cache/schema.gen.check.ts || { echo "gen-api-check: src/api/schema.gen.ts is stale; run 'make -C frontend gen-api' and commit" >&2; exit 1; }
 
 build: check-label $(CHECK_DISK)
 	$(HEAVY) pnpm exec vite build

@@ -265,7 +265,7 @@ class Uji:
 
     def token(self, *, pool="p1", run="run-1", request_id="req-1", nomor=1,
               mode="bergulir", sync=False, kuota=100, no_ember=1000,
-              maks=8, ttl=80_000_000, batas_retry=0, share="0.2",
+              maks=8, ttl=80_000_000, rasio="0.1", retry_min=20, share="0.2",
               jendela=((200_000, 5),), periode=0):
         keys = ["pr:siap", self.k_attempts(pool, periode), self.k_ember(pool),
                 self.k_slot(pool), self.k_retry(pool)]
@@ -274,7 +274,7 @@ class Uji:
             keys.append(self.k_rl(f"w{i}", pool, sync=True))
         argv = [run, request_id, str(nomor), mode, "1" if sync else "0",
                 str(kuota), str(JUMLAH_EMBER), str(no_ember), str(maks),
-                str(ttl), str(batas_retry), share, str(len(jendela))]
+                str(ttl), str(rasio), str(retry_min), share, str(len(jendela))]
         for t, burst in jendela:
             argv += [str(t), str(burst)]
         return self.panggil("token", keys, argv)
@@ -448,7 +448,11 @@ class Uji:
             ("token", ["nomor", 0], "nomor_percobaan_tidak_sah"),
             ("token", ["maks", 0], "maks_konkurensi_tidak_sah"),
             ("token", ["ttl", 0], "ttl_slot_tidak_sah"),
-            ("token", ["batas_retry", -1], "batas_retry_tidak_sah"),
+            ("token", ["rasio", "1.5"], "rasio_retry_tidak_sah"),
+            ("token", ["rasio", "-0.1"], "rasio_retry_tidak_sah"),
+            ("token", ["rasio", "abc"], "rasio_retry_tidak_sah"),
+            ("token", ["retry_min", -1], "retry_min_tidak_sah"),
+            ("token", ["retry_min", "2.5"], "retry_min_tidak_sah"),
             ("token", ["share", "1.5"], "porsi_sync_tidak_sah"),
             ("token", ["jendela", ((200_000, 0),)], "jendela_tidak_sah"),
             ("tambah", ["member", ""], "member_tidak_sah"),
@@ -602,15 +606,70 @@ class Uji:
         self.periksa("share 0: porsi_sync_habis", h[0] == "porsi_sync_habis", str(h))
 
     def uji_retry_budget(self) -> None:
-        print("anggaran retry per menit hanya untuk nomor percobaan > 1 (§5a.3)")
+        print("anggaran retry: jendela 1 jam, retry_jendela < max(retry_min, rasio × percobaan) (§5a.3)")
+        luas = dict(kuota=1_000_000, maks=1000, jendela=((1, 1_000_000),))
+
+        def retry(i, nomor=2, **kw):
+            return self.token(request_id=f"rt-{i}", nomor=nomor, **luas, **kw)
+
+        # retry_min dominan: rasio 0, tiga retry masuk, keempat ditolak.
         self.reset()
-        self.token(nomor=1, batas_retry=1, kuota=100)
-        self.periksa("retry pertama (nomor 2) lolos",
-                     self.token(request_id="req-1", nomor=2, batas_retry=1, kuota=100)[0] == "ok")
-        h = self.token(request_id="req-1", nomor=3, batas_retry=1, kuota=100)
-        self.periksa("retry kedua ditolak", h[0] == "retry_budget_habis", str(h))
-        self.periksa("panggilan pertama tidak memakai anggaran",
-                     self.token(request_id="req-2", nomor=1, batas_retry=1, kuota=100)[0] == "ok")
+        hasil = [retry(i, rasio="0", retry_min=3)[0] for i in range(5)]
+        self.periksa("retry_min 3, rasio 0: tiga lolos lalu retry_budget_habis",
+                     hasil == ["ok", "ok", "ok", "retry_budget_habis", "retry_budget_habis"],
+                     str(hasil))
+        self.periksa("percobaan pertama tidak memakai anggaran",
+                     self.token(request_id="baru-1", nomor=1, rasio="0", retry_min=3, **luas)[0] == "ok")
+
+        # Tanpa nilai "tanpa anggaran": 0 dan 0 berarti tidak ada retry sama sekali.
+        self.reset()
+        self.periksa("rasio 0 dan retry_min 0: retry ditolak",
+                     retry(0, rasio="0", retry_min=0)[0] == "retry_budget_habis")
+        self.periksa("... tetapi percobaan pertama lolos",
+                     self.token(request_id="p-1", nomor=1, rasio="0", retry_min=0, **luas)[0] == "ok")
+
+        # Rasio dominan: 10 percobaan pertama, rasio 0,5 -> retry mengisi sampai
+        # retry_jendela == percobaan_jendela / 2 (retry ikut dihitung sebagai percobaan).
+        self.reset()
+        for i in range(10):
+            self.token(request_id=f"a-{i}", nomor=1, rasio="0.5", retry_min=0, **luas)
+        hasil = [retry(i, rasio="0.5", retry_min=0)[0] for i in range(14)]
+        self.periksa("rasio 0,5 dari 10 percobaan: tepat 10 retry lolos, sisanya ditolak",
+                     hasil == ["ok"] * 10 + ["retry_budget_habis"] * 4, str(hasil))
+
+        # Penolakan murni: tidak menulis hash anggaran.
+        sebelum = self.r.cmd("HGETALL", self.k_retry())
+        retry(99, rasio="0.5", retry_min=0)
+        self.periksa("retry_budget_habis tidak menulis anggaran",
+                     self.r.cmd("HGETALL", self.k_retry()) == sebelum)
+
+        # Jendela bergulir 60 menit: bucket yang lebih tua dari 60 menit tidak
+        # dihitung dan dipangkas saat pemberian token berikutnya.
+        self.reset()
+        menit = self.mikrodetik() // 60_000_000
+        self.r.cmd("HSET", self.k_retry(), f"p{menit - 70}", "999", f"r{menit - 70}", "999",
+                   f"p{menit - 59}", "1", f"r{menit - 59}", "1")
+        self.periksa("bucket menit ke-71 tidak dihitung; ke-60 dihitung (retry_min 2 -> 1 slot sisa)",
+                     retry(0, rasio="0", retry_min=2)[0] == "ok")
+        self.periksa("retry kedua: r(ke-60)=1 + 1 = 2 >= 2 -> ditolak",
+                     retry(1, rasio="0", retry_min=2)[0] == "retry_budget_habis")
+        kunci = self.r.cmd("HKEYS", self.k_retry())
+        self.periksa("bucket lama dipangkas",
+                     f"p{menit - 70}" not in kunci and f"r{menit - 70}" not in kunci, str(kunci))
+        self.periksa("hash anggaran punya TTL",
+                     int(self.r.cmd("PTTL", self.k_retry())) > 0)
+
+        # Retry ikut menghitung sebagai percobaan, percobaan pertama tidak ikut sebagai retry.
+        self.reset()
+        self.token(request_id="s-0", nomor=1, **luas)
+        self.token(request_id="s-1", nomor=2, **luas)
+        menit = self.mikrodetik() // 60_000_000
+        isi = self.r.cmd("HGETALL", self.k_retry())
+        peta = dict(zip(isi[0::2], isi[1::2]))
+        total_p = sum(int(v) for k, v in peta.items() if k.startswith("p"))
+        total_r = sum(int(v) for k, v in peta.items() if k.startswith("r"))
+        self.periksa("dua token: percobaan_jendela 2, retry_jendela 1",
+                     (total_p, total_r) == (2, 1), str(peta))
 
     def uji_retry_after(self) -> None:
         print("Retry-After bergulir dari ember tertua di jendela (D2.10)")

@@ -21,7 +21,7 @@
 --   2 pr:attempts:{<pool>}:<periode>     counter percobaan periode ini
 --   3 pr:ember:{<pool>}                  hash ember 10 menit (mode bergulir)
 --   4 pr:slot:{<pool>}                   semaphore konkurensi, skor = kedaluwarsa
---   5 pr:retry:{<pool>}                  anggaran retry per menit
+--   5 pr:retry:{<pool>}                  hash anggaran retry: p<menit>, r<menit>
 --   6, 8, …  pr:rl:{<pool>}:<jenis>      TAT GCRA jendela ke-1..N
 --   7, 9, …  pr:rl:{<pool>}:<jenis>:sync porsi sync jendela yang sama
 --
@@ -36,10 +36,11 @@
 --   8  no_ember            `floor(requested_at_unix / 600)`
 --   9  maks_konkurensi     batas slot aktif bersamaan (§5a.1 butir 5)
 --   10 ttl_slot_mikro      `timeout_total_upstream + 60 s`, dalam mikrodetik
---   11 batas_retry         anggaran retry per menit; 0 = tanpa anggaran
---   12 porsi_sync          pecahan kapasitas untuk sync, `0`..`1`
---   13 jumlah_jendela      N, banyaknya pasangan jendela di KEYS/ARGV
---   14… (t_mikro, burst)   per jendela: jarak antar token dan kapasitas bucket
+--   11 rasio_retry         `retry_rasio` pool, `0`..`1` (ADR-0001 §5a.3; default 0,10)
+--   12 retry_min           `retry_min_per_jam` pool, bilangan bulat >= 0 (default 20)
+--   13 porsi_sync          pecahan kapasitas untuk sync, `0`..`1`
+--   14 jumlah_jendela      N, banyaknya pasangan jendela di KEYS/ARGV
+--   15… (t_mikro, burst)   per jendela: jarak antar token dan kapasitas bucket
 --
 -- Kembalian (indeks 1 = kode):
 --   {'belum_siap'}
@@ -308,17 +309,24 @@ if ttl == nil or ttl < 1 then
   return { 'ttl_slot_tidak_sah' }
 end
 
-local batas_retry = bersama.bulat(ARGV[11])
-if batas_retry == nil or batas_retry < 0 then
-  return { 'batas_retry_tidak_sah' }
+-- Anggaran retry (ADR-0001 §5a.3): `rasio_retry` 0..1 dan `retry_min` bulat >= 0.
+-- Tidak ada nilai "tanpa anggaran": `0` dan `0` berarti tidak ada retry sama
+-- sekali, karena syaratnya `retry_jendela < max(retry_min, rasio × percobaan)`.
+local rasio_retry = tonumber(ARGV[11])
+if rasio_retry == nil or rasio_retry ~= rasio_retry or rasio_retry < 0 or rasio_retry > 1 then
+  return { 'rasio_retry_tidak_sah' }
+end
+local retry_min = bersama.bulat(ARGV[12])
+if retry_min == nil or retry_min < 0 then
+  return { 'retry_min_tidak_sah' }
 end
 
-local porsi = tonumber(ARGV[12])
+local porsi = tonumber(ARGV[13])
 if porsi == nil or porsi < 0 or porsi > 1 then
   return { 'porsi_sync_tidak_sah' }
 end
 
-local n = bersama.bulat(ARGV[13])
+local n = bersama.bulat(ARGV[14])
 if n == nil or n < 1 then
   return { 'jumlah_jendela_tidak_sah' }
 end
@@ -331,8 +339,8 @@ end
 
 local jendela = {}
 for i = 1, n do
-  local t = bersama.bulat(ARGV[13 + 2 * i - 1])
-  local burst = bersama.bulat(ARGV[13 + 2 * i])
+  local t = bersama.bulat(ARGV[14 + 2 * i - 1])
+  local burst = bersama.bulat(ARGV[14 + 2 * i])
   if t == nil or t < 1 or burst == nil or burst < 1 then
     return { 'jendela_tidak_sah' }
   end
@@ -361,10 +369,33 @@ if slot_aktif >= maks then
   return { 'konkurensi_penuh', terpakai, slot_aktif, kedaluwarsa, 0, 0, 0 }
 end
 
--- Langkah 6: anggaran retry per menit. Panggilan pertama tidak memakainya.
-if nomor > 1 and batas_retry > 0 then
-  local dipakai = tonumber(redis.call('GET', KEYS[5]) or '0')
-  if dipakai >= batas_retry then
+-- Langkah 6: anggaran retry, jendela bergulir 1 jam dari 60 bucket menit
+-- (ADR-0001 §5a.3). Percobaan ulang (`nomor > 1`) hanya diberi token bila
+-- `retry_jendela < max(retry_min, rasio_retry × percobaan_jendela)`.
+-- `percobaan_jendela` menghitung SEMUA token yang diberikan dalam jendela
+-- (percobaan pertama dan retry), `retry_jendela` hanya retry. Pembacaan murni;
+-- penulisannya di langkah 8, bersama pemberian token.
+local menit = math.floor(now / 60000000)
+local MENIT_JENDELA_RETRY = 60
+if nomor > 1 then
+  local batas_bawah = menit - (MENIT_JENDELA_RETRY - 1)
+  local semua = redis.call('HGETALL', KEYS[5])
+  local percobaan_jendela = 0
+  local retry_jendela = 0
+  for i = 1, #semua, 2 do
+    local jenis, m = string.match(semua[i], '^([pr])(%d+)$')
+    m = tonumber(m)
+    if jenis ~= nil and m >= batas_bawah and m <= menit then
+      local nilai = tonumber(semua[i + 1])
+      if jenis == 'p' then
+        percobaan_jendela = percobaan_jendela + nilai
+      else
+        retry_jendela = retry_jendela + nilai
+      end
+    end
+  end
+  local anggaran = math.max(retry_min, rasio_retry * percobaan_jendela)
+  if retry_jendela >= anggaran then
     return { 'retry_budget_habis', terpakai, slot_aktif, kedaluwarsa, 0, 0, 0 }
   end
 end
@@ -466,13 +497,22 @@ if ditambah == 0 then
   return { 'slot_ganda', terpakai, slot_aktif, kedaluwarsa, 0, isi, isi_porsi }
 end
 
--- Anggaran retry: dihitung per menit dan hanya untuk retry, supaya retry
--- tidak bisa memakai jatah percobaan baru (§5a.3).
-if nomor > 1 and batas_retry > 0 then
-  local sisa = redis.call('INCR', KEYS[5])
-  if sisa == 1 or redis.call('PTTL', KEYS[5]) < 0 then
-    redis.call('PEXPIRE', KEYS[5], 60000)
+-- Anggaran retry: catat percobaan (`p<menit>`) dan, bila retry, `r<menit>`.
+-- Bucket yang lebih tua dari jendela dipangkas di sini, satu-satunya tempat
+-- hash ini ditulis, supaya hash tidak tumbuh tanpa batas. TTL 2 jam menjaga
+-- hash dari pool yang berhenti dipakai.
+redis.call('HINCRBY', KEYS[5], 'p' .. menit, 1)
+if nomor > 1 then
+  redis.call('HINCRBY', KEYS[5], 'r' .. menit, 1)
+end
+local batas_pangkas = menit - (MENIT_JENDELA_RETRY - 1)
+local lama = redis.call('HKEYS', KEYS[5])
+for i = 1, #lama do
+  local m = tonumber(string.match(lama[i], '^[pr](%d+)$'))
+  if m == nil or m < batas_pangkas then
+    redis.call('HDEL', KEYS[5], lama[i])
   end
 end
+redis.call('PEXPIRE', KEYS[5], 7200000)
 
 return { 'ok', terpakai, slot_aktif + 1, kedaluwarsa, 0, isi, isi_porsi }
