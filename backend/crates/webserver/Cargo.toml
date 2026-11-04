@@ -36,3 +36,7 @@ utoipa = { workspace = true }
 utoipa-axum = { workspace = true }
 metrics-exporter-prometheus = { workspace = true }
 tracing = { workspace = true }
+metrics = { workspace = true }
+thiserror = { workspace = true }
+aws-lc-rs = { workspace = true }
+jsonwebtoken = { workspace = true }

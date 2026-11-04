@@ -8,6 +8,7 @@ on:
     branches: [main]
     paths:
       - "frontend/**"
+      - "backend/openapi/admin-api.yaml"
       - ".github/workflows/frontend.yml"
   workflow_dispatch:
 
@@ -45,6 +46,12 @@ jobs:
       - name: Gate frontend
         if: steps.guard.outputs.skip != 'true'
         run: make -C frontend setup test lint
+
+      # Drift tipe (SHAA-281): generate ulang dari backend/openapi/admin-api.yaml lalu diff; gagal bila
+      # schema.gen.ts tertinggal. `tsc --noEmit` sudah ada di `make lint` pada langkah di atas.
+      - name: gen-api-check (drift tipe)
+        if: steps.guard.outputs.skip != 'true'
+        run: make -C frontend gen-api-check
 
       - name: "pnpm audit --prod (ambang: high)"
         if: steps.guard.outputs.skip != 'true'
