@@ -716,13 +716,13 @@ const KP01: &[BarisKp01] = &[
     BarisKp01 {
         nama: "kuota_harian",
         minimum: Some(1.0),
-        maximum: Some(1_000_000.0),
+        maximum: None,
         default: None,
     },
     BarisKp01 {
         nama: "rate_limit_per_jam",
         minimum: Some(1.0),
-        maximum: Some(10_000.0),
+        maximum: None,
         default: None,
     },
     BarisKp01 {
@@ -989,14 +989,14 @@ fn validate_pool_valid_lolos() {
 fn validate_pool_batas_bawah_atas_dan_di_luar() {
     // (field name, setter to min, setter to max); the body is otherwise valid so
     // the cross-field rules also hold at each boundary.
+    // `kuota_harian` and `rate_limit_per_jam` keep the pre-SHAA-280 range:
+    // `minimum = 1` only, no maximum (Shu, 2026-11-04).
     let mut pool = pool_valid();
     pool.kuota_harian = 1;
     assert_eq!(pool.validate(), Ok(()), "kuota_harian = minimum");
-    pool.kuota_harian = 1_000_000;
-    assert_eq!(pool.validate(), Ok(()), "kuota_harian = maximum");
-    pool.kuota_harian = 0;
-    assert_eq!(field_errors(&pool), ["kuota_harian"]);
     pool.kuota_harian = 1_000_001;
+    assert_eq!(pool.validate(), Ok(()), "kuota_harian tanpa maximum");
+    pool.kuota_harian = 0;
     assert_eq!(field_errors(&pool), ["kuota_harian"]);
 
     let mut pool = pool_valid();
@@ -1004,25 +1004,17 @@ fn validate_pool_batas_bawah_atas_dan_di_luar() {
     // rate_limit_per_jam = 1 caps the delays at 3_600_000 ms, which the jeda
     // fields stay under.
     assert_eq!(pool.validate(), Ok(()), "rate_limit_per_jam = minimum");
-    pool.rate_limit_per_jam = 10_000;
-    // 3_600_000 / 10_000 = 360 ms, so the delays must come down with it.
-    pool.jeda_min = 300;
-    pool.jeda_maks = 360;
-    assert_eq!(pool.validate(), Ok(()), "rate_limit_per_jam = maximum");
+    pool.rate_limit_per_jam = 36_000;
+    // 3_600_000 / 36_000 = 100 ms, so the delays must come down with it.
+    pool.jeda_min = 50;
+    pool.jeda_maks = 100;
+    assert_eq!(pool.validate(), Ok(()), "rate_limit_per_jam tanpa maximum");
     pool.jeda_maks = 800;
     assert_eq!(field_errors(&pool), ["jeda_maks"], "ceiling ikut turun");
-    pool.jeda_maks = 360;
+    pool.jeda_maks = 100;
     pool.rate_limit_per_jam = 0;
     // Non-positive rate: only the range error, no spurious delay error.
     assert_eq!(field_errors(&pool), ["rate_limit_per_jam"]);
-    pool.rate_limit_per_jam = 10_001;
-    // The delays now exceed 3_600_000 / 10_001 = 359 ms, so they are reported
-    // too: the rate is not merely out of range, it also tightens them.
-    assert_eq!(
-        field_errors(&pool),
-        ["rate_limit_per_jam", "jeda_maks"],
-        "rate out of range plus the tighter derived ceiling"
-    );
 
     let mut pool = pool_valid();
     pool.batas_percobaan = 1;
@@ -1134,9 +1126,8 @@ fn validate_pool_batas_jeda_mengikuti_rate_limit() {
     assert_eq!(field_errors(&pool), ["jeda_maks"]);
 
     // The case named in AC 3: 36_000 requests per hour leave exactly 100 ms
-    // each. `rate_limit_per_jam` above 10_000 is itself out of range, so that
-    // field is always reported for this input; what the test pins is the
-    // derived ceiling (100 ms) and which delay fields that ceiling rejects.
+    // each. `rate_limit_per_jam` has no maximum, so 36_000 is a valid input and
+    // the only thing under test is the 100 ms jeda ceiling it derives.
     let mut pool = pool_valid();
     pool.rate_limit_per_jam = 36_000;
     assert_eq!(
@@ -1146,37 +1137,27 @@ fn validate_pool_batas_jeda_mengikuti_rate_limit() {
     );
     pool.jeda_min = 100;
     pool.jeda_maks = 100;
-    assert_eq!(
-        field_errors(&pool),
-        ["rate_limit_per_jam"],
-        "jeda = 100 ms tepat di ceiling, hanya rate yang di luar rentang"
-    );
+    assert_eq!(pool.validate(), Ok(()), "jeda = 100 ms tepat di ceiling");
+    pool.jeda_min = 0;
+    pool.jeda_maks = 101;
+    assert_eq!(field_errors(&pool), ["jeda_maks"]);
     // `jeda_min` above the ceiling while `jeda_maks` sits below it is also
     // `jeda_maks < jeda_min`, so the ordering rule reports `jeda_maks` too.
     pool.jeda_min = 101;
-    assert_eq!(
-        field_errors(&pool),
-        ["rate_limit_per_jam", "jeda_maks", "jeda_min"]
-    );
-    pool.jeda_min = 0;
-    pool.jeda_maks = 101;
-    assert_eq!(field_errors(&pool), ["rate_limit_per_jam", "jeda_maks"]);
+    pool.jeda_maks = 100;
+    assert_eq!(field_errors(&pool), ["jeda_maks", "jeda_min"]);
     // Both above the ceiling: both reported, so the client fixes both at once.
     pool.jeda_min = 200;
     pool.jeda_maks = 800;
-    assert_eq!(
-        field_errors(&pool),
-        ["rate_limit_per_jam", "jeda_min", "jeda_maks"]
-    );
+    assert_eq!(field_errors(&pool), ["jeda_min", "jeda_maks"]);
 
-    // A rate limit above 10_000 is out of range, but the derived ceiling is
-    // still computed from the submitted value rather than skipped.
+    // One request per hour above that: the ceiling is still derived from the
+    // submitted value (3_600_000 / 36_001 = 99).
     pool.rate_limit_per_jam = 36_001;
     assert_eq!(pool.batas_jeda_dari_rate_limit(), Some(99));
-    assert_eq!(
-        field_errors(&pool),
-        ["rate_limit_per_jam", "jeda_min", "jeda_maks"]
-    );
+    pool.jeda_min = 0;
+    pool.jeda_maks = 100;
+    assert_eq!(field_errors(&pool), ["jeda_maks"]);
 }
 
 /// AC 3: cross-field rules. `jeda_maks` never below `jeda_min`, and

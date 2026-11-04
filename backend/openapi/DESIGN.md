@@ -159,8 +159,8 @@ Sumber umum: peran PA (hak ubah), audit konfigurasi di setiap tulis (siapa, kapa
 
 | Field | `minimum`–`maximum` | `default` |
 |---|---|---|
-| `kuota_harian` | 1–1.000.000 | — (wajib) |
-| `rate_limit_per_jam` | 1–10.000 | — (wajib) |
+| `kuota_harian` | ≥ 1, tanpa maksimum (seperti sebelum SHAA-280) | — (wajib) |
+| `rate_limit_per_jam` | ≥ 1, tanpa maksimum (seperti sebelum SHAA-280) | — (wajib) |
 | `porsi_sync` | 0–1 | — (wajib) |
 | `margin_kuota` | 0,001–0,200 | 0,01 |
 | `batas_percobaan` | 1–5 | 3 |

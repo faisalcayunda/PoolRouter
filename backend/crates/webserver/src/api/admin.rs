@@ -213,14 +213,16 @@ pub struct SecretNilai {
 #[serde(deny_unknown_fields)]
 pub struct UpstreamPoolConfig {
     pub provider_id: Uuid,
-    /// Daily upstream quota, 1..=1_000_000 (KP-01). Required: no default, so a
-    /// create must state the quota it wants.
-    #[schema(minimum = 1, maximum = 1_000_000, example = 750)]
+    /// Daily upstream quota, at least 1 with no upper bound (range kept as it
+    /// was before SHAA-280). Required: no default, so a create must state the
+    /// quota it wants.
+    #[schema(minimum = 1, example = 500)]
     pub kuota_harian: i64,
-    /// Upstream rate limit per hour, 1..=10_000 (KP-01). Required: no default.
-    /// Also caps `jeda_min`/`jeda_maks` at `floor(3_600_000 / rate_limit_per_jam)`
+    /// Upstream rate limit per hour, at least 1 with no upper bound (range kept
+    /// as it was before SHAA-280). Required: no default. Also caps
+    /// `jeda_min`/`jeda_maks` at `floor(3_600_000 / rate_limit_per_jam)`
     /// milliseconds.
-    #[schema(minimum = 1, maximum = 10_000, example = 120)]
+    #[schema(minimum = 1, example = 60)]
     pub rate_limit_per_jam: i64,
     /// Sync portion of the pool, 0.0..1.0 (KP-01: `porsi_sync_maks`). Required:
     /// no default.
@@ -325,14 +327,8 @@ impl UpstreamPoolConfig {
         let mut errors = Vec::new();
 
         // Single-field ranges (KP-01 + Sisipan H for the jeda triad).
-        rentang(&mut errors, "kuota_harian", self.kuota_harian, 1, 1_000_000);
-        rentang(
-            &mut errors,
-            "rate_limit_per_jam",
-            self.rate_limit_per_jam,
-            1,
-            10_000,
-        );
+        rentang_min(&mut errors, "kuota_harian", self.kuota_harian, 1);
+        rentang_min(&mut errors, "rate_limit_per_jam", self.rate_limit_per_jam, 1);
         rentang(&mut errors, "batas_percobaan", self.batas_percobaan, 1, 5);
         rentang(
             &mut errors,
