@@ -7,7 +7,7 @@
 
 ## Ringkasan
 
-Dokumen ini menjelaskan setiap alert F1 di `deploy/monitoring/prometheus/rules/poolrouter-f1.rules.yml`: arti, severity, pemilik, dan langkah pertama. Ambang tidak ditulis di aturan. Aturan membaca gauge `poolrouter_ambang_alert{nama}` yang diekspor PoolRouter, sehingga admin cukup mengubah angka di konfigurasi PoolRouter tanpa menyentuh aturan. Perubahan berlaku pada evaluasi berikutnya.
+Dokumen ini menjelaskan setiap alert F1 di `deploy/compose/monitoring/prometheus/rules/poolrouter-f1.rules.yml`: arti, severity, pemilik, dan langkah pertama. Ambang tidak ditulis di aturan. Aturan membaca gauge `poolrouter_ambang_alert{nama}` yang diekspor PoolRouter, sehingga admin cukup mengubah angka di konfigurasi PoolRouter tanpa menyentuh aturan. Perubahan berlaku pada evaluasi berikutnya.
 
 ## Severity
 
@@ -118,6 +118,6 @@ Setiap opsi wajib tetap mematuhi batas isi notifikasi: tanpa NIK, `request_id`, 
 
 ## Uji
 
-- `promtool check rules deploy/monitoring/prometheus/rules/poolrouter-f1.rules.yml`: SUCCESS, 13 aturan.
+- `promtool check rules deploy/compose/monitoring/prometheus/rules/poolrouter-f1.rules.yml`: SUCCESS, 13 aturan.
 - `promtool test rules deploy/monitoring/prometheus/tests/poolrouter-f1.test.yml`: SUCCESS, uji untuk kuota kritis, kuota di bawah ambang, ambang hilang, MFA, DLQ, dan Redis fail-closed.
 - Keduanya dijalankan di container `docker.io/prom/prometheus@sha256:63805ebb8d2b3920190daf1cb14a60871b16fd38bed42b857a3182bc621f4996` (v3.5.0), bukan instalasi native.
