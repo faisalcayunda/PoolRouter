@@ -196,12 +196,12 @@ make test-dry-run
 
 | Komponen | Sebelum Gate | Sesudah Gate | Catatan |
 |---|---|---|---|
-| Ruang kosong `/data` | 8,3G (58%) | 8,3G (58%) | Ambang minimum 1G terpenuhi |
-| Ruang kosong Docker root (`/var/lib/docker`) | 8,3G | 8,3G | Ambang minimum 3G terpenuhi |
+| Ruang kosong `/data` | 8,3G (58%) | 3,6G (82%) | Terukur via `df -h /data`; penurunan mencakup kompilasi target backend serta aktivitas konkuren lane lain di host |
+| Ruang kosong Docker root (`/var/lib/docker`) | 8,3G (58%) | 3,6G (82%) | Satu partisi (`/dev/vdb`) dengan `/data`; tetap di atas ambang minimum 3G |
 | `frontend/node_modules` | 0 | 396M | 479 paket terinstal |
 | Store pnpm (`frontend/.cache/pnpm-store`) | 0 | 22M | Store lokal per checkout (keputusan SHAA-394) |
 | Cache frontend total (`frontend/.cache`) | 0 | 23M | Termasuk pnpm-store dan corepack |
 | Image Node pinned (`node:24.22.2-bookworm-slim`) | 333M | 333M | Dipakai runner Docker frontend |
-| Image Playwright pinned (`mcr.microsoft.com/playwright`) | Belum di-pull | Belum di-pull | Hanya ditarik saat target `e2e` dipanggil |
+| Image Playwright pinned (`mcr.microsoft.com/playwright`) | Belum di-pull | Belum di-pull | Hanya ditarik saat target `e2e` dipanggil (ukuran manifest layer ~990MB terkompresi, estimasi uncompressed ~2,4GB) |
 
-Puncak pemakaian disk frontend sekitar 420M (node_modules dan cache lokal). Gate memeriksa ruang kosong sebelum target berat dijalankan dan menolak eksekusi bila di bawah ambang batas.
+Penambahan disk lokal spesifik frontend adalah sekitar 420M (gabungan `node_modules` 396M dan `.cache` 23M). Total ruang kosong `/data` berkurang dari 8,3G ke 3,6G akibat kompilasi target backend bersamaan dengan aktivitas lane lain di host. Gate memeriksa ruang kosong sebelum target berat dijalankan dan menolak eksekusi bila di bawah ambang batas.
