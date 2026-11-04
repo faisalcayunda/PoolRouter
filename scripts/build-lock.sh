@@ -48,6 +48,12 @@ remove_stale() {
 	"$ENGINE" rm "$NAME" >/dev/null 2>&1
 }
 
+# is_name_conflict: bentrok nama container. Podman: container name "X" is already in use;
+# Docker: Conflict. The container name "/X" is already in use (SHAA-390: tanpa ini Docker keluar 125, bukan 75).
+is_name_conflict() {
+	grep -Eq "container name \"/?$NAME\" is already in use" "$WD/log"
+}
+
 # attempt <cmd...>: jalankan perintah, tampilkan outputnya (juga ke $WD/log), exit code ke $WD/rc.
 attempt() {
 	( "$@" 2>&1; echo $? >"$WD/rc" ) | tee "$WD/log"
@@ -82,10 +88,6 @@ queue_head() {
 
 queue_len() { ls "$QUEUE" 2>/dev/null | wc -l | tr -d ' '; }
 
-is_conflict() {
-	[ "$rc" = 125 ] && grep -Eq "(container name \"/?$NAME\" is already in use|The container name \"/?$NAME\" is already in use)" "$WD/log"
-}
-
 # try_once <cmd...>: 0 bila perintah sempat jalan (exit code di $rc), 1 bila kunci terpegang.
 try_once() {
 	if "$ENGINE" container inspect "$NAME" >/dev/null 2>&1; then
@@ -93,7 +95,7 @@ try_once() {
 		echo "build-lock: kunci basi dihapus." >&2
 	fi
 	attempt "$@"
-	if is_conflict; then
+	if [ "$rc" = 125 ] && is_name_conflict; then
 		return 1
 	fi
 	return 0
