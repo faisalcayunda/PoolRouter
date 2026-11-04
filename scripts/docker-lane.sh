@@ -81,9 +81,15 @@ gc_checkouts() {
     if [[ "$status" != "done" && "$status" != "cancelled" ]]; then
       echo "gc-checkouts: lewati $issue (status='${status:-tidak terbaca}')"; continue
     fi
+    # Pakai origin/main: ref main lokal di cache bersama bisa stale. Tanpa ref sama sekali, lewati.
+    ref=""
+    git -C "$repo" rev-parse --verify -q origin/main >/dev/null && ref=origin/main
+    if [[ -z "$ref" ]]; then
+      echo "gc-checkouts: lewati $issue (tidak ada ref origin/main)"; continue
+    fi
     head="$(git -C "$repo" rev-parse HEAD 2>/dev/null || true)"
-    if [[ -z "$head" ]] || ! git -C "$repo" merge-base --is-ancestor "$head" main 2>/dev/null; then
-      echo "gc-checkouts: lewati $issue (HEAD belum di main)"; continue
+    if [[ -z "$head" ]] || ! git -C "$repo" merge-base --is-ancestor "$head" "$ref" 2>/dev/null; then
+      echo "gc-checkouts: lewati $issue (HEAD belum di $ref; merge squash tidak terdeteksi)"; continue
     fi
     for p in frontend/node_modules frontend/.cache; do
       [[ -e "$repo/$p" ]] || continue

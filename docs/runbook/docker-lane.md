@@ -58,7 +58,7 @@ scripts/docker-lane.sh check
 ```
 
 - Ambang: 3G untuk filesystem Docker root (`/var/lib/docker`), 1G untuk `/data`.
-- Saat di bawah ambang, `check` lebih dulu menjalankan `gc-checkouts` (SHAA-408): hanya `frontend/node_modules` dan `frontend/.cache` di checkout Multica (`$WORKSPACES_ROOT/*/shaa-*/workdir/PoolRouter`) yang issue-nya `done`/`cancelled` dan HEAD-nya ancestor `main`. Checkout dengan status lain atau status tidak terbaca tidak disentuh. Lalu ruang dicek ulang; push tetap ditolak bila masih di bawah ambang. Container frontend berjalan dengan `--user` host (Docker), jadi artefaknya bisa dihapus tanpa sudo.
+- Saat di bawah ambang, `check` lebih dulu menjalankan `gc-checkouts` (SHAA-408): hanya `frontend/node_modules` dan `frontend/.cache` di checkout Multica (`$WORKSPACES_ROOT/*/shaa-*/workdir/PoolRouter`) yang issue-nya `done`/`cancelled` dan HEAD-nya ancestor `origin/main` (ref lokal `main` tidak dipakai; merge squash tidak terdeteksi dan dilewati). Checkout dengan status lain atau status tidak terbaca tidak disentuh. Lalu ruang dicek ulang; push tetap ditolak bila masih di bawah ambang. Container frontend berjalan dengan `--user` host (Docker), jadi artefaknya bisa dihapus tanpa sudo.
 - Di bawah ambang: run berhenti dan melapor. Jangan diakali, jangan turunkan ambang tanpa keputusan Luca.
 - Pakai `MIN_FREE_ROOT_GB` atau `MIN_FREE_DATA_GB` hanya dengan keputusan tertulis. Bukti guard: `MIN_FREE_DATA_GB=999 make -C backend test-rust RUNNER=docker CONTAINER_LABEL=shaal.issue=SHAA-<n>` keluar exit 2 sebelum container apa pun dibuat.
 

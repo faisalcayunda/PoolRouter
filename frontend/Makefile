@@ -23,7 +23,11 @@ PNPM_HOME_DIR := /work/frontend/.cache/corepack
 # Keep the pnpm store and metadata cache in .cache/ (git- and lint-ignored) so retries are incremental.
 CACHE_ENV := -e npm_config_store_dir=/work/frontend/.cache/pnpm-store -e npm_config_cache=/work/frontend/.cache/npm
 PNPM_INSTALL_FLAGS ?= --network-concurrency 2
-NODE_CMD = $(NODE_IMAGE) sh -c 'corepack enable && exec "$$@"' sh
+# Docker lane (SHAA-408): the container uid has no write access to the image's /usr/local/bin, so corepack
+# writes its pnpm shim into the bind-mounted .cache/bin instead (no global `corepack enable`). Podman unchanged.
+NODE_CMD_DOCKER = $(NODE_IMAGE) sh -c 'mkdir -p /work/frontend/.cache/bin && corepack enable --install-directory /work/frontend/.cache/bin && PATH=/work/frontend/.cache/bin:$$PATH && exec "$$@"' sh
+NODE_CMD_PODMAN = $(NODE_IMAGE) sh -c 'corepack enable && exec "$$@"' sh
+NODE_CMD = $(if $(filter docker,$(FRONTEND_RUNNER)),$(NODE_CMD_DOCKER),$(NODE_CMD_PODMAN))
 
 # Shared "one heavy build per host" lock (SHAA-194, K-41). Same include and HEAVY
 # shape as backend/Makefile; there is no second lock implementation in this repo.
@@ -36,7 +40,8 @@ ifneq ($(filter podman docker,$(FRONTEND_RUNNER)),)
 # frontend/ silently broke both.
 # Docker lane (SHAA-408): container runs as the host uid:gid, so node_modules and .cache are owned by the
 # host user and check-disk can GC them without sudo. Podman keeps its rootless mapping (no --user).
-FRONTEND_USER_OPTS = $(if $(filter docker,$(FRONTEND_RUNNER)),--user $(shell id -u):$(shell id -g),)
+# HOME=/tmp: the uid has no passwd entry in the image, so corepack/npm need a writable HOME.
+FRONTEND_USER_OPTS = $(if $(filter docker,$(FRONTEND_RUNNER)),--user $(shell id -u):$(shell id -g) -e HOME=/tmp,)
 RUN_OPTS = $(CONTAINER_ENGINE) run --rm --memory $(CONTAINER_MEMORY) --label $(CONTAINER_LABEL) $(FRONTEND_USER_OPTS) \
 	-v "$(CURDIR)/..":/work -w /work/frontend \
 	-e COREPACK_HOME=$(PNPM_HOME_DIR) -e COREPACK_ENABLE_DOWNLOAD_PROMPT=0 -e CI=1 $(CACHE_ENV)
