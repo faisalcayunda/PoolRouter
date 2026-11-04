@@ -140,7 +140,11 @@ services:
       # Port 9090 (probe dan metrik) tidak dipublikasikan ke host. Kunci verifikasi kedua untuk rotasi:
       # POOLROUTER_JWT_VERIFY_KEY_FILE (PEM kunci publik, opsional) bersama secret-nya.
       POOLROUTER_API_ADDR: 0.0.0.0:8081
+      # Hati-hati, dua "admin" yang berbeda: POOLROUTER_ADMIN_ADDR (9090) adalah listener probe dan metrik
+      # (dipakai healthcheck); POOLROUTER_ADMIN_API_ADDR (8082) adalah listener `/admin/v1` untuk Web UI
+      # lewat nginx (ADR-0003 3.9). Keduanya tidak dipublikasikan ke host.
       POOLROUTER_ADMIN_ADDR: 0.0.0.0:9090
+      POOLROUTER_ADMIN_API_ADDR: 0.0.0.0:8082
       POOLROUTER_NIK_HMAC_KEY_FILE: /run/secrets/poolrouter_nik_hmac_key
       POOLROUTER_IDEMPOTENCY_HMAC_KEY_FILE: /run/secrets/poolrouter_idempotency_hmac_key
     secrets:

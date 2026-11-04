@@ -32,6 +32,8 @@ use super::jwt::JwtKeys;
 use super::layers::{ApiError, no_store};
 use super::probe::{self, ADMIN_ADDR_VAR, DEFAULT_ADMIN_ADDR, Readiness};
 use super::token::{LocalThrottle, TokenThrottle, issue_token};
+use crate::admin::listener;
+use crate::admin::sesi::router as admin_router;
 use crate::api::problem::ProblemKodeDown;
 
 pub const API_ADDR_VAR: &str = "POOLROUTER_API_ADDR";
@@ -230,16 +232,32 @@ async fn start(cfg: Config) -> Result<(), String> {
     };
     let api = api_router(state);
     let admin = probe::admin_router(Arc::new(DependencyReadiness { pg, redis }), metrics);
+    // Third listener: `/admin/v1`, with its own `pr_admin_api` pool (SHAA-196).
+    let admin_api_addr = listener::alamat_listener(
+        std::env::var(listener::ADMIN_API_ADDR_VAR).ok().as_deref(),
+        api_addr,
+        admin_addr,
+    )?;
+    let admin_api = admin_router(listener::state_admin(&cfg, listener::pool_admin(&cfg)?)?);
 
     let shutdown = CancellationToken::new();
     tokio::spawn(poolrouter_core::runtime::cancel_on_signal(shutdown.clone()));
-    let (a, b) = tokio::join!(
-        serve_until("api", api_addr, api, shutdown.clone()),
-        serve_until("admin", admin_addr, admin, shutdown.clone()),
+    // Bind failure on any one listener ends the process non-zero: the first
+    // listener to finish cancels the others.
+    let guard = |nama, addr, app| {
+        let sd = shutdown.clone();
+        async move {
+            let r = serve_until(nama, addr, app, sd.clone()).await;
+            sd.cancel();
+            r
+        }
+    };
+    let (a, b, c) = tokio::join!(
+        guard("api", api_addr, api),
+        guard("admin", admin_addr, admin),
+        guard("admin-api", admin_api_addr, admin_api),
     );
-    // Whichever listener ends first (error or signal), stop the other one too.
-    shutdown.cancel();
-    a.and(b)
+    a.and(b).and(c)
 }
 
 #[cfg(test)]
@@ -321,6 +339,30 @@ mod tests {
 
     async fn json(res: Response) -> serde_json::Value {
         serde_json::from_slice(&to_bytes(res.into_body(), 64 * 1024).await.unwrap()).unwrap()
+    }
+
+    #[tokio::test]
+    async fn admin_paths_are_not_served_on_the_downstream_listener() {
+        let h = harness();
+        for (method, path) in [
+            ("GET", "/admin/v1/auth/sesi"),
+            ("POST", "/admin/v1/auth/login"),
+            ("POST", "/admin/v1/auth/sesi/perpanjang"),
+        ] {
+            let res = h
+                .app
+                .clone()
+                .oneshot(
+                    Request::builder()
+                        .method(method)
+                        .uri(path)
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(res.status(), StatusCode::NOT_FOUND, "{method} {path}");
+        }
     }
 
     #[tokio::test]

@@ -26,7 +26,12 @@ use poolrouter_core::admin::origin;
 use poolrouter_core::admin::sesi_store::{SesiDitolak, SesiStore};
 use poolrouter_core::admin::token::HashToken;
 use poolrouter_core::admin::{AsalUi, TokenSesi};
+use sqlx::PgPool;
+use tower_http::limit::RequestBodyLimitLayer;
 use tower_http::set_header::SetResponseHeaderLayer;
+
+use super::login;
+use super::pembatas::PembatasMemori;
 
 use crate::api::problem::ProblemKodeAdmin;
 use crate::api::problem_admin::ProblemAdmin;
@@ -40,16 +45,22 @@ pub type Jam = Arc<dyn Fn() -> DateTime<Utc> + Send + Sync>;
 #[derive(Clone)]
 pub struct AdminState {
     pub sesi: SesiStore,
+    /// The `pr_admin_api` pool. It is the only pool admin handlers can reach;
+    /// the downstream router never receives it (ADR-0001 §7.2).
+    pub pool: PgPool,
     pub asal: AsalUi,
     pub jam: Jam,
+    pub pembatas: Arc<PembatasMemori>,
 }
 
 impl AdminState {
-    pub fn baru(sesi: SesiStore, asal: AsalUi) -> Self {
+    pub fn baru(pool: PgPool, asal: AsalUi) -> Self {
         Self {
-            sesi,
+            sesi: SesiStore::baru(pool.clone()),
+            pool,
             asal,
             jam: Arc::new(Utc::now),
+            pembatas: Arc::new(PembatasMemori::baru()),
         }
     }
 
@@ -64,7 +75,9 @@ pub fn router(state: AdminState) -> Router {
         .route("/admin/v1/auth/sesi", get(get_sesi))
         .route("/admin/v1/auth/sesi/perpanjang", post(perpanjang_sesi))
         .route("/admin/v1/auth/logout", post(logout))
+        .route("/admin/v1/auth/login", post(login::login))
         .with_state(state)
+        .layer(RequestBodyLimitLayer::new(16 * 1024))
         .layer(SetResponseHeaderLayer::overriding(
             header::CACHE_CONTROL,
             HeaderValue::from_static("no-store"),
@@ -73,11 +86,11 @@ pub fn router(state: AdminState) -> Router {
 
 /// A problem response; `detail` is never set (R-16). Boxed: `ProblemAdmin` is
 /// large and `Galat` travels in every `Result` (clippy::result_large_err).
-struct Galat(Box<ProblemAdmin>);
+pub(super) struct Galat(Box<ProblemAdmin>, Option<u64>);
 
 impl Galat {
-    fn baru(status: StatusCode, kode: ProblemKodeAdmin) -> Self {
-        Self(Box::new(ProblemAdmin::new(kode, status.as_u16())))
+    pub(super) fn baru(status: StatusCode, kode: ProblemKodeAdmin) -> Self {
+        Self(Box::new(ProblemAdmin::new(kode, status.as_u16())), None)
     }
 
     fn tidak_terautentikasi() -> Self {
@@ -91,7 +104,17 @@ impl Galat {
         Self::baru(StatusCode::FORBIDDEN, ProblemKodeAdmin::OriginTidakValid)
     }
 
-    fn layanan() -> Self {
+    /// 429 with `Retry-After` (whole seconds, at least 1).
+    pub(super) fn dibatasi(detik: u64) -> Self {
+        let mut g = Self::baru(
+            StatusCode::TOO_MANY_REQUESTS,
+            ProblemKodeAdmin::LoginDibatasi,
+        );
+        g.1 = Some(detik.max(1));
+        g
+    }
+
+    pub(super) fn layanan() -> Self {
         Self::baru(
             StatusCode::SERVICE_UNAVAILABLE,
             ProblemKodeAdmin::LayananTidakTersedia,
@@ -109,6 +132,10 @@ impl IntoResponse for Galat {
             header::CONTENT_TYPE,
             HeaderValue::from_static("application/problem+json"),
         );
+        if let Some(detik) = self.1 {
+            res.headers_mut()
+                .insert(header::RETRY_AFTER, HeaderValue::from(detik));
+        }
         res
     }
 }
@@ -126,13 +153,17 @@ fn token_dari_cookie(headers: &HeaderMap) -> Option<TokenSesi> {
         .and_then(|(_, nilai)| TokenSesi::dari_b64(nilai).ok())
 }
 
-fn hash_dari_cookie(headers: &HeaderMap) -> Result<HashToken, Galat> {
+pub(super) fn hash_dari_cookie(headers: &HeaderMap) -> Result<HashToken, Galat> {
     token_dari_cookie(headers)
         .map(|t| t.hash())
         .ok_or_else(Galat::tidak_terautentikasi)
 }
 
-fn periksa_origin(method: &Method, headers: &HeaderMap, asal: &AsalUi) -> Result<(), Galat> {
+pub(super) fn periksa_origin(
+    method: &Method,
+    headers: &HeaderMap,
+    asal: &AsalUi,
+) -> Result<(), Galat> {
     origin::periksa(method.as_str(), headers, asal).map_err(|alasan| {
         tracing::warn!(alasan = %alasan, "admin: origin ditolak");
         Galat::origin()
