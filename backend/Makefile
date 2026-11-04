@@ -10,6 +10,10 @@ RUNNER ?= podman
 # Engine kontainer untuk RUNNER=podman atau RUNNER=docker. Docker dipakai lane Docker (SHAA-373, keputusan Luca).
 CONTAINER_ENGINE := $(if $(filter docker,$(RUNNER)),docker,podman)
 export BUILD_LOCK_ENGINE := $(CONTAINER_ENGINE)
+# Penjaga nilai RUNNER (SHAA-373): nilai di luar daftar gagal dengan exit 2, tanpa fallback diam-diam ke native.
+ifeq ($(filter podman docker native,$(RUNNER)),)
+$(error RUNNER=$(RUNNER) tidak dikenal: pakai podman, docker, atau native)
+endif
 # Must match rust-toolchain.toml and [workspace.package] rust-version (ADR-0004 section 2). Never `latest`.
 # Pinned by tag and digest, same literal as backend/Containerfile line 17, .github/workflows/backend.yml line 30,
 # and .github/workflows/contract.yml line 29. Changing one means changing all four (SHAA-207).

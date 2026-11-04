@@ -7,6 +7,11 @@ SHELL := /bin/sh
 .NOTPARALLEL:
 
 FRONTEND_RUNNER ?= podman
+# Penjaga nilai FRONTEND_RUNNER (SHAA-373): nilai di luar daftar gagal dengan exit 2 saat parse,
+# tanpa fallback diam-diam ke jalur native (corepack enable di host).
+ifeq ($(filter podman docker local,$(FRONTEND_RUNNER)),)
+$(error FRONTEND_RUNNER=$(FRONTEND_RUNNER) tidak dikenal: pakai podman, docker, atau local)
+endif
 CONTAINER_ENGINE := $(if $(filter docker,$(FRONTEND_RUNNER)),docker,podman)
 # Must match .nvmrc major and package.json engines. Never `latest`.
 NODE_IMAGE ?= docker.io/library/node:24.22.2-bookworm-slim@sha256:c86ecead9e55a5210ac1727de38a4ca840bf03dcaf34dc9749addbf383b1920c

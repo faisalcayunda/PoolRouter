@@ -102,3 +102,16 @@ Catat sebelum dan sesudah gate: `df -h /data`; ukuran `frontend/node_modules` da
 store pnpm; ukuran image Node pinned dan image Playwright pinned (`docker images`),
 serta ruang kosong `/data`. Gate memeriksa ruang kosong sebelum target berat dan
 menolak eksekusi bila di bawah ambang.
+
+## Frontend di lane Docker (SHAA-373)
+
+- `FRONTEND_RUNNER=docker` memakai engine docker; `podman` tetap default; `local` menjalankan Node langsung di host dan hanya bila dipilih eksplisit.
+- Untuk `podman` dan `docker`, target container (`setup`, `test`, `lint`, `i18n-check`, `i18n-types`, `build`, `build-e2e`, `e2e`) menjalankan `check-disk` lebih dulu. Untuk `docker`, `check-disk` memanggil `scripts/docker-lane.sh check`; di bawah ambang, target berhenti sebelum container dibuat. `clean` tidak memakai `check-disk`.
+- `CONTAINER_LABEL=shaal.issue=SHAA-<n>` wajib untuk `podman` dan `docker`.
+- Penjaga nilai: `FRONTEND_RUNNER` di luar `podman|docker|local` berhenti dengan exit 2 saat parse. Backend memakai penjaga `RUNNER` (`podman|docker|native`).
+
+Cek tanpa container:
+
+```sh
+FRONTEND_RUNNER=dockr make -C frontend setup; echo $?   # 2, tanpa container atau perintah host
+```
