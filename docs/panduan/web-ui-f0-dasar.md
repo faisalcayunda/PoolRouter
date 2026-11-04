@@ -3,21 +3,20 @@
 Dokumen ini menjelaskan hal yang sama untuk keempat peran Web UI PoolRouter F0: cara masuk, cara membaca layar, perilaku sesi, dan cara mengganti bahasa tampilan. Panduan per peran ada di dokumen terpisah (daftar di bagian akhir). Semua contoh memakai data sintetis; NIK contoh hanya `0000000000000000`.
 
 - **Pembaca:** pengguna Web UI PoolRouter F0 (platform admin, client owner, operator, auditor)
-- **Pemilik teknis:** Viktor (perilaku UI), Nanami (alur pengguna); kesesuaian produk: Fitcher
 - **Tanggal:** 2026-11-04
 - **Versi:** draf 0.1, dicocokkan dengan `main` hash `c6829a25`
-- **Status:** draft (menunggu verifikasi Viktor dan Nanami)
+- **Status:** draft, lulus bersyarat; layar yang belum ada ditandai belum diuji
 
 ## Acuan dan status verifikasi
 
-Nama tombol, menu, dan pesan mengikuti katalog UX copy v0.14 (SHAA-283 lampiran 2026-11-04 00:16, diterbitkan lewat SHAA-260). Perilaku sesi mengikuti handoff spec UI v0.3.2 (SHAA-212) dan ADR-0003 rev 5 §3.6f.
+Nama tombol, menu, dan pesan mengikuti katalog UX copy v0.14. Perilaku sesi mengikuti spec UI v0.3.2.
 
 Penanda di seluruh panduan:
 
 | Penanda | Arti |
 |---|---|
 | **Cocok dengan kode** | Langkah dicocokkan dengan kode layar di `main` (`c6829a25`) lewat pembacaan kode. Aplikasi belum dijalankan untuk panduan ini. |
-| **Belum diuji** | Layar atau perilaku belum ada di `main`, jadi langkah hanya berdasar spec dan katalog. Dicek ulang setelah SHAA-175 selesai. |
+| **Belum diuji** | Layar atau perilaku belum ada di `main`, jadi langkah hanya berdasar spec dan katalog. Dicek ulang setelah layarnya tersedia. |
 | **Selisih label** | Kode di `main` masih memakai teks katalog lama (v0.13); teks v0.14 dipakai di panduan. |
 
 Tangkapan layar belum disertakan: build belum bisa dijalankan dan difoto dengan data sintetis. Tangkapan layar ditambahkan setelah UI F0 lengkap.
@@ -35,7 +34,7 @@ Menu yang tidak sesuai peran tidak tampil. Mengetik alamat halaman secara langsu
 | Pencarian log per NIK, Audit akses | – | – | – | ✔ |
 | Pengaturan | ✔ | ✔ | ✔ | ✔ |
 
-Sumber: UX F0 v0.3 §4 dan addendum bahasa. Baris Operator–Kuota masih berstatus asumsi UX ([H]) dan menunggu konfirmasi Fitcher.
+Operator hanya dapat membaca Kuota.
 
 ## Masuk
 

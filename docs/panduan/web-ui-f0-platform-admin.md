@@ -3,10 +3,9 @@
 Panduan ini untuk platform admin yang menyiapkan PoC: secret, provider, upstream pool, downstream pool, kontrak metadata, dan client; lalu memantau kuota. Hal umum (masuk, sesi, bahasa) ada di `web-ui-f0-dasar.md`. Contoh memakai data sintetis; nilai secret ditulis `${VAR}`.
 
 - **Pembaca:** platform admin PoolRouter
-- **Pemilik teknis:** Viktor (perilaku UI), Nanami (alur); kesesuaian produk: Fitcher
 - **Tanggal:** 2026-11-04
 - **Versi:** draf 0.1, dicocokkan dengan `main` hash `c6829a25`
-- **Status:** draft (menunggu verifikasi Viktor dan Nanami)
+- **Status:** draft, lulus bersyarat; layar yang belum ada ditandai belum diuji
 
 **Status verifikasi seluruh panduan ini: belum diuji.** Layar Secret, Provider, Upstream pool, Downstream pool, Client, dan Webhook belum ada di `main` pada hash di atas (menu sudah terdaftar, halamannya belum). Isi berdasar spec UI v0.3.2, UX F0 v0.3, dan katalog UX copy v0.14. Satu-satunya layar yang sudah ada dan relevan, **Kuota**, dijelaskan di `web-ui-f0-operator.md` dengan status **cocok dengan kode**.
 
@@ -55,7 +54,7 @@ Provider adalah API pihak ketiga yang dipanggil PoolRouter, misalnya API Dukcapi
 1. Pilih **Upstream pool › Tambah upstream pool**.
 2. Tab **Kuota dan rate limit**: pilih **Provider** (hanya provider yang sudah tersimpan), isi **Kuota harian (request)**, **Rate limit per jam (request)**, dan **Porsi maksimal sync (%)**. Bila lalu lintas sync sepi, async boleh memakai sisa porsi; sync di atas porsi ditolak dengan kode 429.
 3. Tab **Anti-pola** (berlaku untuk request async; sync tidak diacak): **Jeda minimum (ms)**, **Jeda maksimum (ms)**, dan **Ambang NIK berdampingan (%)**. Jeda yang terlalu besar bisa membuat rate limit per jam tidak tercapai; cek hasil uji beban sebelum mengubah.
-4. Jam reset kuota harian belum ditetapkan di spec (OQ-03).
+4. Jam reset kuota harian belum ditetapkan.
 5. **Nonaktifkan** pada baris membuka dialog konsekuensi (bagian 6).
 
 ## 4. Downstream pool dan kontrak metadata

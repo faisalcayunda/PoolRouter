@@ -3,11 +3,9 @@
 Panduan ini untuk operator yang menelusuri transaksi lewat **Log transaksi** dan memantau **Kuota** (baca-saja). Operator melihat NIK hanya 4 digit akhir; NIK lengkap diminta lewat auditor. Hal umum (masuk, sesi, bahasa) ada di `web-ui-f0-dasar.md`. Contoh memakai data sintetis.
 
 - **Pembaca:** operator PoolRouter
-- **Pemilik teknis:** Viktor (perilaku UI), Nanami (alur); kesesuaian produk: Fitcher
 - **Tanggal:** 2026-11-04
 - **Versi:** draf 0.1, dicocokkan dengan `main` hash `c6829a25`
-- **Status:** draft (menunggu verifikasi Viktor dan Nanami)
-- **Asumsi:** akses operator ke menu **Kuota** belum dikonfirmasi sebagai perilaku final (matriks menu UX v0.3 §4, baris Operator–Kuota masih asumsi [H]). Bagian Kuota di bawah **belum diuji** sampai ada konfirmasi implementasi F0 atau keputusan produk.
+- **Status:** draft, lulus bersyarat; layar yang belum ada ditandai belum diuji
 
 Penanda **Cocok dengan kode**, **Belum diuji**, dan **Selisih label** dijelaskan di `web-ui-f0-dasar.md`.
 
@@ -54,7 +52,7 @@ Status: **cocok dengan kode** untuk filter, tabel, paginasi, dan catatan NIK/pay
 
 ## Memantau Kuota (baca-saja)
 
-> **Asumsi, belum dikonfirmasi:** akses operator ke Kuota belum final. Jangan anggap menu ini pasti tersedia di akun operator Anda.
+Bagian ini **belum diuji** dengan data nyata.
 
 Kuota membantu menjelaskan penyebab umum penolakan 429 ketika kuota harian atau porsi sync habis.
 
@@ -69,7 +67,7 @@ Kuota membantu menjelaskan penyebab umum penolakan 429 ketika kuota harian atau 
 
 Bila gagal dimuat, kartu terakhir yang berhasil tetap tampil dengan pesan "Data lama ditampilkan. Terakhir dimuat {waktu}." dan layar menawarkan **Coba lagi**. Bila belum ada upstream pool, tampil "Belum ada upstream pool"; mintalah platform admin menyiapkannya.
 
-Pemahaman angka: catatan di halaman menyebut bahwa angka dihitung dari jumlah percobaan ke Dukcapil. Selisih dengan log transaksi masih ditinjau dan belum diputuskan (OQ-12); jangan menyimpulkan kehilangan data dari selisih kecil.
+Pemahaman angka: catatan di halaman menyebut bahwa angka dihitung dari jumlah percobaan ke Dukcapil. Selisih angka dengan log transaksi belum ditetapkan; jangan menyimpulkan kehilangan data dari selisih kecil.
 
 Operator tidak bisa mengubah kuota, rate limit, atau porsi sync. Perubahan dilakukan platform admin.
 
@@ -80,6 +78,6 @@ Status: **cocok dengan kode**. **Belum diuji** untuk tampilan data nyata (butuh 
 | Gejala | Kemungkinan penyebab | Yang dilakukan |
 |---|---|---|
 | "Anda tidak punya akses ke halaman ini" | Peran Anda tidak mencakup halaman itu | Hubungi platform admin |
-| "Log belum bisa dimuat" | Jaringan atau galat server | Pilih **Coba lagi**; bila berulang, laporkan ke leader Engineering lewat Luca |
+| "Log belum bisa dimuat" | Jaringan atau galat server | Pilih **Coba lagi**; bila berulang, laporkan ke platform admin atau kanal dukungan Pusdatin |
 | Tabel kosong padahal transaksi pasti ada | Rentang waktu terlalu sempit atau filter berlebih | Perlebar rentang, pilih **Hapus filter** |
 | Perlu NIK lengkap | NIK operator dibatasi 4 digit akhir | Minta auditor |

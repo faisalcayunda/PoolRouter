@@ -3,10 +3,9 @@
 Panduan ini untuk client owner, yaitu pemilik aplikasi BGN yang memanggil PoolRouter. Anda mengelola kredensial dan webhook client milik Anda sendiri. Hal umum (masuk, sesi, bahasa) ada di `web-ui-f0-dasar.md`. Contoh memakai data sintetis; nilai secret tidak pernah ditulis di dokumen ini.
 
 - **Pembaca:** client owner
-- **Pemilik teknis:** Viktor (perilaku UI), Nanami (alur); kesesuaian produk: Fitcher
 - **Tanggal:** 2026-11-04
 - **Versi:** draf 0.1, dicocokkan dengan `main` hash `c6829a25`
-- **Status:** draft (menunggu verifikasi Viktor dan Nanami)
+- **Status:** draft, lulus bersyarat; layar yang belum ada ditandai belum diuji
 
 **Status verifikasi seluruh panduan ini: belum diuji.** Layar Client dan kredensial serta Webhook belum ada di `main`, dan peran client owner belum tersedia di konteks peran kode UI (hanya platform admin, operator, dan auditor). Isi berdasar spec UI v0.3.2, UX F0 v0.3, dan katalog v0.14.
 

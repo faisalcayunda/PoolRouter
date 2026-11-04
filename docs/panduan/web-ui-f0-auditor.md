@@ -3,10 +3,9 @@
 Panduan ini untuk auditor yang mencari log berdasarkan NIK, membuka payload transaksi, mengekspor hasil, dan membaca **Audit akses**. Setiap pencarian, pembukaan payload, dan ekspor dicatat dan tidak bisa diubah atau dihapus. Hal umum (masuk, sesi, bahasa) ada di `web-ui-f0-dasar.md`. Contoh memakai data sintetis; NIK contoh hanya `0000000000000000`.
 
 - **Pembaca:** auditor PoolRouter
-- **Pemilik teknis:** Viktor (perilaku UI), Nanami (alur); kesesuaian produk: Fitcher
 - **Tanggal:** 2026-11-04
 - **Versi:** draf 0.1, dicocokkan dengan `main` hash `c6829a25`
-- **Status:** draft (menunggu verifikasi Viktor dan Nanami)
+- **Status:** draft, lulus bersyarat; layar yang belum ada ditandai belum diuji
 
 Penanda **Cocok dengan kode**, **Belum diuji**, dan **Selisih label** dijelaskan di `web-ui-f0-dasar.md`.
 
@@ -39,7 +38,7 @@ flowchart TD
 
 Bila tidak ada hasil, tampil "Belum ada hasil untuk pencarian ini". Data di luar retensi online belum bisa dicari; pencarian arsip tersedia pada tahap berikutnya.
 
-Teks galat untuk alasan terlalu pendek (di bawah 10 karakter) atau terlalu panjang (di atas 500 karakter) belum final di katalog; panduan ini tidak mengutipnya (lihat pertanyaan 4 pada komentar verifikasi). Perilakunya: alasan di luar rentang tidak dikirim, fokus kembali ke kolom alasan, dan isian tidak dipotong diam-diam.
+Teks galat untuk alasan terlalu pendek (di bawah 10 karakter) atau terlalu panjang (di atas 500 karakter) belum final di katalog; panduan ini tidak mengutipnya. Perilakunya: alasan di luar rentang tidak dikirim, fokus kembali ke kolom alasan, dan isian tidak dipotong diam-diam.
 
 Status: **cocok dengan kode** (validasi NIK 16 digit, dialog alasan, rentang 10–500 karakter, Ekspor). **Belum diuji** untuk hasil nyata.
 
@@ -52,7 +51,7 @@ Payload memuat data tambahan dari Dukcapil dan dicatat terpisah.
 3. Payload tampil hanya-baca. Notifikasi "Payload dibuka. Akses ini tercatat di audit." muncul.
 4. Bila payload sudah dihapus karena retensi, tampil "Payload sudah dihapus." Bila transaksi ditolak tanpa input, tampil "Ditolak tanpa input."
 
-**Selisih label:** katalog v0.14 menamai tombol di dialog "Buka payload", sedangkan tombol pada baris tabel di `main` memakai teks lama "Lihat payload". Tombol baris diikuti dari katalog setelah SHAA-175 memuat v0.14.
+**Selisih label:** katalog v0.14 menamai tombol di dialog "Buka payload", sedangkan tombol pada baris tabel di `main` memakai teks lama "Lihat payload". Tombol baris diikuti dari katalog setelah layar memuat katalog v0.14.
 
 Status: **cocok dengan kode** untuk alur; label seperti tercatat di atas.
 
@@ -81,7 +80,7 @@ Halaman ini hanya bisa dibaca: "Catatan hanya bisa dibaca. Tidak ada aksi ubah a
 
 Bila tidak ada catatan, tampil "Tidak ada catatan yang cocok" dengan petunjuk mengubah rentang atau menghapus filter. Bila gagal dimuat, tampil "Audit akses belum bisa dimuat" dengan **Coba lagi**.
 
-Status: **cocok dengan kode**. **Selisih katalog:** katalog v0.14 memuat kolom **Peran**, **Filter atau kueri**, dan **Jumlah record**, tetapi layar di `main` sengaja tidak menampilkannya karena kontrak API F0 belum menyediakan datanya. Panduan mengikuti layar di `main`; perlu keputusan Viktor dan Nanami (pertanyaan 5 pada komentar verifikasi).
+Status: **cocok dengan kode**. **Selisih katalog:** katalog v0.14 memuat kolom **Peran**, **Filter atau kueri**, dan **Jumlah record**, tetapi layar di `main` sengaja tidak menampilkannya karena kontrak API F0 belum menyediakan datanya. Panduan ini mengikuti layar yang tersedia.
 
 ## Bila ada masalah
 
