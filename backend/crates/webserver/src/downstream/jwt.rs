@@ -57,6 +57,12 @@ impl TokenError {
     }
 }
 
+/// Signing failed. A server fault, never a bad credential: the token endpoint
+/// answers 503, not 401.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+#[error("token signing failed")]
+pub struct SignError;
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Claims {
     pub iss: String,
@@ -245,7 +251,7 @@ impl JwtKeys {
 
     /// Issue a token for `client_id` at unix time `now`. Returns the compact
     /// token and `expires_in` seconds.
-    pub fn issue(&self, client_id: Uuid, now: u64) -> Result<(String, u64), TokenError> {
+    pub fn issue(&self, client_id: Uuid, now: u64) -> Result<(String, u64), SignError> {
         let mut header = Header::new(self.signing.alg);
         header.kid = Some(self.signing.kid.clone());
         let claims = Claims {
@@ -257,8 +263,8 @@ impl JwtKeys {
             nbf: now,
             jti: Uuid::now_v7(),
         };
-        let token = jsonwebtoken::encode(&header, &claims, &self.signing.key)
-            .map_err(|_| TokenError::Invalid)?;
+        let token =
+            jsonwebtoken::encode(&header, &claims, &self.signing.key).map_err(|_| SignError)?;
         Ok((token, TTL_SECS))
     }
 
@@ -505,6 +511,54 @@ mod tests {
         assert!(shown.contains(keys.signing_kid()));
         let body: String = sk.lines().filter(|l| !l.starts_with("-----")).collect();
         assert!(!shown.contains(&body));
+    }
+
+    /// Sign arbitrary claims with the key's own signing key and `kid`.
+    fn sign_raw(keys: &JwtKeys, claims: &serde_json::Value) -> String {
+        let mut h = Header::new(keys.signing.alg);
+        h.kid = Some(keys.signing.kid.clone());
+        jsonwebtoken::encode(&h, claims, &keys.signing.key).unwrap()
+    }
+
+    #[test]
+    fn token_missing_any_required_claim_is_rejected() {
+        let (sk, _) = ed_pair();
+        let keys = JwtKeys::from_pem(ISS, &sk, None).unwrap();
+        let t = now();
+        let full = serde_json::json!({
+            "iss": ISS, "aud": AUDIENCE, "sub": Uuid::now_v7(),
+            "exp": t + 900, "iat": t, "nbf": t, "jti": Uuid::now_v7(),
+        });
+        assert!(
+            keys.verify(&sign_raw(&keys, &full)).is_ok(),
+            "control: complete claims pass"
+        );
+        for claim in ["iss", "aud", "sub", "exp", "iat", "nbf", "jti"] {
+            let mut c = full.clone();
+            c.as_object_mut().unwrap().remove(claim);
+            assert_eq!(
+                keys.verify(&sign_raw(&keys, &c)),
+                Err(TokenError::Invalid),
+                "token without `{claim}` must be refused"
+            );
+        }
+    }
+
+    #[test]
+    fn pkcs8_v1_ed25519_from_openssl_is_accepted() {
+        // `openssl genpkey -algorithm ed25519` writes PKCS#8 v1: fixed 16-byte
+        // prefix followed by the 32-byte seed. Built here from a random seed so
+        // that no key file is committed.
+        let mut seed = [0u8; 32];
+        aws_lc_rs::rand::fill(&mut seed).unwrap();
+        let mut der = vec![
+            0x30, 0x2e, 0x02, 0x01, 0x00, 0x30, 0x05, 0x06, 0x03, 0x2b, 0x65, 0x70, 0x04, 0x22,
+            0x04, 0x20,
+        ];
+        der.extend_from_slice(&seed);
+        let keys = JwtKeys::from_pem(ISS, &pem("PRIVATE KEY", &der), None).unwrap();
+        let (tok, _) = keys.issue(Uuid::now_v7(), now()).unwrap();
+        assert!(keys.verify(&tok).is_ok());
     }
 
     #[test]

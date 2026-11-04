@@ -2561,6 +2561,7 @@ name = "poolrouter-webserver"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "argon2",
  "aws-lc-rs",
  "axum",
  "axum-extra",
@@ -2569,8 +2570,12 @@ dependencies = [
  "metrics",
  "metrics-exporter-prometheus",
  "poolrouter-core",
+ "redis",
+ "secrecy",
  "serde",
  "serde_json",
+ "serde_urlencoded",
+ "sqlx",
  "thiserror",
  "tokio",
  "tokio-util",
