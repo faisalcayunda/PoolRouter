@@ -16,3 +16,4 @@ poolrouter-core = { workspace = true }
 apalis = { workspace = true }
 apalis-amqp = { workspace = true }
 lapin = { workspace = true }
+uuid = { workspace = true }
