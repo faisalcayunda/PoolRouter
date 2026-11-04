@@ -39,12 +39,36 @@ export CARGO_TERM_COLOR ?= never
 
 include ../scripts/build-lock.mk
 
+# Docker lane (SHAA-390): satu CARGO_TARGET_DIR bersama di / dan satu CARGO_HOME/RUSTUP_HOME bersama di /data,
+# dipakai bergantian oleh semua workdir di bawah kunci shaal-build-heavy. Semua path lewat variabel ini (override
+# lewat env atau argumen make). Container berjalan dengan uid:gid host, jadi user biasa bisa menghapus isinya tanpa sudo.
+SHARED_TARGET_DIR ?= /var/tmp/shaal-build/poolrouter-target
+SHARED_CARGO_HOME ?= /data/workspace/shaal-build/cargo-home
+# Batas ukuran target bersama (MB): di atasnya check-disk menjalankan clean-shared di bawah kunci.
+SHARED_TARGET_LIMIT_MB ?= 2560
+# Sisa bebas minimum di / untuk sistem (MB), di luar ruang tumbuh target sampai batasnya.
+ROOT_MIN_FREE_MB ?= 2048
+
+ifeq ($(RUNNER),docker)
+# Di dalam container: target, cargo, dan rustup bersama di-mount di /cache/*.
+CT_CARGO_HOME := /cache/cargo
+CT_RUSTUP_HOME := /cache/rustup
+CT_TARGET_DIR := /cache/target
+SHARED_OPTS = --user $(shell id -u):$(shell id -g) \
+	-v "$(SHARED_TARGET_DIR)":$(CT_TARGET_DIR) -v "$(SHARED_CARGO_HOME)/cargo":$(CT_CARGO_HOME) -v "$(SHARED_CARGO_HOME)/rustup":$(CT_RUSTUP_HOME) \
+	-e CARGO_TARGET_DIR=$(CT_TARGET_DIR)
+else
+CT_CARGO_HOME := /work/.cache/cargo
+CT_RUSTUP_HOME := /work/.cache/rustup
+SHARED_OPTS =
+endif
+
 ifneq ($(filter podman docker,$(RUNNER)),)
-RUN_OPTS = $(CONTAINER_ENGINE) run --rm --memory $(CONTAINER_MEMORY) $(if $(CONTAINER_LABEL),--label $(CONTAINER_LABEL)) \
+RUN_OPTS = $(CONTAINER_ENGINE) run --rm --memory $(CONTAINER_MEMORY) $(if $(CONTAINER_LABEL),--label $(CONTAINER_LABEL)) $(SHARED_OPTS) \
 	-v "$(CURDIR)":/work -v "$(CURDIR)/../":/repo:ro -w /work \
-	-e CARGO_HOME=/work/.cache/cargo -e RUSTUP_HOME=/work/.cache/rustup -e CARGO_TERM_COLOR=$(CARGO_TERM_COLOR) \
+	-e CARGO_HOME=$(CT_CARGO_HOME) -e RUSTUP_HOME=$(CT_RUSTUP_HOME) -e CARGO_TERM_COLOR=$(CARGO_TERM_COLOR) \
 	-e CARGO_BUILD_JOBS=$(JOBS) -e CARGO_INCREMENTAL=0 -e CARGO_PROFILE_DEV_DEBUG=0 -e CARGO_PROFILE_TEST_DEBUG=0 -e SQLX_OFFLINE=true -e POOLROUTER_REPO_ROOT=/repo \
-	-e PATH=/work/.cache/cargo/bin:/usr/local/cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+	-e PATH=$(CT_CARGO_HOME)/bin:/usr/local/cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 RUN = $(RUN_OPTS) $(RUST_IMAGE)
 # Build berat (compile) lewat kunci bersama; satu build per host (K-41).
 HEAVY = $(BUILD_LOCK_SH) run -- $(RUN_OPTS) $(BUILD_LOCK_OPTS) $(RUST_IMAGE)
@@ -60,13 +84,19 @@ WORK_DIR := $(if $(filter podman docker,$(RUNNER)),/work,$(CURDIR))
 # Repo root on the execution side (/repo is the read-only mount in the podman container).
 REPO_DIR := $(if $(filter podman docker,$(RUNNER)),/repo,$(CURDIR)/..)
 
-.PHONY: help check-label setup test test-rust db-test uji-lua uji-redis uji-redis-cargo lua-rakit lua-rakit-check lint fmt clean openapi openapi-check
+.PHONY: help check-label check-disk clean-shared setup test test-rust db-test uji-lua uji-redis uji-redis-cargo lua-rakit lua-rakit-check lint fmt clean openapi openapi-check
 
 # Podman toolchain containers must carry the owning issue label, so untracked containers cannot appear (SHAA-222).
 # Docker lane: cek ruang kosong sebelum target apa pun yang memakai container (SHAA-373).
 CHECK_DISK := $(if $(filter docker,$(RUNNER)),check-disk,)
 check-disk:
-	@$(if $(filter docker,$(RUNNER)),../scripts/docker-lane.sh check,true)
+ifeq ($(RUNNER),docker)
+	@mkdir -p "$(SHARED_TARGET_DIR)" "$(SHARED_CARGO_HOME)/cargo" "$(SHARED_CARGO_HOME)/rustup"
+	@SHARED_TARGET_DIR="$(SHARED_TARGET_DIR)" SHARED_TARGET_LIMIT_MB="$(SHARED_TARGET_LIMIT_MB)" ROOT_MIN_FREE_MB="$(ROOT_MIN_FREE_MB)" \
+	  CLEAN_SHARED_CMD='$(MAKE) --no-print-directory clean-shared' ../scripts/docker-lane.sh check
+else
+	@true
+endif
 
 ifneq ($(filter podman docker,$(RUNNER)),)
 check-label:
@@ -80,8 +110,8 @@ help:
 
 # Fetch the locked dependency set and install the pinned cargo-deny.
 setup: check-label $(CHECK_DISK)
-	mkdir -p .cache/cargo .cache/rustup
-	$(RUN) sh -c "[ -d /work/.cache/rustup/toolchains ] || cp -a /usr/local/rustup/. /work/.cache/rustup/; cargo fetch --locked"
+	$(if $(filter docker,$(RUNNER)),,mkdir -p .cache/cargo .cache/rustup)
+	$(RUN) sh -c "[ -d $(CT_RUSTUP_HOME)/toolchains ] || cp -a /usr/local/rustup/. $(CT_RUSTUP_HOME)/; cargo fetch --locked"
 	$(RUN) sh -c 'set -eu; \
 	if cargo deny --version 2>/dev/null | grep -q "$(CARGO_DENY_VERSION)"; then exit 0; fi; \
 	arch=$$(uname -m); \
@@ -151,9 +181,27 @@ lint: check-label $(CHECK_DISK)
 fmt: check-label $(CHECK_DISK)
 	$(RUN) cargo fmt --all
 
+# clean hanya membersihkan sisa lokal di workdir ini (aturan akhir run gate). Di RUNNER=docker target dan cargo-home
+# bersama TIDAK disentuh; itu urusan clean-shared (dijalankan penjaga ukuran di check-disk, di bawah kunci).
+ifeq ($(RUNNER),docker)
+# Sisa lama (root-owned) dibersihkan lewat container root, hanya di dalam workdir ini.
+clean: check-label
+	docker run --rm $(if $(CONTAINER_LABEL),--label $(CONTAINER_LABEL)) -v "$(CURDIR)":/work -w /work $(RUST_IMAGE) \
+	  rm -rf -- target .cache/cargo .cache/rustup .cache/oasdiff
+
+# Hapus isi target bersama dengan `cargo clean`, di bawah kunci heavy (exit 75 bila kunci dipegang build lain).
+# Hanya target build; cargo-home bersama tidak disentuh.
+clean-shared: check-label
+	@mkdir -p "$(SHARED_TARGET_DIR)" "$(SHARED_CARGO_HOME)/cargo" "$(SHARED_CARGO_HOME)/rustup"
+	$(HEAVY) cargo clean
+else
 clean: check-label
 	$(RUN) cargo clean
 	$(RUN) rm -rf -- .cache/cargo/registry/cache
+
+clean-shared:
+	@echo "clean-shared hanya untuk RUNNER=docker" >&2; exit 2
+endif
 
 # OpenAPI is generated from code (ADR-0004 section 4.1, utoipa code-first).
 openapi: check-label $(CHECK_DISK)
