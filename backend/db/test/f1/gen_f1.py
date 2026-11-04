@@ -69,6 +69,7 @@ class Gen:
         self.rng = random.Random(SEED)
         self.niks = set()
         self.tables = {}   # nama -> (kolom, [baris])
+        self.jitter_cek = []  # (jadwal nominal, tunda hasil) per percobaan retry
 
     def nik(self):
         # 16 digit, prefiks 00, sisanya acak dengan seed tetap; tanpa duplikat.
@@ -139,7 +140,10 @@ def scen_d2(g):
 
 # ---------------------------------------------------- D3 retry webhook (WR-*)
 def scen_d3(g):
-    # Jadwal per contract §F1-4: 30 s, 2 m, 8 m, 32 m, 2 j; percobaan ke-6 gagal.
+    # Jadwal nominal 30 s, 2 m, 8 m, 32 m, 2 j; percobaan ke-6 gagal.
+    # Jitter ilustratif, sumber belum diverifikasi: angka pasti menunggu pemilik
+    # contract (SHAA-312) menetapkan jitter. Uji hanya memeriksa rentang dan
+    # urutan monoton, bukan nilai tunda tertentu (keputusan Ridley, SHAA-335).
     base, cap, jitter_pct, batas = 30, 7200, 20, 6
     # Jitter diberi seed tetap per percobaan sehingga reproducible.
     jrng = random.Random(SEED + 3)
@@ -153,6 +157,7 @@ def scen_d3(g):
         tunda = max(1, round(kasar * (1 + jit)))
         t += tunda
         jadwal.append(tunda)
+        g.jitter_cek.append((kasar, tunda))
         rows.append([uid(f"wh-{n}"), n, ts(t), "retry"])
     rows.append([uid("wh-6"), batas, "", "gagal"])   # webhook_not_before NULL setelah percobaan ke-6
     g.add("webhook_jadwal.csv", kol, rows)
@@ -166,7 +171,9 @@ def scen_d3(g):
             ["redirect_301", "301", "false"], ["ditolak_allowlist", "", "false"],
             ["dekripsi_gagal", "", "false"]]
     g.add("webhook_klasifikasi.csv", kol_k, klas)
-    return {"jadwal_detik_per_percobaan": jadwal, "klasifikasi_baris": len(klas)}
+    # Tidak mengunci nilai tunda: hanya rentang jitter dan jumlah percobaan.
+    return {"percobaan_retry": len(jadwal), "jitter_rentang": [0.8, 1.2],
+            "klasifikasi_baris": len(klas)}
 
 
 # ------------------------------------------------------- D4 data balikan (DB-*)
@@ -259,7 +266,11 @@ def validasi(g):
             if len(vals) != len(set(vals)):
                 errs.append(f"{nama}: kunci {kunci} tidak unik")
     # Alokasi: Σ exact reserved <= Q pada U-61 (40+30 = 70 <= 100).
-    # Backoff: setiap jadwal tidak melampaui cap 7200 s.
+    # Jitter: tunda berada dalam nominal × [0,8; 1,2] (toleransi pembulatan 1 s).
+    for kasar, tunda in g.jitter_cek:
+        if not (0.8 * kasar - 1 <= tunda <= 1.2 * kasar + 1):
+            errs.append(f"webhook: tunda {tunda} di luar rentang nominal {kasar} x [0,8; 1,2]")
+            break
     # Jadwal retry: webhook_not_before harus naik monoton, percobaan terakhir tanpa jadwal.
     jad = [r[2] for r in g.tables.get("webhook_jadwal.csv", ([], []))[1] if r[2]]
     if jad != sorted(jad) or len(set(jad)) != len(jad):
