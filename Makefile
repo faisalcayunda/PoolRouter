@@ -94,7 +94,7 @@ help:
 
 # push-main: satu-satunya jalur push ke main (CLAUDE.md). Gate penuh harus hijau pada hash yang di-push (SHAA-328).
 push-main:
-	@CONTAINER_LABEL="$(CONTAINER_LABEL)" MAKE="$(MAKE)" sh scripts/push-main.sh
+	@RUNNER="$(RUNNER)" FRONTEND_RUNNER="$(FRONTEND_RUNNER)" CONTAINER_LABEL="$(CONTAINER_LABEL)" MAKE="$(MAKE)" sh scripts/push-main.sh
 
 setup test lint fmt clean:
 	@set -e; for s in $(STACKS); do \
