@@ -510,6 +510,20 @@ async fn username_tak_dikenal_terkunci_dengan_respons_identik() {
             assert_eq!(st, StatusCode::UNAUTHORIZED);
         }
     }
+    // Redis PTTL runs on Redis's own clock, not the injected one. Pin both counters to the
+    // same TTL so Retry-After is exact (ceil of 600_000 ms minus a few ms is 600) instead of
+    // tolerating wall-clock drift between the two lockouts.
+    let mut c = redis_koneksi().await;
+    let pembatas = pembatas(&redis_ujian());
+    for nama in [&dikenal, &tak_dikenal] {
+        let ok: i64 = redis::cmd("PEXPIRE")
+            .arg(pembatas.kunci_redis(nama))
+            .arg(600_000)
+            .query_async(&mut c)
+            .await
+            .unwrap();
+        assert_eq!(ok, 1, "kunci pembatas harus ada untuk {nama}");
+    }
     let (s1, h1, j1) = u.login(&dikenal, PASSWORD, Some(ASAL)).await;
     let (s2, h2, j2) = u.login(&tak_dikenal, PASSWORD, Some(ASAL)).await;
     assert_eq!(
@@ -517,7 +531,7 @@ async fn username_tak_dikenal_terkunci_dengan_respons_identik() {
         (StatusCode::TOO_MANY_REQUESTS, StatusCode::TOO_MANY_REQUESTS)
     );
     assert_eq!(j1, j2);
-    assert!(retry_after(&h1).abs_diff(retry_after(&h2)) <= 5);
+    assert_eq!((retry_after(&h1), retry_after(&h2)), (600, 600));
 }
 
 #[tokio::test]
