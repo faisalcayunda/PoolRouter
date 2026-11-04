@@ -23,6 +23,7 @@ pub mod origin;
 pub mod password;
 pub mod pengguna;
 pub mod secret;
+pub mod seed;
 pub mod sesi;
 pub mod sesi_store;
 pub mod token;
