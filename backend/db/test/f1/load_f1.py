@@ -13,7 +13,10 @@ Pemetaan dan pemotongan dilakukan di sini, bukan di out/ (keputusan Ridley, SHAA
                                                                             baris request-nya tetap dimuat)
     webhook_klien.csv                                                      (tidak ada tabel delivery; uji negatif
                                                                             isolasi memakai client fixture)
-    mfa_*.csv, webhook_log                                                 (lihat catatan MFA di load_f1.sh)
+    mfa_totp_vektor.csv                                                    (vektor publik RFC 6238, dipakai U-79
+                                                                            sebagai uji unit; bukan data tabel)
+    webhook_log                                                            (tidak dimuat; hanya bila uji negatif
+                                                                            membutuhkannya)
 - Baris yang melanggar constraint dengan sengaja (U-64a Σ > Q, U-65 boleh_pinjam = false tanpa alokasi)
   TIDAK dimuat di jalur positif. Dibuat sebagai uji negatif di neg_f1.sql.
 
@@ -21,12 +24,16 @@ Keluaran: <outdir>/load_f1.sql (pemuatan positif, satu transaksi) dan <outdir>/n
 """
 
 import csv
+import datetime
 import hashlib
+import json
 import os
+import subprocess
 import sys
 import uuid
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+MFA_HELPER = os.path.join(HERE, "mfa_envelope.mjs")
 OUT_FIXTURE = os.path.join(HERE, "out")
 
 NS = uuid.UUID("6f1d2c3a-0b5e-4e7a-9c2d-335000000001")
@@ -61,6 +68,24 @@ def insert(table, cols, vals):
 
 def sha256_hex(text):
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def mfa_env():
+    """Seed dan KEK uji dari environment (dibuat per run oleh run_f1.sh). Kosong = berhenti, exit non-nol."""
+    seed = os.environ.get("TOTP_TEST_SEED", "")
+    kek_hex = os.environ.get("F1_KEK_HEX", "")
+    if not seed or not kek_hex:
+        sys.stderr.write("TOTP_TEST_SEED atau F1_KEK_HEX kosong: loader berhenti (fail-closed). "
+                         "Jalankan lewat run_f1.sh.\n")
+        sys.exit(3)
+    return seed, kek_hex
+
+
+def encrypt_mfa(seed, kek_hex, pengguna_ids):
+    """Enkripsi envelope lewat mfa_envelope.mjs. Input lewat stdin, bukan argumen proses."""
+    payload = json.dumps({"seed": seed, "kek_hex": kek_hex, "kek_id": "kek-uji-f1", "pengguna_ids": pengguna_ids})
+    res = subprocess.run(["node", MFA_HELPER], input=payload, capture_output=True, text=True, check=True)
+    return json.loads(res.stdout)
 
 
 def build():
@@ -232,6 +257,53 @@ def build():
                     '{"nama": %s, "tanggal_lahir": %s}' % ('"' + it["nama_sintetis"] + '"', '"' + it["tanggal_lahir"] + '"'),
                     '{"status_penerima_manfaat": "sintetis"}', it["tanggal_request"] + "T00:00:00+00:00"]))
 
+    # ---------- MFA (D7, ADR-0006 §9): secret TOTP dienkripsi envelope; seed dan KEK dari env ----------
+    seed, kek_hex = mfa_env()
+    ids = [r["pengguna_id"] for r in pengguna]
+    for r, enc in zip(pengguna, encrypt_mfa(seed, kek_hex, ids)):
+        add(insert("pengguna_mfa",
+                   ["pengguna_id", "secret_ciphertext", "secret_dek_terbungkus", "secret_nonce", "kek_id", "status",
+                    "langkah_terakhir", "didaftarkan_at", "dikonfirmasi_at"],
+                   [r["pengguna_id"], "\\x" + enc["secret_ciphertext"], "\\x" + enc["secret_dek_terbungkus"],
+                    "\\x" + enc["secret_nonce"], enc["kek_id"], "aktif", 0, T0, T0]))
+    for r in read("mfa_kode_pemulihan.csv"):
+        add(insert("kode_pemulihan_mfa", ["kode_id", "pengguna_id", "kode_hash", "dibuat_at", "dipakai_at"],
+                   [r["kode_id"], r["pengguna_id"], r["kode_hash"], T0, r["dipakai_at"] or None]))
+    # penerbit kode daftar harus orang lain (chk_kode_daftar_penerbit): platform admin kedua
+    penerbit = pengguna[1]["pengguna_id"]
+    for r in read("mfa_kode_daftar.csv"):
+        kedaluwarsa = datetime.datetime.strptime(r["kedaluwarsa_at"], "%Y-%m-%dT%H:%M:%SZ")
+        diterbitkan = (kedaluwarsa - datetime.timedelta(hours=24)).strftime("%Y-%m-%dT%H:%M:%S+00:00")
+        gagal = int(r["gagal_count"])
+        # indeks kode_daftar_mfa_aktif_uq: satu kode aktif per pengguna. Kode kedaluwarsa (U-83c) dan kode
+        # yang gagal 5x (U-83d) ditandai gugur; kode aktif hanya U-83a.
+        gugur_at = T0 if (gagal >= 5 or r["skenario"] == "U-83c") else None
+        gugur_alasan = "gagal_5x" if gagal >= 5 else ("diganti" if gugur_at else None)
+        add(insert("kode_daftar_mfa",
+                   ["kode_id", "pengguna_id", "kode_hash", "diterbitkan_oleh", "diterbitkan_at", "kedaluwarsa_at",
+                    "gagal_count", "gugur_at", "gugur_alasan"],
+                   [r["kode_id"], r["pengguna_id"], r["kode_hash"], penerbit, diterbitkan,
+                    kedaluwarsa.strftime("%Y-%m-%dT%H:%M:%S+00:00"), gagal, gugur_at, gugur_alasan]))
+
+    # ---------- arsip_restore_permintaan (U-76, DQ-49): audit minta_restore dulu, lalu permintaan ----------
+    auditor = pengguna[0]["pengguna_id"]
+    for r in read("arsip_restore_permintaan.csv"):
+        restore = uid("restore", r["restore_id"])
+        audit = uid("audit-restore", r["restore_id"])
+        add(insert("audit_akses",
+                   ["audit_id", "pengguna_id", "peran", "aksi", "tampilan_nik", "jumlah_record", "alasan", "hasil",
+                    "sumber_ip", "sesi_id", "target_restore_id", "terjadi_at"],
+                   [audit, auditor, "auditor", "minta_restore", "tidak_ada", 0,
+                    "uji restore sintetis " + r["skenario"], "diizinkan", "127.0.0.1", "loader-f1", restore, T0]))
+        pulih = 0 if r["skenario"] == "U-76b" else 1      # fixture expected: restore_tidak_ada_baris = 0
+        add(insert("arsip_restore_permintaan",
+                   ["restore_id", "diminta_oleh", "audit_id", "provider_id", "rentang_mulai", "rentang_selesai",
+                    "nik_tersamar", "alasan", "status", "diminta_at", "mulai_at", "siap_at", "kedaluwarsa_at",
+                    "jumlah_baris_pulih"],
+                   [restore, auditor, audit, prov, "2026-11-01", "2026-11-03", r["nik_tersamar"],
+                    "uji restore sintetis " + r["skenario"], "siap", T0, T0, T0,
+                    "2026-11-18T00:00:00+00:00", pulih]))
+
     load = ["BEGIN;", "SET LOCAL ROLE poolrouter_owner;"] + stmts + ["COMMIT;"]
     return "\n".join(load) + "\n", client_ids, cred_ids, ep_of_pool
 
@@ -271,6 +343,25 @@ NEG = [
         SELECT gen_random_uuid(), client_id, credential_id, downstream_endpoint_id, downstream_pool_id, provider_id,
         1, 1, 'async', 'queued', 0, '{}', received_at, '{"sintetis": true}', 1, 1, '2026-11-05T00:00:00+00:00'
         FROM request WHERE mode = 'sync' LIMIT 1;
+        SET CONSTRAINTS ALL IMMEDIATE;"""),
+    ("NEG-07 pengguna_mfa aktif tanpa dikonfirmasi_at ditolak (chk_mfa_konfirmasi)",
+     """UPDATE pengguna_mfa SET dikonfirmasi_at = NULL
+        WHERE pengguna_id = (SELECT pengguna_id FROM pengguna_mfa WHERE status = 'aktif' LIMIT 1);
+        SET CONSTRAINTS ALL IMMEDIATE;"""),
+    ("NEG-08 langkah_terakhir MFA turun ditolak (MF-03, tg_mfa_langkah_naik)",
+     """UPDATE pengguna_mfa SET langkah_terakhir = 5 WHERE pengguna_id = 'e0e43323-37f2-5b8b-9d45-97d9ba27ff17';
+        UPDATE pengguna_mfa SET langkah_terakhir = 3 WHERE pengguna_id = 'e0e43323-37f2-5b8b-9d45-97d9ba27ff17';"""),
+    ("NEG-09 kode pemulihan yang sudah dipakai tidak bisa dipakai ulang (kode_pemulihan_mfa_sekali)",
+     """UPDATE kode_pemulihan_mfa SET dipakai_at = now()
+        WHERE kode_id = (SELECT kode_id FROM kode_pemulihan_mfa WHERE dipakai_at IS NULL LIMIT 1);
+        UPDATE kode_pemulihan_mfa SET dipakai_at = now()
+        WHERE kode_id = (SELECT kode_id FROM kode_pemulihan_mfa WHERE dipakai_at IS NOT NULL LIMIT 1);"""),
+    ("NEG-10 permintaan restore tanpa audit minta_restore yang cocok ditolak (DQ-49 a)",
+     """INSERT INTO arsip_restore_permintaan (restore_id, diminta_oleh, audit_id, provider_id, rentang_mulai,
+        rentang_selesai, nik_tersamar, alasan, status, diminta_at, mulai_at, siap_at, kedaluwarsa_at, jumlah_baris_pulih)
+        SELECT gen_random_uuid(), diminta_oleh, gen_random_uuid(), provider_id, rentang_mulai, rentang_selesai,
+        nik_tersamar, alasan, status, diminta_at, mulai_at, siap_at, kedaluwarsa_at, jumlah_baris_pulih
+        FROM arsip_restore_permintaan LIMIT 1;
         SET CONSTRAINTS ALL IMMEDIATE;"""),
 ]
 

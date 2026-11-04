@@ -63,3 +63,42 @@ DO $neg$ DECLARE v_ditolak boolean := false; BEGIN
   END;
   IF NOT v_ditolak THEN RAISE EXCEPTION 'NEG-06 request tanpa baris request_status_history ditolak saat COMMIT (T-04, trigger tertunda) tidak ditolak'; END IF;
 END $neg$;
+DO $neg$ DECLARE v_ditolak boolean := false; BEGIN
+  BEGIN
+    UPDATE pengguna_mfa SET dikonfirmasi_at = NULL
+            WHERE pengguna_id = (SELECT pengguna_id FROM pengguna_mfa WHERE status = 'aktif' LIMIT 1);
+            SET CONSTRAINTS ALL IMMEDIATE;
+  EXCEPTION WHEN others THEN v_ditolak := true; RAISE NOTICE 'ditolak (%): %', 'NEG-07', SQLERRM;
+  END;
+  IF NOT v_ditolak THEN RAISE EXCEPTION 'NEG-07 pengguna_mfa aktif tanpa dikonfirmasi_at ditolak (chk_mfa_konfirmasi) tidak ditolak'; END IF;
+END $neg$;
+DO $neg$ DECLARE v_ditolak boolean := false; BEGIN
+  BEGIN
+    UPDATE pengguna_mfa SET langkah_terakhir = 5 WHERE pengguna_id = 'e0e43323-37f2-5b8b-9d45-97d9ba27ff17';
+            UPDATE pengguna_mfa SET langkah_terakhir = 3 WHERE pengguna_id = 'e0e43323-37f2-5b8b-9d45-97d9ba27ff17';
+  EXCEPTION WHEN others THEN v_ditolak := true; RAISE NOTICE 'ditolak (%): %', 'NEG-08', SQLERRM;
+  END;
+  IF NOT v_ditolak THEN RAISE EXCEPTION 'NEG-08 langkah_terakhir MFA turun ditolak (MF-03, tg_mfa_langkah_naik) tidak ditolak'; END IF;
+END $neg$;
+DO $neg$ DECLARE v_ditolak boolean := false; BEGIN
+  BEGIN
+    UPDATE kode_pemulihan_mfa SET dipakai_at = now()
+            WHERE kode_id = (SELECT kode_id FROM kode_pemulihan_mfa WHERE dipakai_at IS NULL LIMIT 1);
+            UPDATE kode_pemulihan_mfa SET dipakai_at = now()
+            WHERE kode_id = (SELECT kode_id FROM kode_pemulihan_mfa WHERE dipakai_at IS NOT NULL LIMIT 1);
+  EXCEPTION WHEN others THEN v_ditolak := true; RAISE NOTICE 'ditolak (%): %', 'NEG-09', SQLERRM;
+  END;
+  IF NOT v_ditolak THEN RAISE EXCEPTION 'NEG-09 kode pemulihan yang sudah dipakai tidak bisa dipakai ulang (kode_pemulihan_mfa_sekali) tidak ditolak'; END IF;
+END $neg$;
+DO $neg$ DECLARE v_ditolak boolean := false; BEGIN
+  BEGIN
+    INSERT INTO arsip_restore_permintaan (restore_id, diminta_oleh, audit_id, provider_id, rentang_mulai,
+            rentang_selesai, nik_tersamar, alasan, status, diminta_at, mulai_at, siap_at, kedaluwarsa_at, jumlah_baris_pulih)
+            SELECT gen_random_uuid(), diminta_oleh, gen_random_uuid(), provider_id, rentang_mulai, rentang_selesai,
+            nik_tersamar, alasan, status, diminta_at, mulai_at, siap_at, kedaluwarsa_at, jumlah_baris_pulih
+            FROM arsip_restore_permintaan LIMIT 1;
+            SET CONSTRAINTS ALL IMMEDIATE;
+  EXCEPTION WHEN others THEN v_ditolak := true; RAISE NOTICE 'ditolak (%): %', 'NEG-10', SQLERRM;
+  END;
+  IF NOT v_ditolak THEN RAISE EXCEPTION 'NEG-10 permintaan restore tanpa audit minta_restore yang cocok ditolak (DQ-49 a) tidak ditolak'; END IF;
+END $neg$;

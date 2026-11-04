@@ -9,8 +9,12 @@
 # Container dihapus di akhir run. Tidak ada secret yang dicetak.
 #
 # Berkas yang TIDAK dimuat dan alasannya ada di docstring load_f1.py.
-# MFA (pengguna_mfa, kode_*_mfa) belum dimuat: butuh TOTP_TEST_SEED dan KEK uji dari env (lihat stage MFA).
+# Seed TOTP uji dan KEK uji DIBUAT per run oleh run_f1.sh (hanya di memori) dan dibaca dari environment di sini.
+# Bila kosong, skrip keluar non-nol sebelum container dibuat (fail-closed).
 set -eu
+
+: "${TOTP_TEST_SEED:?TOTP_TEST_SEED kosong: jalankan lewat backend/db/test/f1/run_f1.sh}"
+: "${F1_KEK_HEX:?F1_KEK_HEX kosong: jalankan lewat backend/db/test/f1/run_f1.sh}"
 
 ENGINE=${CONTAINER_ENGINE:-podman}
 ISSUE=SHAA-335
@@ -29,6 +33,8 @@ trap cleanup EXIT INT TERM
 
 echo "==> disk"
 df -h / | tail -1
+echo "==> mfa envelope self-test"
+node "$here/mfa_envelope.mjs" --self-test
 SU_PW=$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')
 $ENGINE run -d --name "$NAME" --label "shaal.issue=$ISSUE" \
   -e POSTGRES_PASSWORD="$SU_PW" -e POSTGRES_DB=postgres \
@@ -75,7 +81,8 @@ echo "load: exit 0"
 
 echo "==> row counts per table"
 for t in client client_kredensial provider upstream_pool downstream_pool downstream_pool_rute \
-         downstream_endpoint request transaction_log data_balikan_batch data_balikan_item; do
+         downstream_endpoint request transaction_log data_balikan_batch data_balikan_item \
+         pengguna_mfa kode_pemulihan_mfa kode_daftar_mfa audit_akses arsip_restore_permintaan; do
   n=$(psql_su -d poolrouter_test -t -A -c "SELECT count(*) FROM $t")
   echo "$t $n"
 done
