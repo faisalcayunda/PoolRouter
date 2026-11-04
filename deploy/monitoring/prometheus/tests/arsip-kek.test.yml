@@ -40,7 +40,7 @@ tests:
             exp_annotations:
               summary: "Job arsip log gagal (baris online melewati retensi)"
               description: "Ada job arsip dengan hasil gagal dalam 96 jam terakhir. Baris online tetap, dan retensinya tertahan sampai satuan itu berhasil. Tenggat tindakan operator: 1 hari kerja."
-              runbook: "docs/runbook/arsip-kek.md#4a"
+              runbook: "docs/runbook/arsip-kek.md#4a-job-arsip-gagal"
               dasar: "ADR-0006 rev 4 §8.1 butir 7 (L terlampaui, gagal tertutup) dan butir 11 (c)"
 
   # Jendela 96h: sampel per jam, kegagalan di jam ke-10 (Jumat malam).
@@ -63,7 +63,7 @@ tests:
             exp_annotations:
               summary: "Job arsip log gagal (baris online melewati retensi)"
               description: "Ada job arsip dengan hasil gagal dalam 96 jam terakhir. Baris online tetap, dan retensinya tertahan sampai satuan itu berhasil. Tenggat tindakan operator: 1 hari kerja."
-              runbook: "docs/runbook/arsip-kek.md#4a"
+              runbook: "docs/runbook/arsip-kek.md#4a-job-arsip-gagal"
               dasar: "ADR-0006 rev 4 §8.1 butir 7 (L terlampaui, gagal tertutup) dan butir 11 (c)"
 
   # ... dan padam sesudah jendela 96h lewat (kegagalan di jam ke-10, eval 120h > 10h + 96h).
@@ -108,7 +108,7 @@ tests:
             exp_annotations:
               summary: "Kanari KEK arsip gagal: kunci privat atau versi objek tidak sesuai"
               description: "Kanari harian di proses restore gagal membuka dek_terbungkus manifest terbaru atau tidak menemukan versi objek yang disematkan. Arsip baru mungkin tidak bisa dipulihkan sampai penyebabnya ditutup."
-              runbook: "docs/runbook/arsip-kek.md#kanari-gagal"
+              runbook: "docs/runbook/arsip-kek.md#4b-kanari-gagal"
               dasar: "ADR-0006 rev 4 §8.1 butir 11 (d)"
 
   # Kanari sehat (hasil lain, bukan gagal): alert tidak boleh menyala.
