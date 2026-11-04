@@ -91,7 +91,18 @@ rollback_all() {
 }
 apply_migrations poolrouter_rb '20261103*'
 f0_dump=$(dump_schema)
+# MF-07: the F1 migration revokes the sessions of platform admins / auditors, and only theirs
+psql_su -d poolrouter_rb -c "INSERT INTO admin_user (pengguna_id, username, password_hash) VALUES
+    ('00000000-0000-7000-8000-0000000000b1', 'rb-admin', 'x'), ('00000000-0000-7000-8000-0000000000b2', 'rb-plain', 'x');
+  INSERT INTO admin_user_peran (pengguna_id, peran, diajukan_oleh) VALUES ('00000000-0000-7000-8000-0000000000b1', 'platform_admin', '00000000-0000-7000-8000-0000000000b1');
+  INSERT INTO admin_session (sesi_id, token_sha256, pengguna_id, kedaluwarsa_at) VALUES
+    ('00000000-0000-7000-8000-0000000000c1', decode(repeat('01', 32), 'hex'), '00000000-0000-7000-8000-0000000000b1', now() + interval '8 hours'),
+    ('00000000-0000-7000-8000-0000000000c2', decode(repeat('02', 32), 'hex'), '00000000-0000-7000-8000-0000000000b2', now() + interval '8 hours')"
 apply_migrations poolrouter_rb '20261104*'
+[ "$(psql_su -d poolrouter_rb -t -A -c "SELECT string_agg(sesi_id::text, ',') FROM admin_session")" = "00000000-0000-7000-8000-0000000000c2" ] \
+  || { echo "FAIL: MF-07 session revocation" >&2; exit 1; }
+echo "MF-07: sessions of the platform admin revoked, the other session kept: ok"
+psql_su -d poolrouter_rb -c "DELETE FROM admin_session; DELETE FROM admin_user_peran; DELETE FROM admin_user"
 # with F1 data the rollback must refuse and leave everything in place
 psql_su -d poolrouter_rb -c "INSERT INTO admin_user (pengguna_id, username, password_hash) VALUES ('00000000-0000-7000-8000-0000000000a1', 'rb-user', '\$argon2id\$synthetic');
   INSERT INTO pengguna_mfa (pengguna_id, secret_ciphertext, secret_dek_terbungkus, secret_nonce, kek_id, status)

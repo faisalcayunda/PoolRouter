@@ -28,8 +28,8 @@ ALTER TABLE request
   ADD CONSTRAINT chk_aging_hanya_async CHECK (
     (mode = 'async' AND status <> 'rejected') OR (aging_ambang_detik IS NULL AND prioritas_diubah_at IS NULL)),
   ADD CONSTRAINT chk_prioritas_diubah_at CHECK (prioritas_diubah_at IS NULL OR prioritas_diubah_at >= received_at),   -- DQ-40 (c)
-  ADD CONSTRAINT chk_reject_lingkup CHECK (reject_lingkup IS NULL OR reject_reason = 'kuota_habis'),                 -- DQ-44 (a)
-  ADD CONSTRAINT chk_webhook_not_before CHECK (webhook_not_before IS NULL OR webhook_status = 'menunggu');            -- DQ-46 (c)
+  ADD CONSTRAINT chk_reject_lingkup CHECK (reject_lingkup IS NULL OR coalesce(reject_reason = 'kuota_habis', false)),                 -- DQ-44 (a)
+  ADD CONSTRAINT chk_webhook_not_before CHECK (webhook_not_before IS NULL OR coalesce(webhook_status = 'menunggu', false));            -- DQ-46 (c)
 
 -- AG-01: 1 <= prioritas_efektif <= prioritas. The lower bound is F0. Added NOT VALID, then validated, so the check
 -- scan holds only a SHARE UPDATE EXCLUSIVE lock; if an F0 row breaks the invariant the migration aborts untouched.
