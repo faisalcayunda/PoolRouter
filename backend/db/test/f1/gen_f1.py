@@ -198,12 +198,14 @@ def scen_d3(g):
     g.add("webhook_jadwal_cepat.csv", kol, cepat)
 
     # Dua client webhook (T-06B-03, T-06B-09, T-06B-10): riwayat harus terisolasi per client.
+    # Pengikatan client ke owner: client-a -> uji-owner-a (mfa-u5), client-b -> uji-owner-b (mfa-u6).
     klien = []
-    for cid, tag in (("client-a", "A"), ("client-b", "B")):
+    for cid, tag, owner in (("client-a", "A", "mfa-u5"), ("client-b", "B", "mfa-u6")):
         for n in range(1, 3):
-            klien.append([uid(f"wh-{tag}-{n}"), n, ts(30 * n), cid, "retry" if n == 1 else "gagal"])
+            klien.append([uid(f"wh-{tag}-{n}"), n, ts(30 * n), cid, uid(owner),
+                          "retry" if n == 1 else "gagal"])
     g.add("webhook_klien.csv", ["webhook_delivery_id", "percobaan_ke", "webhook_not_before",
-                                "client_id", "hasil_tanggung_jawab"], klien)
+                                "client_id", "owner_pengguna_id", "hasil_tanggung_jawab"], klien)
 
     # Klasifikasi retry (U-67): 5xx/408/429/jaringan di-retry; sisanya tidak.
     kol_k = ["kelas", "status_contoh", "di_retry"]
