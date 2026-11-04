@@ -33,7 +33,11 @@ impl SecretSekali {
     pub fn hash(&self) -> String {
         let mut digest = Sha256::new();
         digest.update(self.nilai.as_bytes());
-        digest.finalize().iter().map(|b| format!("{b:02x}")).collect()
+        digest
+            .finalize()
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect()
     }
 }
 
@@ -51,7 +55,12 @@ mod tests {
     fn generates_256_bit_url_secret_and_hash() {
         let secret = SecretSekali::baru();
         assert_eq!(secret.expose().len(), 43);
-        assert!(secret.expose().bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_'));
+        assert!(
+            secret
+                .expose()
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
+        );
         assert_eq!(secret.hash().len(), 64);
         assert!(!format!("{secret:?}").contains(secret.expose()));
     }
