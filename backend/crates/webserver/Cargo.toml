@@ -44,4 +44,4 @@ argon2 = { workspace = true }
 sqlx = { workspace = true }
 redis = { workspace = true }
 secrecy = { workspace = true }
-serde_urlencoded = "0.7"
+serde_urlencoded = { workspace = true }

@@ -9,12 +9,13 @@
 
 use std::sync::Arc;
 
-use argon2::{Argon2, PasswordVerifier};
 use axum::extract::FromRequestParts;
 use axum::http::header::AUTHORIZATION;
 use axum::http::request::Parts;
 use chrono::Utc;
-use poolrouter_core::kredensial::{cocok_secret, urai_api_key};
+use poolrouter_core::kredensial::{
+    PARAMETER_SECRET, cocok_secret, cocok_secret_klien, hash_palsu, urai_api_key,
+};
 use tokio::sync::Semaphore;
 use uuid::Uuid;
 
@@ -103,6 +104,8 @@ pub struct Authenticator {
     store: Arc<dyn CredentialStore>,
     keys: Arc<JwtKeys>,
     hashing: Arc<Semaphore>,
+    /// One dummy PHC string, computed once: unknown clients pay the same cost.
+    dummy: Arc<[u8]>,
 }
 
 impl Authenticator {
@@ -111,6 +114,7 @@ impl Authenticator {
             store,
             keys,
             hashing: Arc::new(Semaphore::new(MAX_PARALLEL_HASHING)),
+            dummy: Arc::from(hash_palsu(PARAMETER_SECRET).as_bytes()),
         }
     }
 
@@ -124,15 +128,9 @@ impl Authenticator {
             return false;
         };
         let secret = secret.to_owned();
-        tokio::task::spawn_blocking(move || {
-            std::str::from_utf8(&phc).is_ok_and(|h| {
-                Argon2::default()
-                    .verify_password(secret.as_bytes(), h)
-                    .is_ok()
-            })
-        })
-        .await
-        .unwrap_or(false)
+        tokio::task::spawn_blocking(move || cocok_secret_klien(&secret, &phc))
+            .await
+            .unwrap_or(false)
     }
 
     /// Same cost as one verification, for unknown clients, so response time does
@@ -142,19 +140,17 @@ impl Authenticator {
             return;
         };
         let secret = secret.to_owned();
-        let _ = tokio::task::spawn_blocking(move || {
-            let mut out = [0u8; 32];
-            let _ = Argon2::default().hash_password_into(
-                secret.as_bytes(),
-                b"poolrouter-dummy-salt",
-                &mut out,
-            );
-        })
-        .await;
+        let dummy = self.dummy.clone();
+        let _ = tokio::task::spawn_blocking(move || cocok_secret_klien(&secret, &dummy)).await;
     }
 
-    /// Token endpoint: `client_id` (UUID text) and client secret.
-    pub async fn client_secret(&self, client_id: &str, secret: &str) -> Result<Uuid, AuthError> {
+    /// Token endpoint: `client_id` (UUID text) and client secret. Returns the
+    /// client and the credential that matched, which becomes the token's `cid`.
+    pub async fn client_secret(
+        &self,
+        client_id: &str,
+        secret: &str,
+    ) -> Result<(Uuid, Uuid), AuthError> {
         let client_id = Uuid::parse_str(client_id).map_err(|_| AuthFail::KredensialTidakDikenal)?;
         let now = Utc::now();
         let semua = self.store.kredensial_client(client_id).await?;
@@ -176,26 +172,27 @@ impl Authenticator {
             }
             .into());
         }
-        let mut cocok = false;
+        let mut cocok = None;
         for k in layak.iter().take(2) {
             if self.argon2_cocok(secret, k.kunci_hash.clone()).await {
-                cocok = true;
+                cocok = Some(k.credential_id);
                 break;
             }
         }
-        if !cocok {
+        let Some(credential_id) = cocok else {
             return Err(AuthFail::SecretSalah.into());
-        }
+        };
         // Status is checked after the secret so that it cannot be probed without it.
         match self.store.client_aktif(client_id).await? {
-            Some(true) => Ok(client_id),
+            Some(true) => Ok((client_id, credential_id)),
             _ => Err(AuthFail::KredensialNonaktif.into()),
         }
     }
 
     /// Bearer token: signature and claims, then the client must still be active
-    /// and keep at least one active client-secret credential. Expiry of that
-    /// credential only blocks new tokens (EN-02).
+    /// and the credential that issued the token (`cid`) must belong to it, still
+    /// be an active client secret and not expired. Revoking one secret therefore
+    /// revokes the tokens issued from it (ADR-0001 rev 15 5a.5).
     pub async fn bearer(&self, token: &str) -> Result<Uuid, AuthError> {
         let claims = self.keys.verify(token).map_err(AuthFail::from)?;
         let client_id = claims.sub;
@@ -204,15 +201,22 @@ impl Authenticator {
             Some(false) => return Err(AuthFail::KredensialNonaktif.into()),
             None => return Err(AuthFail::TokenTidakValid.into()),
         }
-        let semua = self.store.kredensial_client(client_id).await?;
-        if semua
-            .iter()
-            .any(|k| k.jenis == Jenis::ClientSecret && k.aktif)
-        {
-            Ok(client_id)
-        } else {
-            Err(AuthFail::KredensialNonaktif.into())
+        let k = self
+            .store
+            .kredensial(claims.cid)
+            .await?
+            .filter(|k| k.client_id == client_id)
+            .ok_or(AuthFail::TokenTidakValid)?;
+        if k.jenis != Jenis::ClientSecret {
+            return Err(AuthFail::TokenTidakValid.into());
         }
+        if !k.aktif {
+            return Err(AuthFail::KredensialNonaktif.into());
+        }
+        if !k.belum_kedaluwarsa(Utc::now()) {
+            return Err(AuthFail::KredensialKedaluwarsa.into());
+        }
+        Ok(client_id)
     }
 
     /// API key `pr_<credential_id>_<secret>`.
@@ -277,7 +281,7 @@ impl FromRequestParts<AppState> for AuthClient {
 mod tests {
     use super::super::credential::{Kredensial, fake::FakeStore};
     use super::*;
-    use argon2::{Algorithm, Params, PasswordHasher, Version};
+    use argon2::{Algorithm, Argon2, Params, PasswordHasher, Version};
     use poolrouter_core::kredensial::buat_api_key;
 
     const ISS: &str = "https://poolrouter.example.test";
@@ -358,13 +362,14 @@ mod tests {
     #[tokio::test]
     async fn client_secret_accepts_the_right_secret_and_refuses_the_rest() {
         let e = env();
-        e.fake
-            .kredensial
-            .lock()
-            .unwrap()
-            .push(secret_cred(e.client, "s3cret"));
+        let cred = secret_cred(e.client, "s3cret");
+        let cred_id = cred.credential_id;
+        e.fake.kredensial.lock().unwrap().push(cred);
         let id = e.client.to_string();
-        assert_eq!(e.auth.client_secret(&id, "s3cret").await, Ok(e.client));
+        assert_eq!(
+            e.auth.client_secret(&id, "s3cret").await,
+            Ok((e.client, cred_id))
+        );
         assert_eq!(
             e.auth.client_secret(&id, "wrong").await,
             Err(AuthError::Fail(AuthFail::SecretSalah))
@@ -386,8 +391,18 @@ mod tests {
             k.push(secret_cred(e.client, "new"));
         }
         let id = e.client.to_string();
-        assert_eq!(e.auth.client_secret(&id, "old").await, Ok(e.client));
-        assert_eq!(e.auth.client_secret(&id, "new").await, Ok(e.client));
+        let (old_id, new_id) = {
+            let k = e.fake.kredensial.lock().unwrap();
+            (k[0].credential_id, k[1].credential_id)
+        };
+        assert_eq!(
+            e.auth.client_secret(&id, "old").await,
+            Ok((e.client, old_id))
+        );
+        assert_eq!(
+            e.auth.client_secret(&id, "new").await,
+            Ok((e.client, new_id))
+        );
     }
 
     #[tokio::test]
@@ -447,28 +462,43 @@ mod tests {
     #[tokio::test]
     async fn bearer_follows_client_and_credential_status() {
         let e = env();
-        e.fake
-            .kredensial
-            .lock()
-            .unwrap()
-            .push(secret_cred(e.client, "s"));
+        let cred = secret_cred(e.client, "s");
+        let cred_id = cred.credential_id;
+        e.fake.kredensial.lock().unwrap().push(cred);
         let (tok, _) = e
             .auth
             .keys()
-            .issue(e.client, jsonwebtoken::get_current_timestamp())
+            .issue(e.client, cred_id, jsonwebtoken::get_current_timestamp())
             .unwrap();
         assert_eq!(e.auth.bearer(&tok).await, Ok(e.client));
-        // Revoking the only credential refuses the token that was already issued.
+        // Revoking the issuing credential refuses the token already issued from it.
         e.fake.kredensial.lock().unwrap()[0].aktif = false;
         assert_eq!(
             e.auth.bearer(&tok).await,
             Err(AuthError::Fail(AuthFail::KredensialNonaktif))
         );
         e.fake.kredensial.lock().unwrap()[0].aktif = true;
-        // Expiry of the credential does not touch issued tokens.
+        // A second active credential does not keep the revoked one's token alive.
+        e.fake
+            .kredensial
+            .lock()
+            .unwrap()
+            .push(secret_cred(e.client, "lain"));
+        e.fake.kredensial.lock().unwrap()[0].aktif = false;
+        assert_eq!(
+            e.auth.bearer(&tok).await,
+            Err(AuthError::Fail(AuthFail::KredensialNonaktif)),
+            "another active credential must not resurrect this token"
+        );
+        e.fake.kredensial.lock().unwrap()[0].aktif = true;
+        // Expiry of the issuing credential does block the issued token (Shu, 09.18).
         e.fake.kredensial.lock().unwrap()[0].kedaluwarsa_at =
             Some(Utc::now() - chrono::Duration::seconds(5));
-        assert_eq!(e.auth.bearer(&tok).await, Ok(e.client));
+        assert_eq!(
+            e.auth.bearer(&tok).await,
+            Err(AuthError::Fail(AuthFail::KredensialKedaluwarsa))
+        );
+        e.fake.kredensial.lock().unwrap()[0].kedaluwarsa_at = None;
         e.fake.clients.lock().unwrap().insert(e.client, false);
         assert_eq!(
             e.auth.bearer(&tok).await,
@@ -486,11 +516,61 @@ mod tests {
         let (tok, _) = e
             .auth
             .keys()
-            .issue(Uuid::now_v7(), jsonwebtoken::get_current_timestamp())
+            .issue(
+                Uuid::now_v7(),
+                Uuid::now_v7(),
+                jsonwebtoken::get_current_timestamp(),
+            )
             .unwrap();
         assert_eq!(
             e.auth.bearer(&tok).await,
             Err(AuthError::Fail(AuthFail::TokenTidakValid))
+        );
+    }
+
+    #[tokio::test]
+    async fn bearer_with_a_foreign_or_api_key_credential_is_refused() {
+        let e = env();
+        e.fake
+            .kredensial
+            .lock()
+            .unwrap()
+            .push(secret_cred(e.client, "s"));
+        let now = jsonwebtoken::get_current_timestamp();
+
+        // `cid` of a credential that belongs to another client.
+        let asing = secret_cred(Uuid::now_v7(), "s").credential_id;
+        let (tok, _) = e.auth.keys().issue(e.client, asing, now).unwrap();
+        assert_eq!(
+            e.auth.bearer(&tok).await,
+            Err(AuthError::Fail(AuthFail::TokenTidakValid)),
+            "credential of another client"
+        );
+
+        // `cid` of an unknown credential.
+        let (tok, _) = e.auth.keys().issue(e.client, Uuid::now_v7(), now).unwrap();
+        assert_eq!(
+            e.auth.bearer(&tok).await,
+            Err(AuthError::Fail(AuthFail::TokenTidakValid)),
+            "unknown credential"
+        );
+
+        // `cid` of an API key credential: tokens are only issued to client secrets.
+        let key_id = Uuid::now_v7();
+        let k = buat_api_key(key_id).unwrap();
+        e.fake.kredensial.lock().unwrap().push(Kredensial {
+            credential_id: key_id,
+            client_id: e.client,
+            jenis: Jenis::ApiKey,
+            kunci_hash: k.kunci_hash.to_vec(),
+            aktif: true,
+            kedaluwarsa_at: None,
+        });
+        let (tok, _) = e.auth.keys().issue(e.client, key_id, now).unwrap();
+        assert_eq!(
+            e.auth.bearer(&tok).await,
+            Err(AuthError::Fail(AuthFail::TokenTidakValid)),
+            "api key credential cannot issue a bearer token"
         );
     }
 

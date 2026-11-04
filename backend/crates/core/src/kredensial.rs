@@ -9,10 +9,21 @@
 //! - `client_credential.kunci_hash` stores SHA-256 of the *secret part only*.
 //!   The prefix and the id are not hashed: the id is only a lookup handle.
 //!
+//! Client secret (issuing in the admin API, verification in the webserver):
+//! argon2id into a PHC string. [`hash_secret`] and the dummy hash for unknown
+//! clients share [`PARAMETER_SECRET`], so both sides pay the same cost and
+//! cannot drift.
+//!
 //! Nothing here logs or formats a secret into an error.
 
+use argon2::password_hash::phc::PasswordHash;
+use argon2::password_hash::{PasswordHasher, PasswordVerifier};
+use argon2::{Algorithm, Params, Version};
 use aws_lc_rs::{constant_time, digest, rand};
 use uuid::Uuid;
+use zeroize::Zeroizing;
+
+use crate::admin::ParameterArgon2;
 
 /// Fixed prefix of every API key.
 pub const API_KEY_PREFIX: &str = "pr_";
@@ -28,6 +39,9 @@ pub enum KredensialError {
     /// The system random source failed. Never fall back to a weaker source.
     #[error("random source unavailable")]
     Random,
+    /// Argon2 refused the parameters or could not produce a hash.
+    #[error("secret hashing failed")]
+    Hash,
 }
 
 /// A freshly generated API key. `kunci` is shown to the operator once;
@@ -160,6 +174,43 @@ pub fn base64url_decode(text: &str) -> Option<Vec<u8>> {
     Some(out)
 }
 
+/// Argon2id parameters for client secrets (ADR-0004 section 4.4). One constant
+/// for the admin API that hashes and the webserver that verifies.
+pub const PARAMETER_SECRET: ParameterArgon2 = ParameterArgon2::OWASP;
+
+/// Hash a client secret into the PHC string stored in
+/// `client_kredensial.kunci_hash` (admin API, SHAA-196). The salt is generated
+/// from the OS CSPRNG by `password-hash`.
+pub fn hash_secret_klien(
+    secret: &str,
+    param: ParameterArgon2,
+) -> Result<Zeroizing<String>, KredensialError> {
+    let params = Params::new(param.memori_kib, param.iterasi, param.paralelisme, None)
+        .map_err(|_| KredensialError::Hash)?;
+    let hash = argon2::Argon2::new(Algorithm::Argon2id, Version::V0x13, params)
+        .hash_password(secret.as_bytes())
+        .map_err(|_| KredensialError::Hash)?;
+    Ok(Zeroizing::new(hash.to_string()))
+}
+
+/// Verify a client secret against a stored PHC string. Parameters come from the
+/// stored string, so a hash made under older parameters keeps working.
+pub fn cocok_secret_klien(secret: &str, hash_phc: &[u8]) -> bool {
+    std::str::from_utf8(hash_phc).is_ok_and(|phc| {
+        PasswordHash::new(phc).is_ok_and(|h| {
+            argon2::Argon2::default()
+                .verify_password(secret.as_bytes(), &h)
+                .is_ok()
+        })
+    })
+}
+
+/// Dummy PHC string for unknown clients: one verification at the same cost as
+/// a real one. Compute once at startup, not per request.
+pub fn hash_palsu(param: ParameterArgon2) -> Zeroizing<String> {
+    hash_secret_klien("poolrouter-dummy-secret", param).expect("argon2 parameters are valid")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -278,5 +329,19 @@ mod tests {
         let p = urai_api_key(&k.kunci).unwrap();
         let shown = format!("{k:?} {p:?}");
         assert!(!shown.contains(p.secret));
+    }
+
+    #[test]
+    fn client_secret_hash_verifies_and_fake_hash_is_a_phc_string() {
+        let phc = hash_secret_klien("rahasia", PARAMETER_SECRET).unwrap();
+        assert!(phc.starts_with("$argon2id$"));
+        assert!(phc.contains("m=19456,t=2,p=1"));
+        assert!(cocok_secret_klien("rahasia", phc.as_bytes()));
+        assert!(!cocok_secret_klien("salah", phc.as_bytes()));
+        assert!(!cocok_secret_klien("rahasia", b"bukan phc"));
+
+        let palsu = hash_palsu(PARAMETER_SECRET);
+        assert!(palsu.starts_with("$argon2id$"));
+        assert!(!cocok_secret_klien("rahasia", palsu.as_bytes()));
     }
 }

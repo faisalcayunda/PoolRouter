@@ -284,7 +284,7 @@ hash yang di-review (lihat komentar issue untuk hash dan exit code per target).
 `enqueueAsync` memakai path `/v1/endpoints/{endpoint_id}/async` (U-4, diputuskan).
 Penolakan yang masih terbuka dicatat di tabel §7.
 
-## 7. Keputusan review (U-1…U-15 sudah ditutup)
+## 7. Keputusan review (U-1…U-16 sudah ditutup)
 
 Semua butir di bawah sudah diputuskan oleh Shu dan berlaku di YAML. Tabelnya
 dipertahankan sebagai riwayat keputusan, bukan permintaan baru.
@@ -307,6 +307,8 @@ dipertahankan sebagai riwayat keputusan, bukan permintaan baru.
 | U-14 | Kunci JWT dan `kid` | **Diputuskan Shu:** `POOLROUTER_JWT_SIGNING_KEY_FILE` berisi PEM PKCS#8; Ed25519 → EdDSA (default), P-256 → ES256, jenis lain → gagal start. `kid` = JWK thumbprint RFC 7638 (SHA-256, base64url). `POOLROUTER_JWT_VERIFY_KEY_FILE` opsional, PEM kunci publik, untuk rotasi (§5a.5). Algoritma diambil dari kunci, bukan header; `kid` tak dikenal → 401; leeway 60 s |
 | U-15 | Alamat dan throttle token | **Diputuskan Shu:** `POOLROUTER_API_ADDR` default `127.0.0.1:8081`, `POOLROUTER_ADMIN_ADDR` default `127.0.0.1:9090`; compose men-set `0.0.0.0` di jaringan internal tanpa port host untuk 9090. Throttle endpoint token wajib di Redis untuk F0 (kunci terpisah per `client_id` dan per IP; Redis mati → 503 fail-closed). `gcra.rs` in-process hanya transisi sampai bagian 2; R-05 (throttle) baru diklaim lulus setelah bagian 2 |
 
-Sumber U-12…U-15: keputusan Shu, komentar `01a1a57e-a4df-7720-b3af-2410e5c74294` di SHAA-198 (2026-11-04 07.38 UTC). Akan masuk revisi ADR-0001 §5a.5 berikutnya.
+| U-16 | Pencabutan kredensial dan token yang sudah terbit (SHAA-198 bagian 1b) | **Diputuskan Shu:** klaim privat `cid` = `credential_id` yang menerbitkan token. `cid` wajib saat terbit dan verifikasi; tanpa `cid` atau `cid` bukan UUID → 401. Bearer lolos hanya bila client aktif **dan** kredensial `cid` milik `sub`, berjenis client secret, `status = aktif`, dan `kedaluwarsa_at` > now. Pencabutan satu secret karena itu membatalkan token yang terbit darinya, paling lama 30 s (TTL cache), tanpa denylist `jti`. `access_token` tetap opak bagi client, jadi kontrak tidak berubah |
+
+Sumber U-12…U-15: keputusan Shu, komentar `01a1a57e-a4df-7720-b3af-2410e5c74294` di SHAA-198 (2026-11-04 07.38 UTC). Sumber U-16: keputusan Shu, komentar `01a1a5da-6cb9-7300-9fae-c83ee7f65a3f` di SHAA-198 (2026-11-04 09.18 UTC). Semuanya akan masuk revisi ADR-0001 §5a.5 berikutnya.
 
 Cek terhadap UI (layar, copy) tidak saya lakukan di dokumen ini; itu bagian review Fitcher.

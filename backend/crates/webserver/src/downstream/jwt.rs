@@ -68,6 +68,8 @@ pub struct Claims {
     pub iss: String,
     pub aud: String,
     pub sub: Uuid,
+    /// Credential that issued the token. Revoking it revokes this token too.
+    pub cid: Uuid,
     pub exp: u64,
     pub iat: u64,
     pub nbf: u64,
@@ -249,15 +251,21 @@ impl JwtKeys {
         &self.signing.kid
     }
 
-    /// Issue a token for `client_id` at unix time `now`. Returns the compact
-    /// token and `expires_in` seconds.
-    pub fn issue(&self, client_id: Uuid, now: u64) -> Result<(String, u64), SignError> {
+    /// Issue a token for `client_id` under credential `credential_id` at unix
+    /// time `now`. Returns the compact token and `expires_in` seconds.
+    pub fn issue(
+        &self,
+        client_id: Uuid,
+        credential_id: Uuid,
+        now: u64,
+    ) -> Result<(String, u64), SignError> {
         let mut header = Header::new(self.signing.alg);
         header.kid = Some(self.signing.kid.clone());
         let claims = Claims {
             iss: self.issuer.clone(),
             aud: AUDIENCE.to_owned(),
             sub: client_id,
+            cid: credential_id,
             exp: now + TTL_SECS,
             iat: now,
             nbf: now,
@@ -357,7 +365,7 @@ mod tests {
         let (sk, _) = ed_pair();
         let keys = JwtKeys::from_pem(ISS, &sk, None).unwrap();
         let client = Uuid::now_v7();
-        let (tok, ttl) = keys.issue(client, now()).unwrap();
+        let (tok, ttl) = keys.issue(client, Uuid::now_v7(), now()).unwrap();
         assert_eq!(ttl, 900);
         let h = jsonwebtoken::decode_header(&tok).unwrap();
         assert_eq!(h.alg, Algorithm::EdDSA);
@@ -374,7 +382,7 @@ mod tests {
     fn es256_round_trip() {
         let (sk, _) = ec_pair();
         let keys = JwtKeys::from_pem(ISS, &sk, None).unwrap();
-        let (tok, _) = keys.issue(Uuid::now_v7(), now()).unwrap();
+        let (tok, _) = keys.issue(Uuid::now_v7(), Uuid::now_v7(), now()).unwrap();
         assert_eq!(
             jsonwebtoken::decode_header(&tok).unwrap().alg,
             Algorithm::ES256
@@ -387,10 +395,14 @@ mod tests {
         let (sk, _) = ed_pair();
         let keys = JwtKeys::from_pem(ISS, &sk, None).unwrap();
         // Issued 15 min + 30 s ago: inside the 60 s leeway, still valid.
-        let (tok, _) = keys.issue(Uuid::now_v7(), now() - 900 - 30).unwrap();
+        let (tok, _) = keys
+            .issue(Uuid::now_v7(), Uuid::now_v7(), now() - 900 - 30)
+            .unwrap();
         assert!(keys.verify(&tok).is_ok());
         // Issued 15 min + 120 s ago: expired.
-        let (tok, _) = keys.issue(Uuid::now_v7(), now() - 900 - 120).unwrap();
+        let (tok, _) = keys
+            .issue(Uuid::now_v7(), Uuid::now_v7(), now() - 900 - 120)
+            .unwrap();
         assert_eq!(keys.verify(&tok), Err(TokenError::Expired));
     }
 
@@ -398,7 +410,9 @@ mod tests {
     fn not_yet_valid_token_is_invalid_beyond_leeway() {
         let (sk, _) = ed_pair();
         let keys = JwtKeys::from_pem(ISS, &sk, None).unwrap();
-        let (tok, _) = keys.issue(Uuid::now_v7(), now() + 600).unwrap();
+        let (tok, _) = keys
+            .issue(Uuid::now_v7(), Uuid::now_v7(), now() + 600)
+            .unwrap();
         assert_eq!(keys.verify(&tok), Err(TokenError::Invalid));
     }
 
@@ -406,7 +420,7 @@ mod tests {
     fn wrong_issuer_and_foreign_key_are_invalid() {
         let (sk, _) = ed_pair();
         let a = JwtKeys::from_pem(ISS, &sk, None).unwrap();
-        let (tok, _) = a.issue(Uuid::now_v7(), now()).unwrap();
+        let (tok, _) = a.issue(Uuid::now_v7(), Uuid::now_v7(), now()).unwrap();
         let other_iss = JwtKeys::from_pem("https://other.example.test", &sk, None).unwrap();
         assert_eq!(other_iss.verify(&tok), Err(TokenError::Invalid));
         let (sk2, _) = ed_pair();
@@ -418,7 +432,7 @@ mod tests {
     fn tampered_payload_and_garbage_are_invalid() {
         let (sk, _) = ed_pair();
         let keys = JwtKeys::from_pem(ISS, &sk, None).unwrap();
-        let (tok, _) = keys.issue(Uuid::now_v7(), now()).unwrap();
+        let (tok, _) = keys.issue(Uuid::now_v7(), Uuid::now_v7(), now()).unwrap();
         let parts: Vec<&str> = tok.split('.').collect();
         let forged = base64url_encode(
             br#"{"iss":"x","aud":"poolrouter-downstream-api","sub":"00000000-0000-0000-0000-000000000000","exp":9999999999,"iat":1,"nbf":1,"jti":"00000000-0000-0000-0000-000000000000"}"#,
@@ -440,7 +454,7 @@ mod tests {
     fn header_alg_none_hs256_and_missing_kid_are_invalid() {
         let (sk, _) = ed_pair();
         let keys = JwtKeys::from_pem(ISS, &sk, None).unwrap();
-        let (tok, _) = keys.issue(Uuid::now_v7(), now()).unwrap();
+        let (tok, _) = keys.issue(Uuid::now_v7(), Uuid::now_v7(), now()).unwrap();
         let parts: Vec<&str> = tok.split('.').collect();
         let kid = keys.signing_kid();
         for hdr in [
@@ -467,7 +481,7 @@ mod tests {
         let phase1 = JwtKeys::from_pem(ISS, &old_sk, Some(&new_pub)).unwrap();
         // Phase 2: signing with the new key (as another replica would).
         let phase2 = JwtKeys::from_pem(ISS, &new_sk, None).unwrap();
-        let (tok, _) = phase2.issue(Uuid::now_v7(), now()).unwrap();
+        let (tok, _) = phase2.issue(Uuid::now_v7(), Uuid::now_v7(), now()).unwrap();
         assert!(
             phase1.verify(&tok).is_ok(),
             "installed for verification first"
@@ -526,14 +540,14 @@ mod tests {
         let keys = JwtKeys::from_pem(ISS, &sk, None).unwrap();
         let t = now();
         let full = serde_json::json!({
-            "iss": ISS, "aud": AUDIENCE, "sub": Uuid::now_v7(),
+            "iss": ISS, "aud": AUDIENCE, "sub": Uuid::now_v7(), "cid": Uuid::now_v7(),
             "exp": t + 900, "iat": t, "nbf": t, "jti": Uuid::now_v7(),
         });
         assert!(
             keys.verify(&sign_raw(&keys, &full)).is_ok(),
             "control: complete claims pass"
         );
-        for claim in ["iss", "aud", "sub", "exp", "iat", "nbf", "jti"] {
+        for claim in ["iss", "aud", "sub", "cid", "exp", "iat", "nbf", "jti"] {
             let mut c = full.clone();
             c.as_object_mut().unwrap().remove(claim);
             assert_eq!(
@@ -557,7 +571,7 @@ mod tests {
         ];
         der.extend_from_slice(&seed);
         let keys = JwtKeys::from_pem(ISS, &pem("PRIVATE KEY", &der), None).unwrap();
-        let (tok, _) = keys.issue(Uuid::now_v7(), now()).unwrap();
+        let (tok, _) = keys.issue(Uuid::now_v7(), Uuid::now_v7(), now()).unwrap();
         assert!(keys.verify(&tok).is_ok());
     }
 
