@@ -4,7 +4,7 @@ Runbook ini menjelaskan cara menjalankan gate backend di Docker, menjaga ruang k
 
 - **Pemilik:** Tetsu (Platform & SRE), reviewer Ridley, Huan untuk runbook.
 - **Tanggal:** 2026-11-04.
-- **Status:** gate backend lolos di sandbox instabox (lihat Pengukuran). Gate frontend belum diukur.
+- **Status:** gate backend dan frontend lolos di sandbox instabox (lihat Pengukuran dan Pengukuran disk frontend).
 
 ## Prasyarat
 
@@ -158,7 +158,7 @@ Puncak pemakaian: 5G (image 2.2G, target dan cache sekitar 2.5G). Angka ini peng
 
 ## Batasan
 
-- Dengan 20G, lane hanya muat satu gate backend. Gate frontend (`pnpm install`) belum diukur dan butuh ruang lebih.
+- Dengan 20G, lane dapat menjalankan gate backend dan frontend secara berurutan; rincian pemakaian disk tercatat pada tabel Pengukuran di atas dan Pengukuran disk frontend di bawah.
 - Resize `/data` ke 40G masih rekomendasi untuk jangka panjang.
 
 ## Root Docker gate (SHAA-379)
@@ -175,8 +175,7 @@ Push ke `main` (gate penuh dulu, lalu push fast-forward; variabel sama):
 make push-main RUNNER=docker FRONTEND_RUNNER=docker CONTAINER_LABEL=shaal.issue=SHAA-<n>
 ```
 
-`push-main` adalah satu-satunya jalur push ke `main`. Ia menjalankan gate backend dan
-frontend dan hanya push bila semua target exit 0.
+Variabel juga dapat diletakkan di depan perintah (mis. `RUNNER=docker FRONTEND_RUNNER=docker CONTAINER_LABEL=shaal.issue=SHAA-<n> make push-main`). `push-main` adalah satu-satunya jalur push ke `main`. Ia menjalankan gate backend dan frontend (`setup`, `test`, `lint`) dan hanya push bila semua target exit 0.
 
 ### `make -n` aman sebagai bukti
 
@@ -193,10 +192,19 @@ stub tidak kosong):
 make test-dry-run
 ```
 
-Catat sebelum dan sesudah gate: `df -h /data`; ukuran `frontend/node_modules` dan
-store pnpm; ukuran image Node pinned dan image Playwright pinned (`docker images`),
-serta ruang kosong `/data`. Gate memeriksa ruang kosong sebelum target berat dan
-menolak eksekusi bila di bawah ambang.
+### Pengukuran disk frontend (2026-11-04, sandbox instabox, /data 20G)
+
+| Komponen | Sebelum Gate | Sesudah Gate | Catatan |
+|---|---|---|---|
+| Ruang kosong `/data` | 8,3G (58%) | 3,6G (82%) | Terukur via `df -h /data`; penurunan mencakup kompilasi target backend serta aktivitas konkuren lane lain di host |
+| Ruang kosong Docker root (`/var/lib/docker`) | 8,3G (58%) | 3,6G (82%) | Satu partisi (`/dev/vdb`) dengan `/data`; tetap di atas ambang minimum 3G |
+| `frontend/node_modules` | 0 | 396M | 479 paket terinstal |
+| Store pnpm (`frontend/.cache/pnpm-store`) | 0 | 22M | Store lokal per checkout (keputusan SHAA-394) |
+| Cache frontend total (`frontend/.cache`) | 0 | 23M | Termasuk pnpm-store dan corepack |
+| Image Node pinned (`node:24.22.2-bookworm-slim`) | 333M | 333M | Dipakai runner Docker frontend |
+| Image Playwright pinned (`mcr.microsoft.com/playwright`) | Belum di-pull | Belum di-pull | Hanya ditarik saat target `e2e` dipanggil (ukuran manifest layer ~990MB terkompresi, estimasi uncompressed ~2,4GB) |
+
+Penambahan disk lokal spesifik frontend adalah sekitar 420M (gabungan `node_modules` 396M dan `.cache` 23M). Total ruang kosong `/data` berkurang dari 8,3G ke 3,6G akibat kompilasi target backend bersamaan dengan aktivitas lane lain di host. Gate memeriksa ruang kosong sebelum target berat dijalankan dan menolak eksekusi bila di bawah ambang batas.
 
 ## Frontend di lane Docker (SHAA-373)
 
