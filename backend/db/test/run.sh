@@ -42,7 +42,7 @@ psql_su() { $ENGINE exec -i "$NAME" psql -U postgres -h 127.0.0.1 --no-psqlrc -q
 echo "==> secrets and role bootstrap"
 $ENGINE exec "$NAME" sh -c '
   umask 077; mkdir -p /tmp/sec
-  for r in poolrouter_owner pr_api pr_admin_api pr_controller pr_worker pr_webhook pr_job_balikan pr_job_arsip pr_restore; do
+  for r in poolrouter_owner pr_api pr_admin_api pr_controller pr_worker pr_webhook pr_job_balikan pr_job_arsip pr_restore pr_blend; do
     od -An -N18 -tx1 /dev/urandom | tr -d " \n" > /tmp/sec/$r
   done'
 $ENGINE exec "$NAME" mkdir -p /tmp/db
@@ -78,6 +78,16 @@ for t in "$here"/[1-9]*.sql; do
   psql_su -d poolrouter_test -t -A -f - < "$t" >/dev/null
 done
 
+# GB-09 / U-118 butir 8: three instances start at the same moment -> one gate event
+echo "==> gate trail: 3 concurrent starts"
+for i in 1 2 3; do
+  psql_su -d poolrouter_test -t -A -c "SELECT fn_catat_gerbang_blend('true', 'DOC-CONC', 'inst-$i')" >/dev/null &
+done
+wait
+[ "$(psql_su -d poolrouter_test -t -A -c "SELECT count(*) FROM audit_gerbang_blend WHERE dasar_hukum_ref = 'DOC-CONC'")" = "1" ] \
+  || { echo "FAIL: 3 concurrent starts must write exactly one gate event" >&2; exit 1; }
+echo "gate trail: 3 concurrent starts wrote one event: ok"
+
 # ---- rollback: F0 -> F1 -> (refused with data) -> F0 must leave the schema identical to F0; F1 must apply again afterwards
 echo "==> rollback of the F1 migrations"
 psql_su -d postgres -c 'CREATE DATABASE poolrouter_rb'
@@ -85,6 +95,12 @@ $ENGINE exec -e POOLROUTER_SECRETS_DIR=/tmp/sec -e PGUSER=postgres -e PGHOST=127
   "$NAME" sh /tmp/db/bootstrap.sh poolrouter_rb
 dump_schema() { $ENGINE exec -e PGPASSWORD="$SU_PW" "$NAME" pg_dump -U postgres -h 127.0.0.1 -s --no-comments -d poolrouter_rb | grep -v -E '^.(un)?restrict '; }
 rollback_all() {
+  # F3 first (it sits on top of F1); skipped when an earlier, refused attempt already removed it
+  if [ "$(psql_su -d poolrouter_rb -t -A -c "SELECT to_regclass('blend') IS NOT NULL")" = "t" ]; then
+    for f in 2 1; do
+      { echo "SET ROLE poolrouter_owner;"; cat "$rb_dir"/2026110500000${f}_*.down.sql; } | psql_su -d poolrouter_rb -1 || return 1
+    done
+  fi
   for f in 4 3 2 1; do
     { echo "SET ROLE poolrouter_owner;"; cat "$rb_dir"/2026110400000${f}_*.down.sql; } | psql_su -d poolrouter_rb -1 || return 1
   done
@@ -103,6 +119,22 @@ apply_migrations poolrouter_rb '20261104*'
   || { echo "FAIL: MF-07 session revocation" >&2; exit 1; }
 echo "MF-07: sessions of the platform admin revoked, the other session kept: ok"
 psql_su -d poolrouter_rb -c "DELETE FROM admin_session; DELETE FROM admin_user_peran; DELETE FROM admin_user"
+psql_su -d poolrouter_rb -c "INSERT INTO provider (provider_id, nama, data_balikan_aktif, wajib_log_nik) VALUES
+  ('20000000-0000-7000-8000-0000000000e1', 'rb-wajib', true, true), ('20000000-0000-7000-8000-0000000000e2', 'rb-mock', false, false)"
+apply_migrations poolrouter_rb '20261105*'
+[ "$(psql_su -d poolrouter_rb -t -A -c "SELECT count(*) FROM provider WHERE wajib_log_nik AND NOT butuh_dasar_hukum_blend")" = "0" ] \
+  || { echo "FAIL: a provider with wajib_log_nik must start with the marker true" >&2; exit 1; }
+[ "$(psql_su -d poolrouter_rb -t -A -c "SELECT butuh_dasar_hukum_blend FROM provider WHERE nama = 'rb-mock'")" = "f" ] \
+  || { echo "FAIL: a provider without wajib_log_nik starts false" >&2; exit 1; }
+[ "$(psql_su -d poolrouter_rb -t -A -c "SELECT count(*) FROM provider_penanda_audit WHERE aktor = 'migrasi' AND nilai_lama IS NULL AND blend_terdampak = '[]'::jsonb AND length(btrim(alasan)) > 0")" = "$(psql_su -d poolrouter_rb -t -A -c 'SELECT count(*) FROM provider')" ] \
+  || { echo "FAIL: exactly one migrasi entry per provider in provider_penanda_audit" >&2; exit 1; }
+echo "initial marker values and migrasi entries (one per provider, no affected blends): ok"
+# F3 data: the F3 rollback refuses (Klaus + owner approval), and the schema stays in place
+psql_su -d poolrouter_rb -c "INSERT INTO audit_gerbang_blend (jenis, nilai_flag, dasar_hukum_ref, instance) VALUES ('gerbang_blend_dibuka', 'true', 'DOC-RB', 'rb')"
+if { echo "SET ROLE poolrouter_owner;"; cat "$rb_dir"/20261105000001_*.down.sql; } | psql_su -d poolrouter_rb -1 2>/dev/null; then
+  echo "FAIL: F3 rollback ran although F3 data exists" >&2; exit 1; fi
+echo "F3 rollback refuses while F3 data exists: ok"
+{ echo "SET ROLE poolrouter_owner; SET poolrouter.izinkan_hapus_data_f3 = 'ya'; ALTER TABLE audit_gerbang_blend DISABLE TRIGGER audit_gerbang_blend_append_only;"; echo "DELETE FROM audit_gerbang_blend;"; } | psql_su -d poolrouter_rb -1
 # with F1 data the rollback must refuse and leave everything in place
 psql_su -d poolrouter_rb -c "INSERT INTO admin_user (pengguna_id, username, password_hash) VALUES ('00000000-0000-7000-8000-0000000000a1', 'rb-user', '\$argon2id\$synthetic');
   INSERT INTO pengguna_mfa (pengguna_id, secret_ciphertext, secret_dek_terbungkus, secret_nonce, kek_id, status)
@@ -116,4 +148,6 @@ f0_after=$(dump_schema)
 echo "rollback leaves the F0 schema identical: ok"
 apply_migrations poolrouter_rb '20261104*'
 echo "F1 applies again after rollback: ok"
+apply_migrations poolrouter_rb '20261105*'
+echo "F3 applies again after rollback: ok"
 echo "DB TESTS PASSED"
