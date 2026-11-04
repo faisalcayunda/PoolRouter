@@ -12,7 +12,7 @@ Runbook ini menjelaskan backup, cek rutin, restore PITR, restore setelah kehilan
 - Image `localhost/poolrouter-postgres:dev` dibangun dengan `make image-postgres` (dev) atau ditarik dari registry dengan digest (staging dan prod).
 - Secret di direktori di luar repo (`POOLROUTER_SECRETS_DIR`, mode `0700`, file `0444`). Untuk backup ditambah `pgbackrest_repo1_cipher_pass`, passphrase repo. Isi file tidak pernah ditulis di issue, komentar, atau repo.
 - File env di luar repo, dibuat dari `deploy/compose/env/<env>.env.example`. Variabel backup: `PGBACKREST_STANZA`, `PGBACKREST_REPO1_TYPE`, `PGBACKREST_REPO1_RETENTION_FULL` (bawaan 7), dan `PR_REPO1_RETENTION_DIFF` (kosong = bawaan pgBackRest; jadwal hemat mengisi 8), `PR_BACKUP_FULL_WEEKDAY` (`daily` atau 1–7, bawaan `daily`).
-- Di mesin lane (sandbox instabox): Docker lane SHAA-373, dengan cek ruang kosong dan label `shaal.issue=SHAA-381` pada setiap resource.
+- Di mesin lane (sandbox instabox): Docker lane SHAA-373 (`docs/runbook/docker-lane.md`), dengan cek ruang kosong dan label `shaal.issue=SHAA-381` pada setiap resource.
 
 ## Layout
 
@@ -145,15 +145,15 @@ Setelah komentar itu:
 
 ## Pembersihan
 
-Pembersihan akhir run hanya memakai filter label `shaal.issue` milik issue sendiri (playbook §6):
+Pembersihan akhir run hanya menghapus resource berlabel `shaal.issue=SHAA-381` (playbook §6, `docs/runbook/docker-lane.md`):
 
 ```sh
-docker rm -f -v --filter label=shaal.issue=SHAA-381
-docker volume prune -f --filter label=shaal.issue=SHAA-381
-docker network prune -f --filter label=shaal.issue=SHAA-381
+scripts/docker-lane.sh cleanup SHAA-381
 ```
 
-Image `localhost/poolrouter-postgres:dev` tidak dihapus oleh pembersihan ini. Dilarang `docker system prune` dan prune tanpa filter label.
+Image `localhost/poolrouter-postgres:dev` tidak dihapus. Dilarang `docker system prune`, `docker volume prune`, dan prune atau `rm` tanpa filter label.
+
+Sebelum build berat, cek ruang kosong dengan `scripts/docker-lane.sh check` (ambang 3 GB untuk Docker root, 1 GB untuk `/data`). Di bawah ambang, run berhenti dan dilaporkan sebagai blocker.
 
 ## Rujukan
 
