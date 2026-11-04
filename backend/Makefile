@@ -61,12 +61,23 @@ CT_CARGO_HOME := /cache/cargo
 CT_RUSTUP_HOME := /cache/rustup
 # Subdirektori, bukan akar mount: `cargo clean` menghapus direktori targetnya sendiri, dan akar mount tidak bisa dihapus.
 CT_TARGET_DIR := /cache/target/build
-SHARED_OPTS = --user $(shell id -u):$(shell id -g) \
+# Isolasi lane (SHAA-401). Target bersama + mtime: cargo hanya menilai kesegaran crate workspace dari mtime sumber, dan
+# hash unitnya memakai path relatif ke akar workspace (bukan path mount), jadi lane B bisa memakai artefak lane A.
+# RUSTC_WORKSPACE_WRAPPER dengan path unik per lane (/lane/<kunci>/w.sh) ikut hash unit crate workspace saja,
+# jadi artefaknya terpisah per lane dan dependensi registry tetap berbagi. <kunci> = SHAA-n + 8 hex sha256 path checkout.
+# clippy menimpa wrapper dengan clippy-driver: `--cfg shaal_lane` (argumen yang dilacak cargo) menggantikannya di target lint.
+LANE_KEY := $(shell sh ../scripts/lane-key.sh "$(CONTAINER_LABEL)" "$(CURDIR)")
+LANE_OPTS = -e RUSTC_WORKSPACE_WRAPPER=/lane/$(LANE_KEY)/w.sh -v "$(CURDIR)/../scripts/lane-wrapper.sh":/lane/$(LANE_KEY)/w.sh:ro
+CLIPPY_LANE_ARGS = --cfg 'shaal_lane="$(LANE_KEY)"' --check-cfg 'cfg(shaal_lane,values("$(LANE_KEY)"))'
+SHARED_OPTS = $(LANE_OPTS) \
+	 --user $(shell id -u):$(shell id -g) \
 	-v "$(SHARED_TARGET_DIR)":/cache/target -v "$(SHARED_CARGO_HOME)/cargo":$(CT_CARGO_HOME) -v "$(SHARED_CARGO_HOME)/rustup":$(CT_RUSTUP_HOME) \
 	-e CARGO_TARGET_DIR=$(CT_TARGET_DIR)
 else
 CT_CARGO_HOME := /work/.cache/cargo
 CT_RUSTUP_HOME := /work/.cache/rustup
+LANE_KEY :=
+CLIPPY_LANE_ARGS =
 SHARED_OPTS =
 endif
 
@@ -196,7 +207,7 @@ uji-redis-cargo: check-label $(CHECK_DISK)
 
 lint: check-label $(CHECK_DISK)
 	$(RUN) cargo fmt --all --check
-	$(HEAVY) cargo clippy --workspace --all-targets --locked -- -D warnings
+	$(HEAVY) cargo clippy --workspace --all-targets --locked -- -D warnings $(CLIPPY_LANE_ARGS)
 	$(RUN) cargo deny --locked check
 
 fmt: check-label $(CHECK_DISK)

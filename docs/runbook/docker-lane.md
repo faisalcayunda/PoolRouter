@@ -90,6 +90,32 @@ Dengan `RUNNER=docker`, semua workdir memakai satu salinan cache, bergantian di 
 
 Semua path diatur di `backend/Makefile` (blok `SHARED_*`), tidak ada yang di-hardcode di tempat lain. Direktori di-bind ke container di `/cache/{target,cargo,rustup}`, dan container berjalan dengan `--user <uid>:<gid>` host, jadi semua file dimiliki user host dan bisa dihapus tanpa sudo. Pergantian branch antar-lane membangun ulang crate workspace, tetapi dependensi dipakai ulang.
 
+#### Isolasi artefak antar-lane (SHAA-401)
+
+**Penyebab.** Target bersama dipakai semua lane. Cargo menilai kesegaran crate workspace dari mtime sumber dibanding dep-info, dan nama unitnya (hash) dihitung dari path crate **relatif ke akar workspace**, bukan path absolut. Path mount `/work` yang sama atau berbeda tidak memengaruhi hash (diuji di cargo 1.99.1: mount `/work/SHAA-A` dan `/work/SHAA-B` tetap `Fresh`, direktori fingerprint identik). Jadi bila lane A membangun crate `X` dari sumbernya lalu lane B punya `X` berbeda dengan mtime lebih tua dari artefak A, cargo di lane B menganggap artefak A segar: gate merah palsu (`cannot find admin in poolrouter_webserver`) atau **hijau palsu** (push-main lolos dengan artefak lane lain). Sama untuk `cargo clippy`: diagnostik lane A diputar ulang untuk B.
+
+**Perbaikan** (`backend/Makefile`, hanya `RUNNER=docker`):
+
+- `RUSTC_WORKSPACE_WRAPPER=/lane/<kunci>/w.sh`. Berkasnya `scripts/lane-wrapper.sh` (`exec "$@"`), di-mount read-only. Cargo memasukkan wrapper ke hash unit crate workspace saja, jadi artefak crate workspace tiap lane bernama berbeda; dependensi registry tetap berbagi.
+- `<kunci>` = `SHAA-<n>` (dari `CONTAINER_LABEL`; `local` bila kosong) + 8 hex sha256 path absolut checkout di host (`scripts/lane-key.sh`). Dua checkout berlabel sama di path host berbeda tetap terpisah.
+- **Celah clippy.** `cargo clippy` menimpa `RUSTC_WORKSPACE_WRAPPER` dengan `clippy-driver`, path-nya sama di semua lane, jadi wrapper saja tidak melindungi target `lint` (terbukti di uji: B yang melanggar clippy lulus). Target `lint` menambah `--cfg 'shaal_lane="<kunci>"' --check-cfg ...` (`CLIPPY_LANE_ARGS`); argumen ini dilacak cargo, jadi lint dijalankan ulang saat berganti lane. Vonis lint keluar dari satu invocation, cukup dirty saat ganti lane.
+- Mount `/work` dan `WORK_DIR`/`REPO_DIR` tidak berubah.
+- Biner tanpa hash: tidak ada target yang menjalankan `target/.../<nama>` langsung. `openapi` memakai `cargo run` dan `uji-pg-cargo`/`uji-redis-cargo` memakai `cargo test`, keduanya satu invocation cargo; biner/test yang dijalankan sudah melewati pemeriksaan kesegaran cargo dan namanya berhash dengan wrapper.
+
+**Regresi.** `sh scripts/uji-isolasi-target.sh` (docker dan toolchain bersama, tanpa jaringan): dua checkout dengan crate workspace sama tetapi isi berbeda, mtime B lebih tua. Memeriksa: tanpa perbaikan B memakai artefak A; dengan wrapper B compile ulang (label sama, path host beda); lint hanya dengan wrapper bocor; lint dengan `--cfg` gagal untuk B. **Jalankan ulang setiap `RUST_IMAGE` diganti**, karena perbaikan bergantung pada perilaku cargo (wrapper ikut hash unit).
+
+**Dampak ruang** (terukur 2026-11-04):
+
+| Keadaan | Target bersama (`du`) |
+| --- | --- |
+| Sebelum (lane-lane sebelumnya, campur) | 2085 MB, lalu 2585 MB (di atas batas, ditangani `clean-shared`) |
+| Sesudah `clean` + gate penuh satu lane (SHAA-401) | 2460 MB |
+| Artefak crate workspace per lane (`deps/*poolrouter*` + `.fingerprint/poolrouter*`) | sekitar 113 MB |
+
+Setiap lane tambahan menambah sekitar 113 MB (uji mini: 4504 KiB menjadi 8996 KiB untuk dua lane), tetap dibatasi `SHARED_TARGET_LIMIT_MB`. Artefak lane lama tidak dihapus otomatis; `clean-shared` mengosongkannya.
+
+**Mitigasi sebelum perbaikan masuk:** `make -C backend clean` sebelum gate yang dipakai `push-main`. Setelah SHAA-401 masuk `main`, tidak perlu lagi.
+
 **Penjaga `/`** (`check-disk`, sebelum setiap target container):
 
 1. Ukuran target bersama > `SHARED_TARGET_LIMIT_MB` (2560 MB): `make clean-shared` (`cargo clean` pada target bersama, di bawah kunci heavy). Bila kunci dipegang build lain, penjaga keluar 75 dan tidak membersihkan apa pun.
