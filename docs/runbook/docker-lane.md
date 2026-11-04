@@ -87,19 +87,16 @@ Puncak pemakaian: 5G (image 2.2G, target dan cache sekitar 2.5G). Angka ini peng
 - Resize `/data` ke 40G masih rekomendasi untuk jangka panjang.
 - Gate penuh `make setup test lint` di akar repo belum ada target setup/test/lint di Makefile akar. Gate yang dijalankan adalah target backend di atas.
 
-## Frontend Docker lane (SHAA-379)
+## Root Docker gate (SHAA-379)
 
 Gate akar (menjalankan seluruh lane dan push fast-forward):
 
 ```sh
-make push-main FRONTEND_RUNNER=docker CONTAINER_LABEL=shaal.issue=SHAA-379
+RUNNER=docker FRONTEND_RUNNER=docker CONTAINER_LABEL=shaal.issue=SHAA-379 make push-main
 ```
 
-Padanan tanpa push, untuk diagnosis lokal:
-
-```sh
-make -C frontend setup test lint build e2e FRONTEND_RUNNER=docker CONTAINER_LABEL=shaal.issue=SHAA-379
-```
+This is the only root gate command. It runs the backend and frontend gates and
+pushes only after every target exits zero.
 
 Catat sebelum dan sesudah gate: `df -h /data`; ukuran `frontend/node_modules` dan
 store pnpm; ukuran image Node pinned dan image Playwright pinned (`docker images`),
