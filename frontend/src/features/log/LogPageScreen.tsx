@@ -31,6 +31,7 @@ import {
 import { PageHeader, EmptyState, QueryError } from '../common/page';
 import { useQuery } from '../common/useQuery';
 import { useDocumentTitle, useFocusOnMount } from '../common/a11y';
+import { MaskedNik } from '../common/MaskedNik';
 import { ScrollArea } from '../common/ScrollArea';
 import { useRole } from '../common/RoleContext';
 import { SnackbarRegion, useSnackbar } from '../common/useSnackbar';
@@ -436,7 +437,7 @@ export function LogPageScreen({
                             data-label={t('log.col.nik')}
                             className="typescale-body-medium px-4 py-3 align-middle"
                           >
-                            {row.nik}
+                            <MaskedNik value={row.nik} />
                           </td>
                           <td
                             data-label={t('log.col.access')}
