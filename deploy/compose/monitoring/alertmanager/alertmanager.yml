@@ -1,0 +1,12 @@
+# Alertmanager dev (SHAA-334). Internal saja. Kanal dan penerima belum diputuskan (OQ-F1-05):
+# receiver di bawah hanya placeholder "null" sampai keputusan owner. Jangan isi alamat nyata
+# atau secret di sini; nilai rahasia lewat ${VAR} saat keputusan ada.
+route:
+  receiver: dev-null
+  group_by: [alertname, service]
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+
+receivers:
+  - name: dev-null
