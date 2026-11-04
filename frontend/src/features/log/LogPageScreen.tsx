@@ -21,7 +21,13 @@ import { TextField } from '../../components/m3/TextField';
 import { Icon, icons } from '../../icons';
 import { useFormatter } from '../../i18n/useFormatter';
 import { enumLabel } from '../../i18n/enums';
-import { DateRangeField, formatTypedDate, type DateRange } from '../common/DateRangeField';
+import {
+  DateRangeField,
+  formatTypedDate,
+  validateTypedRange,
+  type DateRange,
+  type DateRangeFieldErrors,
+} from '../common/DateRangeField';
 import { PageHeader, EmptyState, QueryError } from '../common/page';
 import { useQuery } from '../common/useQuery';
 import { useDocumentTitle, useFocusOnMount } from '../common/a11y';
@@ -77,10 +83,11 @@ export interface LogPageScreenProps {
  * access log (section 18.3); the table shows the NIK masked by the server and the operator never
  * gets a payload affordance.
  *
- * Responsive rules (section 4): below 600 px every row becomes a card, at 768 px the low-priority
- * columns (queue_id, NIK) are hidden, and above that the full table shows. The markup stays a
- * semantic table at every width — `display: block` on the table only changes how it wraps, not
- * what assistive tech sees.
+ * Responsive rules (section 4): below 600 px every row becomes a card, in the medium class
+ * (600–839 px) the low-priority columns (queue_id, Client) are hidden so the masked NIK and the
+ * time still fit, and above 840 px the full table shows. The markup stays a semantic table at
+ * every width — `display: block` on the table only changes how it wraps, not what assistive tech
+ * sees.
  */
 export function LogPageScreen({
   client = api,
@@ -107,21 +114,33 @@ export function LogPageScreen({
     return { start: formatTypedDate(r.startDate), end: formatTypedDate(r.endDate) };
   });
   const [codeError, setCodeError] = useState<string | null>(null);
+  const [rangeErrors, setRangeErrors] = useState<DateRangeFieldErrors>({});
+  const [rangeMessage, setRangeMessage] = useState<string | null>(null);
   const [payloadFor, setPayloadFor] = useState<LogBaris | null>(null);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
 
   /**
    * The submitted filters. Only the range changes it on its own: a new window should show results
-   * immediately, while typing in a text field must not fire a request per keystroke.
+   * immediately, while typing in a text field must not fire a request per keystroke. A deep link
+   * (`/log/<kode>`) seeds the code as a filter too — filling the field without filtering would show
+   * every client's rows for the window and look like the link did nothing.
    */
   const [applied, setApplied] = useState<LogCariRequest>(() => {
     const initial = lastDay();
-    return { dari: initial.from, sampai: initial.to };
+    const seeded: LogCariRequest = { dari: initial.from, sampai: initial.to };
+    const linked = initialCode.trim();
+    if (linked) seeded.kode_transaksi = linked;
+    return seeded;
   });
+  /**
+   * Bumped whenever the operator asks for the same filters again. The key carries it, so "Cari" on
+   * an unchanged form re-reads the window instead of silently keeping the previous snapshot.
+   */
+  const [run, setRun] = useState(0);
   const filters = useQuery<LogPage>(
     (signal) => client.cariLog(applied, { signal }),
-    JSON.stringify(applied),
+    `${JSON.stringify(applied)}#${run}`,
   );
   const appliedRange = `${applied.dari}|${applied.sampai}`;
 
@@ -148,18 +167,30 @@ export function LogPageScreen({
 
   function submit(event: React.FormEvent) {
     event.preventDefault();
+    // Section 15.1: both ends are validated before anything is sent, and the messages are per
+    // field so the reader can see which date is wrong. Without this an inverted or half-typed
+    // range was silently ignored and the previous window's rows stayed on screen.
+    const checked = validateTypedRange(range, typed, {
+      format: t('common.date.format_error'),
+      order: t('common.date.order_error'),
+    });
+    setRangeErrors(checked.errors);
+    setRangeMessage(checked.errorMessage);
+
     // The code field is short; a code with spaces is almost certainly a paste slip.
     if (code.trim() !== '' && /\s/.test(code.trim())) {
       setCodeError(t('log.filter.code_help'));
       return;
     }
     setCodeError(null);
+    if (!checked.ok) return;
     setPage(1);
     const next: LogCariRequest = { dari: range.from, sampai: range.to };
     if (code.trim()) next.kode_transaksi = code.trim();
     if (queueId.trim()) next.queue_id = queueId.trim();
     if (clientId) next.client_id = clientId;
     setApplied(next);
+    setRun((n) => n + 1);
   }
 
   function clearFilters() {
@@ -168,8 +199,11 @@ export function LogPageScreen({
     setQueueId('');
     setClientId(null);
     setCodeError(null);
+    setRangeErrors({});
+    setRangeMessage(null);
     setPage(1);
     setApplied(base);
+    setRun((n) => n + 1);
   }
 
   const pageStart = (page - 1) * pageSize;
@@ -219,13 +253,17 @@ export function LogPageScreen({
           />
           <Select
             label={t('log.filter.client')}
-            selectedKey={clientId}
+            selectedKey={clientId ?? 'semua'}
             onSelectionChange={(key) => {
-              setClientId(key === null ? null : String(key));
+              if (key === null) return;
+              setClientId(String(key) === 'semua' ? null : String(key));
               setPage(1);
             }}
             className="md:w-64"
           >
+            {/* A select whose empty state has no option of its own shows the framework's English
+                "Select an item"; the catalog already names "all" (common.action.all). */}
+            <SelectItem id="semua">{t('common.action.all')}</SelectItem>
             {clients.map((c) => (
               <SelectItem key={c.id} id={c.id}>
                 {c.nama}
@@ -238,8 +276,13 @@ export function LogPageScreen({
           value={range}
           typed={typed}
           onTypedChange={setTyped}
+          errors={rangeErrors}
+          errorMessage={rangeMessage}
           onChange={(next) => {
-            if (next) setRange(next);
+            if (!next) return;
+            setRange(next);
+            setRangeErrors({});
+            setRangeMessage(null);
           }}
         />
         <div className="flex flex-wrap gap-2">
@@ -320,13 +363,13 @@ export function LogPageScreen({
                       </th>
                       <th
                         scope="col"
-                        className="border-b border-outline-variant px-4 py-3 font-medium"
+                        className="hide-md border-b border-outline-variant px-4 py-3 font-medium"
                       >
                         {t('log.col.client')}
                       </th>
                       <th
                         scope="col"
-                        className="hide-md border-b border-outline-variant px-4 py-3 font-medium"
+                        className="border-b border-outline-variant px-4 py-3 font-medium"
                       >
                         {t('log.col.nik')}
                       </th>
@@ -338,7 +381,7 @@ export function LogPageScreen({
                       </th>
                       <th
                         scope="col"
-                        className="hide-md border-b border-outline-variant px-4 py-3 font-medium"
+                        className="border-b border-outline-variant px-4 py-3 font-medium"
                       >
                         {t('log.col.requested_at')}
                       </th>
@@ -385,13 +428,13 @@ export function LogPageScreen({
                           </td>
                           <td
                             data-label={t('log.col.client')}
-                            className="typescale-body-medium px-4 py-3 align-middle"
+                            className="hide-md typescale-body-medium px-4 py-3 align-middle"
                           >
                             {row.client_nama}
                           </td>
                           <td
                             data-label={t('log.col.nik')}
-                            className="hide-md typescale-body-medium px-4 py-3 align-middle"
+                            className="typescale-body-medium px-4 py-3 align-middle"
                           >
                             {row.nik}
                           </td>
@@ -405,7 +448,7 @@ export function LogPageScreen({
                           </td>
                           <td
                             data-label={t('log.col.requested_at')}
-                            className="hide-md typescale-body-medium px-4 py-3 align-middle"
+                            className="typescale-body-medium px-4 py-3 align-middle"
                           >
                             {format.tanggalWaktu(row.requested_at)}
                           </td>

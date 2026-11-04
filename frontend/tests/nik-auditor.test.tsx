@@ -48,6 +48,44 @@ async function fillNikAndSearch(reason = 'Audit aduan W-2026-07') {
 }
 
 describe('S12 pencarian log per NIK', () => {
+  it('confirms the search in a snackbar only after it succeeded', async () => {
+    const client = stubClient();
+    renderWithI18n(<NikSearchScreen client={client} />);
+
+    await fillNikAndSearch();
+
+    // Section 7: the confirmation is a success signal, so it waits for the recorded request.
+    expect(await screen.findByText('Pencarian dicatat')).toBeInTheDocument();
+  });
+
+  it('confirms the same search again when the auditor repeats it', async () => {
+    const client = stubClient();
+    renderWithI18n(<NikSearchScreen client={client} />);
+
+    await fillNikAndSearch();
+    expect(await screen.findByText('Pencarian dicatat')).toBeInTheDocument();
+
+    // Same filters, but a second audited action: the second request is not swallowed as a
+    // duplicate of the first one's key.
+    await userEvent.clear(screen.getByLabelText('NIK (16 digit)'));
+    await fillNikAndSearch();
+    expect(await screen.findAllByText('Pencarian dicatat')).toHaveLength(2);
+    expect(client.cariLogNik).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not claim a failed search was recorded', async () => {
+    const client = stubClient({
+      cariLogNik: vi.fn().mockRejectedValue(new ApiError(500, { status: 500 })),
+    });
+    renderWithI18n(<NikSearchScreen client={client} />);
+
+    await fillNikAndSearch();
+
+    expect(await screen.findByRole('alert')).toBeInTheDocument();
+    // The write never landed, so the snackbar must stay silent.
+    expect(screen.queryByText('Pencarian dicatat')).not.toBeInTheDocument();
+  });
+
   it('refuses a NIK shorter than 16 digits before asking for a reason', async () => {
     const client = stubClient();
     renderWithI18n(<NikSearchScreen client={client} />);

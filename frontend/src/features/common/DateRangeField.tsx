@@ -69,6 +69,44 @@ function isIsoDate(value: string): boolean {
   return /^\d{4}-\d{2}-\d{2}$/.test(value);
 }
 
+/** Catalog copy the submit-time check reports (section 15.1). */
+export interface DateRangeCopy {
+  format: string;
+  order: string;
+}
+
+export interface DateRangeCheck {
+  /** False when the typed values are not a usable interval, so nothing may be sent. */
+  ok: boolean;
+  /** One message per date field, for `DateRangeField`'s `errors`. */
+  errors: DateRangeFieldErrors;
+  /** The pair message for an inverted interval, for `DateRangeField`'s `errorMessage`. */
+  errorMessage: string | null;
+}
+
+/**
+ * Validate the two typed dates before a submit. A half-typed or impossible date names its own
+ * field; a complete pair that runs backwards gets the pair message. The screen has to say what is
+ * wrong — silently keeping the previous window made a bad range look like an accepted one.
+ *
+ * `current` is the range the field already holds: a valid edit has been merged into it by
+ * `onChange`, so this only decides whether the pair is usable and what to say when it is not.
+ */
+export function validateTypedRange(
+  current: DateRange | null,
+  typed: { start: string; end: string },
+  copy: DateRangeCopy,
+): DateRangeCheck {
+  const startIso = parseTypedDate(typed.start);
+  const endIso = parseTypedDate(typed.end);
+  const errors: DateRangeFieldErrors = {};
+  if (!startIso) errors.startDate = copy.format;
+  if (!endIso) errors.endDate = copy.format;
+  if (!startIso || !endIso) return { ok: false, errors, errorMessage: null };
+  const inverted = mergeRange(current, { startDate: startIso, endDate: endIso }) === null;
+  return { ok: !inverted, errors, errorMessage: inverted ? copy.order : null };
+}
+
 /** RAC hands back a `TimeValue`; only hour and minute matter, and both ends are sent as WIB. */
 function timeText(time: { hour: number; minute: number } | null): string {
   if (!time) return '';
@@ -145,6 +183,18 @@ export function DateRangeField({
     emit(which === 'start' ? { startDate: iso ?? '' } : { endDate: iso ?? '' });
   }
 
+  /**
+   * A calendar pick writes the same text the user would have typed, so the two inputs never
+   * disagree: the text is what a submit validates, and a stale field made a picked date look
+   * invalid (or quietly won the check).
+   */
+  function pickInto(which: 'start' | 'end', iso: string) {
+    const text = iso ? formatTypedDate(iso) : '';
+    const next = { start: startText, end: endText, [which]: text };
+    onTypedChange?.(next);
+    emit(which === 'start' ? { startDate: iso } : { endDate: iso });
+  }
+
   return (
     <fieldset className="flex flex-col gap-2">
       <legend className="typescale-label-large mb-1">{legend}</legend>
@@ -174,7 +224,7 @@ export function DateRangeField({
             label={t('common.date.from_picker')}
             calendarLabel={t('common.date.from')}
             value={isIsoDate(startDate) ? parseDate(startDate) : null}
-            onChange={(date) => emit({ startDate: date ? date.toString() : '' })}
+            onChange={(date) => pickInto('start', date ? date.toString() : '')}
             className="w-44"
           />
         </div>
@@ -200,7 +250,7 @@ export function DateRangeField({
             label={t('common.date.to_picker')}
             calendarLabel={t('common.date.to')}
             value={isIsoDate(endDate) ? parseDate(endDate) : null}
-            onChange={(date) => emit({ endDate: date ? date.toString() : '' })}
+            onChange={(date) => pickInto('end', date ? date.toString() : '')}
             className="w-44"
           />
         </div>

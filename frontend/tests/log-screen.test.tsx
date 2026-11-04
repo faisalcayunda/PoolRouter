@@ -44,8 +44,9 @@ describe('S11 log transaksi', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Cari' }));
 
     await screen.findByRole('link', { name: 'TRX-2026-0001' });
-    expect(client.cariLog).toHaveBeenCalledOnce();
-    const body = vi.mocked(client.cariLog).mock.calls[0]![0];
+    // The window loads on mount; "Cari" on an untouched form re-reads it rather than reusing it.
+    expect(client.cariLog).toHaveBeenCalledTimes(2);
+    const body = vi.mocked(client.cariLog).mock.calls.at(-1)![0];
     // Both ends of the default 24-hour window travel in the body, not the URL.
     expect(body.dari).toMatch(/\+07:00$/);
     expect(body.sampai).toMatch(/\+07:00$/);
@@ -164,5 +165,73 @@ describe('S11 log transaksi', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Cari' }));
     expect(await screen.findByText('Tidak ada log yang cocok')).toBeInTheDocument();
     expect(screen.queryByRole('table')).not.toBeInTheDocument();
+  });
+
+  it('names the empty client filter "Semua", never the framework default', async () => {
+    renderWithI18n(<LogPageScreen client={stubClient()} />);
+    await userEvent.click(screen.getByRole('button', { name: 'Cari' }));
+    await screen.findByRole('link', { name: 'TRX-2026-0001' });
+
+    // A select with no option matching its empty value printed the English "Select an item".
+    const trigger = screen.getByRole('button', { name: /Client/ });
+    expect(within(trigger).getByText('Semua')).toBeInTheDocument();
+    expect(screen.queryByText('Select an item')).not.toBeInTheDocument();
+  });
+
+  it('filters on the code a deep link carries, not just fills the field', async () => {
+    const client = stubClient();
+    renderWithI18n(<LogPageScreen client={client} initialCode="TRX-2026-0001" />);
+
+    await waitFor(() => expect(client.cariLog).toHaveBeenCalled());
+    // The first request is the one the screen mounts with: `/log/<kode>` must already filter.
+    const body = vi.mocked(client.cariLog).mock.calls[0]![0];
+    expect(body.kode_transaksi).toBe('TRX-2026-0001');
+    expect(screen.getByRole('textbox', { name: 'Kode transaksi' })).toHaveValue('TRX-2026-0001');
+  });
+
+  it('re-reads the window when the operator searches again without changing anything', async () => {
+    const client = stubClient();
+    renderWithI18n(<LogPageScreen client={client} />);
+    await waitFor(() => expect(client.cariLog).toHaveBeenCalledTimes(1));
+
+    await userEvent.click(screen.getByRole('button', { name: 'Cari' }));
+    await waitFor(() => expect(client.cariLog).toHaveBeenCalledTimes(2));
+    await userEvent.click(screen.getByRole('button', { name: 'Cari' }));
+    // Identical filters, but the snapshot may have moved on: the second press must ask again.
+    await waitFor(() => expect(client.cariLog).toHaveBeenCalledTimes(3));
+  });
+
+  it('reports a date that is not a real day instead of ignoring it', async () => {
+    const client = stubClient();
+    renderWithI18n(<LogPageScreen client={client} />);
+    // The window the screen mounts with already ran once; a rejected range adds no request.
+    await waitFor(() => expect(client.cariLog).toHaveBeenCalledTimes(1));
+
+    const start = screen.getByRole('textbox', { name: 'Dari' });
+    await userEvent.clear(start);
+    await userEvent.type(start, '31/02/2026');
+    await userEvent.click(screen.getByRole('button', { name: 'Cari' }));
+
+    expect(
+      await screen.findByText('Tanggal belum sah. Tulis dengan format 03/11/2026.'),
+    ).toBeInTheDocument();
+    expect(start).toHaveAttribute('aria-invalid', 'true');
+    expect(client.cariLog).toHaveBeenCalledTimes(1);
+  });
+
+  it('reports an end date before the start date as a pair error', async () => {
+    const client = stubClient();
+    renderWithI18n(<LogPageScreen client={client} />);
+    await waitFor(() => expect(client.cariLog).toHaveBeenCalledTimes(1));
+
+    const start = screen.getByRole('textbox', { name: 'Dari' });
+    await userEvent.clear(start);
+    await userEvent.type(start, '05/11/2026');
+    await userEvent.click(screen.getByRole('button', { name: 'Cari' }));
+
+    expect(
+      await screen.findByText('Tanggal akhir harus sama dengan atau setelah tanggal awal.'),
+    ).toBeInTheDocument();
+    expect(client.cariLog).toHaveBeenCalledTimes(1);
   });
 });

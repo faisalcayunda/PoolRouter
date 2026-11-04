@@ -115,6 +115,13 @@ async function settle(page: Page) {
 async function shoot(page: Page, screen: string, width: number) {
   await page.setViewportSize({ width, height: 900 });
   await settle(page);
+  // Section 4: no width scrolls the page itself. A table that needs more room scrolls inside its
+  // own region; the document staying at the viewport is what keeps "Diminta pada" and the payload
+  // action on screen at 1024.
+  const overflow = await page.evaluate(
+    () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+  );
+  expect(overflow, `dokumen melebar ${overflow}px pada ${width}px`).toBeLessThanOrEqual(0);
   await page.screenshot({
     path: `e2e/screenshots/${screen}@${width}.png`,
     fullPage: true,
