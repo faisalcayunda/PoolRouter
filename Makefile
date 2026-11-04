@@ -80,16 +80,23 @@ image:
 # Repo gate (ADR-0003 section 5): `make setup test lint` from the repo root.
 # Each stack keeps its own Makefile; these targets only delegate. frontend/ is
 # included once it has a Makefile, so adding it needs no change here.
+# Lihat backend/Makefile: resep dengan efek samping memakai $(SUBMAKE), bukan $(MAKE), supaya `make -n` aman (SHAA-398).
+SUBMAKE = $(MAKE)
 STACKS := backend $(if $(wildcard frontend/Makefile),frontend)
 
-.PHONY: help setup test lint fmt clean push-main
+.PHONY: help setup test lint fmt clean push-main test-dry-run
 
 help:
-	@echo "targets: setup test lint fmt clean (gate repo, delegasi ke stack); push-main (gate penuh lalu push ke main, wajib CONTAINER_LABEL=shaal.issue=SHAA-<n>); compose-up compose-down compose-ps compose-logs compose-config compose-migrate compose-lint compose-test-dind image"
+	@echo "gate resmi: make setup test lint RUNNER=docker FRONTEND_RUNNER=docker CONTAINER_LABEL=shaal.issue=SHAA-<n>; push: make push-main dengan variabel yang sama"
+	@echo "targets: setup test lint fmt clean (gate repo, delegasi ke stack); test-dry-run (uji regresi make -n, tanpa Docker); push-main (gate penuh lalu push ke main, wajib CONTAINER_LABEL=shaal.issue=SHAA-<n>); compose-up compose-down compose-ps compose-logs compose-config compose-migrate compose-lint compose-test-dind image"
 
 # push-main: satu-satunya jalur push ke main (CLAUDE.md). Gate penuh harus hijau pada hash yang di-push (SHAA-328).
 push-main:
-	@RUNNER="$(RUNNER)" FRONTEND_RUNNER="$(FRONTEND_RUNNER)" CONTAINER_LABEL="$(CONTAINER_LABEL)" MAKE="$(MAKE)" sh scripts/push-main.sh
+	@RUNNER="$(RUNNER)" FRONTEND_RUNNER="$(FRONTEND_RUNNER)" CONTAINER_LABEL="$(CONTAINER_LABEL)" MAKE="$(SUBMAKE)" sh scripts/push-main.sh
+
+# test-dry-run: bukti `make -n` tidak menyentuh engine kontainer (stub docker/podman di PATH, SHAA-398).
+test-dry-run:
+	@sh scripts/test-dry-run.sh
 
 setup test lint fmt clean:
 	@set -e; for s in $(STACKS); do \

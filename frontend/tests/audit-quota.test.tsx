@@ -91,6 +91,39 @@ describe('S13 audit akses', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Cari' }));
     expect(await screen.findByText('aksi_baru')).toBeInTheDocument();
   });
+
+  it('sends the cursor of the previous response when turning the page', async () => {
+    const cariAuditAkses = vi
+      .fn()
+      .mockResolvedValueOnce({ ...AUDIT, kursor: 'cur-2' })
+      .mockResolvedValueOnce(AUDIT);
+    renderWithI18n(<AuditScreen client={stubClient({ cariAuditAkses })} />);
+
+    await userEvent.click(screen.getByRole('button', { name: 'Cari' }));
+    await screen.findByText('Cek aduan W-2026-07');
+    const callsBefore = cariAuditAkses.mock.calls.length;
+    await userEvent.click(screen.getByRole('button', { name: 'Halaman berikutnya' }));
+
+    await waitFor(() => expect(cariAuditAkses.mock.calls.length).toBeGreaterThan(callsBefore));
+    expect(cariAuditAkses.mock.calls.at(-1)![0].kursor).toBe('cur-2');
+  });
+
+  it('sends the chosen action and starts again from the first page', async () => {
+    const cariAuditAkses = vi.fn().mockResolvedValue({ ...AUDIT, kursor: 'cur-2' });
+    renderWithI18n(<AuditScreen client={stubClient({ cariAuditAkses })} />);
+
+    await userEvent.click(screen.getByRole('button', { name: 'Cari' }));
+    await screen.findByText('Cek aduan W-2026-07');
+    await userEvent.click(screen.getByRole('button', { name: 'Halaman berikutnya' }));
+    await waitFor(() => expect(cariAuditAkses.mock.calls.at(-1)![0].kursor).toBe('cur-2'));
+
+    await userEvent.click(screen.getByRole('button', { name: /Aksi/ }));
+    await userEvent.click(await screen.findByRole('option', { name: 'Ekspor' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Cari' }));
+
+    await waitFor(() => expect(cariAuditAkses.mock.calls.at(-1)![0].aksi).toBe('ekspor'));
+    expect(cariAuditAkses.mock.calls.at(-1)![0].kursor).toBeUndefined();
+  });
 });
 
 describe('quota tracker', () => {
@@ -138,7 +171,7 @@ describe('quota tracker', () => {
 
     // Once, not twice: the caveat sits under the title and is not repeated under the cards.
     expect(
-      await screen.findAllByText(/Angka hitung dari jumlah percobaan ke Dukcapil/),
+      await screen.findAllByText(/Angka dihitung dari jumlah percobaan ke Dukcapil/),
     ).toHaveLength(1);
   });
 

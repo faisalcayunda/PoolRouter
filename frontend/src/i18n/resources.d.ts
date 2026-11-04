@@ -138,6 +138,7 @@ export default interface Resources {
       },
       "pagination": {
         "next_page": "Halaman berikutnya",
+        "page_current": "Halaman {{ke}}",
         "page_number": "Halaman {{ke}} dari {{total}}",
         "page_range": "{{dari, number}}–{{sampai, number}} dari {{total, number}}",
         "prev_page": "Halaman sebelumnya",
@@ -315,7 +316,7 @@ export default interface Resources {
         "add": "Tambah field",
         "breadcrumb": "Downstream pool › {{nama}} › Endpoint",
         "info": "Metadata dicatat di log transaksi untuk data balikan. Metadata tidak dikirim ke Dukcapil.",
-        "note": "Request tanpa field wajib ditolak sebelum memakai kuota. Menambah field opsional tidak membuat request lama ditolak. Daftar field final menunggu data contract (SHAA-166, OQ-19).",
+        "note": "Request tanpa field wajib ditolak sebelum memakai kuota. Menambah field opsional tidak membuat request lama ditolak. Daftar field final menyusul setelah data contract disepakati.",
         "title": "Kontrak metadata"
       },
       "type": {
@@ -490,7 +491,7 @@ export default interface Resources {
         "empty_action": "Atur upstream pool",
         "hour": "Jam berjalan ({{rentang}})",
         "meta": "Pool: {{nama_pool}} · Diperbarui {{waktu}}",
-        "note": "Angka hitung dari jumlah percobaan ke Dukcapil. Selisih dengan log transaksi: rekonsiliasi menunggu OQ-12.",
+        "note": "Angka dihitung dari jumlah percobaan ke Dukcapil, termasuk percobaan ulang dan panggilan gagal. Selisih dengan log transaksi dapat terjadi.",
         "of_total": "{{terpakai, number}} dari {{total, number}}",
         "pool_filter": "Pool",
         "pool_unknown": "Pool upstream",
@@ -661,7 +662,7 @@ export default interface Resources {
         "status": "Status"
       },
       "daily_quota": {
-        "help": "Dihitung per hari menurut jam reset [menunggu OQ-03]."
+        "help": "Dihitung per hari menurut jam reset (pengaturan jam reset menyusul)."
       },
       "empty": {
         "body": "Tambahkan upstream pool untuk menetapkan kuota harian dan rate limit per jam ke provider.",

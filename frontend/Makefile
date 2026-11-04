@@ -64,6 +64,7 @@ PNPM = $(RUN) pnpm
 
 help:
 	@echo "targets: setup test lint fmt clean gen-api gen-api-check build build-e2e e2e i18n-check i18n-types"
+	@echo "gate resmi (dari akar): make setup test lint RUNNER=docker FRONTEND_RUNNER=docker CONTAINER_LABEL=shaal.issue=SHAA-<n>"
 	@echo "lock:    build-lock-status build-lock-clean (K-41 heavy build lock, shared with backend)"
 
 # Every podman container must carry shaal.issue=SHAA-<n> (playbook section 6).
