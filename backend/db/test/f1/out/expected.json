@@ -11,14 +11,12 @@
     "upstream_pool_Q": 100
   },
   "d3_webhook": {
-    "jadwal_detik_per_percobaan": [
-      27,
-      126,
-      491,
-      1630,
-      8035
+    "jitter_rentang": [
+      0.8,
+      1.2
     ],
-    "klasifikasi_baris": 11
+    "klasifikasi_baris": 11,
+    "percobaan_retry": 5
   },
   "d4_data_balikan": {
     "batch_item": 250
