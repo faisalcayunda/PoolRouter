@@ -28,6 +28,7 @@ use poolrouter_core::admin::pengguna::cari_login;
 use poolrouter_core::audit::{AksiLogin, HasilLogin, LoginBaru, catat_login};
 use uuid::Uuid;
 
+use super::pembatas::HasilPeriksa;
 use super::sesi::{AdminState, COOKIE_SESI, Galat, periksa_origin};
 use crate::api::admin::LoginRequest;
 use crate::api::problem::ProblemKodeAdmin;
@@ -103,9 +104,15 @@ pub(super) async fn login(
     let ip = sumber_ip(&headers, peer);
     let ua = user_agent(&headers);
 
-    if let Some(detik) = s.pembatas.terkunci(&username, sekarang) {
-        audit(&s, None, HasilLogin::Gagal, None, &ip, &ua).await;
-        return Err(Galat::dibatasi(detik));
+    // Limiter first, before any lookup or password work. Redis down means no
+    // login at all (fail-closed): 503, no session, no password check.
+    match s.pembatas.periksa(&username).await {
+        Err(_) => return Err(Galat::layanan()),
+        Ok(HasilPeriksa::Terkunci { coba_lagi_detik }) => {
+            audit(&s, None, HasilLogin::Terkunci, None, &ip, &ua).await;
+            return Err(Galat::dibatasi(coba_lagi_detik));
+        }
+        Ok(HasilPeriksa::Bebas) => {}
     }
 
     let pengguna = if PANJANG_USERNAME.contains(&username.chars().count()) {
@@ -148,14 +155,18 @@ pub(super) async fn login(
                 let _ = s.sesi.cabut(&token.hash()).await;
                 return Err(Galat::layanan());
             }
-            s.pembatas.berhasil(&username);
+            if s.pembatas.berhasil(&username).await.is_err() {
+                tracing::warn!("admin: hitungan gagal tidak terhapus setelah login berhasil");
+            }
             let mut res = StatusCode::NO_CONTENT.into_response();
             res.headers_mut()
                 .insert(header::SET_COOKIE, cookie_sesi(&token));
             Ok(res)
         }
         gagal => {
-            s.pembatas.gagal(&username, sekarang);
+            if s.pembatas.catat_gagal(&username).await.is_err() {
+                tracing::warn!("admin: kegagalan login tidak terhitung");
+            }
             audit(
                 &s,
                 gagal.map(|p| p.pengguna_id),

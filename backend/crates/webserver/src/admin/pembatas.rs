@@ -1,92 +1,164 @@
-//! Login limiter: 5 failures per username in 15 minutes lock that username for
-//! 15 minutes (ADR-0003 rev 5 §3.6, "Pembatasan login").
+//! Login limiter in Redis: 5 failures per username in 15 minutes lock that
+//! username until the window ends (ADR-0003 rev 5 §3.6, Shu SHAA-196
+//! 2026-11-04).
 //!
-//! The ADR names Redis as the shared store. This is the in-process
-//! implementation: correct for one webserver instance, and the clock is a
-//! parameter so tests move time instead of sleeping. With several instances
-//! each would count separately (up to 5 per instance), so a Redis-backed
-//! implementation must replace it before the webserver is scaled out; the
-//! handler only depends on these three calls.
-//!
-//! Keys are the normalised username as typed, known or not, so the limiter
-//! cannot be used to tell an existing account from a missing one. The map is
-//! bounded: past `BATAS_ENTRI` expired entries are swept, and if it is still
-//! full a new username is simply not tracked (fail open for the *unknown* name,
-//! never for one already counted).
+//! - **Key:** `pr:login:gagal:<hex HMAC-SHA256(key, "login-limit" 0x00 username)>`.
+//!   The HMAC key is one the webserver already holds; the label separates this
+//!   use from the others. The typed username never reaches Redis, the same
+//!   principle as `audit_login`.
+//! - **Atomic:** one Lua script counts (`INCR`, and `PEXPIRE` 15 min on the
+//!   first failure of the window); another checks. `Retry-After` comes from
+//!   `PTTL`.
+//! - **Fail-closed:** if Redis cannot be reached the caller gets an error and
+//!   login answers 503 before any password work or session. Failing open would
+//!   allow unlimited guessing during an outage.
+//! - Known and unknown usernames take exactly the same path, so the limiter
+//!   cannot tell an account from a missing one.
 
-use std::collections::{HashMap, VecDeque};
-use std::sync::Mutex;
+use std::time::Duration;
 
-use chrono::{DateTime, Duration, Utc};
+use aws_lc_rs::hmac;
+use redis::Script;
 
-pub const MAKS_GAGAL: usize = 5;
-pub const JENDELA_MENIT: i64 = 15;
-const BATAS_ENTRI: usize = 10_000;
+pub const MAKS_GAGAL: u32 = 5;
+pub const JENDELA_MS: u64 = 15 * 60 * 1000;
+const PREFIKS: &str = "pr:login:gagal:";
+const LABEL: &[u8] = b"login-limit\0";
+/// Redis budget for one limiter call, connection included.
+const BATAS_WAKTU: Duration = Duration::from_millis(500);
 
-#[derive(Default)]
-struct Entri {
-    gagal: VecDeque<DateTime<Utc>>,
-    kunci_sampai: Option<DateTime<Utc>>,
+/// Locked when the count has reached the limit: remaining ms of the window,
+/// else -1. A counter that somehow has no TTL is deleted instead of locking
+/// forever.
+const SKRIP_PERIKSA: &str = r#"
+local n = tonumber(redis.call('GET', KEYS[1]) or '0')
+if n >= tonumber(ARGV[1]) then
+  local t = redis.call('PTTL', KEYS[1])
+  if t < 0 then redis.call('DEL', KEYS[1]) return -1 end
+  return t
+end
+return -1
+"#;
+
+/// Count one failure; the first of a window starts the 15-minute expiry.
+const SKRIP_GAGAL: &str = r#"
+local n = redis.call('INCR', KEYS[1])
+if n == 1 or redis.call('PTTL', KEYS[1]) < 0 then
+  redis.call('PEXPIRE', KEYS[1], ARGV[1])
+end
+return n
+"#;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HasilPeriksa {
+    Bebas,
+    /// Seconds until the window ends, at least 1.
+    Terkunci {
+        coba_lagi_detik: u64,
+    },
 }
 
-#[derive(Default)]
-pub struct PembatasMemori {
-    peta: Mutex<HashMap<String, Entri>>,
+/// Redis could not be reached or answered in time. Carries no detail on
+/// purpose: driver text can include addresses.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RedisTidakTersedia;
+
+pub struct PembatasLogin {
+    klien: redis::Client,
+    kunci: hmac::Key,
+    periksa: Script,
+    gagal: Script,
 }
 
-impl PembatasMemori {
-    pub fn baru() -> Self {
-        Self::default()
-    }
-
-    /// Seconds until the username may try again, if it is locked at `sekarang`.
-    pub fn terkunci(&self, username: &str, sekarang: DateTime<Utc>) -> Option<u64> {
-        let mut peta = self.peta.lock().unwrap_or_else(|e| e.into_inner());
-        let entri = peta.get_mut(username)?;
-        match entri.kunci_sampai {
-            Some(sampai) if sampai > sekarang => {
-                Some((sampai - sekarang).num_seconds().max(1) as u64)
-            }
-            Some(_) => {
-                entri.kunci_sampai = None;
-                None
-            }
-            None => None,
+impl PembatasLogin {
+    pub fn baru(klien: redis::Client, kunci_hmac: &[u8]) -> Self {
+        Self {
+            klien,
+            kunci: hmac::Key::new(hmac::HMAC_SHA256, kunci_hmac),
+            periksa: Script::new(SKRIP_PERIKSA),
+            gagal: Script::new(SKRIP_GAGAL),
         }
     }
 
-    /// Count one failed attempt. The fifth inside the window starts the lock.
-    pub fn gagal(&self, username: &str, sekarang: DateTime<Utc>) {
-        let mut peta = self.peta.lock().unwrap_or_else(|e| e.into_inner());
-        if peta.len() >= BATAS_ENTRI && !peta.contains_key(username) {
-            peta.retain(|_, e| {
-                e.kunci_sampai.is_some_and(|s| s > sekarang)
-                    || e.gagal
-                        .back()
-                        .is_some_and(|t| *t > sekarang - Duration::minutes(JENDELA_MENIT))
-            });
-            if peta.len() >= BATAS_ENTRI {
-                return;
+    /// The Redis key for a normalised username.
+    pub fn kunci_redis(&self, username: &str) -> String {
+        let mut pesan = Vec::with_capacity(LABEL.len() + username.len());
+        pesan.extend_from_slice(LABEL);
+        pesan.extend_from_slice(username.as_bytes());
+        let tag = hmac::sign(&self.kunci, &pesan);
+        let mut k = String::with_capacity(PREFIKS.len() + 64);
+        k.push_str(PREFIKS);
+        for b in tag.as_ref() {
+            k.push_str(&format!("{b:02x}"));
+        }
+        k
+    }
+
+    async fn jalankan<T, F, Fut>(&self, f: F) -> Result<T, RedisTidakTersedia>
+    where
+        F: FnOnce(redis::aio::MultiplexedConnection) -> Fut,
+        Fut: std::future::Future<Output = redis::RedisResult<T>>,
+    {
+        let kerja = async {
+            let conn = self.klien.get_multiplexed_async_connection().await?;
+            f(conn).await
+        };
+        match tokio::time::timeout(BATAS_WAKTU, kerja).await {
+            Ok(Ok(v)) => Ok(v),
+            Ok(Err(e)) => {
+                tracing::error!(kind = ?e.kind(), "admin: pembatas login: Redis gagal");
+                Err(RedisTidakTersedia)
+            }
+            Err(_) => {
+                tracing::error!("admin: pembatas login: Redis melewati batas waktu");
+                Err(RedisTidakTersedia)
             }
         }
-        let entri = peta.entry(username.to_owned()).or_default();
-        let batas = sekarang - Duration::minutes(JENDELA_MENIT);
-        while entri.gagal.front().is_some_and(|t| *t <= batas) {
-            entri.gagal.pop_front();
-        }
-        entri.gagal.push_back(sekarang);
-        if entri.gagal.len() >= MAKS_GAGAL {
-            entri.kunci_sampai = Some(sekarang + Duration::minutes(JENDELA_MENIT));
-            entri.gagal.clear();
-        }
+    }
+
+    pub async fn periksa(&self, username: &str) -> Result<HasilPeriksa, RedisTidakTersedia> {
+        let kunci = self.kunci_redis(username);
+        let sisa_ms: i64 = self
+            .jalankan(|mut c| async move {
+                self.periksa
+                    .key(&kunci)
+                    .arg(MAKS_GAGAL)
+                    .invoke_async(&mut c)
+                    .await
+            })
+            .await?;
+        Ok(if sisa_ms < 0 {
+            HasilPeriksa::Bebas
+        } else {
+            HasilPeriksa::Terkunci {
+                coba_lagi_detik: (sisa_ms as u64).div_ceil(1000).max(1),
+            }
+        })
+    }
+
+    pub async fn catat_gagal(&self, username: &str) -> Result<(), RedisTidakTersedia> {
+        let kunci = self.kunci_redis(username);
+        let _n: i64 = self
+            .jalankan(|mut c| async move {
+                self.gagal
+                    .key(&kunci)
+                    .arg(JENDELA_MS)
+                    .invoke_async(&mut c)
+                    .await
+            })
+            .await?;
+        Ok(())
     }
 
     /// A successful login clears the count.
-    pub fn berhasil(&self, username: &str) {
-        self.peta
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .remove(username);
+    pub async fn berhasil(&self, username: &str) -> Result<(), RedisTidakTersedia> {
+        let kunci = self.kunci_redis(username);
+        let _n: i64 = self
+            .jalankan(
+                |mut c| async move { redis::cmd("DEL").arg(&kunci).query_async(&mut c).await },
+            )
+            .await?;
+        Ok(())
     }
 }
 
@@ -94,41 +166,32 @@ impl PembatasMemori {
 mod tests {
     use super::*;
 
-    fn t(m: i64) -> DateTime<Utc> {
-        DateTime::<Utc>::UNIX_EPOCH + Duration::minutes(m)
+    fn pembatas(kunci: &[u8]) -> PembatasLogin {
+        // Never connects: only key derivation is exercised here.
+        PembatasLogin::baru(redis::Client::open("redis://127.0.0.1:1/").unwrap(), kunci)
     }
 
     #[test]
-    fn lima_kegagalan_mengunci_lima_belas_menit() {
-        let p = PembatasMemori::baru();
-        for i in 0..4 {
-            p.gagal("a", t(i));
-            assert!(p.terkunci("a", t(i)).is_none());
-        }
-        p.gagal("a", t(4));
-        assert_eq!(p.terkunci("a", t(4)), Some(15 * 60));
-        assert!(p.terkunci("a", t(18)).is_some());
-        assert!(p.terkunci("a", t(19)).is_none());
+    fn kunci_stabil_berbeda_per_username_dan_tidak_memuat_username() {
+        let p = pembatas(b"kunci-uji");
+        let a = p.kunci_redis("auditor_01");
+        assert_eq!(a, p.kunci_redis("auditor_01"));
+        assert_ne!(a, p.kunci_redis("auditor_02"));
+        assert!(a.starts_with(PREFIKS));
+        assert!(!a.contains("auditor"));
+        let hex = &a[PREFIKS.len()..];
+        assert_eq!(hex.len(), 64);
+        assert!(
+            hex.bytes()
+                .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+        );
     }
 
     #[test]
-    fn kegagalan_di_luar_jendela_tidak_dihitung() {
-        let p = PembatasMemori::baru();
-        for i in 0..4 {
-            p.gagal("a", t(i));
-        }
-        p.gagal("a", t(20));
-        assert!(p.terkunci("a", t(20)).is_none());
-    }
-
-    #[test]
-    fn username_lain_tidak_terpengaruh_dan_berhasil_mereset() {
-        let p = PembatasMemori::baru();
-        for i in 0..5 {
-            p.gagal("a", t(i));
-        }
-        assert!(p.terkunci("b", t(5)).is_none());
-        p.berhasil("a");
-        assert!(p.terkunci("a", t(5)).is_none());
+    fn kunci_bergantung_pada_kunci_hmac() {
+        assert_ne!(
+            pembatas(b"kunci-satu").kunci_redis("x"),
+            pembatas(b"kunci-dua").kunci_redis("x")
+        );
     }
 }

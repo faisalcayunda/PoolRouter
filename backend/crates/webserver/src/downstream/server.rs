@@ -231,6 +231,7 @@ async fn start(cfg: Config) -> Result<(), String> {
         throttle: Arc::new(LocalThrottle::new()),
     };
     let api = api_router(state);
+    let redis_admin = redis.clone();
     let admin = probe::admin_router(Arc::new(DependencyReadiness { pg, redis }), metrics);
     // Third listener: `/admin/v1`, with its own `pr_admin_api` pool (SHAA-196).
     let admin_api_addr = listener::alamat_listener(
@@ -238,7 +239,11 @@ async fn start(cfg: Config) -> Result<(), String> {
         api_addr,
         admin_addr,
     )?;
-    let admin_api = admin_router(listener::state_admin(&cfg, listener::pool_admin(&cfg)?)?);
+    let admin_api = admin_router(listener::state_admin(
+        &cfg,
+        listener::pool_admin(&cfg)?,
+        redis_admin,
+    )?);
 
     let shutdown = CancellationToken::new();
     tokio::spawn(poolrouter_core::runtime::cancel_on_signal(shutdown.clone()));
