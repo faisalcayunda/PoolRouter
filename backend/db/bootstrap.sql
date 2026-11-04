@@ -20,13 +20,14 @@
 \set pw_job_balikan `cat "$POOLROUTER_SECRETS_DIR/pr_job_balikan"`
 \set pw_job_arsip `cat "$POOLROUTER_SECRETS_DIR/pr_job_arsip"`
 \set pw_restore `cat "$POOLROUTER_SECRETS_DIR/pr_restore"`
+\set pw_blend `cat "$POOLROUTER_SECRETS_DIR/pr_blend"`
 
 DO $$
 DECLARE
   r text;
 BEGIN
   FOREACH r IN ARRAY ARRAY['poolrouter_owner', 'pr_api', 'pr_admin_api', 'pr_controller', 'pr_worker', 'pr_webhook',
-                           'pr_job_balikan', 'pr_job_arsip', 'pr_restore']
+                           'pr_job_balikan', 'pr_job_arsip', 'pr_restore', 'pr_blend']
   LOOP
     IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = r) THEN
       EXECUTE format('CREATE ROLE %I LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS', r);
@@ -45,6 +46,10 @@ ALTER ROLE pr_webhook PASSWORD :'pw_webhook';
 ALTER ROLE pr_job_balikan PASSWORD :'pw_job_balikan';
 ALTER ROLE pr_job_arsip PASSWORD :'pw_job_arsip';
 ALTER ROLE pr_restore PASSWORD :'pw_restore';
+-- F3 (SHAA-354): merge job role, separate pool from pr_controller (delta F3 BA-01).
+ALTER ROLE pr_blend PASSWORD :'pw_blend';
+ALTER ROLE pr_blend SET log_parameter_max_length_on_error = 0;
+ALTER ROLE pr_blend SET log_parameter_max_length = 0;
 
 -- Never let a statement from the application roles leak parameters into the server log
 -- (ADR-0001 section 7.1, contract R-04). Two settings, both needed:
@@ -76,10 +81,10 @@ ALTER ROLE pr_webhook SET log_parameter_max_length = 0;
 -- The database and the public schema belong to poolrouter_owner; nobody else may create objects.
 SELECT format('ALTER DATABASE %I OWNER TO poolrouter_owner', :'dbname') \gexec
 SELECT format('REVOKE ALL ON DATABASE %I FROM PUBLIC', :'dbname') \gexec
-SELECT format('GRANT CONNECT ON DATABASE %I TO pr_api, pr_admin_api, pr_controller, pr_worker, pr_webhook, pr_job_balikan, pr_job_arsip, pr_restore', :'dbname') \gexec
+SELECT format('GRANT CONNECT ON DATABASE %I TO pr_api, pr_admin_api, pr_controller, pr_worker, pr_webhook, pr_job_balikan, pr_job_arsip, pr_restore, pr_blend', :'dbname') \gexec
 
 \connect :dbname
 ALTER SCHEMA public OWNER TO poolrouter_owner;
 REVOKE ALL ON SCHEMA public FROM PUBLIC;
 GRANT USAGE ON SCHEMA public TO pr_api, pr_admin_api, pr_controller, pr_worker, pr_webhook,
-  pr_job_balikan, pr_job_arsip, pr_restore;
+  pr_job_balikan, pr_job_arsip, pr_restore, pr_blend;

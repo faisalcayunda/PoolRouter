@@ -42,7 +42,7 @@ psql_su() { $ENGINE exec -i "$NAME" psql -U postgres -h 127.0.0.1 --no-psqlrc -q
 echo "==> secrets and role bootstrap"
 $ENGINE exec "$NAME" sh -c '
   umask 077; mkdir -p /tmp/sec
-  for r in poolrouter_owner pr_api pr_admin_api pr_controller pr_worker pr_webhook pr_job_balikan pr_job_arsip pr_restore; do
+  for r in poolrouter_owner pr_api pr_admin_api pr_controller pr_worker pr_webhook pr_job_balikan pr_job_arsip pr_restore pr_blend; do
     od -An -N18 -tx1 /dev/urandom | tr -d " \n" > /tmp/sec/$r
   done'
 $ENGINE exec "$NAME" mkdir -p /tmp/db
