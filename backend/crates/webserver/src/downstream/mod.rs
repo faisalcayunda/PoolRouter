@@ -3,7 +3,9 @@
 
 pub mod auth;
 pub mod credential;
+pub mod gerbang;
 pub mod gcra;
+pub mod intake;
 pub mod jwt;
 pub mod layers;
 pub mod probe;
