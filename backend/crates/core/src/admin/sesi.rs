@@ -178,9 +178,13 @@ impl StatusSesi {
     /// so the client's countdown does not inherit clock skew from a second
     /// `Utc::now()` call.
     pub fn hitung(keadaan: KeadaanSesi, sekarang: DateTime<Utc>, batas: BatasSesi) -> Self {
+        let absolut_berakhir_pada = keadaan.dibuat_at + Duration::seconds(batas.absolut_detik);
         Self {
-            idle_berakhir_pada: keadaan.terakhir_aktif_at + Duration::seconds(batas.idle_detik),
-            absolut_berakhir_pada: keadaan.dibuat_at + Duration::seconds(batas.absolut_detik),
+            // Near the cap the idle deadline is the cap itself (ADR-0003 rev 5
+            // §3.6f): the UI must never be promised more than the session has.
+            idle_berakhir_pada: (keadaan.terakhir_aktif_at + Duration::seconds(batas.idle_detik))
+                .min(absolut_berakhir_pada),
+            absolut_berakhir_pada,
             waktu_server: sekarang,
         }
     }
@@ -374,6 +378,15 @@ mod tests {
             perpanjang(sesi(0, di_cap - langkah), t(di_cap), batas),
             HasilPerpanjang::Ditolak(SesiKedaluwarsa::Absolut)
         );
+    }
+
+    #[test]
+    fn idle_deadline_is_clamped_to_the_absolute_cap() {
+        let batas = BatasSesi::f0();
+        let hampir = ABSOLUT_DETIK - 600;
+        let status = StatusSesi::hitung(sesi(0, hampir), t(hampir), batas);
+        assert_eq!(status.idle_berakhir_pada, t(ABSOLUT_DETIK));
+        assert_eq!(status.idle_berakhir_pada, status.absolut_berakhir_pada);
     }
 
     #[test]

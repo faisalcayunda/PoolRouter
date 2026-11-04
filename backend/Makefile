@@ -91,7 +91,7 @@ WORK_DIR := $(if $(filter podman docker,$(RUNNER)),/work,$(CURDIR))
 # Repo root on the execution side (/repo is the read-only mount in the podman container).
 REPO_DIR := $(if $(filter podman docker,$(RUNNER)),/repo,$(CURDIR)/..)
 
-.PHONY: help check-label check-disk clean-shared clean-cache-shared setup test test-rust db-test uji-lua uji-redis uji-redis-cargo lua-rakit lua-rakit-check lint fmt clean openapi openapi-check
+.PHONY: help check-label check-disk clean-shared clean-cache-shared setup test test-rust db-test uji-pg uji-pg-cargo uji-lua uji-redis uji-redis-cargo lua-rakit lua-rakit-check lint fmt clean openapi openapi-check
 
 # Podman toolchain containers must carry the owning issue label, so untracked containers cannot appear (SHAA-222).
 # Docker lane: cek ruang kosong sebelum target apa pun yang memakai container (SHAA-373).
@@ -140,7 +140,7 @@ setup: check-label $(CHECK_DISK)
 	install -m 0755 "$$t/cargo-deny-$(CARGO_DENY_VERSION)-$$arch-unknown-linux-musl/cargo-deny" "$$CARGO_HOME/bin/cargo-deny"; \
 	cargo deny --version'
 
-test: test-rust db-test uji-lua uji-redis
+test: test-rust db-test uji-pg uji-lua uji-redis
 
 test-rust: check-label $(CHECK_DISK)
 	$(HEAVY) cargo test --workspace --all-targets --locked
@@ -151,6 +151,16 @@ test-rust: check-label $(CHECK_DISK)
 DB_ENGINE ?= $(if $(filter docker,$(RUNNER)),docker,podman)
 db-test: check-label $(CHECK_DISK)
 	CONTAINER_ENGINE=$(DB_ENGINE) SHAA_ISSUE=$(patsubst shaal.issue=%,%,$(CONTAINER_LABEL)) sh db/test/run.sh
+
+# Uji integrasi Rust terhadap PostgreSQL sungguhan (SHAA-196): skema dari migrasi, koneksi sebagai pr_admin_api.
+# Container Postgres independen dari RUNNER (seperti db-test); `uji-pg-cargo` menjalankan uji `#[ignore]` lewat kunci build.
+uji-pg: check-label $(CHECK_DISK)
+	CONTAINER_ENGINE=$(DB_ENGINE) SHAA_ISSUE=$(patsubst shaal.issue=%,%,$(CONTAINER_LABEL)) \
+	sh db/test/uji-pg.sh "$(SUBMAKE) uji-pg-cargo RUNNER=$(RUNNER) CONTAINER_LABEL=$(CONTAINER_LABEL)"
+
+uji-pg-cargo: BUILD_LOCK_OPTS += --network host -e POOLROUTER_TEST_DATABASE_URL
+uji-pg-cargo: check-label $(CHECK_DISK)
+	$(HEAVY) cargo test --locked -p poolrouter-core --test sesi_store_pg -- --ignored --test-threads=1 --nocapture
 
 # Lua quota scripts (SHAA-195). `lua/` holds sources with `-- sisip:` markers;
 # `scripts/rakit-lua.sh` inlines `potongan/*.lua` into `rakitan/*.lua`, and that
