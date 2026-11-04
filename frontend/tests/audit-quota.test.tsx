@@ -119,13 +119,27 @@ describe('quota tracker', () => {
     expect(screen.getByText(/Sync terpakai 50 dari batas 50%/)).toBeInTheDocument();
   });
 
+  it('fills the bar and reports the same percentage as the text (0–100 scale)', async () => {
+    const client = stubClient({ kuota: vi.fn().mockResolvedValue([quota()]) });
+    renderWithI18n(<QuotaScreen client={client} />);
+
+    expect(await screen.findByText(/Terpakai 88%, sisa 100/)).toBeInTheDocument();
+    // `ProgressBar` is a 0–100 control: a 0–1 ratio painted an empty track next to "88%".
+    const bar = screen.getByRole('progressbar', { name: 'Hari ini' });
+    expect(Number(bar.getAttribute('aria-valuenow'))).toBeCloseTo(87.5);
+    expect(bar).toHaveAttribute('aria-valuemin', '0');
+    expect(bar).toHaveAttribute('aria-valuemax', '100');
+    expect(screen.getByText('88%')).toBeInTheDocument();
+  });
+
   it('says the figures come from the database, not Redis', async () => {
     const client = stubClient({ kuota: vi.fn().mockResolvedValue([quota()]) });
     renderWithI18n(<QuotaScreen client={client} />);
 
+    // Once, not twice: the caveat sits under the title and is not repeated under the cards.
     expect(
-      (await screen.findAllByText(/Angka hitung dari jumlah percobaan ke Dukcapil/)).length,
-    ).toBeGreaterThan(0);
+      await screen.findAllByText(/Angka hitung dari jumlah percobaan ke Dukcapil/),
+    ).toHaveLength(1);
   });
 
   it('filters by pool and reloads on demand', async () => {

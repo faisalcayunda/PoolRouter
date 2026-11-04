@@ -83,6 +83,24 @@ async function stubS11(page: Page): Promise<Recorded[]> {
 }
 
 test.describe('S11 log transaksi (auditor)', () => {
+  test('keeps the NIK and drops queue_id and Client in the medium window class', async ({
+    page,
+  }) => {
+    await stubS11(page);
+    // 768 px is `medium` (600–839): section 4 hides queue_id and Client, and keeps the masked NIK
+    // and the requested time, which are what identify a row.
+    await page.setViewportSize({ width: 768, height: 900 });
+    await page.goto('/?peran=auditor');
+
+    await expect(page.getByRole('link', { name: 'TRX-2026-0077' })).toBeVisible();
+    const header = (name: string) => page.getByRole('columnheader', { name, includeHidden: true });
+    await expect(header('Queue ID')).toBeHidden();
+    await expect(header('Client')).toBeHidden();
+    await expect(page.getByRole('columnheader', { name: 'NIK' })).toBeVisible();
+    await expect(page.getByRole('columnheader', { name: 'Diminta pada' })).toBeVisible();
+    await expect(page.getByRole('cell', { name: '3175********0001' })).toBeVisible();
+  });
+
   test('searches by transaction code and opens the payload through a reason', async ({ page }) => {
     const calls = await stubS11(page);
     // The session hook has not landed (section 18.1), so the assembled app cannot assume a role on

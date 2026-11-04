@@ -7,8 +7,9 @@
  *                      shows its column name from `data-label`, and the row gets a surface and a
  *                      divider. The markup stays a real <table>; only the box model changes, so
  *                      screen readers keep getting a table with rows and headers.
- *   medium  (600–839)  the low-priority columns (`.hide-md`) are removed: queue_id and NIK on the
- *                      log, the user id on the audit. Nothing that identifies a row disappears.
+ *   medium  (600–839)  the low-priority columns (`.hide-md`) are removed: queue_id and Client on
+ *                      the log, Kode transaksi and Client on the NIK search, the user id on the
+ *                      audit. Nothing that identifies a row disappears.
  *
  * The class names are plain CSS instead of Tailwind utilities because a `<td>` needs
  * `display: block` plus a generated label, which is more readable here than forty arbitrary
@@ -66,10 +67,42 @@
   .table-card td:not([data-label])::before {
     content: none;
   }
+
+  /* Card mode: `display: grid` with an `auto` minimum would let one long value (the masked NIK)
+     push the card wider than the screen and clip the digits. Wrapping keeps all four trailing
+     NIK digits readable at 320 px. */
+  .table-card td {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
 }
 
 @media (min-width: 600px) and (max-width: 839.98px) {
   .table-card .hide-md {
     display: none;
+  }
+}
+
+/*
+ * A long unbroken value (masked NIK, transaction code) decides an auto-layout table's min-content
+ * width, and that is what pushed S11 and S13 past the viewport at 1024 (section 4: the table fits
+ * the expanded window class without scrolling the page). `anywhere` is the only value that shrinks
+ * the intrinsic size — `break-word` lays out identically to `normal` while sizing — so the cells
+ * wrap instead of the page growing.
+ *
+ * Only up to `large`: at 1200 px and above the room is there, and breaking a masked NIK in half
+ * ("3175******" / "*0001") or a transaction code across two lines reads worse than a wider column.
+ */
+@media (max-width: 1199.98px) {
+  .table-card table {
+    overflow-wrap: anywhere;
+  }
+}
+
+/* Expanded but not yet `large`: 8 columns fit only with the tighter cell padding. */
+@media (min-width: 840px) and (max-width: 1199.98px) {
+  .table-card table th,
+  .table-card table td {
+    padding-inline: 12px;
   }
 }

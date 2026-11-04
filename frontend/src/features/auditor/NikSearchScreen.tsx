@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-aria-components';
 import {
@@ -79,13 +79,24 @@ export function NikSearchScreen({ client = api }: NikSearchScreenProps): ReactNo
   const [exportOpen, setExportOpen] = useState(false);
   const [exportNotice, setExportNotice] = useState<'too_large' | 'error' | null>(null);
   const [exporting, setExporting] = useState(false);
+  /**
+   * The submitted request whose success snackbar has already been shown. Tracked by identity, not
+   * by key: repeating the same search is a fresh audited action, so it gets its own confirmation.
+   */
+  const loggedRequest = useRef<unknown>(null);
+  /**
+   * Bumped on every accepted search. The query key includes it, so submitting the same filters
+   * again really does call the API again instead of reusing the previous result: a repeat search is
+   * a new audited action, and the snapshot it returns may have moved on.
+   */
+  const [run, setRun] = useState(0);
 
   const nikValid = /^\d{16}$/.test(nik.trim());
   const nikError = nikTouched && !nikValid ? t('nik.page.error') : null;
 
   const query = useQuery<LogPage>(
     (signal) => client.cariLogNik(submitted!.body, { signal, alasan: submitted!.body.alasan }),
-    submitted?.key ?? 'idle',
+    `${submitted?.key ?? 'idle'}#${run}`,
     { enabled: submitted !== null },
   );
 
@@ -104,8 +115,6 @@ export function NikSearchScreen({ client = api }: NikSearchScreenProps): ReactNo
   function search(nextReason: string) {
     setReason(nextReason);
     setReasonOpen(false);
-    // Section 7: the search is an audited action, so its success is confirmed in a snackbar.
-    snackbar.notify(t('nik.snackbar.logged'));
     const body: NikCariRequest = {
       nik: nik.trim(),
       dari: range!.from,
@@ -113,7 +122,20 @@ export function NikSearchScreen({ client = api }: NikSearchScreenProps): ReactNo
       alasan: nextReason,
     };
     setSubmitted({ body, key: JSON.stringify(body) });
+    setRun((n) => n + 1);
   }
+
+  /**
+   * Section 7: the search is an audited action, so its success is confirmed in a snackbar — but
+   * only once the request that records it came back. Announcing it at submit time claimed a
+   * failed search had been written to the audit trail. One confirmation per submitted search.
+   */
+  useEffect(() => {
+    if (query.status !== 'success' || submitted === null) return;
+    if (loggedRequest.current === submitted) return;
+    loggedRequest.current = submitted;
+    snackbar.notify(t('nik.snackbar.logged'));
+  }, [query.status, submitted, snackbar, t]);
 
   /**
    * Hand the finished CSV to the browser. Kept inline because the export is the only download in
@@ -191,7 +213,6 @@ export function NikSearchScreen({ client = api }: NikSearchScreenProps): ReactNo
           />
           <DateRangeField
             legend={t('log.filter.range')}
-            description={t('log.filter.range')}
             value={range}
             onChange={(next) => {
               setRange(next);
@@ -258,10 +279,10 @@ export function NikSearchScreen({ client = api }: NikSearchScreenProps): ReactNo
                       <th scope="col" className="typescale-label-large px-4 py-3 text-left">
                         {t('log.col.time')}
                       </th>
-                      <th scope="col" className="typescale-label-large px-4 py-3 text-left">
+                      <th scope="col" className="hide-md typescale-label-large px-4 py-3 text-left">
                         {t('log.col.code')}
                       </th>
-                      <th scope="col" className="typescale-label-large px-4 py-3 text-left">
+                      <th scope="col" className="hide-md typescale-label-large px-4 py-3 text-left">
                         {t('log.col.client')}
                       </th>
                       <th scope="col" className="typescale-label-large px-4 py-3 text-left">
@@ -281,7 +302,10 @@ export function NikSearchScreen({ client = api }: NikSearchScreenProps): ReactNo
                         <td data-label={t('log.col.time')} className="typescale-body-medium px-4">
                           {format.tanggalWaktu(row.requested_at)}
                         </td>
-                        <td data-label={t('log.col.code')} className="typescale-body-medium px-4">
+                        <td
+                          data-label={t('log.col.code')}
+                          className="hide-md typescale-body-medium px-4"
+                        >
                           <Link
                             href={`/log/${encodeURIComponent(row.kode_transaksi)}`}
                             className="m3-focus rounded-small text-primary underline-offset-2 hover:underline"
@@ -290,7 +314,10 @@ export function NikSearchScreen({ client = api }: NikSearchScreenProps): ReactNo
                             {row.kode_transaksi}
                           </Link>
                         </td>
-                        <td data-label={t('log.col.client')} className="typescale-body-medium px-4">
+                        <td
+                          data-label={t('log.col.client')}
+                          className="hide-md typescale-body-medium px-4"
+                        >
                           {row.client_nama}
                         </td>
                         <td data-label={t('log.col.nik')} className="typescale-body-medium px-4">

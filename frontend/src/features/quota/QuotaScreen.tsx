@@ -33,6 +33,15 @@ const TONE: Record<Level, 'success' | 'warning' | 'error'> = {
   out: 'error',
 };
 
+/**
+ * The tracker reports a 0–1 ratio; `LinearProgress` is an M3/ARIA progress bar, whose value scale
+ * is 0–100. Passing the ratio straight through painted an empty bar next to "Terpakai 33%".
+ * Clamped so an over-quota row (sisa above kuota_efektif) never reports more than 100%.
+ */
+function toPercent(fraction: number): number {
+  return Math.min(100, Math.max(0, fraction * 100));
+}
+
 function PoolQuotaCard({ row, poolName }: { row: KuotaTracker; poolName?: string }) {
   const { t } = useTranslation();
   const format = useFormatter();
@@ -70,7 +79,7 @@ function PoolQuotaCard({ row, poolName }: { row: KuotaTracker; poolName?: string
             sisa: row.sisa_periode,
           })}
         </p>
-        <LinearProgress value={usedFraction} aria-label={t('quota.page.today')} />
+        <LinearProgress value={toPercent(usedFraction)} aria-label={t('quota.page.today')} />
         <p className="typescale-body-small text-on-surface-variant">
           {t('quota.page.reset_at', {
             waktu: format.jam(row.periode_selesai),
@@ -87,7 +96,7 @@ function PoolQuotaCard({ row, poolName }: { row: KuotaTracker; poolName?: string
           })}
         </p>
         <LinearProgress
-          value={syncLimit ? row.terpakai_sync_jam_berjalan / syncLimit : 0}
+          value={toPercent(syncLimit ? row.terpakai_sync_jam_berjalan / syncLimit : 0)}
           aria-label={t('quota.page.sync_heading')}
         />
       </div>
@@ -103,7 +112,9 @@ function PoolQuotaCard({ row, poolName }: { row: KuotaTracker; poolName?: string
           })}
         </p>
         <LinearProgress
-          value={row.rate_limit_per_jam ? row.terpakai_jam_berjalan / row.rate_limit_per_jam : 0}
+          value={toPercent(
+            row.rate_limit_per_jam ? row.terpakai_jam_berjalan / row.rate_limit_per_jam : 0,
+          )}
           aria-label={t('quota.page.hour', { rentang: format.hourRange(startOfHour, endOfHour) })}
         />
       </div>
@@ -218,8 +229,6 @@ export function QuotaScreen({ client = api }: QuotaScreenProps): ReactNode {
           </div>
         </div>
       ) : null}
-
-      <p className="typescale-body-small text-on-surface-variant">{t('quota.page.note')}</p>
     </section>
   );
 }

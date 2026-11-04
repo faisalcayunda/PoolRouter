@@ -138,6 +138,29 @@ test.describe('auditor flow', () => {
     expect(ekspor[0]!.body).toMatchObject({ nik: NIK });
   });
 
+  test('keeps the NIK and drops the code and client in the medium window class', async ({
+    page,
+  }) => {
+    await stubAuditorApi(page);
+    // 768 px is `medium` (600–839): section 4 hides Kode transaksi and Client on S13/S12 so the
+    // NIK and the time still fit without a sideways scroll.
+    await page.setViewportSize({ width: 768, height: 900 });
+    await page.goto('/nik');
+
+    await page.getByRole('textbox', { name: 'NIK (16 digit)' }).fill(NIK);
+    await page.getByRole('button', { name: 'Cari' }).click();
+    const reasonDialog = page.getByRole('dialog', { name: 'Alasan mencari log NIK' });
+    await reasonDialog.getByRole('textbox').fill('Cek aduan W-2026-07');
+    await reasonDialog.getByRole('button', { name: 'Cari' }).click();
+
+    await expect(page.getByRole('cell', { name: '3175********0001' })).toBeVisible();
+    const header = (name: string) => page.getByRole('columnheader', { name, includeHidden: true });
+    await expect(header('Kode transaksi')).toBeHidden();
+    await expect(header('Client')).toBeHidden();
+    await expect(page.getByRole('columnheader', { name: 'NIK' })).toBeVisible();
+    await expect(page.getByRole('columnheader', { name: 'Waktu' })).toBeVisible();
+  });
+
   test('refuses a search without a reason and sends no request', async ({ page }) => {
     const calls = await stubAuditorApi(page);
     await page.goto('/nik');
