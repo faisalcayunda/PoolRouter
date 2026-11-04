@@ -1,0 +1,49 @@
+#!/bin/sh
+# Entrypoint image PostgreSQL + pgBackRest (ADR-0005 §4.5). Berjalan sebagai 10001:10001.
+#  1. Baca secret pgBackRest dari /run/secrets lalu ekspor ke proses (pola KD-1: entrypoint tidak mendukung *_FILE).
+#  2. Siapkan sertifikat TLS server (ssl = on). Sertifikat self-signed hanya untuk dev; staging dan prod
+#     wajib memasang sertifikat sungguhan lewat volume tls di Compose.
+#  3. Jalankan penjadwal backup di latar belakang untuk postgres, lalu serahkan ke entrypoint resmi.
+set -eu
+
+SECRETS_DIR=/run/secrets
+TLS_DIR=/var/lib/postgresql/tls
+
+die() { echo "pr-pg-entrypoint: $*" >&2; exit 1; }
+
+# read_secret <nama berkas> <nama variabel> <wajib: 1|0>
+read_secret() {
+	f="$SECRETS_DIR/$1"
+	if [ ! -e "$f" ]; then
+		[ "$3" = 1 ] && die "secret $1 tidak ada di $SECRETS_DIR"
+		return 0
+	fi
+	v=$(cat "$f")
+	[ -n "$v" ] || die "secret $1 kosong"
+	export "$2=$v"
+}
+
+: "${PGBACKREST_REPO1_CIPHER_TYPE:=aes-256-cbc}"
+export PGBACKREST_REPO1_CIPHER_TYPE
+if [ "$PGBACKREST_REPO1_CIPHER_TYPE" != none ]; then
+	read_secret pgbackrest_repo1_cipher_pass PGBACKREST_REPO1_CIPHER_PASS 1
+fi
+
+if [ ! -s "$TLS_DIR/server.key" ] || [ ! -s "$TLS_DIR/server.crt" ]; then
+	echo "pr-pg-entrypoint: sertifikat TLS belum ada, membuat self-signed untuk dev (jangan dipakai di staging atau prod)" >&2
+	openssl req -x509 -newkey rsa:2048 -nodes -days 3650 -subj "/CN=poolrouter-postgres" \
+		-keyout "$TLS_DIR/server.key" -out "$TLS_DIR/server.crt" >/dev/null 2>&1 \
+		|| die "gagal membuat sertifikat TLS"
+	chmod 0600 "$TLS_DIR/server.key"
+fi
+
+# pgBackRest menolak variabel yang ada tetapi kosong, jadi retensi diferensial hanya diekspor bila terisi.
+if [ -n "${PR_REPO1_RETENTION_DIFF:-}" ]; then
+	export PGBACKREST_REPO1_RETENTION_DIFF="$PR_REPO1_RETENTION_DIFF"
+fi
+
+if [ "${1:-}" = postgres ]; then
+	/usr/local/bin/pr-backup-scheduler.sh &
+fi
+
+exec docker-entrypoint.sh "$@"

@@ -2,6 +2,12 @@
 # blok `build:` hanya mencatat konteks dan nama image. Seed dan mock hanya di dev.
 # sslmode `disable` hanya di sini (kontrak env §2).
 services:
+  postgres:
+    # Image PostgreSQL 17 + pgBackRest dibangun lokal (SHAA-381). Build: `make image-postgres`.
+    build:
+      context: backup
+      dockerfile: Containerfile
+
   migrate:
     environment:
       POOLROUTER_DB_SSLMODE: disable

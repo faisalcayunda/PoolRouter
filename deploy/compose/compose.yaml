@@ -25,20 +25,61 @@ x-backend-env: &backend-env
 
 services:
   postgres:
-    image: docker.io/library/postgres:17-alpine@sha256:266d3c257594e195b309ae9d1805e54c788f1d7b375f56bf6c367aac6c917e7b
+    # Image PostgreSQL 17 + pgBackRest (ADR-0005 §4.5, SHAA-381). Dibangun dari deploy/compose/backup/Containerfile.
+    # Dev membangunnya lokal (compose.dev.yaml); staging dan prod memakai image yang sudah berdigest.
+    image: ${POOLROUTER_POSTGRES_IMAGE:?isi POOLROUTER_POSTGRES_IMAGE di file env}
     profiles: ["bundled-infra"]
-    # Entrypoint resmi mulai sebagai root lalu turun ke user postgres (pengecualian 2, §5).
-    # cap_add minimum untuk turun hak itu saja. Daftar ini diizinkan lint hanya untuk postgres dan redis.
+    # Image berjalan sebagai 10001:10001 (Containerfile). Tanpa cap tambahan dan tanpa root.
     cap_drop: [ALL]
-    cap_add: [CHOWN, DAC_OVERRIDE, FOWNER, SETUID, SETGID]
     security_opt: ["no-new-privileges:true"]
     environment:
       POSTGRES_DB: ${POSTGRES_DB:?isi POSTGRES_DB di file env}
       POSTGRES_USER: ${POSTGRES_USER:?isi POSTGRES_USER di file env}
       POSTGRES_PASSWORD_FILE: /run/secrets/db_password
-    secrets: [db_password]
+      # pgBackRest (ADR-0005 §4.5). Passphrase repo lewat secret pgbackrest_repo1_cipher_pass, bukan di sini.
+      PGBACKREST_STANZA: ${PGBACKREST_STANZA:-poolrouter}
+      PGBACKREST_PG1_PATH: /var/lib/postgresql/data
+      PGBACKREST_PG1_USER: ${POSTGRES_USER:?isi POSTGRES_USER di file env}
+      PGBACKREST_PG1_SOCKET_PATH: /var/run/postgresql
+      PGBACKREST_REPO1_TYPE: ${PGBACKREST_REPO1_TYPE:-posix}
+      PGBACKREST_REPO1_PATH: /var/lib/pgbackrest
+      PGBACKREST_REPO1_CIPHER_TYPE: aes-256-cbc
+      PGBACKREST_REPO1_RETENTION_FULL_TYPE: time
+      PGBACKREST_REPO1_RETENTION_FULL: ${PGBACKREST_REPO1_RETENTION_FULL:-7}
+      PGBACKREST_COMPRESS_TYPE: zst
+      PGBACKREST_ARCHIVE_ASYNC: "y"
+      PGBACKREST_SPOOL_PATH: /var/spool/pgbackrest
+      PGBACKREST_LOG_PATH: /var/log/pgbackrest
+      PR_BACKUP_FULL_HOUR_UTC: ${PR_BACKUP_FULL_HOUR_UTC:-18}
+      PR_BACKUP_DIFF_EVERY_HOURS: ${PR_BACKUP_DIFF_EVERY_HOURS:-6}
+      PR_BACKUP_VERIFY_HOUR_UTC: ${PR_BACKUP_VERIFY_HOUR_UTC:-19}
+      PR_BACKUP_FULL_WEEKDAY: ${PR_BACKUP_FULL_WEEKDAY:-daily}
+      # Kosong = bawaan pgBackRest. Jadwal hemat (ADR-0005 §5.2) mengisi 8. Diteruskan ke
+      # PGBACKREST_REPO1_RETENTION_DIFF oleh pr-pg-entrypoint.sh hanya bila terisi.
+      PR_REPO1_RETENTION_DIFF: ${PR_REPO1_RETENTION_DIFF:-}
+    # Konfigurasi server lewat flag, bukan postgresql.conf, agar terlihat di satu tempat. archive_command
+    # memakai stanza dari PGBACKREST_STANZA. Sertifikat TLS dibuat pr-pg-entrypoint.sh bila belum ada.
+    command:
+      - postgres
+      - -c
+      - wal_level=replica
+      - -c
+      - archive_mode=on
+      - -c
+      - archive_command=pgbackrest archive-push %p
+      - -c
+      - archive_timeout=60
+      - -c
+      - ssl=on
+      - -c
+      - ssl_cert_file=/var/lib/postgresql/tls/server.crt
+      - -c
+      - ssl_key_file=/var/lib/postgresql/tls/server.key
+    secrets: [db_password, pgbackrest_repo1_cipher_pass]
     volumes:
       - pg_data:/var/lib/postgresql/data
+      # Repo pgBackRest di volume terpisah dari volume data DB (ADR-0005 §4.5).
+      - pg_backup_repo:/var/lib/pgbackrest
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
       interval: 5s
@@ -208,12 +249,15 @@ services:
 
 volumes:
   pg_data: {}
+  pg_backup_repo: {}
   redis_data: {}
   rabbitmq_data: {}
 
 secrets:
   db_password:
     file: ${POOLROUTER_SECRETS_DIR:?isi POOLROUTER_SECRETS_DIR di file env}/db_password
+  pgbackrest_repo1_cipher_pass:
+    file: ${POOLROUTER_SECRETS_DIR:?}/pgbackrest_repo1_cipher_pass
   redis_password:
     file: ${POOLROUTER_SECRETS_DIR:?}/redis_password
   rabbitmq_password:

@@ -32,7 +32,7 @@ COMPOSE := $(COMPOSE_ENV) $(CONTAINER_ENGINE) compose -p $(PROJECT) $(COMPOSE_FI
 LINT_ENV_FILES := $(COMPOSE_DIR)/env/dev.env.example
 IMAGE_TAG ?= dev
 
-.PHONY: check-env compose-up compose-down compose-ps compose-logs compose-config compose-migrate compose-lint compose-test-dind image
+.PHONY: check-env compose-up compose-down compose-ps compose-logs compose-config compose-migrate compose-lint compose-test-dind image image-postgres
 
 check-env:
 	@case "$(ENV)" in dev|staging|prod) ;; *) echo "ENV harus dev, staging, atau prod" >&2; exit 2 ;; esac
@@ -77,6 +77,11 @@ image:
 	@test -f backend/Containerfile || { echo "backend/Containerfile belum ada (menunggu SHAA-175)" >&2; exit 2; }
 	$(CONTAINER_ENGINE) build -f backend/Containerfile --build-arg JOBS=$(JOBS) -t localhost/poolrouter-backend:$(IMAGE_TAG) backend
 
+# image-postgres: PostgreSQL 17 + pgBackRest (ADR-0005, SHAA-381). Konteks deploy/compose/backup.
+image-postgres:
+	@test -f deploy/compose/backup/Containerfile || { echo "deploy/compose/backup/Containerfile tidak ada" >&2; exit 2; }
+	$(CONTAINER_ENGINE) build -f deploy/compose/backup/Containerfile -t localhost/poolrouter-postgres:$(IMAGE_TAG) deploy/compose/backup
+
 # Repo gate (ADR-0003 section 5): `make setup test lint` from the repo root.
 # Each stack keeps its own Makefile; these targets only delegate. frontend/ is
 # included once it has a Makefile, so adding it needs no change here.
@@ -85,7 +90,7 @@ STACKS := backend $(if $(wildcard frontend/Makefile),frontend)
 .PHONY: help setup test lint fmt clean push-main
 
 help:
-	@echo "targets: setup test lint fmt clean (gate repo, delegasi ke stack); push-main (gate penuh lalu push ke main, wajib CONTAINER_LABEL=shaal.issue=SHAA-<n>); compose-up compose-down compose-ps compose-logs compose-config compose-migrate compose-lint compose-test-dind image"
+	@echo "targets: setup test lint fmt clean (gate repo, delegasi ke stack); push-main (gate penuh lalu push ke main, wajib CONTAINER_LABEL=shaal.issue=SHAA-<n>); compose-up compose-down compose-ps compose-logs compose-config compose-migrate compose-lint compose-test-dind image image-postgres"
 
 # push-main: satu-satunya jalur push ke main (CLAUDE.md). Gate penuh harus hijau pada hash yang di-push (SHAA-328).
 push-main:
