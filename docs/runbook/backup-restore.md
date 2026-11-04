@@ -4,7 +4,7 @@ Runbook ini menjelaskan backup, cek rutin, restore PITR, restore setelah kehilan
 
 - **Pemilik:** Sid (Platform & SRE). Reviewer runbook: Huan.
 - **Tanggal:** 2026-11-04
-- **Status:** draf untuk review Huan. Bukti drill lokal ada di SHAA-381.
+- **Status:** final untuk review. Hash final di `main` belum ada: menunggu gate `make push-main` (resize `/data`, SHAA-373). Hash `main` diisi setelah push. Bukti drill lokal ada di SHAA-381.
 - **Lingkup:** dev dengan data sintetis. Staging dan prod belum diuji (lihat bagian Batasan).
 
 ## Prasyarat
@@ -79,21 +79,37 @@ Skenario (a). Restore ke volume baru, tanpa menyentuh volume data yang berjalan.
 
 ## Restore setelah kehilangan host
 
-Skenario (b). Volume data hilang, repo masih ada. Yang dipulihkan: sampai arsip WAL terakhir.
+Skenario (b). Volume data hilang atau rusak, repo masih ada. Repo memuat arsip WAL sampai titik terakhir yang sudah diarsip, jadi RPO dibatasi `archive_timeout` (60 detik) ditambah WAL yang belum diarsip saat kegagalan.
 
-1. Catat `T0` (waktu keputusan pulih). RTO diukur dari `T0` sampai server hasil restore menjawab kueri (`T1`).
-2. Restore ke volume data kosong baru (tanpa `T_target`):
+Restore dari repo yang sama mempertahankan system identifier cluster, jadi stanza tetap dan tidak dibuat ulang. Pemulihan sampai akhir arsip membuka timeline baru (timeline naik satu). Arsip WAL timeline baru ditulis ke repo yang sama. Jalur ini untuk layanan (bukan drill): arsip dan penjadwal aktif.
+
+Keputusan pemulihan dicatat di issue dengan T0 (waktu keputusan) sebelum langkah pertama.
+
+1. Hentikan stack. Volume tidak dihapus oleh perintah ini:
    ```sh
-   sh deploy/compose/backup/drill/pr-drill.sh restore <volume-data-baru> -
+   make compose-down ENV=<env> COMPOSE_PROFILES=bundled-infra ENV_FILE=<env file>
    ```
-3. Nyalakan server, lalu ukur RPO. Ambil `max_ts` dari checksum. RPO = waktu commit terakhir yang di-ACK sebelum kegagalan dikurangi `max_ts`:
+2. Pastikan volume data lama tidak akan dipakai lagi. Volume yang rusak dihapus hanya setelah keputusan tertulis di issue. Buat ulang dengan label Compose agar dikenali sebagai volume service `pg_data`:
    ```sh
-   sh deploy/compose/backup/drill/pr-drill.sh serve <volume-data-baru> <kontainer-restore>
-   sh deploy/compose/backup/drill/pr-drill.sh checksum <kontainer-restore>
-   sh deploy/compose/backup/drill/pr-drill.sh rpo <log-sentinel> "<max_ts>"
+   docker volume rm <project>_pg_data
+   docker volume create --label com.docker.compose.project=<project> --label com.docker.compose.volume=pg_data <project>_pg_data
    ```
-4. RPO harus ≤ 300 detik dan RTO ≤ 4 jam. Catat keduanya di issue.
-5. Setelah database hasil restore dipakai sebagai primary, jalankan `stanza-create` dan backup penuh baru. Stanza yang sama dengan system identifier berbeda tidak boleh dipakai untuk database lain. Jika ini terjadi, pgBackRest menolak dan ini sinyal, bukan kesalahan konfigurasi yang harus dipaksa.
+3. Restore ke volume itu, sampai akhir arsip (tanpa `T_target`). Label `DRILL_LABEL` diisi penanda insiden, mis. `incident=<id>`:
+   ```sh
+   ENGINE=docker DRILL_LABEL=incident=<id> REPO_VOLUME=<project>_pg_backup_repo SECRETS_DIR=<dir secret> \
+   POSTGRES_USER=<user> POSTGRES_DB=<db> PGBACKREST_STANZA=poolrouter \
+   sh deploy/compose/backup/drill/pr-drill.sh restore <project>_pg_data -
+   ```
+4. Naikkan stack dengan perintah biasa. Penjadwal dan archive_command aktif lagi. Recovery selesai di akhir arsip dan server dipromosikan sendiri:
+   ```sh
+   make compose-up ENV=<env> COMPOSE_PROFILES=bundled-infra ENV_FILE=<env file>
+   ```
+   Tunggu `healthy` di `docker compose ps`.
+5. Verifikasi: `pg_is_in_recovery()` harus `f`, `pgbackrest check` harus `check-rc=0` (arsip di timeline baru berjalan), dan kueri aplikasi lolos.
+6. Segera setelah `healthy`, buat backup full baru di timeline baru: `pgbackrest --stanza=poolrouter --type=full backup`. Lalu cek `info`.
+7. RTO = T1 (healthy dan kueri lolos) dikurangi T0. RPO = commit terakhir yang di-ACK atau diketahui sebelum kegagalan dikurangi titik pulih terakhir. Catat keduanya di issue.
+
+Jika repo tidak berisi WAL sampai titik yang diinginkan, pemulihan hanya bisa sampai titik yang tersedia. Titik itu dicatat di issue, bukan ditebak.
 
 ## Drill
 
@@ -115,12 +131,27 @@ Catatan RPO: batas kehilangan dibatasi `archive_timeout = 60` detik, plus WAL ya
 
 ## Rotasi passphrase
 
-pgBackRest tidak mengganti passphrase repo yang sudah ada. Rotasi berarti repo baru:
+pgBackRest tidak mengganti passphrase repo yang sudah ada. Rotasi berarti repo baru, dengan jendela PITR yang mulai dari nol. Selama repo lama masih dalam retensi, repo lama adalah satu-satunya titik pulih penuh untuk waktu sebelum rotasi. Repo lama dan repo baru hidup berdampingan di volume `pg_backup_repo`: repo lama di akar volume, repo baru di subdirektori `r2`.
 
-1. Buat secret baru `pgbackrest_repo1_cipher_pass` di direktori secret (nama file sama, isi baru) pada repo baru, dengan path repo baru (`PGBACKREST_REPO1_PATH`) atau stanza baru.
-2. `stanza-create` dan full backup pada repo baru, lalu `check`.
-3. Repo lama dipertahankan sampai retensinya habis (7 hari ditambah satu interval full, ADR-0005 §5.1). Passphrase lama disimpan di tempat yang sama dengan secret lain sampai repo lama dihapus.
-4. Catat tanggal rotasi, hash commit konfigurasi, dan rentang retensi repo lama di issue.
+1. Tulis keputusan di issue: tanggal rotasi, alasan, dan tanggal akhir masa tumpang tindih (retensi repo lama).
+2. Simpan passphrase lama sebagai secret terpisah, dengan nama `pgbackrest_repo1_cipher_pass_old` (mode 444). Jangan menyalin isinya ke issue atau chat:
+   ```sh
+   cp <dir secret>/pgbackrest_repo1_cipher_pass <dir secret>/pgbackrest_repo1_cipher_pass_old
+   chmod 444 <dir secret>/pgbackrest_repo1_cipher_pass_old
+   ```
+3. Ganti isi `pgbackrest_repo1_cipher_pass` dengan passphrase baru (nama file tetap, isi baru). Simpan passphrase baru hanya di manajer secret.
+4. Di env file, arahkan repo baru ke subdirektori: `PGBACKREST_REPO1_PATH=/var/lib/pgbackrest/r2`.
+5. Naikkan stack. Penjadwal melakukan `stanza-create` pada repo baru. Lalu buat full pertama dan `check`:
+   ```sh
+   make compose-up ENV=<env> COMPOSE_PROFILES=bundled-infra ENV_FILE=<env file>
+   ```
+6. Selama tumpang tindih, restore dari repo lama dengan passphrase lama. Jalur ini sama dengan restore biasa, dengan variabel `REPO_PATH` dan `CIPHER_SECRET` di-set ke repo lama:
+   ```sh
+   REPO_PATH=/var/lib/pgbackrest CIPHER_SECRET=pgbackrest_repo1_cipher_pass_old ENGINE=docker DRILL_LABEL=<label> \
+   REPO_VOLUME=<project>_pg_backup_repo SECRETS_DIR=<dir secret> POSTGRES_USER=<user> POSTGRES_DB=<db> \
+   sh deploy/compose/backup/drill/pr-drill.sh restore <volume-restore> "<T_target>"
+   ```
+7. Selesai tumpang tindih: hapus berkas repo lama (`archive/` dan `backup/` di akar volume) dan secret `_old`, hanya dengan keputusan tertulis di issue. Jangan hapus berkas repo secara manual sebelum keputusan itu.
 
 ## Peralihan ke jadwal hemat
 
@@ -133,6 +164,46 @@ Setelah komentar itu:
 1. Di env file: `PR_BACKUP_FULL_WEEKDAY=<hari ISO, mis. 7 untuk Minggu>` dan `PR_REPO1_RETENTION_DIFF=8`.
 2. `make compose-up` (penjadwal dan variabel baru berlaku saat container dibuat ulang).
 3. Verifikasi: `info` menampilkan pola full mingguan setelah full pertama pada hari yang ditentukan.
+
+## Triase alert
+
+Alert dari SHAA-382 (Shiro) menaut ke anchor di bawah. Setiap bagian punya cek pertama, penyebab umum, dan tindakan. Anchor ditulis eksplisit agar stabil saat judul berubah.
+
+<a id="alert-arsip-wal-tertunda"></a>
+### Arsip WAL gagal atau tertunda (> 5 menit)
+
+- **Cek pertama:** `pg_stat_archiver` (`failed_count` naik?, `last_failed_wal`, `last_archived_time`) dan log kontainer: `docker logs <kontainer> 2>&1 | grep "archive command failed" | tail -3`.
+- **Penyebab umum:** repo tidak bisa ditulis (volume penuh, lihat [repo terisi](#alert-repo-terisi)), secret passphrase hilang atau salah, kredensial S3 kedaluwarsa (bila repo s3), atau lock pgBackRest tertinggal.
+- **Tindakan:** perbaiki penyebab. Postgres mencoba ulang archive sendiri. Jangan hapus berkas di `pg_wal` secara manual. Jika arsip mati lebih dari satu jam, catat di issue dan periksa RPO yang sedang berjalan.
+
+<a id="alert-full-terlalu-tua"></a>
+### Full terakhir yang sukses terlalu tua
+
+- **Cek pertama:** `pgbackrest info` (timestamp full terakhir yang sukses) dan `docker logs <kontainer> 2>&1 | grep "pr-backup"`.
+- **Ambang:** 26 jam pada jadwal harian. 8 hari pada jadwal hemat (ADR-0005 §5.1 butir c).
+- **Penyebab umum:** penjadwal berhenti (kontainer atau proses penjadwal mati), full gagal (lihat log `GAGAL`), atau repo penuh.
+- **Tindakan:** jalankan full manual sekali (`pgbackrest --stanza=poolrouter --type=full backup`) lalu cek `info`. Jika gagal berulang, eskalasi ke Huan.
+
+<a id="alert-verify-gagal"></a>
+### Verifikasi repo gagal
+
+- **Cek pertama:** keluaran `pgbackrest verify` (file atau set backup yang disebut) dan `pgbackrest check`.
+- **Penyebab umum:** berkas repo rusak atau hilang, WAL yang diperlukan tidak ada, atau disk bermasalah.
+- **Tindakan:** jangan hapus berkas repo secara manual. Catat set backup yang terdampak di issue, buat full baru, lalu biarkan set rusak kedaluwarsa lewat retensi. Karena ini menyentuh data, eskalasi ke Huan sebelum tindakan lain.
+
+<a id="alert-repo-terisi"></a>
+### Repo terisi > 80%
+
+- **Cek pertama:** ukuran repo (`du -sh` pada volume repo, lewat kontainer dengan mount read-only) dan ruang volume.
+- **Penyebab umum:** volume terlalu kecil untuk S2 (ADR-0005 §3.2), retensi lebih panjang dari perkiraan, atau trafik lebih besar.
+- **Tindakan:** jangan hapus berkas repo secara manual. Jalankan `pgbackrest expire --stanza=poolrouter`, yang hanya menghapus di luar retensi. Evaluasi peralihan ke jadwal hemat (bagian Peralihan). Catat keputusan di issue sebelum jadwal berubah. Menambah kapasitas repo adalah keputusan biaya, diteruskan ke Luca lewat Huan.
+
+<a id="alert-titik-pulih-tertua"></a>
+### Titik pulih tertua < 7 hari
+
+- **Cek pertama:** `pgbackrest info` (full tertua dan `wal archive min`).
+- **Penyebab umum:** stanza baru dan belum berjalan 7 hari (wajar, catat sebagai ekspektasi, bukan insiden), expire terlalu agresif (retensi di env turun), atau full gagal berulang.
+- **Tindakan:** jangan menurunkan retensi untuk menutup alert. Pastikan full berjalan (lihat [full terlalu tua](#alert-full-terlalu-tua)). Jika stanza baru, catat tanggal mulai di issue.
 
 ## Batasan
 

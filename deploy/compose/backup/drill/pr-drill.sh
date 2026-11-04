@@ -26,6 +26,9 @@ DRILL_IMAGE=${DRILL_IMAGE:-localhost/poolrouter-postgres:dev}
 POSTGRES_USER=${POSTGRES_USER:-poolrouter_admin}
 POSTGRES_DB=${POSTGRES_DB:-poolrouter}
 PGBACKREST_STANZA=${PGBACKREST_STANZA:-poolrouter}
+# REPO_PATH: path repo di dalam volume (repo baru setelah rotasi memakai subdirektori). CIPHER_SECRET: nama secret passphrase repo itu.
+REPO_PATH=${REPO_PATH:-/var/lib/pgbackrest}
+CIPHER_SECRET=${CIPHER_SECRET:-pgbackrest_repo1_cipher_pass}
 PSQL="psql -X -q -v ON_ERROR_STOP=1 -U $POSTGRES_USER -d $POSTGRES_DB"
 
 die() { echo "pr-drill: $*" >&2; exit 1; }
@@ -66,7 +69,7 @@ checksum() { # checksum <kontainer> [<ts_target>]
 # Kredensial repo hanya di proses, dibaca dari secret (pola KD-1). Dipakai oleh restore dan serve.
 repo_env() {
 	cat <<EOR
--e PGBACKREST_STANZA=$PGBACKREST_STANZA -e PGBACKREST_PG1_PATH=/var/lib/postgresql/data -e PGBACKREST_REPO1_TYPE=posix -e PGBACKREST_REPO1_PATH=/var/lib/pgbackrest -e PGBACKREST_REPO1_CIPHER_TYPE=aes-256-cbc -e PGBACKREST_SPOOL_PATH=/var/spool/pgbackrest -e PGBACKREST_LOG_PATH=/var/log/pgbackrest -e PGBACKREST_CONFIG=/etc/pgbackrest/pgbackrest.conf
+-e PGBACKREST_STANZA=$PGBACKREST_STANZA -e PGBACKREST_PG1_PATH=/var/lib/postgresql/data -e PGBACKREST_REPO1_TYPE=posix -e PGBACKREST_REPO1_PATH=$REPO_PATH -e PGBACKREST_REPO1_CIPHER_TYPE=aes-256-cbc -e PGBACKREST_SPOOL_PATH=/var/spool/pgbackrest -e PGBACKREST_LOG_PATH=/var/log/pgbackrest -e PGBACKREST_CONFIG=/etc/pgbackrest/pgbackrest.conf
 EOR
 }
 
@@ -84,7 +87,7 @@ restore() { # restore <volume-data> <ts_target|->
 		--label "$DRILL_LABEL" --network "${DRILL_NETWORK:-none}" \
 		-v "$vol:/var/lib/postgresql/data" \
 		-v "$REPO_VOLUME:/var/lib/pgbackrest" \
-		-v "$SECRETS_DIR/pgbackrest_repo1_cipher_pass:/run/secrets/pgbackrest_repo1_cipher_pass:ro" \
+		-v "$SECRETS_DIR/$CIPHER_SECRET:/run/secrets/pgbackrest_repo1_cipher_pass:ro" \
 		$(repo_env) \
 		--entrypoint /bin/sh "$DRILL_IMAGE" -c \
 		'set -eu; export PGBACKREST_REPO1_CIPHER_PASS="$(cat /run/secrets/pgbackrest_repo1_cipher_pass)"; pgbackrest --stanza="$PGBACKREST_STANZA" "$@" restore' \
@@ -98,7 +101,7 @@ serve() { # serve <volume-data> <kontainer>
 	$ENGINE run -d --name "$name" --label "$DRILL_LABEL" --network "${DRILL_NETWORK:-none}" \
 		-v "$vol:/var/lib/postgresql/data" \
 		-v "$REPO_VOLUME:/var/lib/pgbackrest" \
-		-v "$SECRETS_DIR/pgbackrest_repo1_cipher_pass:/run/secrets/pgbackrest_repo1_cipher_pass:ro" \
+		-v "$SECRETS_DIR/$CIPHER_SECRET:/run/secrets/pgbackrest_repo1_cipher_pass:ro" \
 		$(repo_env) \
 		--entrypoint /bin/sh "$DRILL_IMAGE" -c \
 		'set -eu; export PGBACKREST_REPO1_CIPHER_PASS="$(cat /run/secrets/pgbackrest_repo1_cipher_pass)"; exec /usr/lib/postgresql/17/bin/postgres -D /var/lib/postgresql/data -c archive_mode=off -c listen_addresses= -k /var/run/postgresql' >/dev/null
