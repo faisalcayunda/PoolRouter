@@ -135,6 +135,7 @@ Sumber umum: peran PA (hak ubah), audit konfigurasi di setiap tulis (siapa, kapa
 | `createUpstreamPool` / `updateUpstreamPool` | `POST /admin/v1/upstream-pools`, `PUT …/{id}` | PA | `provider_id`, `kuota_harian`, `rate_limit_per_jam`, `porsi_sync`, `margin_kuota` (0,001–0,200), `batas_percobaan` (1–5), `retry_backoff_base_detik`, `retry_backoff_cap_detik`, `retry_rasio`, `retry_min_per_jam`, `jendela_kuota` (`bergulir_24j`\|`kalender`), `reset_kuota_jam`, `reset_kuota_zona` (IANA), `jeda_min`, `jeda_maks`, `ambang_berdampingan`, `alasan` (wajib saat ubah) | 201/200; 422 di luar rentang KP-01, offset tetap pada zona, `kalender` tanpa sumber kepastian di `alasan`; `reset_kuota_*` berlaku di akhir periode (KP-02) |
 | `listDownstreamPools` / `getDownstreamPool` | `GET /admin/v1/downstream-pools`, `…/{id}` | PA | — | 200; 404 |
 | `createDownstreamPool` / `updateDownstreamPool` | `POST …`, `PUT …/{id}` | PA | `nama` (wajib, unik), `ttl_antrean_detik` (default 24 jam), `upstream_pool_ids[]` (`minItems`/`maxItems` 1; alokasi tunggal), `alasan` wajib saat ubah. **Tanpa `mode`**: mode ditentukan path. Respons menambah `prioritas` (`readOnly`, selalu 1) | 201/200; 422 |
+
 | `listClients` / `getClient` | `GET /admin/v1/clients`, `…/{id}` | PA; CO hanya clientnya | — | 200; 404 |
 | `createClient` / `updateClient` | `POST /admin/v1/clients`, `PUT …/{id}` | PA | `nama`, `limiter_penolakan_burst` (1–1000, default 20), `limiter_penolakan_isi_ulang_per_detik` (0,10–100,00, default 1,00), `alasan` wajib saat ubah limiter | 201/200; 422 di luar rentang (L-04) |
 | `setClientEndpoints` | `PUT /admin/v1/clients/{id}/endpoints` | PA | `{endpoint_ids[]}` | 200; 422. Client tanpa penugasan → 404 saat memanggil downstream. **Bentuk penugasan client↔endpoint tidak ditetapkan acuan (U-7)** |
@@ -147,6 +148,38 @@ Sumber umum: peran PA (hak ubah), audit konfigurasi di setiap tulis (siapa, kapa
 | `listWebhookAllowlist` / `putWebhookAllowlistEntry` / `deleteWebhookAllowlistEntry` | `GET`, `PUT`, `DELETE /admin/v1/webhook-allowlist[/{domain}]` | PA | `{aktif}` | 200/204; 422 |
 | `listEndpoints` / `getEndpoint` | `GET /admin/v1/endpoints`, `…/{id}` | PA | — | 200; 404 |
 | `createEndpoint` / `updateEndpoint` | `POST /admin/v1/endpoints`, `PUT …/{id}` | PA | `provider_id`, `downstream_pool_id`, `parameter_literal` (termasuk `TRESHOLD`), `log_mode`, `metadata_fields[]` (`nama_field`, `tipe`, `wajib`, `nilai_diizinkan?`, `aturan_validasi?`, `klasifikasi`, `kirim_ke_data_balikan`, `deskripsi`), `config_schema_version: 1`, `alasan` | 201/200 (menaikkan `endpoint_config_version`); 422: rujukan `{{endpoint.*}}` tanpa literal, endpoint Dukcapil tanpa `status_penerima_manfaat` (`metadata_wajib_hilang`, M-R1), field tak dikenal |
+| `listEndpoints` / `getEndpoint` | `GET /admin/v1/endpoints`, `…/{id}` | PA | — | 200; 404 |
+| `createEndpoint` / `updateEndpoint` | `POST /admin/v1/endpoints`, `PUT …/{id}` | PA | `provider_id`, `downstream_pool_id`, `parameter_literal` (termasuk `TRESHOLD`), `log_mode`, `metadata_fields[]` (`nama_field`, `tipe`, `wajib`, `nilai_diizinkan?`, `aturan_validasi?`, `klasifikasi`, `kirim_ke_data_balikan`, `deskripsi`), `config_schema_version: 1`, `alasan` | 201/200 (menaikkan `endpoint_config_version`); 422: rujukan `{{endpoint.*}}` tanpa literal, endpoint Dukcapil tanpa `status_penerima_manfaat` (`metadata_wajib_hilang`, M-R1), field tak dikenal |
+
+
+
+`UpstreamPoolConfig` membawa rentang KP-01 eksplisit sejak SHAA-280 (ADR-0001 §5a). Angka di bawah adalah keputusan Shu (2026-11-03) dan **final**; `KP01` di `backend/crates/webserver/src/api/tests.rs` menguji tabel ini terhadap dokumen yang di-generate, jadi mengubah satu batas berarti mengubah keduanya.
+
+`jeda_min`, `jeda_maks`, `ambang_berdampingan`, `kuota_harian`, `rate_limit_per_jam`, `porsi_sync`, dan `provider_id` **wajib diisi tanpa `default`**: `POST` harus menyebut nilainya, dan `PUT` (penggantian penuh) tidak boleh mengisi field yang hilang dengan nilai bawaan server.
+
+| Field | `minimum`–`maximum` | `default` |
+|---|---|---|
+| `kuota_harian` | ≥ 1, tanpa maksimum (seperti sebelum SHAA-280) | — (wajib) |
+| `rate_limit_per_jam` | ≥ 1, tanpa maksimum (seperti sebelum SHAA-280) | — (wajib) |
+| `porsi_sync` | 0–1 | — (wajib) |
+| `margin_kuota` | 0,001–0,200 | 0,01 |
+| `batas_percobaan` | 1–5 | 3 |
+| `retry_backoff_base_detik` | 1–300 | 5 |
+| `retry_backoff_cap_detik` | 1–3600, dan ≥ `retry_backoff_base_detik` (batas silang) | 300 |
+| `retry_rasio` | 0–0,5 | 0,1 |
+| `retry_min_per_jam` | 0–10.000 | 20 |
+| `reset_kuota_jam` | 0–23 | 0 |
+| `jeda_min` | 0–60.000, dan ≤ `floor(3.600.000 / rate_limit_per_jam)` (batas silang) | — (wajib) |
+| `jeda_maks` | 0–60.000, dan ≤ `floor(3.600.000 / rate_limit_per_jam)`, serta ≥ `jeda_min` (batas silang) | — (wajib) |
+| `ambang_berdampingan` | ≥ 1, tanpa maksimum | — (wajib) |
+
+`floor(3.600.000 / rate_limit_per_jam)` adalah jarak rata-rata antar-permintaan yang diizinkan batas per jam, jadi jeda yang lebih panjang akan menurunkan pool di bawah `rate_limit_per_jam` dengan sendirinya. Batas statis 60.000 di atas hanya plafon untuk `rate_limit_per_jam` ≥ 60; pada 36.000 batas jedanya 100 ms. Contoh batas silang lain: `retry_backoff_cap_detik` tidak boleh di bawah `retry_backoff_base_detik`, dan `jeda_maks` tidak boleh di bawah `jeda_min`.
+
+Batas silang di atas tidak bisa dinyatakan lewat `minimum`/`maximum` JSON Schema, jadi ditulis di `description` tiap field dan di `description` skema, lalu ditegakkan fungsi murni `UpstreamPoolConfig::validate() -> Result<(), Vec<FieldError>>` di `admin.rs` (satu `FieldError { field, message }` per field; semua pelanggaran dikembalikan sekaligus). Fungsi itu sudah ada dan ber-unit test; **wiring ke handler `create_upstream_pool`/`update_upstream_pool` (masih stub) menyusul di SHAA-175**, yang akan memetakan `Vec<FieldError>` ke 422.
+
+`reset_kuota_zona` hanya punya `default: Asia/Jakarta` (tanpa rentang); `alasan` tanpa `default` (konteks, bukan setelan). `example` sengaja berbeda dari `default` agar tidak terbaca sebagai nilai yang dipakai server saat field kosong; entitas baca `UpstreamPool` tidak memuat `default`. Diuji `e2e_upstream_pool`, `upstream_pool_tanpa_default`, `validate_pool_*` (`backend/crates/webserver/src/api/tests.rs`).
+
+
 
 ### 3.3 Penonaktifan dan reaktivasi K-20 (ADR-0001 §3a; contract EN-01…EN-09)
 
