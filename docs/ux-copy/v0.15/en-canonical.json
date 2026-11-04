@@ -1,0 +1,675 @@
+{
+  "nav": {
+    "group": {
+      "account": "Account",
+      "config": "Configuration",
+      "client": "Clients",
+      "monitoring": "Monitoring",
+      "compliance": "Compliance"
+    },
+    "drawer": {
+      "settings": "Settings",
+      "provider": "Providers",
+      "secret": "Secrets",
+      "upstream": "Upstream pools",
+      "downstream": "Downstream pools",
+      "client": "Clients and credentials",
+      "webhook": "Webhooks",
+      "quota": "Quota",
+      "log": "Transaction logs",
+      "nik_search": "Search logs by NIK",
+      "audit": "Access audit",
+      "open_menu": "Open navigation menu",
+      "aria": "Main navigation"
+    },
+    "skip_link": "Skip to content"
+  },
+  "settings": {
+    "page": {
+      "title": "Settings"
+    },
+    "language": {
+      "heading": "Language",
+      "desc": "Choose the display language for PoolRouter. This choice is saved to your account and applies on all your devices.",
+      "legend": "Display language",
+      "option": {
+        "id": "Bahasa Indonesia",
+        "en": "English"
+      },
+      "default": "(default)",
+      "apply_note": "The display changes as soon as you choose.",
+      "scope_note": "What gets translated: menus, labels, and on-screen messages. Dates, times, and numbers follow the chosen language; the time zone stays WIB. Data you enter, such as provider and pool names, isn't translated.",
+      "preview_label": "Format preview",
+      "preview_value": "3 Nov 2026, 14:30 WIB · 1,000,000",
+      "saving": "Saving…",
+      "saved": "Display language changed to {{bahasa}}.",
+      "save_error": "Couldn't save the language. The display hasn't changed. Try again."
+    }
+  },
+  "common": {
+    "app": {
+      "name": "PoolRouter"
+    },
+    "action": {
+      "save": "Save",
+      "cancel": "Cancel",
+      "search": "Search",
+      "clear_filters": "Clear filters",
+      "retry": "Try again",
+      "edit": "Edit",
+      "delete": "Delete",
+      "open": "Open",
+      "details": "Details",
+      "got_it": "Got it",
+      "close": "Close",
+      "all": "All",
+      "copy": "Copy"
+    },
+    "state": {
+      "loading": "Loading…",
+      "active": "Active",
+      "required": "Required",
+      "optional": "Optional"
+    },
+    "pagination": {
+      "rows_per_page": "Rows per page",
+      "page_range": "{{dari, number}}–{{sampai, number}} of {{total, number}}",
+      "prev_page": "Previous page",
+      "next_page": "Next page"
+    },
+    "empty": {
+      "logs": {
+        "title": "No matching logs",
+        "body": "Change the time range or clear the filters."
+      }
+    },
+    "datetime": {
+      "wib": "{{tanggal}}, {{jam}} WIB"
+    }
+  },
+  "account": {
+    "menu": {
+      "menu": "Account menu for {{nama_pengguna}}",
+      "sign_out": "Sign out"
+    }
+  },
+  "enum": {
+    "peran": {
+      "admin": "Platform admin",
+      "owner": "Client owner",
+      "operator": "Operator",
+      "auditor": "Auditor"
+    },
+    "status_request": {
+      "queued": "Queued",
+      "processing": "Processing",
+      "done": "Completed",
+      "failed": "Failed",
+      "expired": "Expired",
+      "cancelled": "Cancelled"
+    },
+    "status_akses": {
+      "ok": "Successful",
+      "timeout": "Failed: timeout"
+    },
+    "aksi_audit": {
+      "cari_nik": "Search",
+      "ditolak": "Denied",
+      "ekspor": "Export"
+    }
+  },
+  "error": {
+    "network": {
+      "load": "Couldn't load the data. Check your connection, then try again."
+    },
+    "http": {
+      "403": {
+        "title": "You don't have access to this page",
+        "body": "Your role doesn't include this page. This attempt is recorded. Contact a platform admin if you need access.",
+        "action": "Go to home page"
+      }
+    }
+  },
+  "login": {
+    "page": {
+      "title": "Sign in to PoolRouter",
+      "subtitle": "Use the account issued by BGN Pusdatin.",
+      "username": "Username",
+      "password": "Password",
+      "submit": "Sign in",
+      "session_expired": "Your session has expired. Sign in again to continue."
+    },
+    "error": {
+      "invalid": "The username or password doesn't match.",
+      "throttled": "Too many attempts. Try again in 15 minutes."
+    }
+  },
+  "provider": {
+    "page": {
+      "title": "Providers",
+      "subtitle": "A provider is a third-party API that PoolRouter calls, such as the Dukcapil API.",
+      "add": "Add provider",
+      "breadcrumb": "Providers › {{nama}} › Endpoint",
+      "deactivate": "Deactivate provider"
+    },
+    "empty": {
+      "title": "No providers yet",
+      "body": "Add a provider to start receiving requests from client applications. First, set up the secrets (USER_ID, PASSWORD, IP_USER) under Secrets.",
+      "goto_secrets": "Go to Secrets"
+    },
+    "tab": {
+      "general": "General",
+      "template": "Template",
+      "rules": "Parameters",
+      "schema": "Response",
+      "endpoint": "Endpoint"
+    },
+    "template": {
+      "label": "Body template (JSON)",
+      "help": "Write keys exactly as in the Dukcapil document, including the spelling TRESHOLD.",
+      "save": "Save template",
+      "error": {
+        "alert": "The template can't be saved yet. Line {{nomor_baris}}: {{rincian}}",
+        "brace_missing": "a closing curly brace is missing.",
+        "goto": "Go to line {{nomor_baris}}",
+        "secret_missing": "Secret {{nama}} hasn't been created yet. Create it under Secrets, then save the template again."
+      }
+    },
+    "general": {
+      "name": "Provider name",
+      "url": "Endpoint address (URL)",
+      "method": "Method",
+      "auth": {
+        "label": "Authentication",
+        "body": "Credentials in body (secret variables)",
+        "header": "API key in header",
+        "none": "No authentication",
+        "help": "Available now: credentials in body, API key in header, or none. JWT/OIDC comes in a later phase."
+      }
+    },
+    "schema": {
+      "label": "Response schema (JSON)",
+      "help": "Output to the client: status and score for each element sent. Elements that weren't sent don't appear.",
+      "add_code": "Add response code",
+      "codes": "Response codes",
+      "col": {
+        "code": "Code",
+        "meaning": "Meaning",
+        "handling": "Handling"
+      },
+      "success": "Success"
+    },
+    "rules": {
+      "add": "Add parameter",
+      "info": "A new rule applies to new requests only. Requests already queued use the rule that was in force when they entered the queue.",
+      "col": {
+        "param": "Parameter",
+        "type": "Rule type",
+        "value": "Rule value",
+        "status": "Status"
+      },
+      "type": {
+        "length_regex": "Length + regex",
+        "date_format": "Date format",
+        "length": "Length",
+        "enum": "Enum",
+        "regex": "Regex"
+      },
+      "value": {
+        "digits16": "16 digits"
+      },
+      "add_heading": "Add rule: choose a type",
+      "type_help": "Options: Regex, Enum, Length, Date format. Custom validation functions aren't available yet.",
+      "no_defaults": "Rule values stay empty until BGN sets them. The system doesn't fill in defaults.",
+      "no_custom": "Custom validation functions aren't available in this version yet.",
+      "empty": {
+        "title": "No parameters yet"
+      }
+    },
+    "endpoint": {
+      "info": "Only a platform admin can change this value. Every change is recorded in the configuration audit (who, when, what).",
+      "threshold_help": "Sent to Dukcapil from here. Clients must not send TRESHOLD (rejected with code 422)."
+    },
+    "snackbar": {
+      "saved": "Provider saved"
+    }
+  },
+  "secret": {
+    "page": {
+      "title": "Secrets",
+      "subtitle": "Secret values are stored masked. Once saved, a value can't be viewed or copied; it can only be replaced.",
+      "add": "Add secret",
+      "replace": "Replace",
+      "write_only": "The value is masked. Once saved, it can't be viewed or copied."
+    },
+    "col": {
+      "name": "Name",
+      "value": "Value",
+      "used_by": "Used by",
+      "changed": "Changed",
+      "actions": "Actions"
+    },
+    "replace": {
+      "title": "Replace secret {{nama}}",
+      "new_value": "New value",
+      "body": "The old value can't be viewed. The new value replaces it right away."
+    },
+    "delete": {
+      "blocked": {
+        "title": "Secret is still in use",
+        "body": "{{nama}} is still used by active providers: {{daftar}}. Deactivate or change those providers first, then delete this secret."
+      }
+    },
+    "snackbar": {
+      "saved": "Secret saved"
+    },
+    "empty": {
+      "title": "No secrets yet",
+      "body": "A secret stores a provider credential, such as USER_ID and PASSWORD. Add a secret before you create a provider template."
+    }
+  },
+  "upstream": {
+    "page": {
+      "title": "Upstream pools",
+      "provider": "Provider",
+      "status": "Status",
+      "daily_quota": "Daily quota (requests)",
+      "hourly_limit": "Hourly rate limit (requests)",
+      "sync_share": "Maximum sync share (%)",
+      "add": "Add upstream pool",
+      "deactivate": "Deactivate pool",
+      "quota_per_day": "{{jumlah, number}} / day",
+      "deactivate_row": "Deactivate"
+    },
+    "tab": {
+      "quota": "Quota and rate limit",
+      "antipattern": "Anti-pattern"
+    },
+    "provider": {
+      "help": "Only saved providers are listed."
+    },
+    "daily_quota": {
+      "help": "Counted per day according to the configured reset time."
+    },
+    "sync_share": {
+      "help": "When sync traffic is low, async may use the remainder. Sync above the share is rejected with code 429."
+    },
+    "col": {
+      "name": "Name",
+      "provider": "Provider",
+      "quota": "Quota",
+      "status": "Status",
+      "actions": "Actions"
+    },
+    "empty": {
+      "title": "No upstream pools yet",
+      "body": "Add an upstream pool to set the daily quota and hourly rate limit for a provider."
+    }
+  },
+  "antipattern": {
+    "page": {
+      "subtitle": "Applies to async requests. Sync requests aren't randomised or delayed, but they still count toward the quota.",
+      "min_delay": "Minimum delay (ms)",
+      "max_delay": "Maximum delay (ms)",
+      "delay_help": "A random delay between sends is picked between the minimum and the maximum.",
+      "adjacent": "Adjacent NIK threshold (%)",
+      "adjacent_help": "Maximum share of consecutive NIKs that may be sent next to each other.",
+      "warn": "A delay that is too long can keep the rate limit of {{batas, number}}/hour from being reached. Check the load-test results before changing it."
+    }
+  },
+  "downstream": {
+    "page": {
+      "title": "Downstream pools",
+      "add": "Add downstream pool",
+      "subtitle": "Each downstream pool is linked to one upstream pool (single allocation). Reserved/shareable allocation and priority come in a later phase.",
+      "ttl_hours_one": "{{count, number}} hour",
+      "ttl_hours_other": "{{count, number}} hours",
+      "form_heading": "Form: add downstream pool",
+      "ttl": "Queue TTL (hours)",
+      "ttl_help": "Leave empty for 24 hours. Changes apply to new requests only."
+    },
+    "col": {
+      "name": "Name",
+      "mode": "Mode",
+      "upstream": "Upstream pool",
+      "ttl": "Queue TTL"
+    },
+    "mode": {
+      "async": "Async",
+      "sync": "Sync"
+    },
+    "deactivate": {
+      "title": "Deactivate downstream pool?",
+      "done": "Downstream pool deactivated."
+    },
+    "empty": {
+      "title": "No downstream pools yet",
+      "body": "Add a downstream pool and link it to one upstream pool."
+    }
+  },
+  "metadata": {
+    "page": {
+      "title": "Metadata contract",
+      "breadcrumb": "Downstream pool › {{nama}} › Endpoint",
+      "add": "Add field",
+      "info": "Metadata is recorded in the transaction log for feedback data. It isn't sent to Dukcapil.",
+      "note": "A request without a required field is rejected before it uses quota. Adding an optional field doesn't make older requests fail. The final field list is pending the data contract."
+    },
+    "col": {
+      "name": "Field name",
+      "type": "Type",
+      "required": "Required?",
+      "rule": "Rule"
+    },
+    "type": {
+      "short_text": "Short text"
+    },
+    "empty": {
+      "title": "No fields yet",
+      "body": "Add a metadata field to record it in the transaction log."
+    }
+  },
+  "client": {
+    "page": {
+      "title": "Clients and credentials",
+      "add": "Add client"
+    },
+    "col": {
+      "client": "Client",
+      "type": "Credential type",
+      "id": "Client ID",
+      "created": "Created",
+      "status": "Status",
+      "actions": "Actions"
+    },
+    "type": {
+      "oauth": "OAuth2 client credentials",
+      "api_key": "API key"
+    },
+    "credential": {
+      "create": "Create credential",
+      "revoke": "Revoke",
+      "dialog_title": "New credential for {{nama_client}}"
+    },
+    "form": {
+      "title": "Add client",
+      "intro": "A client is a BGN application that calls PoolRouter.",
+      "name": "Client name",
+      "name_help": "A unique name, for example the application name.",
+      "cred_type": "Credential type",
+      "pool": "Downstream pool",
+      "pool_help": "A client can only use the pool it is linked to.",
+      "webhook": "Webhook address (optional)",
+      "save": "Save client"
+    },
+    "snackbar": {
+      "saved": "Client saved"
+    },
+    "empty": {
+      "title": "No clients yet",
+      "body": "Add a client for each application that will call PoolRouter."
+    }
+  },
+  "secret_once": {
+    "dialog": {
+      "body": "Copy the secret now. It is shown only once and can't be viewed again after you close this dialog.",
+      "client_secret": "Client secret",
+      "shown_once": "shown once",
+      "copied": "Secret copied",
+      "done": "I've saved it"
+    }
+  },
+  "webhook": {
+    "page": {
+      "title": "Webhook · {{nama_client}}",
+      "address": "Webhook address"
+    },
+    "address": {
+      "help": "Must start with https://. Addresses without https are rejected.",
+      "error": "The webhook address must start with https://."
+    },
+    "secret": {
+      "heading": "Signing secret",
+      "desc": "Created by the system and shown only once. Install it in your application to verify webhooks.",
+      "create": "Create secret",
+      "rotate": "Rotate secret"
+    },
+    "rotate": {
+      "title": "Rotate webhook secret?",
+      "body": "The old secret stops working immediately. The {{nama_client}} application will fail to verify webhooks until the new secret is installed in it."
+    },
+    "created": {
+      "title": "New webhook secret for {{nama_client}}",
+      "field": "Signing secret"
+    },
+    "failures": {
+      "heading": "Delivery failures",
+      "alert_one": "{{count, number}} webhook failed in the last 24 hours. A webhook is sent once; you can still fetch the result by polling with queue_id.",
+      "alert_other": "{{count, number}} webhooks failed in the last 24 hours. A webhook is sent once; you can still fetch the result by polling with queue_id."
+    },
+    "col": {
+      "time": "Time",
+      "request_status": "Request status",
+      "reason": "Failure reason",
+      "note": "Note"
+    },
+    "reason": {
+      "timeout": "Timeout {{detik}} s",
+      "http": "HTTP {{kode}}"
+    },
+    "note": {
+      "not_resent": "Not resent"
+    },
+    "snackbar": {
+      "saved": "Webhook saved"
+    },
+    "empty": {
+      "no_failures": "No failures in the last 24 hours."
+    }
+  },
+  "quota": {
+    "page": {
+      "title": "Quota",
+      "meta": "Pool: {{nama_pool}} · Updated {{waktu}}",
+      "today": "Today",
+      "of_total": "{{terpakai, number}} of {{total, number}}",
+      "used_left": "{{persen, number}}% used, {{sisa, number}} left",
+      "reset_at": "resets {{waktu}}",
+      "hour": "Current hour ({{rentang}})",
+      "sync_heading": "Sync share",
+      "sync_used": "Sync used {{terpakai, number}} of the {{persen, number}}% limit",
+      "note": "Figures count attempts to Dukcapil. Differences from the transaction log: reconciliation is still under review."
+    },
+    "level": {
+      "ok": "OK",
+      "low": "Running low",
+      "out": "Exhausted"
+    }
+  },
+  "log": {
+    "page": {
+      "title": "Transaction logs",
+      "subtitle": "Trace transactions by transaction code, queue_id, client, or time. NIK shows the last 4 digits only.",
+      "nik_hint": "NIK search is available to auditors only. Need the full NIK? Ask an auditor."
+    },
+    "filter": {
+      "code": "Transaction code",
+      "client": "Client",
+      "range": "Time range"
+    },
+    "chip": {
+      "client": "Client: {{nama}}"
+    },
+    "col": {
+      "time": "Time",
+      "code": "Transaction code",
+      "client": "Client",
+      "nik": "NIK",
+      "access": "Access status"
+    },
+    "row": {
+      "aria": "Transaction details {{kode}}"
+    }
+  },
+  "nik": {
+    "page": {
+      "title": "Search logs by NIK",
+      "subtitle": "Every search, payload view, and export is recorded in the access audit.",
+      "field": "NIK (16 digits)",
+      "field_help": "Digits only.",
+      "error": "Enter a 16-digit NIK.",
+      "range_only_note": "Searching by time range alone isn't available; a NIK is required.",
+      "export": "Export results",
+      "payload": "Payload",
+      "retention": "Data outside the online retention period can't be searched yet. Archive search arrives in a later phase."
+    },
+    "reason": {
+      "title": "Reason for searching NIK logs",
+      "body": "This access is recorded: your name, the time, and the reason below are saved in the access audit and can't be edited or deleted.",
+      "field": "Reason (at least 10 characters)",
+      "help": "Example: ticket number or purpose of the check.",
+      "error": "The reason must be at least {{min}} characters."
+    },
+    "payload": {
+      "title": "Reason for opening the payload",
+      "body": "The payload contains additional data from Dukcapil. This access is recorded separately and can't be edited or deleted.",
+      "help": "Filled in from the search reason. You can edit it.",
+      "open": "Open payload"
+    },
+    "snackbar": {
+      "logged": "Search recorded"
+    },
+    "empty": {
+      "title": "No results for this search"
+    }
+  },
+  "audit": {
+    "page": {
+      "title": "Access audit",
+      "subtitle": "Records are read-only. There are no edit or delete actions."
+    },
+    "filter": {
+      "user": "User",
+      "action": "Action",
+      "nik_range": "NIK + range {{rentang}}",
+      "nik_search": "NIK search",
+      "open_logs": "Open transaction logs",
+      "range_only": "Range {{rentang}}"
+    },
+    "col": {
+      "user": "User",
+      "role": "Role",
+      "action": "Action",
+      "filter": "Filter or query",
+      "count": "Record count"
+    },
+    "empty": {
+      "title": "No records match",
+      "body": "Change the time range or clear the filters."
+    }
+  },
+  "risk": {
+    "pool": {
+      "title": "Deactivate upstream pool?",
+      "scope": "Waiting requests in this pool are affected.",
+      "new_requests": "New requests to this pool are rejected with code 503.",
+      "confirm": "Deactivate pool"
+    },
+    "upstream": {
+      "scope": "Only requests that have already been routed to this pool are stopped, as counted below. Requests that haven't been routed aren't cancelled.",
+      "timing_window": "During those 30 seconds, sync requests that were already accepted can still be processed. Async requests that were routed to this pool are stopped without a call to the provider: cancelled, or failed if waiting for a retry. Requests that haven't been routed keep waiting, then are processed through an active upstream pool or end as expired once their TTL runs out. Neither group is counted above or recorded in the configuration audit.",
+      "cancelled_one": "{{count, number}} request that has been routed to this pool but not yet tried will be cancelled. It has never been sent to the provider and uses no quota.",
+      "cancelled_other": "{{count, number}} requests that have been routed to this pool but not yet tried will be cancelled. They have never been sent to the provider and use no quota.",
+      "body_zero": "No requests have been routed to this pool.",
+      "new_requests_rerouted": "No later than 30 seconds after you confirm, new requests from the downstream pools that use this pool are no longer routed to this pool and are served by another active upstream pool.",
+      "last_active": "This is the last active upstream pool for at least one downstream pool. New requests to those downstream pools are rejected with code 503, no later than 30 seconds after you confirm.",
+      "last_active_waiting": "Waiting requests that haven't been routed to this pool aren't cancelled. They stay queued, the client can still cancel them, and they are processed as usual if an active upstream pool exists for their downstream pool before their TTL runs out. If none exists, they end as expired.",
+      "last_active_stop": "To stop waiting requests, deactivate the downstream pool.",
+      "unused": "This pool isn't used by any downstream pool, so no new requests are affected.",
+      "done": "Upstream pool deactivated."
+    },
+    "provider": {
+      "title": "Deactivate provider?",
+      "confirm": "Deactivate provider",
+      "scope": "All waiting requests in every upstream pool that uses this provider are affected, from any downstream pool. The active status of the pools doesn't change.",
+      "new_requests": "New requests that use this provider are rejected with code 503.",
+      "recover": "The route recovers as soon as the provider is activated again.",
+      "done": "Provider deactivated."
+    },
+    "endpoint": {
+      "title": "Deactivate endpoint?",
+      "confirm": "Deactivate endpoint",
+      "new_requests": "New requests to this endpoint are rejected with code 403. Clients must not retry them.",
+      "done": "Endpoint deactivated."
+    },
+    "client": {
+      "title": "Deactivate client?",
+      "confirm": "Deactivate client",
+      "scope": "All requests that belong to this client are affected.",
+      "new_requests": "New requests from this client are rejected with code 401.",
+      "in_flight_result": "The result of a request that is being processed is sent by webhook if the client webhook is active. A deactivated client can't fetch results by polling (code 401). If the client is activated again before the result TTL of the downstream pool runs out, a completed result can be fetched again.",
+      "webhook_stays": "Webhooks are still sent to this client while its webhook is active. To stop them, deactivate the client webhook separately.",
+      "done": "Client deactivated."
+    },
+    "credential": {
+      "title": "Revoke credential?",
+      "confirm": "Revoke credential",
+      "scope": "Only requests that came in through this credential are affected. Other credentials of the same client keep working; revoking one credential doesn't stop the client.",
+      "new_requests": "New requests with this credential are rejected with code 401, without waiting for the token to expire.",
+      "in_flight_result": "The result of a request that is being processed can be fetched with another credential of this client.",
+      "irreversible": "Revoking can't be undone. A revoked credential can't be activated again (the system rejects it with code 409). To replace it, create a new credential; a client can have at most 2 active credentials.",
+      "done": "Credential revoked."
+    },
+    "common": {
+      "preview_heading": "Estimated impact",
+      "cancelled_one": "{{count, number}} waiting request will be cancelled. It has never been sent to the provider and uses no quota.",
+      "cancelled_other": "{{count, number}} waiting requests will be cancelled. They have never been sent to the provider and use no quota.",
+      "failed_one": "{{count, number}} request waiting for a retry will be marked failed and won't be tried again. Quota already used and earlier attempt logs stay as they are, with no quota refund.",
+      "failed_other": "{{count, number}} requests waiting for a retry will be marked failed and won't be tried again. Quota already used and earlier attempt logs stay as they are, with no quota refund.",
+      "body_zero": "No requests are waiting.",
+      "estimate_note": "These numbers are estimates. The final numbers appear in the result of the action and in the audit.",
+      "in_flight_label": "In progress",
+      "in_flight_one": "For information only: {{count, number}} request is being processed and isn't counted above. The attempt in progress is allowed to finish. If it fails temporarily, the request isn't tried again and ends as failed.",
+      "in_flight_other": "For information only: {{count, number}} requests are being processed and aren't counted above. The attempts in progress are allowed to finish. If one fails temporarily, it isn't tried again and ends as failed.",
+      "timing": "New requests are rejected no later than 30 seconds after you confirm.",
+      "timing_window": "During those 30 seconds, sync requests that were already accepted can still be processed. Async requests that get through are cancelled and not sent to the provider.",
+      "reversible": "A platform admin can activate it again in the Web UI. Activation only applies to new requests. Requests that were cancelled or failed don't come back; the client must send a new request.",
+      "webhook": "Clients whose webhook is active receive one webhook for each request that becomes cancelled or failed, with the status and the reason. A webhook isn't sent again if delivery fails.",
+      "audit": "This action is recorded in the configuration audit: who, when, and the old and new values.",
+      "action_failed": "The action didn't succeed. Try again."
+    }
+  },
+  "title": {
+    "page": {
+      "login": "Sign in · PoolRouter",
+      "settings": "Settings · PoolRouter",
+      "provider": "Providers · PoolRouter",
+      "secret": "Secrets · PoolRouter",
+      "upstream": "Upstream pools · PoolRouter",
+      "downstream": "Downstream pools · PoolRouter",
+      "client": "Clients and credentials · PoolRouter",
+      "webhook": "Webhooks · PoolRouter",
+      "quota": "Quota · PoolRouter",
+      "log": "Transaction logs · PoolRouter",
+      "nik_search": "Search logs by NIK · PoolRouter",
+      "audit": "Access audit · PoolRouter"
+    }
+  },
+  "session": {
+    "idle": {
+      "title": "Your session is about to end",
+      "body": "Your session ends at {{jam}} WIB. Choose \"Extend session\" to stay signed in.",
+      "extend": "Extend session",
+      "countdown": "Time left {{menit}}:{{detik}}"
+    },
+    "limit": {
+      "title": "Session limit almost reached",
+      "body": "For security, sessions are limited to 8 hours and can't be extended. Your session ends at {{jam}} WIB. Save your input now, then sign in again.",
+      "banner": "Your session ends at {{jam}} WIB and can't be extended. Save your input now."
+    },
+    "extend": {
+      "done": "Session extended",
+      "error": "Couldn't extend the session. Try again."
+    }
+  }
+}

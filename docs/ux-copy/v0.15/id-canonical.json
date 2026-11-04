@@ -1,0 +1,669 @@
+{
+  "nav": {
+    "group": {
+      "account": "Akun",
+      "config": "Konfigurasi",
+      "client": "Client",
+      "monitoring": "Pemantauan",
+      "compliance": "Kepatuhan"
+    },
+    "drawer": {
+      "settings": "Pengaturan",
+      "provider": "Provider",
+      "secret": "Secret",
+      "upstream": "Upstream pool",
+      "downstream": "Downstream pool",
+      "client": "Client dan kredensial",
+      "webhook": "Webhook",
+      "quota": "Kuota",
+      "log": "Log transaksi",
+      "nik_search": "Pencarian log per NIK",
+      "audit": "Audit akses",
+      "open_menu": "Buka menu navigasi",
+      "aria": "Navigasi utama"
+    },
+    "skip_link": "Lompat ke konten"
+  },
+  "settings": {
+    "page": {
+      "title": "Pengaturan"
+    },
+    "language": {
+      "heading": "Bahasa",
+      "desc": "Pilih bahasa tampilan PoolRouter. Pilihan ini tersimpan di akun Anda dan berlaku di semua perangkat.",
+      "legend": "Bahasa tampilan",
+      "option": {
+        "id": "Bahasa Indonesia",
+        "en": "English"
+      },
+      "default": "(bawaan)",
+      "apply_note": "Tampilan langsung berganti begitu Anda memilih.",
+      "scope_note": "Yang diterjemahkan: menu, label, dan pesan di layar. Tanggal, waktu, dan angka mengikuti bahasa yang dipilih; zona waktu tetap WIB. Data yang Anda isi, seperti nama provider dan pool, tidak diterjemahkan.",
+      "preview_label": "Contoh format",
+      "preview_value": "3 Nov 2026, 14.30 WIB · 1.000.000",
+      "saving": "Menyimpan…",
+      "saved": "Bahasa tampilan diubah ke {{bahasa}}.",
+      "save_error": "Bahasa belum bisa disimpan. Tampilan tidak berubah. Coba lagi."
+    }
+  },
+  "common": {
+    "app": {
+      "name": "PoolRouter"
+    },
+    "action": {
+      "save": "Simpan",
+      "cancel": "Batal",
+      "search": "Cari",
+      "clear_filters": "Hapus filter",
+      "retry": "Coba lagi",
+      "edit": "Ubah",
+      "delete": "Hapus",
+      "open": "Buka",
+      "details": "Detail",
+      "got_it": "Mengerti",
+      "close": "Tutup",
+      "all": "Semua",
+      "copy": "Salin"
+    },
+    "state": {
+      "loading": "Memuat…",
+      "active": "Aktif",
+      "required": "Wajib",
+      "optional": "Opsional"
+    },
+    "pagination": {
+      "rows_per_page": "Baris per halaman",
+      "page_range": "{{dari, number}}–{{sampai, number}} dari {{total, number}}",
+      "prev_page": "Halaman sebelumnya",
+      "next_page": "Halaman berikutnya"
+    },
+    "empty": {
+      "logs": {
+        "title": "Tidak ada log yang cocok",
+        "body": "Ubah rentang waktu atau hapus filter."
+      }
+    },
+    "datetime": {
+      "wib": "{{tanggal}}, {{jam}} WIB"
+    }
+  },
+  "account": {
+    "menu": {
+      "menu": "Menu akun {{nama_pengguna}}",
+      "sign_out": "Keluar"
+    }
+  },
+  "enum": {
+    "peran": {
+      "admin": "Platform admin",
+      "owner": "Client owner",
+      "operator": "Operator",
+      "auditor": "Auditor"
+    },
+    "status_request": {
+      "queued": "Mengantre",
+      "processing": "Diproses",
+      "done": "Selesai",
+      "failed": "Gagal",
+      "expired": "Kedaluwarsa",
+      "cancelled": "Dibatalkan"
+    },
+    "status_akses": {
+      "ok": "Berhasil",
+      "timeout": "Gagal: timeout"
+    },
+    "aksi_audit": {
+      "cari_nik": "Cari",
+      "ditolak": "Ditolak",
+      "ekspor": "Ekspor"
+    }
+  },
+  "error": {
+    "network": {
+      "load": "Data belum bisa dimuat. Periksa koneksi, lalu coba lagi."
+    },
+    "http": {
+      "403": {
+        "title": "Anda tidak punya akses ke halaman ini",
+        "body": "Peran Anda tidak mencakup halaman ini. Percobaan ini dicatat. Hubungi platform admin bila Anda perlu akses.",
+        "action": "Ke halaman awal"
+      }
+    }
+  },
+  "login": {
+    "page": {
+      "title": "Masuk ke PoolRouter",
+      "subtitle": "Gunakan akun yang diberikan Pusdatin BGN.",
+      "username": "Nama pengguna",
+      "password": "Kata sandi",
+      "submit": "Masuk",
+      "session_expired": "Sesi Anda berakhir. Masuk lagi untuk melanjutkan."
+    },
+    "error": {
+      "invalid": "Nama pengguna atau kata sandi tidak cocok.",
+      "throttled": "Terlalu banyak percobaan. Coba lagi dalam 15 menit."
+    }
+  },
+  "provider": {
+    "page": {
+      "title": "Provider",
+      "subtitle": "Provider adalah API pihak ketiga yang dipanggil PoolRouter, misalnya API Dukcapil.",
+      "add": "Tambah provider",
+      "breadcrumb": "Provider › {{nama}} › Endpoint",
+      "deactivate": "Nonaktifkan provider"
+    },
+    "empty": {
+      "title": "Belum ada provider",
+      "body": "Tambahkan provider untuk mulai menerima request dari aplikasi client. Siapkan dulu secret (USER_ID, PASSWORD, IP_USER) di menu Secret.",
+      "goto_secrets": "Buka menu Secret"
+    },
+    "tab": {
+      "general": "Umum",
+      "template": "Template",
+      "rules": "Parameter",
+      "schema": "Respons",
+      "endpoint": "Endpoint"
+    },
+    "template": {
+      "label": "Template body (JSON)",
+      "help": "Kunci ditulis persis seperti di dokumen Dukcapil, termasuk ejaan TRESHOLD.",
+      "save": "Simpan template",
+      "error": {
+        "alert": "Template belum bisa disimpan. Baris {{nomor_baris}}: {{rincian}}",
+        "brace_missing": "kurung kurawal penutup kurang.",
+        "goto": "Ke baris {{nomor_baris}}",
+        "secret_missing": "Secret {{nama}} belum dibuat. Buat di menu Secret, lalu simpan template lagi."
+      }
+    },
+    "general": {
+      "name": "Nama provider",
+      "url": "Alamat endpoint (URL)",
+      "method": "Metode",
+      "auth": {
+        "label": "Autentikasi",
+        "body": "Kredensial di body (variabel secret)",
+        "header": "API key di header",
+        "none": "Tanpa autentikasi",
+        "help": "Pilihan saat ini: kredensial di body, API key di header, tanpa autentikasi. JWT/OIDC tersedia pada tahap berikutnya."
+      }
+    },
+    "schema": {
+      "label": "Skema respons (JSON)",
+      "help": "Keluaran ke client: status dan skor per elemen yang dikirim. Elemen yang tidak dikirim tidak muncul.",
+      "add_code": "Tambah kode respons",
+      "codes": "Kode respons",
+      "col": {
+        "code": "Kode",
+        "meaning": "Arti",
+        "handling": "Perlakuan"
+      },
+      "success": "Sukses"
+    },
+    "rules": {
+      "add": "Tambah parameter",
+      "info": "Rule baru hanya berlaku untuk request baru. Request yang sudah mengantre memakai rule saat masuk antrean.",
+      "col": {
+        "param": "Parameter",
+        "type": "Jenis rule",
+        "value": "Nilai rule",
+        "status": "Status"
+      },
+      "type": {
+        "length_regex": "Panjang + regex",
+        "date_format": "Format tanggal",
+        "length": "Panjang",
+        "enum": "Enum",
+        "regex": "Regex"
+      },
+      "value": {
+        "digits16": "16 digit angka"
+      },
+      "add_heading": "Tambah rule: pilih jenis",
+      "type_help": "Pilihan: Regex, Enum, Panjang, Format tanggal. Fungsi validasi kustom belum tersedia.",
+      "no_defaults": "Nilai rule dikosongkan sampai ditetapkan BGN. Sistem tidak mengisi nilai bawaan.",
+      "no_custom": "Fungsi validasi kustom belum tersedia di versi ini.",
+      "empty": {
+        "title": "Belum ada parameter"
+      }
+    },
+    "endpoint": {
+      "info": "Hanya platform admin yang bisa mengubah nilai ini. Setiap perubahan dicatat di audit konfigurasi (siapa, kapan, apa).",
+      "threshold_help": "Dikirim ke Dukcapil dari sini. Client tidak boleh mengirim TRESHOLD (ditolak dengan kode 422)."
+    },
+    "snackbar": {
+      "saved": "Provider tersimpan"
+    }
+  },
+  "secret": {
+    "page": {
+      "title": "Secret",
+      "subtitle": "Nilai secret disimpan tersamar. Setelah disimpan, nilainya tidak bisa dilihat atau disalin; hanya bisa diganti.",
+      "add": "Tambah secret",
+      "replace": "Ganti",
+      "write_only": "Nilai tersamar. Setelah disimpan, nilai tidak bisa dilihat atau disalin."
+    },
+    "col": {
+      "name": "Nama",
+      "value": "Nilai",
+      "used_by": "Dipakai oleh",
+      "changed": "Diubah",
+      "actions": "Aksi"
+    },
+    "replace": {
+      "title": "Ganti secret {{nama}}",
+      "new_value": "Nilai baru",
+      "body": "Nilai lama tidak bisa dilihat. Nilai baru langsung menggantikannya."
+    },
+    "delete": {
+      "blocked": {
+        "title": "Secret masih dipakai",
+        "body": "{{nama}} masih dipakai oleh provider aktif: {{daftar}}. Nonaktifkan atau ubah provider itu dulu, lalu hapus secret ini."
+      }
+    },
+    "snackbar": {
+      "saved": "Secret tersimpan"
+    },
+    "empty": {
+      "title": "Belum ada secret",
+      "body": "Secret menyimpan kredensial provider, misalnya USER_ID dan PASSWORD. Tambahkan secret sebelum membuat template provider."
+    }
+  },
+  "upstream": {
+    "page": {
+      "title": "Upstream pool",
+      "provider": "Provider",
+      "status": "Status",
+      "daily_quota": "Kuota harian (request)",
+      "hourly_limit": "Rate limit per jam (request)",
+      "sync_share": "Porsi maksimal sync (%)",
+      "add": "Tambah upstream pool",
+      "deactivate": "Nonaktifkan pool",
+      "quota_per_day": "{{jumlah, number}} / hari",
+      "deactivate_row": "Nonaktifkan"
+    },
+    "tab": {
+      "quota": "Kuota dan rate limit",
+      "antipattern": "Anti-pola"
+    },
+    "provider": {
+      "help": "Hanya provider yang sudah tersimpan."
+    },
+    "daily_quota": {
+      "help": "Dihitung per hari menurut jam reset yang ditetapkan."
+    },
+    "sync_share": {
+      "help": "Bila lalu lintas sync sepi, async boleh memakai sisanya. Sync di atas porsi ditolak dengan kode 429."
+    },
+    "col": {
+      "name": "Nama",
+      "provider": "Provider",
+      "quota": "Kuota",
+      "status": "Status",
+      "actions": "Aksi"
+    },
+    "empty": {
+      "title": "Belum ada upstream pool",
+      "body": "Tambahkan upstream pool untuk menetapkan kuota harian dan rate limit per jam ke provider."
+    }
+  },
+  "antipattern": {
+    "page": {
+      "subtitle": "Dipakai untuk request async. Request sync tidak diacak dan tidak diberi jeda, tetapi tetap dihitung di kuota.",
+      "min_delay": "Jeda minimum (ms)",
+      "max_delay": "Jeda maksimum (ms)",
+      "delay_help": "Jeda acak antarpengiriman dipilih di antara minimum dan maksimum.",
+      "adjacent": "Ambang NIK berdampingan (%)",
+      "adjacent_help": "Batas proporsi NIK berurutan yang boleh terkirim berdampingan.",
+      "warn": "Jeda yang terlalu besar bisa membuat rate limit {{batas, number}}/jam tidak tercapai. Cek hasil uji beban sebelum mengubah."
+    }
+  },
+  "downstream": {
+    "page": {
+      "title": "Downstream pool",
+      "add": "Tambah downstream pool",
+      "subtitle": "Satu downstream pool terkait satu upstream pool (alokasi tunggal). Alokasi reserved/shareable dan prioritas tersedia pada tahap berikutnya.",
+      "ttl_hours_other": "{{count, number}} jam",
+      "form_heading": "Form: tambah downstream pool",
+      "ttl": "TTL antrean (jam)",
+      "ttl_help": "Bila kosong, memakai 24 jam. Perubahan hanya berlaku untuk request baru."
+    },
+    "col": {
+      "name": "Nama",
+      "mode": "Mode",
+      "upstream": "Upstream pool",
+      "ttl": "TTL antrean"
+    },
+    "mode": {
+      "async": "Async",
+      "sync": "Sync"
+    },
+    "deactivate": {
+      "title": "Nonaktifkan downstream pool?",
+      "done": "Downstream pool dinonaktifkan."
+    },
+    "empty": {
+      "title": "Belum ada downstream pool",
+      "body": "Tambahkan downstream pool dan kaitkan dengan satu upstream pool."
+    }
+  },
+  "metadata": {
+    "page": {
+      "title": "Kontrak metadata",
+      "breadcrumb": "Downstream pool › {{nama}} › Endpoint",
+      "add": "Tambah field",
+      "info": "Metadata dicatat di log transaksi untuk data balikan. Metadata tidak dikirim ke Dukcapil.",
+      "note": "Request tanpa field wajib ditolak sebelum memakai kuota. Menambah field opsional tidak membuat request lama ditolak. Daftar field final menunggu data contract."
+    },
+    "col": {
+      "name": "Nama field",
+      "type": "Tipe",
+      "required": "Wajib?",
+      "rule": "Rule"
+    },
+    "type": {
+      "short_text": "Teks pendek"
+    },
+    "empty": {
+      "title": "Belum ada field",
+      "body": "Tambahkan field metadata untuk dicatat di log transaksi."
+    }
+  },
+  "client": {
+    "page": {
+      "title": "Client dan kredensial",
+      "add": "Tambah client"
+    },
+    "col": {
+      "client": "Client",
+      "type": "Jenis kredensial",
+      "id": "Client ID",
+      "created": "Dibuat",
+      "status": "Status",
+      "actions": "Aksi"
+    },
+    "type": {
+      "oauth": "OAuth2 client credentials",
+      "api_key": "API key"
+    },
+    "credential": {
+      "create": "Buat kredensial",
+      "revoke": "Cabut",
+      "dialog_title": "Kredensial baru untuk {{nama_client}}"
+    },
+    "form": {
+      "title": "Tambah client",
+      "intro": "Client adalah aplikasi BGN yang memanggil PoolRouter.",
+      "name": "Nama client",
+      "name_help": "Nama unik, misalnya nama aplikasi.",
+      "cred_type": "Jenis kredensial",
+      "pool": "Downstream pool",
+      "pool_help": "Client hanya bisa memakai pool yang ditautkan.",
+      "webhook": "Alamat webhook (opsional)",
+      "save": "Simpan client"
+    },
+    "snackbar": {
+      "saved": "Client tersimpan"
+    },
+    "empty": {
+      "title": "Belum ada client",
+      "body": "Tambahkan client untuk setiap aplikasi yang akan memanggil PoolRouter."
+    }
+  },
+  "secret_once": {
+    "dialog": {
+      "body": "Salin secret sekarang. Secret hanya tampil sekali dan tidak bisa dilihat lagi setelah dialog ini ditutup.",
+      "client_secret": "Client secret",
+      "shown_once": "ditampilkan sekali",
+      "copied": "Secret disalin",
+      "done": "Sudah saya simpan"
+    }
+  },
+  "webhook": {
+    "page": {
+      "title": "Webhook · {{nama_client}}",
+      "address": "Alamat webhook"
+    },
+    "address": {
+      "help": "Harus diawali https://. Alamat tanpa https ditolak.",
+      "error": "Alamat webhook harus diawali https://."
+    },
+    "secret": {
+      "heading": "Secret tanda tangan",
+      "desc": "Dibuat oleh sistem dan hanya tampil sekali. Pasang di aplikasi Anda untuk memverifikasi webhook.",
+      "create": "Buat secret",
+      "rotate": "Rotasi secret"
+    },
+    "rotate": {
+      "title": "Rotasi secret webhook?",
+      "body": "Secret lama langsung tidak berlaku. Aplikasi {{nama_client}} akan gagal memverifikasi webhook sampai secret baru dipasang di aplikasinya."
+    },
+    "created": {
+      "title": "Secret webhook baru untuk {{nama_client}}",
+      "field": "Secret tanda tangan"
+    },
+    "failures": {
+      "heading": "Kegagalan pengiriman",
+      "alert_other": "{{count, number}} webhook gagal dalam 24 jam terakhir. Webhook dikirim satu kali; hasil tetap bisa diambil lewat polling dengan queue_id."
+    },
+    "col": {
+      "time": "Waktu",
+      "request_status": "Status request",
+      "reason": "Alasan gagal",
+      "note": "Catatan"
+    },
+    "reason": {
+      "timeout": "Timeout {{detik}} detik",
+      "http": "HTTP {{kode}}"
+    },
+    "note": {
+      "not_resent": "Tidak dikirim ulang"
+    },
+    "snackbar": {
+      "saved": "Webhook tersimpan"
+    },
+    "empty": {
+      "no_failures": "Tidak ada kegagalan dalam 24 jam terakhir."
+    }
+  },
+  "quota": {
+    "page": {
+      "title": "Kuota",
+      "meta": "Pool: {{nama_pool}} · Diperbarui {{waktu}}",
+      "today": "Hari ini",
+      "of_total": "{{terpakai, number}} dari {{total, number}}",
+      "used_left": "Terpakai {{persen, number}}%, sisa {{sisa, number}}",
+      "reset_at": "reset {{waktu}}",
+      "hour": "Jam berjalan ({{rentang}})",
+      "sync_heading": "Porsi sync",
+      "sync_used": "Sync terpakai {{terpakai, number}} dari batas {{persen, number}}%",
+      "note": "Angka hitung dari jumlah percobaan ke Dukcapil. Selisih dengan log transaksi: rekonsiliasi masih ditinjau."
+    },
+    "level": {
+      "ok": "Aman",
+      "low": "Hampir habis",
+      "out": "Habis"
+    }
+  },
+  "log": {
+    "page": {
+      "title": "Log transaksi",
+      "subtitle": "Telusuri transaksi lewat kode transaksi, queue_id, client, atau waktu. NIK tampil 4 digit akhir.",
+      "nik_hint": "Pencarian per NIK hanya tersedia untuk auditor. Butuh NIK lengkap? Minta auditor."
+    },
+    "filter": {
+      "code": "Kode transaksi",
+      "client": "Client",
+      "range": "Rentang waktu"
+    },
+    "chip": {
+      "client": "Client: {{nama}}"
+    },
+    "col": {
+      "time": "Waktu",
+      "code": "Kode transaksi",
+      "client": "Client",
+      "nik": "NIK",
+      "access": "Status akses"
+    },
+    "row": {
+      "aria": "Detail transaksi {{kode}}"
+    }
+  },
+  "nik": {
+    "page": {
+      "title": "Pencarian log per NIK",
+      "subtitle": "Setiap pencarian, pembukaan payload, dan ekspor dicatat di audit akses.",
+      "field": "NIK (16 digit)",
+      "field_help": "Hanya angka.",
+      "error": "Masukkan NIK 16 digit.",
+      "range_only_note": "Pencarian rentang waktu saja tidak tersedia; NIK wajib diisi.",
+      "export": "Ekspor hasil",
+      "payload": "Payload",
+      "retention": "Data di luar retensi online belum bisa dicari. Pencarian arsip tersedia pada tahap berikutnya."
+    },
+    "reason": {
+      "title": "Alasan mencari log NIK",
+      "body": "Akses ini dicatat: nama Anda, waktu, dan alasan di bawah tersimpan di audit akses dan tidak bisa diubah atau dihapus.",
+      "field": "Alasan (minimal 10 karakter)",
+      "help": "Contoh: nomor tiket atau tujuan pemeriksaan.",
+      "error": "Alasan minimal {{min}} karakter."
+    },
+    "payload": {
+      "title": "Alasan membuka payload",
+      "body": "Payload memuat data tambahan dari Dukcapil. Akses ini dicatat terpisah dan tidak bisa diubah atau dihapus.",
+      "help": "Terisi dari alasan pencarian. Boleh diubah.",
+      "open": "Buka payload"
+    },
+    "snackbar": {
+      "logged": "Pencarian dicatat"
+    },
+    "empty": {
+      "title": "Belum ada hasil untuk pencarian ini"
+    }
+  },
+  "audit": {
+    "page": {
+      "title": "Audit akses",
+      "subtitle": "Catatan hanya bisa dibaca. Tidak ada aksi ubah atau hapus."
+    },
+    "filter": {
+      "user": "Pengguna",
+      "action": "Aksi",
+      "nik_range": "NIK + rentang {{rentang}}",
+      "nik_search": "Pencarian per NIK",
+      "open_logs": "Buka log transaksi",
+      "range_only": "Rentang {{rentang}}"
+    },
+    "col": {
+      "user": "Pengguna",
+      "role": "Peran",
+      "action": "Aksi",
+      "filter": "Filter atau kueri",
+      "count": "Jumlah record"
+    },
+    "empty": {
+      "title": "Tidak ada catatan yang cocok",
+      "body": "Ubah rentang waktu atau hapus filter."
+    }
+  },
+  "risk": {
+    "pool": {
+      "title": "Nonaktifkan upstream pool?",
+      "scope": "Request yang menunggu di pool ini ikut terdampak.",
+      "new_requests": "Request baru ke pool ini ditolak dengan kode 503.",
+      "confirm": "Nonaktifkan pool"
+    },
+    "upstream": {
+      "scope": "Hanya request yang sudah diteruskan ke pool ini yang dihentikan, sesuai angka di bawah. Request yang belum diteruskan tidak dibatalkan.",
+      "timing_window": "Dalam 30 detik itu, request sync yang sudah diterima masih bisa diproses. Request async yang sempat diteruskan ke pool ini dihentikan tanpa panggilan ke provider: dibatalkan (cancelled), atau ditandai gagal (failed) bila menunggu percobaan ulang. Request yang belum diteruskan tetap menunggu, lalu diproses lewat upstream pool yang aktif atau berakhir kedaluwarsa (expired) setelah TTL-nya habis. Keduanya tidak masuk angka di atas dan tidak dicatat di audit konfigurasi.",
+      "cancelled_other": "{{count, number}} request yang sudah diteruskan ke pool ini tetapi belum dicoba akan dibatalkan (cancelled). Request ini belum pernah dikirim ke provider dan tidak memakai kuota.",
+      "body_zero": "Tidak ada request yang sudah diteruskan ke pool ini.",
+      "new_requests_rerouted": "Paling lambat 30 detik setelah Anda mengonfirmasi, request baru dari downstream pool yang memakai pool ini tidak lagi diteruskan ke pool ini dan dilayani upstream pool aktif lain.",
+      "last_active": "Ini upstream pool aktif terakhir untuk minimal satu downstream pool. Request baru ke downstream pool tersebut ditolak dengan kode 503, paling lambat 30 detik setelah Anda mengonfirmasi.",
+      "last_active_waiting": "Request menunggu yang belum diteruskan ke pool ini tidak dibatalkan. Request itu tetap menunggu, masih bisa dibatalkan client, dan diproses seperti biasa bila ada upstream pool aktif untuk downstream pool-nya sebelum TTL-nya habis. Bila tidak ada, request berakhir kedaluwarsa (expired).",
+      "last_active_stop": "Untuk menghentikan request yang menunggu, nonaktifkan downstream pool.",
+      "unused": "Pool ini tidak dipakai downstream pool mana pun, jadi tidak ada request baru yang terdampak.",
+      "done": "Upstream pool dinonaktifkan."
+    },
+    "provider": {
+      "title": "Nonaktifkan provider?",
+      "confirm": "Nonaktifkan provider",
+      "scope": "Semua request yang menunggu di setiap upstream pool yang memakai provider ini ikut terdampak, dari downstream pool mana pun. Status aktif pool tidak berubah.",
+      "new_requests": "Request baru yang memakai provider ini ditolak dengan kode 503.",
+      "recover": "Rute langsung pulih begitu provider diaktifkan lagi.",
+      "done": "Provider dinonaktifkan."
+    },
+    "endpoint": {
+      "title": "Nonaktifkan endpoint?",
+      "confirm": "Nonaktifkan endpoint",
+      "new_requests": "Request baru ke endpoint ini ditolak dengan kode 403. Client tidak boleh mengulangnya.",
+      "done": "Endpoint dinonaktifkan."
+    },
+    "client": {
+      "title": "Nonaktifkan client?",
+      "confirm": "Nonaktifkan client",
+      "scope": "Semua request milik client ini ikut terdampak.",
+      "new_requests": "Request baru dari client ini ditolak dengan kode 401.",
+      "in_flight_result": "Hasil request yang sedang diproses dikirim lewat webhook bila webhook client aktif. Client yang nonaktif tidak bisa mengambil hasil lewat polling (kode 401). Bila client diaktifkan lagi sebelum TTL hasil di downstream pool habis, hasil yang sudah selesai bisa diambil lagi.",
+      "webhook_stays": "Webhook tetap dikirim ke client ini selama webhook-nya aktif. Untuk menghentikannya, nonaktifkan webhook client itu secara terpisah.",
+      "done": "Client dinonaktifkan."
+    },
+    "credential": {
+      "title": "Cabut kredensial?",
+      "confirm": "Cabut kredensial",
+      "scope": "Hanya request yang masuk lewat kredensial ini yang terdampak. Kredensial lain milik client yang sama tetap berjalan; mencabut satu kredensial tidak menghentikan client.",
+      "new_requests": "Request baru dengan kredensial ini ditolak dengan kode 401, tanpa menunggu token kedaluwarsa.",
+      "in_flight_result": "Hasil request yang sedang diproses bisa diambil dengan kredensial lain milik client ini.",
+      "irreversible": "Pencabutan tidak bisa dibatalkan. Kredensial yang sudah dicabut tidak bisa diaktifkan lagi (sistem menolak dengan kode 409). Untuk menggantinya, buat kredensial baru; satu client maksimal punya 2 kredensial aktif.",
+      "done": "Kredensial dicabut."
+    },
+    "common": {
+      "preview_heading": "Perkiraan dampak",
+      "cancelled_other": "{{count, number}} request menunggu akan dibatalkan (cancelled). Request ini belum pernah dikirim ke provider dan tidak memakai kuota.",
+      "failed_other": "{{count, number}} request yang menunggu percobaan ulang akan ditandai gagal (failed) dan tidak dicoba lagi. Kuota yang sudah terpakai dan log percobaan sebelumnya tetap ada, tanpa pengembalian kuota.",
+      "body_zero": "Tidak ada request yang menunggu.",
+      "estimate_note": "Angka ini perkiraan. Angka final ada di hasil aksi dan di audit.",
+      "in_flight_label": "Sedang diproses",
+      "in_flight_other": "Hanya informasi: {{count, number}} request sedang diproses dan tidak termasuk hitungan di atas. Percobaan yang sedang berjalan dibiarkan selesai. Bila gagal sementara, request tidak dicoba lagi dan berakhir gagal (failed).",
+      "timing": "Request baru ditolak paling lambat 30 detik setelah Anda mengonfirmasi.",
+      "timing_window": "Dalam 30 detik itu, request sync yang sudah diterima masih bisa diproses. Request async yang lolos dibatalkan dan tidak dikirim ke provider.",
+      "reversible": "Admin platform bisa mengaktifkannya lagi di Web UI. Aktivasi hanya berlaku untuk request baru. Request yang sudah dibatalkan atau gagal tidak hidup lagi; client perlu mengirim request baru.",
+      "webhook": "Client yang webhook-nya aktif menerima satu webhook untuk setiap request yang menjadi dibatalkan atau gagal, berisi status dan alasan. Webhook tidak dikirim ulang bila gagal terkirim.",
+      "audit": "Aksi ini dicatat di audit konfigurasi: siapa, kapan, dan nilai lama ke nilai baru.",
+      "action_failed": "Aksi belum berhasil. Coba lagi."
+    }
+  },
+  "title": {
+    "page": {
+      "login": "Masuk · PoolRouter",
+      "settings": "Pengaturan · PoolRouter",
+      "provider": "Provider · PoolRouter",
+      "secret": "Secret · PoolRouter",
+      "upstream": "Upstream pool · PoolRouter",
+      "downstream": "Downstream pool · PoolRouter",
+      "client": "Client dan kredensial · PoolRouter",
+      "webhook": "Webhook · PoolRouter",
+      "quota": "Kuota · PoolRouter",
+      "log": "Log transaksi · PoolRouter",
+      "nik_search": "Pencarian log per NIK · PoolRouter",
+      "audit": "Audit akses · PoolRouter"
+    }
+  },
+  "session": {
+    "idle": {
+      "title": "Sesi akan berakhir",
+      "body": "Sesi Anda berakhir pukul {{jam}} WIB. Pilih \"Perpanjang sesi\" untuk tetap masuk.",
+      "extend": "Perpanjang sesi",
+      "countdown": "Sisa waktu {{menit}}:{{detik}}"
+    },
+    "limit": {
+      "title": "Batas sesi hampir tercapai",
+      "body": "Demi keamanan, sesi dibatasi 8 jam dan tidak bisa diperpanjang. Sesi berakhir pukul {{jam}} WIB. Simpan isian Anda sekarang, lalu masuk lagi.",
+      "banner": "Sesi berakhir pukul {{jam}} WIB dan tidak bisa diperpanjang. Simpan isian Anda sekarang."
+    },
+    "extend": {
+      "done": "Sesi diperpanjang",
+      "error": "Sesi belum bisa diperpanjang. Coba lagi."
+    }
+  }
+}
