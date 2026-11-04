@@ -46,6 +46,12 @@ remove_stale() {
 	"$ENGINE" rm "$NAME" >/dev/null 2>&1
 }
 
+# is_name_conflict: bentrok nama container. Podman: container name "X" is already in use;
+# Docker: Conflict. The container name "/X" is already in use (SHAA-390: tanpa ini Docker keluar 125, bukan 75).
+is_name_conflict() {
+	grep -Eq "container name \"/?$NAME\" is already in use" "$WD/log"
+}
+
 # attempt <cmd...>: jalankan perintah, tampilkan outputnya (juga ke $WD/log), exit code ke $WD/rc.
 attempt() {
 	( "$@" 2>&1; echo $? >"$WD/rc" ) | tee "$WD/log"
@@ -60,11 +66,11 @@ cmd_run() {
 	WD=$(mktemp -d .cache/build-lock.XXXXXX) || return 1
 	trap 'rm -rf "$WD"' EXIT
 	attempt "$@"
-	if [ "$rc" = 125 ] && grep -Fq "container name \"$NAME\" is already in use" "$WD/log"; then
+	if [ "$rc" = 125 ] && is_name_conflict; then
 		if remove_stale; then
 			echo "build-lock: kunci basi dihapus, mencoba sekali lagi." >&2
 			attempt "$@"
-			if [ "$rc" = 125 ] && grep -Fq "container name \"$NAME\" is already in use" "$WD/log"; then
+			if [ "$rc" = 125 ] && is_name_conflict; then
 				echo "build-lock: kunci dipegang $(holder_text). Jalankan pekerjaan non-compile, atau tunggu sampai container itu selesai." >&2
 				rc=$EX_TEMPFAIL
 			fi
