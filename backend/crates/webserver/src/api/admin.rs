@@ -2518,7 +2518,15 @@ async fn get_quota_tracker() -> (StatusCode, Json<Problem>) {
     ),
     security(("sessionCookie" = []))
 )]
-async fn search_log(axum::Json(_body): axum::Json<LogCariRequest>) -> (StatusCode, Json<Problem>) {
+async fn search_log(axum::Json(body): axum::Json<LogCariRequest>) -> (StatusCode, Json<Problem>) {
+    // Keep S11's closed interval invariant at the trust boundary as well as in
+    // the UI; callers cannot bypass the date-range check with a raw request.
+    if body.dari > body.sampai {
+        let mut problem = Problem::stub();
+        problem.status = 422;
+        problem.detail = Some("Rentang waktu tidak valid.".into());
+        return (StatusCode::UNPROCESSABLE_ENTITY, Json(problem));
+    }
     stub()
 }
 

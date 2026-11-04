@@ -13,6 +13,7 @@ on:
       - "deploy/**"
       - "**/Containerfile"
       - "**/.dockerignore"
+      - "perf/mock-dukcapil/**"
       - ".github/workflows/compose-portability.yml"
   workflow_dispatch:
 
@@ -97,6 +98,8 @@ jobs:
         run: |
           # Hanya ±60 baris terakhir, dengan nilai secret uji diganti *** dan baris berkata kunci
           # secret dibuang. Hasilnya bisa dibaca publik lewat check-runs/{id}/annotations.
+          # Batasan: redaksi hanya mencocokkan nilai literal (dan kata kunci), bukan bentuk
+          # turunan (base64, URL-encoded, terpotong). Jangan menambah output yang memuat secret.
           python3 - "$RUNNER_TEMP/v3-harness.out" "$RUNNER_TEMP/poolrouter-secrets" <<'PY'
           import os, re, sys
           src, sdir = sys.argv[1], sys.argv[2]
@@ -107,7 +110,10 @@ jobs:
           secrets = []
           if os.path.isdir(sdir):
               for name in os.listdir(sdir):
-                  val = open(os.path.join(sdir, name), encoding="utf-8").read().strip()
+                  try:
+                      val = open(os.path.join(sdir, name), encoding="utf-8").read().strip()
+                  except OSError:
+                      continue
                   if len(val) >= 8:
                       secrets.append(val)
           keyword = re.compile(r"PASSWORD|SECRET|TOKEN|PRIVATE|HMAC|KEK|JWT", re.IGNORECASE)
@@ -146,3 +152,32 @@ jobs:
           path: deploy/compose/test/logs/
           if-no-files-found: ignore
           retention-days: 14
+
+  # Bukti build image mock Dukcapil (perf/mock-dukcapil) di runner amd64. Tanpa push, tanpa secret.
+  # Pin digest per-platform (arm64) akan gagal di sini dengan "image platform does not match".
+  mock-dukcapil-image:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build image mock-dukcapil (linux/amd64, tanpa push)
+        run: |
+          set -eu
+          docker build --platform linux/amd64 \
+            -f perf/mock-dukcapil/Containerfile \
+            -t localhost/poolrouter-mock-dukcapil:ci perf/mock-dukcapil
+
+      - name: Verifikasi arsitektur dan user non-root
+        run: |
+          set -eu
+          arch="$(docker image inspect --format '{{.Architecture}}' localhost/poolrouter-mock-dukcapil:ci)"
+          user="$(docker image inspect --format '{{.Config.User}}' localhost/poolrouter-mock-dukcapil:ci)"
+          echo "arch=${arch} user=${user}"
+          [ "${arch}" = "amd64" ]
+          [ "${user}" = "10001:10001" ]
+
+      - name: Bersihkan image (selalu)
+        if: always()
+        run: docker image rm -f localhost/poolrouter-mock-dukcapil:ci >/dev/null 2>&1 || true

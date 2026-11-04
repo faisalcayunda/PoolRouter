@@ -7,6 +7,9 @@ SHELL := /bin/sh
 .NOTPARALLEL:
 
 RUNNER ?= podman
+# Engine kontainer untuk RUNNER=podman atau RUNNER=docker. Docker dipakai lane Docker (SHAA-373, keputusan Luca).
+CONTAINER_ENGINE := $(if $(filter docker,$(RUNNER)),docker,podman)
+export BUILD_LOCK_ENGINE := $(CONTAINER_ENGINE)
 # Must match rust-toolchain.toml and [workspace.package] rust-version (ADR-0004 section 2). Never `latest`.
 # Pinned by tag and digest, same literal as backend/Containerfile line 17, .github/workflows/backend.yml line 30,
 # and .github/workflows/contract.yml line 29. Changing one means changing all four (SHAA-207).
@@ -36,11 +39,11 @@ export CARGO_TERM_COLOR ?= never
 
 include ../scripts/build-lock.mk
 
-ifeq ($(RUNNER),podman)
-RUN_OPTS = podman run --rm --memory $(CONTAINER_MEMORY) $(if $(CONTAINER_LABEL),--label $(CONTAINER_LABEL)) \
+ifneq ($(filter podman docker,$(RUNNER)),)
+RUN_OPTS = $(CONTAINER_ENGINE) run --rm --memory $(CONTAINER_MEMORY) $(if $(CONTAINER_LABEL),--label $(CONTAINER_LABEL)) \
 	-v "$(CURDIR)":/work -v "$(CURDIR)/../":/repo:ro -w /work \
 	-e CARGO_HOME=/work/.cache/cargo -e RUSTUP_HOME=/work/.cache/rustup -e CARGO_TERM_COLOR=$(CARGO_TERM_COLOR) \
-	-e CARGO_BUILD_JOBS=$(JOBS) -e SQLX_OFFLINE=true -e POOLROUTER_REPO_ROOT=/repo \
+	-e CARGO_BUILD_JOBS=$(JOBS) -e CARGO_INCREMENTAL=0 -e CARGO_PROFILE_DEV_DEBUG=0 -e CARGO_PROFILE_TEST_DEBUG=0 -e SQLX_OFFLINE=true -e POOLROUTER_REPO_ROOT=/repo \
 	-e PATH=/work/.cache/cargo/bin:/usr/local/cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 RUN = $(RUN_OPTS) $(RUST_IMAGE)
 # Build berat (compile) lewat kunci bersama; satu build per host (K-41).
@@ -53,12 +56,19 @@ export SQLX_OFFLINE := true
 endif
 
 # Path backend di sisi eksekusi: /work di dalam container Podman, direktori checkout untuk RUNNER=native (CI).
-WORK_DIR := $(if $(filter podman,$(RUNNER)),/work,$(CURDIR))
+WORK_DIR := $(if $(filter podman docker,$(RUNNER)),/work,$(CURDIR))
+# Repo root on the execution side (/repo is the read-only mount in the podman container).
+REPO_DIR := $(if $(filter podman docker,$(RUNNER)),/repo,$(CURDIR)/..)
 
-.PHONY: help check-label setup test test-rust db-test lint fmt clean openapi openapi-check
+.PHONY: help check-label setup test test-rust db-test uji-lua uji-redis uji-redis-cargo lua-rakit lua-rakit-check lint fmt clean openapi openapi-check
 
 # Podman toolchain containers must carry the owning issue label, so untracked containers cannot appear (SHAA-222).
-ifeq ($(RUNNER),podman)
+# Docker lane: cek ruang kosong sebelum target apa pun yang memakai container (SHAA-373).
+CHECK_DISK := $(if $(filter docker,$(RUNNER)),check-disk,)
+check-disk:
+	@$(if $(filter docker,$(RUNNER)),../scripts/docker-lane.sh check,true)
+
+ifneq ($(filter podman docker,$(RUNNER)),)
 check-label:
 	@echo "$(CONTAINER_LABEL)" | grep -Eq '^shaal\.issue=SHAA-[0-9]+$$' || { echo "CONTAINER_LABEL wajib shaal.issue=SHAA-<n> untuk RUNNER=podman (contoh: make -C backend lint CONTAINER_LABEL=shaal.issue=SHAA-222)" >&2; exit 2; }
 else
@@ -66,10 +76,10 @@ check-label:
 endif
 
 help:
-	@echo "targets: setup test test-rust db-test lint fmt clean openapi openapi-check build-lock-status build-lock-clean (RUNNER=podman|native)"
+	@echo "targets: setup test test-rust db-test uji-lua lua-rakit lua-rakit-check lint fmt clean openapi openapi-check build-lock-status build-lock-clean (RUNNER=podman|native)"
 
 # Fetch the locked dependency set and install the pinned cargo-deny.
-setup: check-label
+setup: check-label $(CHECK_DISK)
 	mkdir -p .cache/cargo .cache/rustup
 	$(RUN) sh -c "[ -d /work/.cache/rustup/toolchains ] || cp -a /usr/local/rustup/. /work/.cache/rustup/; cargo fetch --locked"
 	$(RUN) sh -c 'set -eu; \
@@ -89,73 +99,95 @@ setup: check-label
 	install -m 0755 "$$t/cargo-deny-$(CARGO_DENY_VERSION)-$$arch-unknown-linux-musl/cargo-deny" "$$CARGO_HOME/bin/cargo-deny"; \
 	cargo deny --version'
 
-test: test-rust db-test
+test: test-rust db-test uji-lua uji-redis
 
-test-rust: check-label
+test-rust: check-label $(CHECK_DISK)
 	$(HEAVY) cargo test --workspace --all-targets --locked
 
 # Schema tests (SHAA-193): roles bootstrap, migrations from empty, grant matrix, constraints, functions.
 # Starts a throwaway PostgreSQL 17 container labelled shaal.issue=<n> (from CONTAINER_LABEL) and removes it afterwards.
 # It needs a container engine on the host, so it is independent of RUNNER.
-DB_ENGINE ?= podman
-db-test: check-label
+DB_ENGINE ?= $(if $(filter docker,$(RUNNER)),docker,podman)
+db-test: check-label $(CHECK_DISK)
 	CONTAINER_ENGINE=$(DB_ENGINE) SHAA_ISSUE=$(patsubst shaal.issue=%,%,$(CONTAINER_LABEL)) sh db/test/run.sh
 
-lint: check-label
+# Lua quota scripts (SHAA-195). `lua/` holds sources with `-- sisip:` markers;
+# `scripts/rakit-lua.sh` inlines `potongan/*.lua` into `rakitan/*.lua`, and that
+# assembled form is what Redis loads (the sandbox has no `dofile`). Sources are
+# not valid on their own, so the artifact is committed and gated: rakitan/ must
+# always equal a fresh assembly.
+LUA_SKRIP := crates/core/src/kuota/lua
+
+lua-rakit:
+	sh ../scripts/rakit-lua.sh
+
+lua-rakit-check:
+	tmp=$$(mktemp -d); trap 'rm -rf "$$tmp"' EXIT; \
+	sh ../scripts/rakit-lua.sh --keluaran "$$tmp" >/dev/null; \
+	diff -ru "$(LUA_SKRIP)/rakitan" "$$tmp"
+
+# Harness runs the scripts against a real Redis (throwaway container, pinned image).
+# Like db-test it needs a container engine on the host, so it is independent of RUNNER.
+LUA_ENGINE ?= $(if $(filter docker,$(RUNNER)),docker,podman)
+uji-lua: check-label $(CHECK_DISK) lua-rakit-check
+	CONTAINER_ENGINE=$(LUA_ENGINE) SHAA_ISSUE=$(patsubst shaal.issue=%,%,$(CONTAINER_LABEL)) sh lua/test/run.sh
+
+# Fail-closed, failover (`run_id` berubah) dan rebuild terhadap Redis sungguhan (SHAA-195).
+# Redis jalan di jaringan host (port acak per proses, atau UJI_REDIS_PORT) supaya container cargo
+# menjangkaunya; `uji-redis-cargo` menjalankan uji `#[ignore]` di crate core lewat kunci build.
+uji-redis: check-label $(CHECK_DISK)
+	CONTAINER_ENGINE=$(LUA_ENGINE) SHAA_ISSUE=$(patsubst shaal.issue=%,%,$(CONTAINER_LABEL)) \
+	sh lua/test/uji-redis.sh "$(MAKE) uji-redis-cargo RUNNER=$(RUNNER) CONTAINER_LABEL=$(CONTAINER_LABEL)"
+
+uji-redis-cargo: BUILD_LOCK_OPTS += --network host -e POOLROUTER_TEST_REDIS -e POOLROUTER_TEST_FASE -e POOLROUTER_TEST_RUN_ID_LAMA
+uji-redis-cargo: check-label $(CHECK_DISK)
+	$(HEAVY) cargo test --locked -p poolrouter-core --test pemulihan_redis --test kuota_store_redis -- --ignored --test-threads=1 --nocapture
+
+lint: check-label $(CHECK_DISK)
 	$(RUN) cargo fmt --all --check
 	$(HEAVY) cargo clippy --workspace --all-targets --locked -- -D warnings
 	$(RUN) cargo deny --locked check
 
-fmt: check-label
+fmt: check-label $(CHECK_DISK)
 	$(RUN) cargo fmt --all
 
 clean: check-label
 	$(RUN) cargo clean
-	rm -rf -- .cache/cargo/registry/cache
+	$(RUN) rm -rf -- .cache/cargo/registry/cache
 
 # OpenAPI is generated from code (ADR-0004 section 4.1, utoipa code-first).
-openapi: check-label
+openapi: check-label $(CHECK_DISK)
 	mkdir -p openapi
 	$(HEAVY) cargo run --locked -q -p poolrouter-webserver --bin openapi-gen -- openapi
 
 # Fails when the committed YAML differs from what the code generates, and when
-# the working-tree contracts break the ones committed on main (oasdiff, SHAA-192).
-openapi-check: check-label openapi oasdiff-breaking
+# the working-tree contracts break the baseline OASDIFF_BASE (oasdiff, SHAA-192, SHAA-278).
+openapi-check: check-label $(CHECK_DISK) openapi oasdiff-breaking
 	@test -z "$$(git status --porcelain -- openapi)" || { echo "openapi: generated files are uncommitted or modified" >&2; git status --short -- openapi; exit 1; }
 	git diff --exit-code -- openapi
 
-# oasdiff `breaking` against the contracts on main. Skipped until main carries
-# both YAML files (first merge of SHAA-192), after that every contract change
-# is diffed and a breaking change fails the gate (ADR-0001 rev 15 section 5a.7).
-oasdiff-breaking: check-label
+# oasdiff `breaking` against an explicit baseline (SHAA-278 D1-D6, SHAA-279).
+# OASDIFF_BASE is a git rev. Locally it defaults to origin/main; in CI (CI=true) it must be
+# set explicitly by the workflow (a shallow detached checkout has no `main`), otherwise exit 1.
+# OASDIFF_BASE_SOURCE only labels the log line (push.before | dispatch | default).
+# Unresolvable base rev -> exit 1. A contract missing in the baseline -> ::warning:: for that file only.
+# downstream-api.yaml breaking -> exit 1; admin-api.yaml breaking -> ::warning:: only (ADR-0003 section 4.2 item 3).
+_OASDIFF_SRC := $(if $(filter undefined,$(origin OASDIFF_BASE)),default,explicit)
+OASDIFF_BASE_SOURCE ?= $(_OASDIFF_SRC)
+OASDIFF_BASE ?= $(if $(filter true,$(CI)),,origin/main)
+oasdiff-breaking: check-label $(CHECK_DISK)
 	@set -eu; \
-	if ! git cat-file -e "main:backend/openapi/downstream-api.yaml" 2>/dev/null || ! git cat-file -e "main:backend/openapi/admin-api.yaml" 2>/dev/null; then \
-	  echo "oasdiff: baseline belum ada di main (pertama kali); dilewati"; exit 0; \
-	fi; \
+	base="$(OASDIFF_BASE)"; \
+	if [ -z "$$base" ]; then echo "oasdiff: OASDIFF_BASE must be set explicitly when CI=true" >&2; exit 1; fi; \
+	sha=$$(git rev-parse --verify --quiet "$$base^{commit}") || { echo "oasdiff: baseline ref '$$base' cannot be resolved" >&2; exit 1; }; \
+	echo "oasdiff: baseline $$sha ($(OASDIFF_BASE_SOURCE))"; \
 	mkdir -p .cache/oasdiff; \
-	git show main:backend/openapi/downstream-api.yaml > .cache/oasdiff/base-downstream.yaml; \
-	git show main:backend/openapi/admin-api.yaml > .cache/oasdiff/base-admin.yaml; \
-	$(RUN) sh -c 'set -eu; \
-	if [ ! -x $(WORK_DIR)/.cache/oasdiff/oasdiff ] || ! $(WORK_DIR)/.cache/oasdiff/oasdiff --version 2>/dev/null | grep -q "$(OASDIFF_VERSION)"; then \
-	  arch=$$(uname -m); \
-	  case "$$arch" in \
-	    aarch64) urlarch=arm64; sha="$(OASDIFF_SHA256_arm64)" ;; \
-	    x86_64) urlarch=amd64; sha="$(OASDIFF_SHA256_amd64)" ;; \
-	    *) echo "oasdiff: unsupported arch $$arch" >&2; exit 1 ;; \
-	  esac; \
-	  t=$$(mktemp -d); trap "rm -rf \"$$t\"" EXIT; \
-	  url="https://github.com/oasdiff/oasdiff/releases/download/v$(OASDIFF_VERSION)/oasdiff_$(OASDIFF_VERSION)_linux_$${urlarch}.tar.gz"; \
-	  curl -fsSL -o "$$t/o.tar.gz" "$$url"; \
-	  echo "$$sha  $$t/o.tar.gz" | sha256sum -c -; \
-	  tar -xzf "$$t/o.tar.gz" -C "$$t" oasdiff; \
-	  mv "$$t/oasdiff" $(WORK_DIR)/.cache/oasdiff/oasdiff; \
-	fi; \
-	rc=0; \
-	for pair in "base-downstream.yaml downstream-api.yaml" "base-admin.yaml admin-api.yaml"; do \
-	  set -- $$pair; \
-	  if ! $(WORK_DIR)/.cache/oasdiff/oasdiff breaking --fail-on ERR "$(WORK_DIR)/.cache/oasdiff/$$1" "$(WORK_DIR)/openapi/$$2"; then \
-	    echo "oasdiff: perubahan breaking pada $$2 terhadap main" >&2; \
-	    rc=1; \
+	for name in downstream-api admin-api; do \
+	  rm -f ".cache/oasdiff/base-$$name.yaml"; \
+	  if git cat-file -e "$$sha:backend/openapi/$$name.yaml" 2>/dev/null; then \
+	    git show "$$sha:backend/openapi/$$name.yaml" > ".cache/oasdiff/base-$$name.yaml"; \
+	  else \
+	    echo "::warning title=oasdiff baseline::$$name.yaml not present in baseline $$sha; breaking check skipped for this file"; \
 	  fi; \
 	done; \
-	exit $$rc'
+	$(RUN) sh $(REPO_DIR)/scripts/oasdiff-compare.sh "$(WORK_DIR)" "$(OASDIFF_VERSION)" "$(OASDIFF_SHA256_arm64)" "$(OASDIFF_SHA256_amd64)"

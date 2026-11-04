@@ -48,7 +48,7 @@ export function StatusLabel({
   return (
     <span
       className={cx(
-        'typescale-label-medium inline-flex items-center gap-1 rounded-full px-2 py-0.5',
+        'typescale-label-medium inline-flex items-center gap-1 whitespace-nowrap rounded-full px-2 py-0.5',
         TONE[tone],
         className,
       )}

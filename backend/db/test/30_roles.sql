@@ -187,7 +187,8 @@ SELECT t.ok(t.hitung($q$
 SELECT t.ok(t.hitung($q$
   SELECT count(*) FROM information_schema.role_table_grants
    WHERE grantee IN ('pr_api','pr_admin_api','pr_controller','pr_worker','pr_webhook') AND privilege_type = 'DELETE'
-     AND table_name NOT IN ('downstream_pool_rute', 'client_endpoint', 'endpoint_metadata_field', 'admin_session')$q$) = 0,
+     AND table_name NOT IN ('downstream_pool_rute', 'client_endpoint', 'endpoint_metadata_field', 'admin_session',
+                          'pengguna_mfa', 'kode_pemulihan_mfa', 'kode_daftar_mfa')$q$) = 0,   -- the last three: MF-09 (F1), pinned in 60_f1_roles.sql
   'no application role can DELETE outside the allowed configuration tables');
 SELECT t.ok(t.hitung($q$
   SELECT count(*) FROM information_schema.role_table_grants

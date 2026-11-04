@@ -20,6 +20,27 @@ describe('Button (M3 F0 variants)', () => {
     expect(onPress).toHaveBeenCalledOnce();
   });
 
+  it('forwards type="submit" to the DOM', () => {
+    // React Aria drops unknown props; the native type is what makes Enter submit the form.
+    const onSubmit = vi.fn((event: React.FormEvent) => event.preventDefault());
+    render(
+      <form onSubmit={onSubmit}>
+        <Button type="submit">Cari</Button>
+      </form>,
+    );
+    expect(screen.getByRole('button', { name: 'Cari' })).toHaveAttribute('type', 'submit');
+  });
+
+  it('defaults to type="button" so it cannot submit a surrounding form by accident', () => {
+    const onSubmit = vi.fn();
+    render(
+      <form onSubmit={onSubmit}>
+        <Button>Batal</Button>
+      </form>,
+    );
+    expect(screen.getByRole('button', { name: 'Batal' })).toHaveAttribute('type', 'button');
+  });
+
   it('disabled button does not fire onPress', async () => {
     const onPress = vi.fn();
     render(

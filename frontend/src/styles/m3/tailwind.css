@@ -3,6 +3,7 @@
 @import './color.css';
 @import './tokens.css';
 @import './components.css';
+@import './tables.css';
 
 @theme inline {
   --color-*: initial;

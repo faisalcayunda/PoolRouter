@@ -14,6 +14,12 @@ const VARIANT: Record<ButtonVariant, string> = {
 export interface ButtonProps extends Omit<RacButtonProps, 'className'> {
   className?: string;
   variant?: ButtonVariant;
+  /**
+   * React Aria's button renders a native `<button>` but does not forward `type`, so a submit
+   * button would silently never submit its form (the S11/S12 "Cari" buttons rely on this).
+   * Declared explicitly and passed through as the native attribute.
+   */
+  type?: 'button' | 'submit' | 'reset';
   /** Use the `error` role for destructive confirmations (ADR-0003 7.2). */
   destructive?: boolean;
 }
@@ -23,6 +29,7 @@ export function Button({
   variant = 'filled',
   destructive = false,
   className,
+  type = 'button',
   ...props
 }: ButtonProps) {
   const tone = destructive
@@ -33,6 +40,7 @@ export function Button({
   return (
     <RacButton
       {...props}
+      type={type}
       className={cx(
         'm3-state m3-focus m3-disabled typescale-label-large inline-flex h-10 min-w-12 items-center justify-center gap-2 rounded-full px-6',
         'cursor-pointer select-none',

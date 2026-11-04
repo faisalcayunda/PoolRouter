@@ -1,13 +1,13 @@
 # ADR-0003: Stack Web UI PoolRouter F0 (frontend), struktur monorepo, dan alur client OpenAPI
 
-**Ringkasan:** ADR ini menetapkan stack Web UI PoolRouter F0 untuk empat peran (platform admin, client owner, operator, auditor): SPA React 19 + TypeScript + Vite, TanStack Router dan Query, client dari OpenAPI admin (`openapi-typescript` + `openapi-fetch`), sesi PoolRouter opaque di cookie `HttpOnly`, Vitest + Playwright + axe, target WCAG 2.2 AA, dan monorepo `backend/` + `frontend/`. Rev 2 menerapkan K-36 (owner: design system **Material Design 3**). Karena tidak ada pustaka React M3 resmi yang terpelihara, komponen M3 dibangun di repo di atas primitif headless **React Aria Components**, dengan token M3 (`--md-sys-*`) dari Material Theme Builder dan Tailwind CSS 4 sebagai mesin styling; shadcn/ui, Radix, Sonner, lucide, TanStack Table, dan Inter dikeluarkan. Batasan desain §7 kini memakai katalog komponen M3, token M3 bernama sama di Figma dan kode, window size class M3 (frame 1440/1024/768/375 dan reflow 320 px tetap), dan seed warna netral yang nanti cukup diganti dengan warna BGN. Rev 3 (SHAA-167, review UX F0) menetapkan tiga keputusan teknis turunan desain: tombol "Salin" hanya di dialog secret satu-kali yang dibangkitkan sistem (§3.6a), alasan auditor diminta sekali per pencarian NIK utuh dan per pembukaan payload (§3.6b), dan pengelolaan pengguna serta peran F0 lewat CLI backend tanpa layar (§3.6c). Rev 4 (SHAA-184) menetapkan kontrak API ekspor log auditor dan pembacaan audit akses (§3.6d–§3.6e), menaikkan password minimum menjadi 15 karakter, menambah kontrol kompensasi auditor PoC (R-12 opsi b), mengubah format secret webhook ke `whsec_` (Standard Webhooks), dan merapikan inkonsistensi. Langkah berikutnya: §7 dipasang di SHAA-167/SHAA-168, lalu dipakai hand-off implementasi SHAA-175.
+**Ringkasan:** ADR ini menetapkan stack Web UI PoolRouter F0 untuk empat peran (platform admin, client owner, operator, auditor): SPA React 19 + TypeScript + Vite, TanStack Router dan Query, client dari OpenAPI admin (`openapi-typescript` + `openapi-fetch`), sesi PoolRouter opaque di cookie `HttpOnly`, Vitest + Playwright + axe, target WCAG 2.2 AA, dan monorepo `backend/` + `frontend/`. Rev 2 menerapkan K-36 (owner: design system **Material Design 3**). Karena tidak ada pustaka React M3 resmi yang terpelihara, komponen M3 dibangun di repo di atas primitif headless **React Aria Components**, dengan token M3 (`--md-sys-*`) dari Material Theme Builder dan Tailwind CSS 4 sebagai mesin styling; shadcn/ui, Radix, Sonner, lucide, TanStack Table, dan Inter dikeluarkan. Batasan desain §7 kini memakai katalog komponen M3, token M3 bernama sama di tool desain dan kode, window size class M3 (frame 1440/1024/768/375 dan reflow 320 px tetap), dan seed warna netral yang nanti cukup diganti dengan warna BGN. Rev 3 (SHAA-167, review UX F0) menetapkan tiga keputusan teknis turunan desain: tombol "Salin" hanya di dialog secret satu-kali yang dibangkitkan sistem (§3.6a), alasan auditor diminta sekali per pencarian NIK utuh dan per pembukaan payload (§3.6b), dan pengelolaan pengguna serta peran F0 lewat CLI backend tanpa layar (§3.6c). Rev 4 (SHAA-184) menetapkan kontrak API ekspor log auditor dan pembacaan audit akses (§3.6d–§3.6e), menaikkan password minimum menjadi 15 karakter, menambah kontrol kompensasi auditor PoC (R-12 opsi b), mengubah format secret webhook ke `whsec_` (Standard Webhooks), dan merapikan inkonsistensi. Rev 5 (SHAA-196, temuan A-01 WCAG 2.2.1 di SHAA-200) menetapkan kontrak peringatan sesi (§3.6f). Kontrak itu terdiri atas `GET /admin/v1/auth/sesi`, yang mengembalikan waktu berakhir idle dan absolut tanpa menggeser idle, dan `POST /admin/v1/auth/sesi/perpanjang`, yang mereset idle tanpa menggeser batas absolut 8 jam. Nilai sesi tidak berubah. Rev 6 (SHAA-378, arahan owner 2026-11-04) mengganti tool desain dari Figma ke **Penpot** (§7, §7.1–§7.3): token M3 di Penpot memakai nama kanonis `md.sys.*`, sumber warna dari Material Theme Builder versi web, dan artefak desain yang sudah di-approve tetap berlaku. Rev 6 juga memasukkan koreksi CSP dari implementasi SHAA-197 (§3.5, §3.9). Langkah berikutnya: §7 dipasang di SHAA-167/SHAA-168, lalu dipakai hand-off implementasi SHAA-175.
 
 - **Pemilik:** Shu
-- **Tanggal:** 2026-11-03 (rev 1, rev 2, rev 3)
-- **Status:** final, rev 4 (difinalkan Shu sebagai lead Engineering; arahan owner 2026-11-03: Luca tidak ikut review project PoolRouter). Rev 2 menggantikan rev 1 seluruhnya; rev 3 menambah §3.6a–§3.6c; rev 4 menambah §3.6d–§3.6e dan mengubah butir yang disebut di riwayat. Bagian lain sama dengan rev 3.
-- **Issue:** SHAA-178 (rev 1), SHAA-183 (rev 2, K-36), SHAA-167 (rev 3, keputusan D-1, D-2, D-4 review UX F0), SHAA-184 (rev 4, riset best practice: R-11, R-12, R-16, R-18, R-17); induk SHAA-162
+- **Tanggal:** 2026-11-03 (rev 1 sampai rev 5), 2026-11-04 (rev 6)
+- **Status:** final, rev 6 (difinalkan Shu sebagai lead Engineering; arahan owner 2026-11-03, SHAA-180: hasil kerja project leader squad difinalkan leader itu). Rev 2 menggantikan rev 1 seluruhnya; rev 3 menambah §3.6a–§3.6c; rev 4 menambah §3.6d–§3.6e dan mengubah butir yang disebut di riwayat; rev 5 menambah §3.6f serta menyelaraskan §2, §3.4, §3.6, dan §3.7; rev 6 mengganti tool desain ke Penpot (§7) dan memasukkan koreksi CSP SHAA-197 (§3.5, §3.9). Bagian lain sama dengan rev 5.
+- **Issue:** SHAA-178 (rev 1), SHAA-183 (rev 2, K-36), SHAA-167 (rev 3, keputusan D-1, D-2, D-4 review UX F0), SHAA-184 (rev 4, riset best practice: R-11, R-12, R-16, R-18, R-17), SHAA-196 (rev 5, A-01 WCAG 2.2.1 dari audit SHAA-200), SHAA-378 (rev 6, Penpot; koreksi CSP dari SHAA-197); induk SHAA-162
 - **Reviewer:** tidak ada (lihat Status). Penerapannya di kode tetap direview Ridley per hash commit (K-35, §6).
-- **Lokasi akhir:** `docs/adr/0003-stack-web-ui.md` di repo `PoolRouter`, di commit kerangka repo pertama. Sampai saat itu, lampiran rev 4 di SHAA-184 adalah salinan resmi (menggantikan lampiran rev 3 di SHAA-183).
+- **Lokasi akhir:** `docs/adr/0003-stack-web-ui.md` di repo `faisalcayunda/PoolRouter`. Sejak rev 6 di-commit, salinan repo itulah salinan resmi. Sampai saat itu, lampiran rev 6 di SHAA-378 adalah salinan resmi (menggantikan lampiran rev 5 di SHAA-196). Catatan rev 6: salinan repo sebelum rev 6 memuat rev 4 ditambah koreksi CSP SHAA-197 yang diberi label "rev 5", dan belum memuat §3.6f. Rev 6 menyatukan keduanya; label "rev 5" untuk koreksi CSP tidak dipakai lagi.
 - **Hubungan dengan ADR lain:** menggantikan ADR-0001 §8.3 opsi R1 (dua repo) untuk struktur repo, sesuai keputusan owner 2026-11-03. Menjawab sisi frontend ADR-0001 T-2 untuk F0. ADR-0001 diperbarui di revisi berikutnya (bersama hasil spike SHAA-177) untuk merujuk ADR ini. Tidak mengubah bagian lain ADR-0001 atau ADR-0002.
 
 ## 1. Konteks
@@ -51,7 +51,7 @@ Kolom "versi minimum" adalah batas bawah yang mengikat. Versi persis di-pin di `
 | Komponen UI | Komponen M3 milik repo (`src/components/m3/`) di atas React Aria Components; tanggal lewat `@internationalized/date`; ikon Material Symbols Outlined (SVG per ikon lewat `vite-plugin-svgr`) | `react-aria-components` 1.22, `@internationalized/date` 3.12, `@material-symbols/svg-400` 0.48, `vite-plugin-svgr` 5.2 | §3.5 |
 | Styling | Tailwind CSS v4 (`@tailwindcss/vite`) yang dipetakan ke token M3 `--md-sys-*`; token dari ekspor Material Theme Builder; font Roboto variable di-host sendiri | Tailwind 4.1, `@fontsource-variable/roboto` 5.2 | §3.5, §7.2 |
 | Client API | `openapi-typescript` (generator tipe) + `openapi-fetch` (client runtime) | 7.8 / 0.14 | §4 |
-| Login admin | Sesi PoolRouter opaque di cookie `__Host-` `HttpOnly; Secure; SameSite=Strict`; sliding idle 30 menit, absolut 8 jam; logout mencabut sesi di server | — | §3.6 |
+| Login admin | Sesi PoolRouter opaque di cookie `__Host-` `HttpOnly; Secure; SameSite=Strict`; sliding idle 30 menit, absolut 8 jam; logout mencabut sesi di server; status sesi yang tidak menggeser idle dan perpanjangan idle eksplisit untuk peringatan WCAG 2.2.1 (rev 5) | — | §3.6, §3.6f |
 | Lint dan format | ESLint 9 (flat config) + typescript-eslint + `eslint-plugin-react-hooks` + `eslint-plugin-jsx-a11y` + `@tanstack/eslint-plugin-query`; Prettier | ESLint 9.30, typescript-eslint 8.35, jsx-a11y 6.10, Prettier 3.6 | §3.7 |
 | Unit dan komponen | Vitest (jsdom) + Testing Library (`react`, `user-event`, `jest-dom`) + MSW | Vitest 3.2, RTL 16.3, user-event 14.6, MSW 2.10 | §3.7 |
 | E2E | Playwright (Chromium + Firefox) terhadap stack Compose dengan mock Dukcapil | 1.54 | §3.7 |
@@ -109,6 +109,7 @@ Struktur rute: satu aplikasi untuk semua peran. Navigasi dan rute dibentuk dari 
 - **State server:** hanya TanStack Query ≥ 5.80. Data server tidak disalin ke `useState` atau context. Setiap resource punya factory `queryOptions` di `src/api/queries/<resource>.ts`. Default `staleTime` 30 detik; mutasi menginvalidasi key resource-nya.
 - **Query yang membawa NIK utuh atau payload** (hanya auditor): `staleTime: 0`, `gcTime: 0`, tanpa `refetchOnWindowFocus`, dan tidak pernah dipersistenkan. Cache Query tidak pernah dipersistenkan untuk query mana pun (tanpa `persistQueryClient`).
 - **Logout atau 401:** `queryClient.clear()` lalu redirect ke `/login`.
+- **Tanpa polling berkala (rev 5):** F0 tidak memakai `refetchInterval` atau request otomatis berkala lain. Request seperti itu menggeser idle di server, sehingga idle timeout tidak pernah berlaku. Satu-satunya pengecekan terjadwal adalah `GET /auth/sesi`, yang tidak menggeser idle (§3.6f). `refetchOnWindowFocus` tetap boleh, karena kembalinya fokus adalah aktivitas pengguna. Layar yang nanti butuh pembaruan otomatis memerlukan revisi ADR ini lebih dulu.
 - **State lokal:** `useState`/`useReducer`; state yang bisa dibagikan (filter, sortir, halaman) di search params; sesi pengguna (identitas, peran) di satu context yang mengisi dirinya dari query `auth/me`. Store global (mis. Zustand) baru boleh ditambahkan lewat aturan §6 jika ada kebutuhan konkret.
 - **Form:** React Hook Form ≥ 7.60 + Zod ≥ 4.0. Skema Zod form ditulis tangan untuk UX (pesan Bahasa Indonesia); server tetap otoritatif. Error validasi server (422) dipetakan ke field oleh satu helper bersama. Zod tidak dibangkitkan dari OpenAPI di F0 (menambah generator kedua tanpa kebutuhan).
 
@@ -145,9 +146,9 @@ Rincian yang mengikat:
 - **Tanggal:** `@internationalized/date` ≥ 3.12 sebagai dependensi langsung, karena nilai `CalendarDate`/`ZonedDateTime` dipakai di kode fitur. Konversi ke ISO 8601 untuk API dilakukan di satu helper.
 - **Ikon:** Material Symbols Outlined, weight 400, grade 0, optical size 24, dari `@material-symbols/svg-400` ≥ 0.48 (Apache-2.0). Ikon diimpor satu per satu sebagai komponen React lewat `vite-plugin-svgr` ≥ 5.2 (MIT), sehingga hanya ikon yang dipakai yang masuk bundle. Tidak memakai font ikon atau CDN.
 - **Font:** Roboto variable di-host sendiri (`@fontsource-variable/roboto` ≥ 5.2), typeface baseline M3. Lisensinya OFL-1.1, di luar daftar §6 butir 3; Shu menyetujuinya di sini khusus untuk font, karena OFL membolehkan penggunaan dan bundling tanpa kewajiban ke kode aplikasi. Tanpa CDN, karena lingkungan PoC BGN bisa tanpa akses internet.
-- **Token:** token M3 sebagai CSS custom property `--md-sys-*` di `frontend/src/styles/m3/`. Sumber warnanya ekspor Material Theme Builder dari sesi yang sama dengan Figma Variables Jude (§7.2, §7.3). Tidak ada generator token di build F0. `@material/material-color-utilities` (0.4.0, Apache-2.0) baru dipertimbangkan lewat §6 jika nanti butuh tema dinamis saat runtime.
+- **Token:** token M3 sebagai CSS custom property `--md-sys-*` di `frontend/src/styles/m3/`. Sumber warnanya ekspor Material Theme Builder dari sesi yang sama dengan token Penpot Jude (§7.2, §7.3; rev 6). Tidak ada generator token di build F0. `@material/material-color-utilities` (0.4.0, Apache-2.0) baru dipertimbangkan lewat §6 jika nanti butuh tema dinamis saat runtime.
 - **Styling:** Tailwind CSS ≥ 4.1 tetap dipakai sebagai mesin utilitas, dengan `@theme` yang hanya merujuk token M3: warna (`bg-primary`, `text-on-surface-variant`, `bg-surface-container-high`), shape (`rounded-medium`), elevasi (`shadow-level2`), breakpoint (§7.4), dan utilitas typescale (`typescale-title-medium`). Skala warna, radius, dan breakpoint bawaan Tailwind dinonaktifkan supaya hanya token M3 yang bisa dipakai. Pengelola varian kelas (mis. `class-variance-authority`, `tailwind-merge`) boleh ditambahkan lewat §6 butir 3.
-- **CSP:** tidak ada CSS-in-JS runtime (karena itu Sonner dikeluarkan). Posisi popover dan panel RAC ditulis React lewat CSSOM (properti `element.style`), yang tidak dibatasi `style-src`. Satu pengecualian ditemukan saat implementasi (rev 5): `@react-aria/interactions` `usePress` **menyisipkan satu `<style>`** ke `<head>` berisi `@layer { [data-react-aria-pressable] { touch-action: pan-x pan-y pinch-zoom; } }`. Listener `securitypolicyviolation` di e2e menangkapnya sebagai `style-src-elem` yang diblokir, jadi aturan itu tidak berlaku dan pressable kehilangan `touch-action`. Penanganannya hash sha256 lembar gaya itu di `style-src` (bukan `'unsafe-inline'`): nilainya satu-satunya sumber di `frontend/vite.csp.ts`, dan `frontend/tests/csp.test.ts` mencocokkannya dengan teks yang benar-benar ada di paket terpasang, sehingga upgrade yang mengubah teks itu gagal di `make test`, bukan diam-diam di produksi. Uji e2e tetap gagal bila ada pelanggaran lain.
+- **CSP:** tidak ada CSS-in-JS runtime (karena itu Sonner dikeluarkan). Posisi popover dan panel RAC ditulis React lewat CSSOM (properti `element.style`), yang tidak dibatasi `style-src`. Satu pengecualian ditemukan saat implementasi (rev 6, dari SHAA-197): `@react-aria/interactions` `usePress` **menyisipkan satu `<style>`** ke `<head>` berisi `@layer { [data-react-aria-pressable] { touch-action: pan-x pan-y pinch-zoom; } }`. Listener `securitypolicyviolation` di e2e menangkapnya sebagai `style-src-elem` yang diblokir, jadi aturan itu tidak berlaku dan pressable kehilangan `touch-action`. Penanganannya hash sha256 lembar gaya itu di `style-src` (bukan `'unsafe-inline'`): nilainya satu-satunya sumber di `frontend/vite.csp.ts`, dan `frontend/tests/csp.test.ts` mencocokkannya dengan teks yang benar-benar ada di paket terpasang, sehingga upgrade yang mengubah teks itu gagal di `make test`, bukan diam-diam di produksi. Uji e2e tetap gagal bila ada pelanggaran lain.
 - **Tema:** terang saja di F0, kontras standar. Skema gelap dan kontras tinggi dari Theme Builder tidak dipakai atau didesain, tetapi komponen hanya memakai token peran sehingga keduanya bisa ditambah tanpa mengubah komponen.
 - Tidak ada pustaka chart di F0. Quota tracker dasar (US-12) cukup angka dan linear progress indicator M3. Chart F1 diputuskan lewat §6.
 
@@ -170,6 +171,7 @@ Kontrak perilaku (path final ditetapkan di OpenAPI oleh pelaksana backend; prefi
 | Pembatasan login | 5 kegagalan per username per 15 menit → login untuk username itu ditolak 15 menit (Redis). Pesan gagal tidak membedakan username salah dan password salah. Setiap login berhasil dan gagal dicatat di audit (tanpa password) |
 | Identitas | `GET /admin/v1/auth/me` → identitas, daftar peran, dan `client_id` untuk client owner. Frontend membentuk navigasi dari respons ini |
 | Refresh | Tidak ada refresh token di browser. Sesi bergeser di server: idle timeout 30 menit (waktu aktif diperbarui paling sering sekali per menit), batas absolut 8 jam lalu login ulang. Frontend menangani 401 dengan `queryClient.clear()` dan redirect ke `/login?alasan=sesi_berakhir`, tanpa menyimpan halaman yang memuat NIK |
+| Status dan perpanjangan sesi (rev 5) | `GET /admin/v1/auth/sesi` mengembalikan waktu berakhir idle dan absolut tanpa menggeser idle. `POST /admin/v1/auth/sesi/perpanjang` mereset idle tanpa menggeser batas absolut. Kontrak dan aturannya di §3.6f |
 | Logout | `POST /admin/v1/auth/logout` → server menghapus baris sesi dan mengirim cookie kedaluwarsa; frontend `queryClient.clear()`. Penonaktifan pengguna dan perubahan peran (A-02) mencabut semua sesi pengguna itu di transaksi yang sama |
 | CSRF | `SameSite=Strict` ditambah pemeriksaan server pada setiap method selain GET/HEAD: header `Origin` harus sama dengan origin Web UI yang dikonfigurasi (`${POOLROUTER_UI_ORIGIN}`), dan `Sec-Fetch-Site` (jika ada) harus `same-origin`. Gagal → 403 |
 | Satu origin | UI dan admin API disajikan dari origin yang sama (§3.9). Tidak ada CORS untuk admin API |
@@ -260,6 +262,75 @@ Konteks: US-16 AC mewajibkan ekspor log NIK hanya oleh auditor dan tercatat. Dat
 - **Audit atas audit:** setiap panggilan menulis satu baris `aksi = lihat_audit` dengan `filter_kueri` dan `jumlah_record` (DC §8.2), lewat fungsi `SECURITY DEFINER` yang sama polanya.
 - **Tanpa ubah dan hapus.** Tidak ada endpoint selain baca (append-only, DQ-21).
 
+### 3.6f Peringatan sesi dan perpanjangan idle (rev 5, A-01 WCAG 2.2.1)
+
+**Konteks.** Audit WCAG 2.2 AA oleh Wakaba (SHAA-200) mencatat temuan Mayor A-01: sesi berakhir tanpa peringatan (2.2.1). Fitcher memutuskan di SHAA-200 bahwa sesi idle 30 menit diberi peringatan 2 menit sebelumnya dengan tombol "Perpanjang sesi", sedangkan batas absolut 8 jam diberi peringatan 2 menit tanpa opsi perpanjangan. Deviasi 2.2.1 untuk batas absolut disetujui Ridley di SHAA-200. Desain dialognya ada di handoff spec v0.3 (SHAA-212). Nilai sesi tidak berubah dari §3.6.
+
+**Masalah teknis.** Timer lokal saja tidak cukup bagi frontend untuk mengetahui sisa waktu sesi, karena tiga hal: (a) setiap request admin dari tab mana pun menggeser idle di server; (b) jam browser bisa berbeda dari jam server; (c) browser menunda timer di tab latar. Selain itu, endpoint yang dipakai untuk mengecek sesi tidak boleh ikut menggeser idle. Jika ikut menggeser, pengecekan berkala menjadi keep-alive dan idle timeout tidak pernah berlaku.
+
+| Opsi | Kelebihan | Kekurangan | Risiko |
+|---|---|---|---|
+| **A. Endpoint status yang tidak menggeser + endpoint perpanjang eksplisit** | Server menjadi satu-satunya sumber kebenaran; benar lintas tab; tidak terpengaruh selisih jam; kontrak kecil (2 operasi, 1 skema); niat pengguna untuk memperpanjang terlihat eksplisit | Satu request tambahan menjelang peringatan | Rendah |
+| B. Waktu berakhir dikirim di header setiap respons admin; request apa pun dianggap perpanjangan | Tanpa endpoint baru | Tab lain tidak tahu bila satu tab menggeser sesi; header di luar tipe body `openapi-fetch`; "Perpanjang" menjadi request tiruan tanpa kontrak | Sedang |
+| C. Timer lokal di frontend saja (30 menit sejak request terakhir) | Tanpa perubahan backend | Hasilnya salah lintas tab dan saat jam berselisih, sehingga dialog bisa muncul untuk sesi yang masih hidup atau terlambat untuk sesi yang sudah habis. "Perpanjang" tetap butuh backend | Tinggi, ditolak |
+| D. Refresh token atau rotasi token sesi | — | Opsi ini sudah ditolak di §3.6 (opsi B); tidak menambah apa pun yang dibutuhkan di sini | Ditolak |
+
+**Keputusan: A.**
+
+Kontrak mengikat Flik (SHAA-192 dan SHAA-196) dan Viktor (SHAA-202). Path dan `operationId` di bawah ini final. Prefix `/admin/v1` sama dengan endpoint `auth` lain di §3.6.
+
+| Operasi | Method dan path | `operationId` | Request | Respons |
+|---|---|---|---|---|
+| Status sesi | `GET /admin/v1/auth/sesi` | `getSesi` | Tanpa body dan tanpa query | 200 `SesiStatus`; 401 jika tidak ada sesi sah |
+| Perpanjang sesi | `POST /admin/v1/auth/sesi/perpanjang` | `perpanjangSesi` | Tanpa body | 200 `SesiStatus`; 401 jika sesi sudah berakhir atau tidak ada; 403 jika `Origin` atau `Sec-Fetch-Site` gagal (CSRF §3.6) |
+
+Skema `SesiStatus`: semua field wajib, `additionalProperties: false`.
+
+| Field | Tipe | Arti |
+|---|---|---|
+| `idle_berakhir_pada` | string `date-time`, UTC (`Z`) | `min(terakhir_aktif + idle, absolut_berakhir_pada)`, dihitung dari nilai `terakhir_aktif` yang tersimpan, bukan perkiraan |
+| `absolut_berakhir_pada` | string `date-time`, UTC | `dibuat_pada + absolut`; tidak berubah sepanjang umur sesi |
+| `waktu_server` | string `date-time`, UTC | `now()` server saat respons dibentuk. Frontend menghitung sisa waktu terhadap nilai ini, bukan terhadap jam browser |
+
+Aturan server:
+1. `GET /auth/sesi` tidak memperbarui `terakhir_aktif`. Endpoint ini dikecualikan dari mekanisme geser §3.6 dan menjadi satu-satunya endpoint admin yang tidak menggeser idle.
+2. `POST /auth/sesi/perpanjang` menetapkan `terakhir_aktif = now()` tanpa throttle 1 menit. Endpoint ini tidak mengubah `dibuat_pada`, tidak merotasi token, dan tidak mengirim `Set-Cookie`. Menjelang batas absolut, `idle_berakhir_pada` sama dengan `absolut_berakhir_pada`, jadi perpanjangan tidak pernah membuat sesi hidup melewati batas absolut.
+3. Sesi berakhir saat `now() >= idle_berakhir_pada`. Pemeriksaannya sama untuk semua endpoint admin, dan kedua endpoint baru tidak punya masa tenggang.
+4. Respons hanya memuat tiga field di atas: tanpa token, hash token, id sesi, `pengguna_id`, user agent, atau alamat IP. Seperti semua respons admin API, respons membawa `Cache-Control: no-store`.
+5. Perpanjangan tidak ditulis ke audit, sama seperti request lain yang menggeser idle. Login, logout, dan pencabutan sesi tetap diaudit sesuai §3.6.
+6. Durasi idle dan absolut dibaca dari konfigurasi yang sama dengan pemeriksaan sesi. Endpoint ini tidak memakai konstanta sendiri.
+
+Aturan frontend (Viktor; perilaku dan copy dialog mengikuti handoff spec v0.3, SHAA-212):
+1. Setelah login dan setelah setiap respons `SesiStatus`, frontend menjadwalkan pengecekan pada `idle_berakhir_pada − 2 menit` dan `absolut_berakhir_pada − 2 menit`. Jadwal dihitung sebagai selisih terhadap `waktu_server`.
+2. Saat jadwal tiba, frontend memanggil `GET /auth/sesi` lebih dulu. Jika sisa waktu masih lebih dari 2 menit (sesi sudah digeser request lain atau tab lain), frontend menjadwal ulang tanpa menampilkan dialog. Jika sisa waktu 2 menit atau kurang, dialog ditampilkan.
+3. Di dialog idle, tombol "Perpanjang sesi" memanggil `POST /auth/sesi/perpanjang`, lalu frontend menjadwal ulang dari respons itu. Jika `idle_berakhir_pada` sama dengan `absolut_berakhir_pada` (dibandingkan sebagai waktu), yang ditampilkan adalah dialog batas absolut tanpa tombol "Perpanjang sesi".
+4. Saat tab kembali terlihat (`visibilitychange`), frontend memanggil `GET /auth/sesi` dan menjadwal ulang, karena browser bisa menunda timer di tab latar.
+5. Respons 401 dari endpoint mana pun ditangani sesuai §3.6: `queryClient.clear()`, lalu redirect ke `/login?alasan=sesi_berakhir`.
+6. `POST /auth/sesi/perpanjang` hanya dipanggil dari aktivasi tombol oleh pengguna. Munculnya dialog, fokus, dan gerakan mouse tidak memanggilnya. `GET /auth/sesi` tidak dipakai sebagai keep-alive.
+7. Selain jadwal di atas, frontend tidak mengirim request otomatis berkala (§3.4).
+
+Di luar lingkup F0: sinkronisasi dialog antar-tab (misalnya lewat `BroadcastChannel`). Butir 2 dan 4 sudah mencegah dialog palsu. Jika dialog yang sama muncul di dua tab, keduanya tetap aman karena perpanjangan idempoten. Fitur ini bisa ditambah di F1 lewat §6 bila audit runtime stage 6 memintanya.
+
+Uji wajib:
+- Backend (SHAA-196, uji integrasi dengan jam yang bisa dimajukan):
+  - `GET /auth/sesi` yang dipanggil berulang tidak menunda berakhirnya sesi; sesi tetap berakhir pada `terakhir_aktif + 30 menit`.
+  - `POST /auth/sesi/perpanjang` menghasilkan `idle_berakhir_pada = now + 30 menit`, tidak mengubah `absolut_berakhir_pada`, dan tidak mengirim `Set-Cookie`.
+  - 20 menit sebelum batas absolut, perpanjangan menghasilkan `idle_berakhir_pada = absolut_berakhir_pada`. Setelah batas absolut, perpanjangan menghasilkan 401.
+  - `POST /auth/sesi/perpanjang` dengan `Origin` asing menghasilkan 403, dan `terakhir_aktif` tidak berubah.
+  - Respons kedua endpoint cocok dengan skema (tepat tiga field) dan membawa `Cache-Control: no-store`.
+- Frontend (SHAA-202, uji komponen dengan fake timers dan MSW bertipe):
+  - Dialog idle muncul pada T−2 menit.
+  - Dialog tidak muncul jika `GET` menunjukkan sesi sudah digeser.
+  - "Perpanjang sesi" menjadwal ulang pengecekan.
+  - Dialog batas absolut tampil tanpa tombol perpanjang.
+  - Fokus pindah ke dialog dan isinya diumumkan sesuai SHAA-212.
+- E2E: alur 1 di §3.7.
+
+**Konsekuensi.**
+- Perubahan kontrak: satu operasi baca, satu operasi tulis, dan satu skema di `admin-api.yaml`. Tidak ada tabel atau kolom baru, karena endpoint memakai `terakhir_aktif` dan `dibuat_pada` dari §3.6.
+- Perkiraan dampak jadwal: ±0,5 hari backend dan ±1 hari frontend (dialog, penjadwalan, dan uji). Tenggat F0 tetap.
+- Risiko tersisa: deviasi 2.2.1 untuk batas absolut 8 jam, yang disetujui Ridley di SHAA-200 dan ditinjau ulang di F1 bersama kebijakan sesi BGN (W-4).
+
 ### 3.7 Testing
 
 | Lapis | Alat | Yang wajib diuji | Gate |
@@ -270,7 +341,7 @@ Konteks: US-16 AC mewajibkan ekspor log NIK hanya oleh auditor dan tercatat. Dat
 | Lint dan tipe | ESLint, Prettier `--check`, `tsc --noEmit` | — | `make -C frontend lint` |
 
 Alur e2e minimum F0:
-1. Login, logout, sesi idle berakhir (jam dimajukan di test), login gagal berulang terkunci.
+1. Login, logout, sesi idle berakhir (jam dimajukan di test), login gagal berulang terkunci. (rev 5) Dialog peringatan idle muncul 2 menit sebelum idle berakhir. "Perpanjang sesi" mempertahankan sesi, sedangkan tanpa aksi sesi berakhir dan pengguna diarahkan ke `/login?alasan=sesi_berakhir`. Dialog batas absolut tampil tanpa tombol perpanjang. Axe dijalankan pada kedua dialog.
 2. Platform admin mendaftarkan provider Dukcapil dengan secret: nilai secret tidak pernah muncul lagi di DOM atau respons jaringan setelah disimpan.
 3. Platform admin membuat upstream pool (kuota, rate limit, porsi sync) dan downstream pool; konfirmasi penonaktifan (K-20) menampilkan konsekuensi.
 4. Client owner membuat kredensial dan mendaftarkan webhook; hanya melihat client miliknya.
@@ -307,7 +378,7 @@ Alat dan prosedur:
 
 **Keputusan: A.** Image `docker.io/nginxinc/nginx-unprivileged` dengan tag dan digest di-pin (≥ 1.28). Di dev, server Vite mem-proxy prefix admin API ke webserver lokal, sehingga dev juga satu origin. Header wajib dari nginx:
 - `Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self' 'sha256-38RhXrc7EdReTKsOm23ZPOCUgniTUUcjky8QOOrQx6o='; img-src 'self' data:; font-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'; object-src 'none'`. Jika komponen terbukti butuh `style-src 'unsafe-inline'`, pelaksana menunjukkan buktinya di PR dan Ridley memutuskan; `script-src` tidak pernah dilonggarkan.
-- (rev 5) Hash di `style-src` adalah lembar gaya tunggal yang disisipkan `@react-aria/interactions` (§3.5, butir CSP), bukan pelonggaran ke `'unsafe-inline'`: hanya lembar gaya itu yang diizinkan. Nilai kanonisnya di `frontend/vite.csp.ts`; `frontend/tests/csp.test.ts` gagal bila teks paket terpasang berubah, dan header nginx harus disalin dari situ saat image nginx dibuat.
+- (rev 6, dari SHAA-197) Hash di `style-src` adalah lembar gaya tunggal yang disisipkan `@react-aria/interactions` (§3.5, butir CSP), bukan pelonggaran ke `'unsafe-inline'`: hanya lembar gaya itu yang diizinkan. Nilai kanonisnya di `frontend/vite.csp.ts`; `frontend/tests/csp.test.ts` gagal bila teks paket terpasang berubah, dan header nginx harus disalin dari situ saat image nginx dibuat.
 - Komponen M3 dan Tailwind tidak membutuhkan `style-src 'unsafe-inline'` (§3.5, butir CSP).
 - `Strict-Transport-Security` (PoC dan produksi), `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`, `Permissions-Policy` yang mematikan kamera, mikrofon, dan geolokasi.
 - Access log nginx tidak mencatat body; karena NIK tidak pernah ada di URL (§3.6), access log bebas NIK.
@@ -412,15 +483,29 @@ Catatan:
 5. **Keamanan:** CI menjalankan `pnpm audit --prod`; temuan `high` atau `critical` memblokir merge kecuali Ridley mencatat bahwa jalur rentan tidak terjangkau, dengan issue tindak lanjut.
 6. Versi persis selalu di-pin; image container (Node, Playwright, nginx, oasdiff) di-pin dengan tag dan digest, tidak pernah `latest`.
 
-## 7. Batasan desain untuk Nanami (UX) dan Jude (UI) (rev 2, Material Design 3)
+## 7. Batasan desain untuk Nanami (UX) dan Jude (UI) (rev 2, Material Design 3; tool desain Penpot sejak rev 6)
 
 Berlaku untuk SHAA-167 dan SHAA-168, menggantikan §7 rev 1 seluruhnya. Penyimpangan ditulis di handoff spec beserta alasannya, lalu diputuskan bersama Fitcher (desain) dan Shu (dampak teknis) sebelum Viktor mengimplementasikan.
 
-Acuan desain: spesifikasi Material Design 3 di https://m3.material.io/ dan kit Figma resmi Google "Material 3 Design Kit" (Figma Community). Hanya komponen dan varian **M3 baseline** di katalog §7.1 yang dipakai. Komponen atau varian M3 Expressive di kit (button group, split button, FAB menu, loading indicator, shape morph) tidak dipakai di F0 (§3.5).
+Acuan desain: spesifikasi Material Design 3 di https://m3.material.io/. Hanya komponen dan varian **M3 baseline** di katalog §7.1 yang dipakai. Komponen atau varian M3 Expressive (button group, split button, FAB menu, loading indicator, shape morph) tidak dipakai di F0 (§3.5).
+
+**Tool desain: Penpot (rev 6, arahan owner 2026-11-04, SHAA-378).** Figma tidak dipakai lagi untuk PoolRouter. Alur UX (Nanami) lalu UI (Jude) tidak berubah; yang pindah hanya tool-nya.
+
+| Aspek | Aturan |
+|---|---|
+| Artefak yang sudah di-approve | UX v0.3 (SHAA-167), handoff spec UI v0.3.x beserta PNG acuan dan package UI (SHAA-168, SHAA-212) tetap berlaku dan tidak dikerjakan ulang. Tidak ada berkas Figma PoolRouter yang perlu dimigrasi (inventaris SHAA-378) |
+| Desain baru dan revisi | Dibuat di Penpot, mengikuti §7.1–§7.6 |
+| Deliverable resmi | Tetap handoff spec dan PNG acuan yang **dilampirkan di issue**. Berkas Penpot adalah sumber kerja; tautannya boleh dicantumkan di handoff spec, tetapi tidak menggantikan lampiran. Viktor mengimplementasikan dari lampiran, sehingga implementasi tidak bergantung pada akses Penpot |
+| Library komponen | Penpot tidak punya kit M3 resmi dari Google. Jude membangun library Penpot secara bertahap, hanya untuk komponen katalog §7.1 dan ekstensi lokal yang dipakai layar baru, dengan nama komponen sama dengan kolom "Nama katalog". Library komunitas boleh dipakai sebagai rujukan jika lisensinya mengizinkan; acuan yang mengikat tetap spesifikasi M3 |
+| Token | Token Penpot memakai nama kanonis §7.2 dan nilai dari sesi Theme Builder §7.3. Sumber kebenaran nilai token tetap `frontend/src/styles/m3/` di repo |
+| Data | Berkas Penpot hanya memuat data sintetis (NIK, nama, IP contoh). Data asli atau tangkapan layar data asli dilarang |
+| Akses | Token API Penpot hanya lewat env `${PENPOT_TOKEN}` di runtime agent yang disetujui owner (Nanami, Jude, Viktor). Token tidak ditulis di repo, handoff spec, issue, komentar, atau log |
+
+Rujukan Figma di tabel opsi §3.1, §3.5, dan §7.4 adalah konteks saat keputusan rev 1–2 dibuat. Penggantian tool desain tidak mengubah keputusan di sana: stack, pustaka komponen, dan token tidak bergantung pada tool desain.
 
 ### 7.1 Katalog komponen M3 untuk F0
 
-Desain hanya memakai komponen di tabel ini atau komposisinya. Handoff spec menyebut **nama katalog dan varian** per elemen (mis. `Button` `variant=filled-tonal`). Nama komponen di kit Figma tidak harus diganti; kolom "Nama katalog" adalah nama yang dipakai di handoff spec dan di kode (`src/components/m3/`).
+Desain hanya memakai komponen di tabel ini atau komposisinya. Handoff spec menyebut **nama katalog dan varian** per elemen (mis. `Button` `variant=filled-tonal`). Kolom "Nama katalog" adalah nama yang dipakai di handoff spec, di library Penpot (rev 6), dan di kode (`src/components/m3/`).
 
 | Komponen M3 | Varian yang dipakai di F0 | Nama katalog (kode dan handoff) | Primitif RAC |
 |---|---|---|---|
@@ -463,16 +548,20 @@ Komponen baru di luar katalog dan ekstensi wajib diberi alasan di handoff spec. 
 
 ### 7.2 Design token M3
 
-**Aturan nama.** Nama kanonis adalah nama token M3, misalnya `md.sys.color.primary`. Bentuknya di Figma dan kode diturunkan secara mekanis, tanpa penamaan lain:
+**Aturan nama.** Nama kanonis adalah nama token M3, misalnya `md.sys.color.primary`. Bentuknya di tool desain dan kode diturunkan secara mekanis, tanpa penamaan lain:
 
 | Tempat | Bentuk | Contoh |
 |---|---|---|
 | Handoff spec | nama kanonis | `md.sys.color.on-primary-container` |
-| Figma Variables (koleksi `M3`) | titik diganti `/` | `md/sys/color/on-primary-container` |
+| Token Penpot (set `M3`, rev 6) | nama kanonis apa adanya; titik menjadi grup token Penpot | `md.sys.color.on-primary-container` |
 | CSS (`frontend/src/styles/m3/`) | `--` + titik diganti `-` | `--md-sys-color-on-primary-container` |
 | Utilitas Tailwind (hanya di kode) | alias peran | `bg-primary-container`, `text-on-primary-container` |
 
-Jika ekspor Theme Builder memakai nama yang berbeda dari tabel ini, nama diseragamkan sekali saat impor (di Figma oleh Jude, di CSS oleh Viktor). Pemetaannya ditulis di `frontend/src/styles/m3/README.md`. Warna mentah (hex) tidak pernah dipakai di desain maupun komponen; selalu lewat token peran.
+**Token Penpot (rev 6).** Token Penpot memakai nama kanonis, bukan bentuk CSS `--md-sys-…`. Alasannya: Penpot mengelompokkan token berdasarkan titik (seperti format W3C Design Tokens yang dipakai impor/ekspor JSON Penpot), sehingga nama kanonis menghasilkan grup `md › sys › color` yang mudah dinavigasi. Bentuk CSS akan menjadi satu daftar datar berisi ratusan token. Hubungan satu-ke-satu dengan CSS variable tetap terjamin karena turunannya mekanis: `--` lalu titik diganti `-`. Siapa pun bisa menulis CSS variable dari nama token Penpot tanpa tabel pemetaan.
+- Tipe token: color, dimension/border radius, opacity, dan typography dipetakan ke tipe token Penpot yang setara. Token yang tipenya belum didukung Penpot (mis. motion `md.sys.motion.*`) tidak dibuat di Penpot; handoff spec cukup menyebut nama kanonisnya.
+- Verifikasi (SHAA-187, saat diangkat dari backlog): Jude mengimpor set token ke berkas Penpot uji dan memastikan nama dengan segmen bertanda hubung (`on-primary-container`) diterima utuh. Jika Penpot menolak tanda hubung, bentuk cadangannya segmen camelCase (`md.sys.color.onPrimaryContainer`, sama dengan kunci JSON Theme Builder). Bentuk yang dipakai ditulis di `frontend/src/styles/m3/README.md` dan baris tabel ini diperbarui lewat revisi kecil ADR ini.
+
+Jika ekspor Theme Builder memakai nama yang berbeda dari tabel ini, nama diseragamkan sekali saat impor (di Penpot oleh Jude, di CSS oleh Viktor). Pemetaannya ditulis di `frontend/src/styles/m3/README.md`. Warna mentah (hex) tidak pernah dipakai di desain maupun komponen; selalu lewat token peran.
 
 **Color role yang dipakai** (`md.sys.color.*`, skema terang, kontras standar):
 
@@ -513,7 +602,7 @@ Display (`display-*`) tidak dipakai. Typeface: `md.ref.typeface.brand` dan `md.r
 
 ### 7.3 Skema warna dan seed
 
-- **Sumber tunggal:** Material Theme Builder (plugin Figma). Satu sesi Theme Builder menghasilkan Figma Variables untuk Jude dan ekspor web (JSON tema dan CSS skema terang) untuk Viktor. Di repo, `frontend/src/styles/m3/theme.json` dan `color.css` adalah salinan ekspor itu, tidak diedit tangan kecuali penyeragaman nama §7.2.
+- **Sumber tunggal (rev 6):** Material Theme Builder **versi web** (bukan plugin Figma). Satu sesi Theme Builder dengan parameter di tabel berikut menghasilkan ekspor JSON tema dan CSS skema terang. Ekspor itu dipakai dua arah: Viktor menyalinnya ke repo, dan Jude mengimpornya sebagai token Penpot (set `M3`, nama §7.2). Sesi bisa direproduksi dari parameter tabel ini, jadi tidak bergantung pada berkas tool desain. Di repo, `frontend/src/styles/m3/theme.json` dan `color.css` adalah salinan ekspor itu, tidak diedit tangan kecuali penyeragaman nama §7.2.
 - **Pengaturan F0:**
 
 | Parameter | Nilai F0 | Alasan |
@@ -525,7 +614,7 @@ Display (`display-*`) tidak dipakai. Typeface: `md.ref.typeface.brand` dan `md.r
 | Error | Bawaan M3 | Tidak bergantung seed |
 | Skema yang dipakai | Terang, kontras standar | §3.5, tema |
 
-- **Mengganti seed dengan warna utama BGN (W-2):** (1) Jude mengganti source color di sesi Theme Builder yang sama dan tidak mengubah pengaturan lain; Figma Variables ikut diperbarui. (2) Jude memperbarui tabel kontras di handoff spec. (3) Viktor mengganti `theme.json` dan `color.css` dalam satu commit. (4) Ridley memeriksa bahwa commit itu hanya menyentuh `frontend/src/styles/m3/` dan bahwa e2e axe lolos. Tidak ada perubahan komponen, layout, atau desain layar. Jika BGN juga memberi warna sekunder, warna itu dimasukkan sebagai key color `secondary` dengan cara yang sama.
+- **Mengganti seed dengan warna utama BGN (W-2):** (1) Jude mengganti source color di sesi Theme Builder dengan parameter yang sama dan tidak mengubah pengaturan lain; token Penpot diperbarui dari ekspor baru (rev 6). (2) Jude memperbarui tabel kontras di handoff spec. (3) Viktor mengganti `theme.json` dan `color.css` dalam satu commit. (4) Ridley memeriksa bahwa commit itu hanya menyentuh `frontend/src/styles/m3/` dan bahwa e2e axe lolos. Tidak ada perubahan komponen, layout, atau desain layar. Jika BGN juga memberi warna sekunder, warna itu dimasukkan sebagai key color `secondary` dengan cara yang sama.
 - **Kontras:** setiap pasangan konten/latar yang dipakai memenuhi ≥ 4,5:1 (teks normal) dan ≥ 3:1 (teks besar, ikon, batas komponen, indikator fokus terhadap latar di sekitarnya). Skema M3 dirancang memenuhi ini untuk pasangan `on-X`/`X`, tetapi Jude tetap melampirkan tabel kontras hasil hitung untuk semua pasangan yang dipakai, termasuk role extended dan `secondary` (fokus) terhadap `surface` dan `surface-container-*`. Tabel dihitung ulang setiap kali seed berubah.
 
 ### 7.4 Breakpoint dan layout: window size class M3
@@ -575,7 +664,7 @@ Aturan layout:
 
 ## 8. Konsekuensi
 
-- **Lebih mudah:** perubahan kontrak admin API dan pemakaiannya di UI direview dalam satu PR; drift kontrak tertangkap saat compile dan di CI; aksesibilitas dasar datang dari primitif React Aria yang teruji; satu kosakata token M3 di Figma dan kode, sehingga warna BGN cukup diganti lewat seed (§7.3); frontend tidak menyimpan token sehingga permukaan XSS untuk pengambilalihan sesi kecil; OIDC BGN bisa dipasang nanti tanpa mengubah frontend.
+- **Lebih mudah:** perubahan kontrak admin API dan pemakaiannya di UI direview dalam satu PR; drift kontrak tertangkap saat compile dan di CI; aksesibilitas dasar datang dari primitif React Aria yang teruji; satu kosakata token M3 di tool desain (Penpot, rev 6) dan kode, sehingga warna BGN cukup diganti lewat seed (§7.3); frontend tidak menyimpan token sehingga permukaan XSS untuk pengambilalihan sesi kecil; OIDC BGN bisa dipasang nanti tanpa mengubah frontend.
 - **Lebih sulit atau perlu dikerjakan:**
   - Backend perlu modul sesi admin (tabel pengguna admin, sesi, pembatasan login, pemeriksaan `Origin`) yang belum ada di ADR-0001, ditambah CLI pengguna dan peran serta seed `dev`/`ci` (§3.6c), endpoint pencarian auditor dan payload sesuai §3.6b, dan pembangkitan secret satu-kali (§3.6a). Skema tabel `admin_user` dan `admin_session` diselaraskan dengan `pengguna_id` di `audit_akses` data contract SHAA-166 saat hand-off SHAA-175.
   - Komponen M3 (katalog §7.1, 23 komponen + 6 ekstensi) dibangun dan dipelihara sendiri di atas RAC. Perkiraan kasar: tambahan 5–8 hari kerja frontend dibanding rev 1 (shadcn/ui siap salin). Mitigasi: hanya komponen di katalog yang dibangun, sesuai urutan kebutuhan layar F0; setiap komponen punya test komponen (keyboard, state, label) sesuai §3.7.
@@ -584,9 +673,9 @@ Aturan layout:
   - Format ekspor Material Theme Builder bisa berubah antar-versi plugin. Dampaknya terbatas pada penyeragaman nama saat impor (§7.2), yang dicatat di `styles/m3/README.md`.
   - Hook query ditulis tangan per resource (tipis, tetapi ada).
   - E2E butuh stack Compose penuh, sehingga job CI e2e lebih lama; dijalankan di PR yang menyentuh `frontend/**` atau `backend/openapi/**`, dan di `main`.
-- **Biaya:** semua pustaka open source berlisensi permisif (MIT; React Aria Components, `@internationalized/date`, Material Symbols, dan Playwright Apache-2.0; Roboto OFL-1.1; axe-core MPL-2.0 sebagai dev dependency tanpa modifikasi). Material Theme Builder dan kit Figma M3 gratis. Tidak ada biaya lisensi atau layanan. Biaya infrastruktur tambahan hanya satu container nginx kecil.
+- **Biaya:** semua pustaka open source berlisensi permisif (MIT; React Aria Components, `@internationalized/date`, Material Symbols, dan Playwright Apache-2.0; Roboto OFL-1.1; axe-core MPL-2.0 sebagai dev dependency tanpa modifikasi). Material Theme Builder versi web gratis. Penpot (open source, MPL-2.0) disediakan owner; ADR ini tidak menambah biaya lisensi atau layanan, dan biaya instance Penpot di luar repo PoolRouter (rev 6). Biaya infrastruktur tambahan hanya satu container nginx kecil.
 - **Pekerjaan lanjutan:**
-  - SHAA-167 (UX, Nanami) dan SHAA-168 (UI, Jude): memakai §7 rev 2 sebagai batasan. SHAA-168 juga menghasilkan sesi Theme Builder (§7.3) dan Figma Variables bernama kanonis (§7.2) sebagai bagian handoff spec.
+  - SHAA-167 (UX, Nanami) dan SHAA-168 (UI, Jude): memakai §7 rev 2 sebagai batasan. SHAA-168 juga menghasilkan sesi Theme Builder (§7.3) dan token bernama kanonis (§7.2) sebagai bagian handoff spec. Rev 6: sesi Theme Builder asli dan token Penpot dikerjakan di SHAA-187 (backlog); teks "Figma Variables" di AC SHAA-187 dibaca sebagai "token Penpot" (§7.2), termasuk verifikasi nama bertanda hubung.
   - Dampak rev 2 ke kerangka repo (SHAA-175): tanpa `components.json` dan shadcn CLI; folder `src/components/m3/` dan `src/styles/m3/` (§5); dependensi baru di tabel §2; konfigurasi `@theme` Tailwind yang mematikan skala bawaan dan memakai breakpoint M3 (§7.4); `vite-plugin-svgr` di konfigurasi Vite; listener pelanggaran CSP di e2e (§3.5). Urutan yang disarankan untuk Viktor: impor token dari handoff SHAA-168 lebih dulu, lalu komponen katalog per kebutuhan layar. Hand-off SHAA-175 sendiri belum dipromosikan, jadi tidak ada pekerjaan yang terbuang. Modul backend (sesi admin, `openapi-check`) tidak terdampak.
   - SHAA-175 (hand-off implementasi F0): kerangka `frontend/` dan target `make` (Viktor), modul sesi admin dan `openapi-check` (Flik), CI dan Compose termasuk container nginx dan job e2e (Platform & SRE, K2), rencana uji e2e dan audit aksesibilitas (Quality, K2). Semua PR direview Ridley.
   - Revisi ADR-0001 berikutnya: §8.3 merujuk ADR ini untuk struktur repo; T-1 dan T-2 diperbarui.
@@ -607,18 +696,21 @@ Aturan layout:
 - (rev 4) Laporan riset SHAA-184 v1.0 dan keputusan scope F0 Fitcher; data contract v0.7.4 final A-04, §8.2; BRD v0.16 US-16; UX v0.3 §5.5 (SHAA-167); NIST SP 800-63B-4 §3.1.1.2; RFC 9530 (`Repr-Digest`); OWASP CSV Injection; Standard Webhooks specification.
 - Data contract SHAA-166 v0.6.1 final: §6.1 (NIK sintetis), §8.1 (matriks akses), `audit_akses`.
 - Keputusan owner 2026-11-03 di SHAA-178: K-33, monorepo `faisalcayunda/PoolRouter`, deploy sementara lokal lewat Podman; jawaban W-1. K-36 (Material Design 3) di SHAA-162. K-34 dan K-35 (alur git) di SHAA-182.
-- Material Design 3: https://m3.material.io/ (komponen, color roles, typescale, shape, elevation, states, window size classes, canonical layouts); kit Figma "Material 3 Design Kit" dan plugin Material Theme Builder (Google).
+- Material Design 3: https://m3.material.io/ (komponen, color roles, typescale, shape, elevation, states, window size classes, canonical layouts); Material Theme Builder versi web (Google). Rujukan rev 1–5 ke kit Figma "Material 3 Design Kit" dan plugin Theme Builder Figma tidak dipakai lagi sejak rev 6.
+- (rev 6) Arahan owner 2026-11-04 (SHAA-378): tool desain Figma diganti Penpot; inventaris rujukan Figma oleh Jude dan persetujuan Fitcher di SHAA-378. Dokumentasi Penpot: design tokens (set, tema, impor/ekspor JSON format W3C Design Tokens) dan library komponen. W3C Design Tokens Community Group format.
 - Status pustaka, dicek 2026-11-03: npm registry (`react-aria-components` 1.22.1, `@material/web` 2.5.0, `@mui/material` 9.5.0, `@internationalized/date` 3.12.4, `@material-symbols/svg-400` 0.48.2, `vite-plugin-svgr` 5.2.0, `@fontsource-variable/roboto` 5.3.0, `@material/material-color-utilities` 0.4.0); material-components/material-web discussion #5642 (maintenance mode); mui/material-ui issue #29345 (M3); dokumentasi React Aria Toast (`UNSTABLE_`); material-web.dev (daftar komponen).
 - `shaal-eng-standards` §1, §3, §4, §5 (PR frontend), §8; `shaal-playbook` §3, §6.
+- (rev 5) Audit WCAG 2.2 AA F0 `wakaba-a11y-f0.md` (lampiran SHAA-200), temuan A-01; keputusan Fitcher dan persetujuan deviasi Ridley di SHAA-200; handoff spec UI v0.3 (SHAA-212). WCAG 2.2 SC 2.2.1 Timing Adjustable.
 - W3C WCAG 2.2 (Recommendation); OWASP Session Management, CSRF Prevention, dan Password Storage Cheat Sheet.
-- Commit: belum ada (repo belum memuat kerangka).
+- Commit: ADR masuk repo di `797e68b` (SHAA-191); koreksi CSP di `676f2c1` (SHAA-197). Commit rev 6: dicatat di SHAA-378 setelah masuk `main`.
 
 ## Riwayat revisi
 
 | Rev | Tanggal | Perubahan |
 |---|---|---|
 | 1 | 2026-11-03 | Versi pertama, final oleh Shu sebagai lead Engineering (SHAA-178) |
+| 6 | 2026-11-04 | Arahan owner (SHAA-378): tool desain Figma diganti Penpot. §7 pengantar: tabel aturan Penpot (artefak approved tetap berlaku, deliverable resmi tetap lampiran issue, library Penpot bertahap dengan nama katalog, data sintetis, akses lewat `${PENPOT_TOKEN}`). §7.1 nama katalog juga dipakai di library Penpot. §7.2 token Penpot memakai nama kanonis `md.sys.*` (titik = grup), turunan mekanis ke CSS `--md-sys-*`, verifikasi tanda hubung di SHAA-187 dengan cadangan camelCase. §7.3 Theme Builder versi web sebagai sumber tunggal; langkah W-2 diselaraskan. §3.5 butir token, §8, dan Rujukan diselaraskan. Koreksi CSP dari implementasi SHAA-197 (sebelumnya berlabel "rev 5" di salinan repo, bentrok dengan rev 5 SHAA-196) dimasukkan ke §3.5 butir CSP dan §3.9. Tidak ada perubahan stack, pustaka, kontrak API, atau nilai token. Final oleh Shu sebagai lead Engineering |
+| 5 | 2026-11-03 | Temuan A-01 WCAG 2.2.1 (audit Wakaba SHAA-200; keputusan produk Fitcher; deviasi batas absolut disetujui Ridley di SHAA-200). §3.6f baru: kontrak `GET /admin/v1/auth/sesi` (tidak menggeser idle) dan `POST /admin/v1/auth/sesi/perpanjang` (reset idle tanpa menggeser batas absolut), skema `SesiStatus` tiga field tanpa data sensitif, aturan server dan frontend, serta uji wajib. Satu baris baru di tabel §3.6. §3.4 melarang polling berkala di F0. Alur e2e 1 di §3.7 diperluas. Baris "Login admin" di §2 diselaraskan. Nilai sesi tidak berubah. Final oleh Shu sebagai lead Engineering |
 | 4 | 2026-11-03 | Riset SHAA-184 dan keputusan scope F0 Fitcher: §3.6d kontrak API ekspor log auditor (sinkron, CSV tanpa payload, maksimal 10.000 baris, berkas dan SHA-256 dibentuk di fungsi `SECURITY DEFINER` bersama baris `audit_akses`); §3.6e pembacaan audit akses (`lihat_audit`); password minimum 15 (R-11); kontrol kompensasi auditor PoC (R-12 opsi b: allowlist IP admin, peran auditor berbatas waktu, review harian); secret webhook `whsec_` (R-09); `no-store` dan `no-cache` (R-16); alur e2e 9. Inkonsistensi Lampiran A dirapikan: alasan auditor 10–500 karakter di §7.6; jumlah layar disamakan dengan §7.4; rujukan PRD v0.4.6 dan ADR-0001 rev 7. Final oleh Shu sebagai lead Engineering |
 | 3 | 2026-11-03 | Keputusan teknis turunan review UX F0 (SHAA-167, D-1, D-2, D-4 Fitcher): §3.6a secret satu-kali dibangkitkan server dan "Salin" hanya di dialog satu-kali; secret webhook diselaraskan dengan contract §8.1a (dibangkitkan sistem, bukan diisi pengguna); §3.6b alasan auditor sekali per pencarian NIK utuh, satu baris `audit_akses` per panggilan, payload per pembukaan; §3.6c pengelolaan pengguna dan peran F0 lewat CLI dengan aturan A-02, seed hanya `dev`/`ci`. §1, §3.3, §3.6, §5, §7.6, §8 diselaraskan; pemakaian kuota client owner keluar dari F0. Bagian lain tidak berubah. Final oleh Shu sebagai lead Engineering |
 | 2 | 2026-11-03 | K-36 Material Design 3 (SHAA-183): §3.5 ditulis ulang (komponen M3 di atas React Aria Components, token M3 dari Material Theme Builder, Tailwind dipetakan ke token, ikon Material Symbols, font Roboto; shadcn/ui, Radix, Sonner, lucide, TanStack Table, dan Inter dikeluarkan); §7 ditulis ulang (katalog M3, token kanonis, seed netral, window size class M3); §2, §3.1, §3.9, §5, §8 diselaraskan. W-1 ditutup (owner setuju MFA di F1), W-4 berlaku untuk F0, default W-2 diganti. Catatan K-35 di §6 menyelaraskan istilah "PR" dengan alur push langsung ke `main`. Bagian lain tidak berubah. Final oleh Shu sebagai lead Engineering |
-| 5 | 2026-11-03 | Koreksi CSP dari implementasi katalog M3 (SHAA-197): `@react-aria/interactions` `usePress` menyisipkan satu `<style>` (`@layer { [data-react-aria-pressable] { touch-action: pan-x pan-y pinch-zoom; } }`), yang ditangkap listener `securitypolicyviolation` di e2e. §3.5 butir CSP dan §3.9 diperbaiki: `style-src` memuat hash sha256 lembar gaya itu, bukan `'unsafe-inline'`. Klaim lama "tidak ada pustaka yang menyuntik `<style>`" tidak akurat dan diganti. Bagian lain tidak berubah. Final oleh Shu sebagai lead Engineering |

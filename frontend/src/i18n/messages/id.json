@@ -75,7 +75,8 @@
       "rows_per_page": "Baris per halaman",
       "page_range": "{{dari, number}}–{{sampai, number}} dari {{total, number}}",
       "prev_page": "Halaman sebelumnya",
-      "next_page": "Halaman berikutnya"
+      "next_page": "Halaman berikutnya",
+      "page_number": "Halaman {{ke}} dari {{total}}"
     },
     "empty": {
       "logs": {
@@ -85,6 +86,18 @@
     },
     "datetime": {
       "wib": "{{tanggal}}, {{jam}} WIB"
+    },
+    "date": {
+      "from": "Dari",
+      "to": "Sampai",
+      "from_time": "Jam mulai",
+      "to_time": "Jam akhir",
+      "from_picker": "Pilih tanggal mulai",
+      "to_picker": "Pilih tanggal akhir",
+      "format_hint": "Format: 03/11/2026",
+      "format_error": "Tanggal belum sah. Tulis dengan format 03/11/2026.",
+      "order_error": "Tanggal akhir harus sama dengan atau setelah tanggal awal.",
+      "only_note": "Pilih tanggal dan jam mulai serta akhir untuk mencari."
     }
   },
   "account": {
@@ -115,7 +128,13 @@
     "aksi_audit": {
       "cari_nik": "Cari",
       "ditolak": "Ditolak",
-      "ekspor": "Ekspor"
+      "ekspor": "Ekspor",
+      "lihat_payload": "Lihat payload"
+    },
+    "hasil": {
+      "diizinkan": "Diizinkan",
+      "ditolak": "Ditolak",
+      "berhasil": "Berhasil"
     }
   },
   "error": {
@@ -476,12 +495,22 @@
       "hour": "Jam berjalan ({{rentang}})",
       "sync_heading": "Porsi sync",
       "sync_used": "Sync terpakai {{terpakai, number}} dari batas {{persen, number}}%",
-      "note": "Angka hitung dari jumlah percobaan ke Dukcapil. Selisih dengan log transaksi: rekonsiliasi menunggu OQ-12."
+      "note": "Angka hitung dari jumlah percobaan ke Dukcapil. Selisih dengan log transaksi: rekonsiliasi menunggu OQ-12.",
+      "reload": "Muat ulang",
+      "pool_filter": "Pool",
+      "pool_unknown": "Pool upstream",
+      "stale": "Data lama ditampilkan. Terakhir dimuat {{waktu}}.",
+      "empty_action": "Atur upstream pool"
     },
     "level": {
       "ok": "Aman",
       "low": "Hampir habis",
       "out": "Habis"
+    },
+    "error": {
+      "title": "Kuota belum bisa dimuat",
+      "body": "Data kuota belum bisa dimuat. Coba lagi.",
+      "action": "Coba lagi"
     }
   },
   "log": {
@@ -493,7 +522,10 @@
     "filter": {
       "code": "Kode transaksi",
       "client": "Client",
-      "range": "Rentang waktu"
+      "range": "Rentang waktu",
+      "queue": "Queue ID",
+      "queue_help": "Masukkan queue_id untuk mencari transaksi.",
+      "code_help": "Cari rekaman menggunakan kode transaksi."
     },
     "chip": {
       "client": "Client: {{nama}}"
@@ -501,12 +533,40 @@
     "col": {
       "time": "Waktu",
       "code": "Kode transaksi",
+      "queue": "Queue ID",
       "client": "Client",
       "nik": "NIK",
-      "access": "Status akses"
+      "access": "Status akses",
+      "requested_at": "Diminta pada",
+      "request_id": "ID permintaan"
     },
     "row": {
       "aria": "Detail transaksi {{kode}}"
+    },
+    "payload": {
+      "summary": "Ringkasan transaksi",
+      "not_available": "Tidak tersedia.",
+      "error_purged": "Payload sudah dihapus.",
+      "input": "Input",
+      "metadata": "Metadata",
+      "hasil": "Hasil",
+      "readonly": "Hanya baca",
+      "open": "Lihat payload",
+      "title": "Payload transaksi",
+      "dialog_title": "Payload transaksi",
+      "rejected_no_input": "Ditolak tanpa input.",
+      "reason": {
+        "supporting": "Wajib diisi. Pembukaan payload tercatat di audit.",
+        "error": "Alasan wajib diisi dengan 10–500 karakter."
+      },
+      "snackbar": {
+        "opened": "Payload dibuka. Akses ini tercatat di audit."
+      }
+    },
+    "error": {
+      "title": "Log belum bisa dimuat",
+      "body": "Data log belum bisa dimuat. Coba lagi.",
+      "action": "Coba lagi"
     }
   },
   "nik": {
@@ -519,7 +579,8 @@
       "range_only_note": "Pencarian rentang waktu saja tidak tersedia; NIK wajib diisi.",
       "export": "Ekspor hasil",
       "payload": "Payload",
-      "retention": "Data di luar retensi online belum bisa dicari. Pencarian arsip tersedia di F1."
+      "retention": "Data di luar retensi online belum bisa dicari. Pencarian arsip tersedia di F1.",
+      "export_help": "Masukkan NIK 16 digit yang sah untuk mengaktifkan ekspor."
     },
     "reason": {
       "title": "Alasan mencari log NIK",
@@ -539,6 +600,11 @@
     },
     "empty": {
       "title": "Belum ada hasil untuk pencarian ini"
+    },
+    "error": {
+      "title": "Pencarian belum bisa dilakukan",
+      "body": "Hasil pencarian belum bisa dimuat. Coba lagi.",
+      "action": "Coba lagi"
     }
   },
   "audit": {
@@ -552,18 +618,30 @@
       "nik_range": "NIK + rentang {{rentang}}",
       "nik_search": "Pencarian per NIK",
       "open_logs": "Buka log transaksi",
-      "range_only": "Rentang {{rentang}}"
+      "range_only": "Rentang {{rentang}}",
+      "range": "Rentang waktu",
+      "range_help": "Pilih rentang waktu untuk menampilkan catatan audit.",
+      "note": "Filter diterapkan pada catatan audit akses."
     },
     "col": {
       "user": "Pengguna",
       "role": "Peran",
       "action": "Aksi",
       "filter": "Filter atau kueri",
-      "count": "Jumlah record"
+      "result": "Hasil",
+      "count": "Jumlah record",
+      "time": "Waktu",
+      "reason": "Alasan"
     },
     "empty": {
       "title": "Tidak ada catatan yang cocok",
       "body": "Ubah rentang waktu atau hapus filter."
+    },
+    "error": {
+      "range": "Rentang waktu tidak valid.",
+      "title": "Audit akses belum bisa dimuat",
+      "body": "Data audit akses belum bisa dimuat. Coba lagi.",
+      "action": "Coba lagi"
     }
   },
   "risk": {
@@ -647,6 +725,14 @@
       "log": "Log transaksi · PoolRouter",
       "nik_search": "Pencarian log per NIK · PoolRouter",
       "audit": "Audit akses · PoolRouter"
+    }
+  },
+  "export": {
+    "error": {
+      "title": "Ekspor tidak bisa dilakukan",
+      "body": "Hasil ekspor belum bisa dibuat. Coba lagi.",
+      "action": "Coba lagi",
+      "too_large": "Hasil terlalu besar. Persempit rentang waktu hingga paling banyak 10.000 record."
     }
   }
 }

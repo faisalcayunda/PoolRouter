@@ -256,8 +256,8 @@ SELECT t.gagal($$UPDATE client SET limiter_penolakan_burst = 1001 WHERE nama = '
 ROLLBACK TO s;
 SELECT t.gagal($$UPDATE client SET limiter_penolakan_isi_ulang_per_detik = 0.05 WHERE nama = 'client-x'$$, '23514', 'limiter refill min 0.10');
 ROLLBACK TO s;
-SELECT t.gagal($$INSERT INTO provider_config_versi VALUES ('20000000-0000-7000-8000-000000000001', 2, 2, 'metadata_only', '{}', now(), '00000000-0000-7000-8000-000000000001')$$,
-  '23514', 'config_schema_version other than 1 refused (V-05)');
+SELECT t.gagal($$INSERT INTO provider_config_versi VALUES ('20000000-0000-7000-8000-000000000001', 2, 3, 'metadata_only', '{}', now(), '00000000-0000-7000-8000-000000000001')$$,
+  '23514', 'config_schema_version outside 1..2 refused (V-05; 2 opened by F1, tested in 50_f1_skema.sql)');
 ROLLBACK TO s;
 SELECT t.gagal($$UPDATE provider_config_versi SET dokumen = '{"x":1}'$$, '23000', 'config versions are immutable (V-03)');
 ROLLBACK TO s;

@@ -1,0 +1,84 @@
+/*
+ * Responsive data tables (section 4 of the handoff spec, ADR-0003 7.4).
+ *
+ * Two behaviours, both driven by the M3 window size classes defined in `tailwind.css`:
+ *
+ *   compact (< 600px)  every row becomes a card: the header row is hidden visually, each cell
+ *                      shows its column name from `data-label`, and the row gets a surface and a
+ *                      divider. The markup stays a real <table>; only the box model changes, so
+ *                      screen readers keep getting a table with rows and headers.
+ *   medium  (600–839)  the low-priority columns (`.hide-md`) are removed: queue_id and Client on
+ *                      the log, Kode transaksi and Client on the NIK search, the user id on the
+ *                      audit. Nothing that identifies a row disappears.
+ *
+ * The class names are plain CSS instead of Tailwind utilities because a `<td>` needs
+ * `display: block` plus a generated label, which is more readable here than forty arbitrary
+ * variants at the three call sites.
+ */
+
+@media (max-width: 599.98px) {
+  .table-card table,
+  .table-card thead,
+  .table-card tbody,
+  .table-card tr,
+  .table-card td {
+    display: block;
+    width: 100%;
+  }
+
+  .table-card thead {
+    /* Hidden visually, still announced: cells keep their column association through data-label. */
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+    border: 0;
+  }
+
+  .table-card tr {
+    padding-block: 8px;
+    border-bottom: 1px solid var(--md-sys-color-outline-variant);
+  }
+
+  .table-card tr:last-child {
+    border-bottom: 0;
+  }
+
+  .table-card td {
+    display: grid;
+    grid-template-columns: minmax(6rem, 40%) 1fr;
+    gap: 12px;
+    padding: 6px 16px;
+    align-items: baseline;
+  }
+
+  .table-card td::before {
+    content: attr(data-label);
+    font-size: var(--md-sys-typescale-label-medium-size);
+    line-height: var(--md-sys-typescale-label-medium-line-height);
+    color: var(--md-sys-color-on-surface-variant);
+  }
+
+  /* A cell without a column name (the action cell) spans the full width. */
+  .table-card td:not([data-label])::before {
+    content: none;
+  }
+
+  /* Card mode: `display: grid` with an `auto` minimum would let one long value (the masked NIK)
+     push the card wider than the screen and clip the digits. Wrapping keeps all four trailing
+     NIK digits readable at 320 px. */
+  .table-card td {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+}
+
+@media (min-width: 600px) and (max-width: 839.98px) {
+  .table-card .hide-md {
+    display: none;
+  }
+}

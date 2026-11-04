@@ -77,7 +77,7 @@ services:
       start_period: 5s
 
   rabbitmq:
-    image: docker.io/library/rabbitmq:4-management-alpine@sha256:89a52c69f937d258e8cf1e13a008131e28990c30fc0dfa8a94037a418f4415b8
+    image: docker.io/library/rabbitmq:4-management-alpine@sha256:b768d2e09a809b48458d6c3c32fc2894643a6bfafd76264c120373eff0ee6532
     profiles: ["bundled-infra"]
     # RabbitMQ 4 menolak *_FILE (RABBITMQ_DEFAULT_PASS_FILE). Password dibaca dari secret
     # saat start lalu diekspor ke proses (pola tetap, KD-1). Secret kosong membuat start gagal.

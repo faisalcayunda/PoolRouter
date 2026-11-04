@@ -23,18 +23,30 @@ export default interface Resources {
         "action": "Aksi",
         "count": "Jumlah record",
         "filter": "Filter atau kueri",
+        "reason": "Alasan",
+        "result": "Hasil",
         "role": "Peran",
+        "time": "Waktu",
         "user": "Pengguna"
       },
       "empty": {
         "body": "Ubah rentang waktu atau hapus filter.",
         "title": "Tidak ada catatan yang cocok"
       },
+      "error": {
+        "action": "Coba lagi",
+        "body": "Data audit akses belum bisa dimuat. Coba lagi.",
+        "range": "Rentang waktu tidak valid.",
+        "title": "Audit akses belum bisa dimuat"
+      },
       "filter": {
         "action": "Aksi",
         "nik_range": "NIK + rentang {{rentang}}",
         "nik_search": "Pencarian per NIK",
+        "note": "Filter diterapkan pada catatan audit akses.",
         "open_logs": "Buka log transaksi",
+        "range": "Rentang waktu",
+        "range_help": "Pilih rentang waktu untuk menampilkan catatan audit.",
         "range_only": "Rentang {{rentang}}",
         "user": "Pengguna"
       },
@@ -103,6 +115,18 @@ export default interface Resources {
       "app": {
         "name": "PoolRouter"
       },
+      "date": {
+        "format_error": "Tanggal belum sah. Tulis dengan format 03/11/2026.",
+        "format_hint": "Format: 03/11/2026",
+        "from": "Dari",
+        "from_picker": "Pilih tanggal mulai",
+        "from_time": "Jam mulai",
+        "only_note": "Pilih tanggal dan jam mulai serta akhir untuk mencari.",
+        "order_error": "Tanggal akhir harus sama dengan atau setelah tanggal awal.",
+        "to": "Sampai",
+        "to_picker": "Pilih tanggal akhir",
+        "to_time": "Jam akhir"
+      },
       "datetime": {
         "wib": "{{tanggal}}, {{jam}} WIB"
       },
@@ -114,6 +138,7 @@ export default interface Resources {
       },
       "pagination": {
         "next_page": "Halaman berikutnya",
+        "page_number": "Halaman {{ke}} dari {{total}}",
         "page_range": "{{dari, number}}–{{sampai, number}} dari {{total, number}}",
         "prev_page": "Halaman sebelumnya",
         "rows_per_page": "Baris per halaman"
@@ -158,7 +183,13 @@ export default interface Resources {
       "aksi_audit": {
         "cari_nik": "Cari",
         "ditolak": "Ditolak",
-        "ekspor": "Ekspor"
+        "ekspor": "Ekspor",
+        "lihat_payload": "Lihat payload"
+      },
+      "hasil": {
+        "berhasil": "Berhasil",
+        "diizinkan": "Diizinkan",
+        "ditolak": "Ditolak"
       },
       "peran": {
         "admin": "Platform admin",
@@ -191,6 +222,14 @@ export default interface Resources {
         "load": "Data belum bisa dimuat. Periksa koneksi, lalu coba lagi."
       }
     },
+    "export": {
+      "error": {
+        "action": "Coba lagi",
+        "body": "Hasil ekspor belum bisa dibuat. Coba lagi.",
+        "title": "Ekspor tidak bisa dilakukan",
+        "too_large": "Hasil terlalu besar. Persempit rentang waktu hingga paling banyak 10.000 record."
+      }
+    },
     "log": {
       "chip": {
         "client": "Client: {{nama}}"
@@ -200,17 +239,48 @@ export default interface Resources {
         "client": "Client",
         "code": "Kode transaksi",
         "nik": "NIK",
+        "queue": "Queue ID",
+        "request_id": "ID permintaan",
+        "requested_at": "Diminta pada",
         "time": "Waktu"
+      },
+      "error": {
+        "action": "Coba lagi",
+        "body": "Data log belum bisa dimuat. Coba lagi.",
+        "title": "Log belum bisa dimuat"
       },
       "filter": {
         "client": "Client",
         "code": "Kode transaksi",
+        "code_help": "Cari rekaman menggunakan kode transaksi.",
+        "queue": "Queue ID",
+        "queue_help": "Masukkan queue_id untuk mencari transaksi.",
         "range": "Rentang waktu"
       },
       "page": {
         "nik_hint": "Pencarian per NIK hanya tersedia untuk auditor. Butuh NIK lengkap? Minta auditor.",
         "subtitle": "Telusuri transaksi lewat kode transaksi, queue_id, client, atau waktu. NIK tampil 4 digit akhir.",
         "title": "Log transaksi"
+      },
+      "payload": {
+        "dialog_title": "Payload transaksi",
+        "error_purged": "Payload sudah dihapus.",
+        "hasil": "Hasil",
+        "input": "Input",
+        "metadata": "Metadata",
+        "not_available": "Tidak tersedia.",
+        "open": "Lihat payload",
+        "readonly": "Hanya baca",
+        "reason": {
+          "error": "Alasan wajib diisi dengan 10–500 karakter.",
+          "supporting": "Wajib diisi. Pembukaan payload tercatat di audit."
+        },
+        "rejected_no_input": "Ditolak tanpa input.",
+        "snackbar": {
+          "opened": "Payload dibuka. Akses ini tercatat di audit."
+        },
+        "summary": "Ringkasan transaksi",
+        "title": "Payload transaksi"
       },
       "row": {
         "aria": "Detail transaksi {{kode}}"
@@ -281,9 +351,15 @@ export default interface Resources {
       "empty": {
         "title": "Belum ada hasil untuk pencarian ini"
       },
+      "error": {
+        "action": "Coba lagi",
+        "body": "Hasil pencarian belum bisa dimuat. Coba lagi.",
+        "title": "Pencarian belum bisa dilakukan"
+      },
       "page": {
         "error": "Masukkan NIK 16 digit.",
         "export": "Ekspor hasil",
+        "export_help": "Masukkan NIK 16 digit yang sah untuk mengaktifkan ekspor.",
         "field": "NIK (16 digit)",
         "field_help": "Hanya angka.",
         "payload": "Payload",
@@ -400,17 +476,27 @@ export default interface Resources {
       }
     },
     "quota": {
+      "error": {
+        "action": "Coba lagi",
+        "body": "Data kuota belum bisa dimuat. Coba lagi.",
+        "title": "Kuota belum bisa dimuat"
+      },
       "level": {
         "low": "Hampir habis",
         "ok": "Aman",
         "out": "Habis"
       },
       "page": {
+        "empty_action": "Atur upstream pool",
         "hour": "Jam berjalan ({{rentang}})",
         "meta": "Pool: {{nama_pool}} · Diperbarui {{waktu}}",
         "note": "Angka hitung dari jumlah percobaan ke Dukcapil. Selisih dengan log transaksi: rekonsiliasi menunggu OQ-12.",
         "of_total": "{{terpakai, number}} dari {{total, number}}",
+        "pool_filter": "Pool",
+        "pool_unknown": "Pool upstream",
+        "reload": "Muat ulang",
         "reset_at": "reset {{waktu}}",
+        "stale": "Data lama ditampilkan. Terakhir dimuat {{waktu}}.",
         "sync_heading": "Porsi sync",
         "sync_used": "Sync terpakai {{terpakai, number}} dari batas {{persen, number}}%",
         "title": "Kuota",

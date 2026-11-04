@@ -12,6 +12,9 @@ import Info from '@material-symbols/svg-400/outlined/info.svg?react';
 import CheckCircle from '@material-symbols/svg-400/outlined/check_circle.svg?react';
 import CalendarMonth from '@material-symbols/svg-400/outlined/calendar_month.svg?react';
 import Remove from '@material-symbols/svg-400/outlined/remove.svg?react';
+import Visibility from '@material-symbols/svg-400/outlined/visibility.svg?react';
+import Download from '@material-symbols/svg-400/outlined/download.svg?react';
+import Refresh from '@material-symbols/svg-400/outlined/refresh.svg?react';
 
 export type IconComponent = ComponentType<SVGProps<SVGSVGElement>>;
 
@@ -30,6 +33,9 @@ export const icons = {
   checkCircle: CheckCircle,
   calendarMonth: CalendarMonth,
   remove: Remove,
+  visibility: Visibility,
+  download: Download,
+  refresh: Refresh,
 } satisfies Record<string, IconComponent>;
 
 export function Icon({ icon: Svg, className }: { icon: IconComponent; className?: string }) {
