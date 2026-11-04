@@ -18,6 +18,9 @@ use poolrouter_core::config::{Config, DbRole};
 use sqlx::PgPool;
 use sqlx::postgres::{PgConnectOptions, PgPoolOptions, PgSslMode};
 
+use secrecy::ExposeSecret;
+
+use super::pembatas::PembatasLogin;
 use super::sesi::AdminState;
 
 pub const ADMIN_API_ADDR_VAR: &str = "POOLROUTER_ADMIN_API_ADDR";
@@ -88,14 +91,21 @@ pub fn pool_admin(cfg: &Config) -> Result<PgPool, String> {
         .connect_lazy_with(opts))
 }
 
-pub fn state_admin(cfg: &Config, pool: PgPool) -> Result<AdminState, String> {
+pub fn state_admin(cfg: &Config, pool: PgPool, redis: redis::Client) -> Result<AdminState, String> {
     let asal = cfg
         .ui_origin
         .as_deref()
         .ok_or("POOLROUTER_UI_ORIGIN missing")?;
     let asal =
         AsalUi::baru(asal).map_err(|_| "POOLROUTER_UI_ORIGIN is not an origin".to_owned())?;
-    Ok(AdminState::baru(pool, asal))
+    // The limiter key is an HMAC under a key the webserver already holds, with
+    // its own label (see `pembatas`): no new secret.
+    let kunci = cfg
+        .secrets
+        .get("POOLROUTER_IDEMPOTENCY_HMAC_KEY")
+        .ok_or("POOLROUTER_IDEMPOTENCY_HMAC_KEY_FILE missing")?;
+    let pembatas = PembatasLogin::baru(redis, kunci.expose_secret().as_bytes());
+    Ok(AdminState::baru(pool, asal, pembatas))
 }
 
 #[cfg(test)]

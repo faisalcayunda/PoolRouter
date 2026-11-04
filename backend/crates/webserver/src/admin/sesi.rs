@@ -30,8 +30,8 @@ use sqlx::PgPool;
 use tower_http::limit::RequestBodyLimitLayer;
 use tower_http::set_header::SetResponseHeaderLayer;
 
-use super::login;
-use super::pembatas::PembatasMemori;
+use super::pembatas::PembatasLogin;
+use super::{login, me};
 
 use crate::api::problem::ProblemKodeAdmin;
 use crate::api::problem_admin::ProblemAdmin;
@@ -50,17 +50,17 @@ pub struct AdminState {
     pub pool: PgPool,
     pub asal: AsalUi,
     pub jam: Jam,
-    pub pembatas: Arc<PembatasMemori>,
+    pub pembatas: Arc<PembatasLogin>,
 }
 
 impl AdminState {
-    pub fn baru(pool: PgPool, asal: AsalUi) -> Self {
+    pub fn baru(pool: PgPool, asal: AsalUi, pembatas: PembatasLogin) -> Self {
         Self {
             sesi: SesiStore::baru(pool.clone()),
             pool,
             asal,
             jam: Arc::new(Utc::now),
-            pembatas: Arc::new(PembatasMemori::baru()),
+            pembatas: Arc::new(pembatas),
         }
     }
 
@@ -76,6 +76,11 @@ pub fn router(state: AdminState) -> Router {
         .route("/admin/v1/auth/sesi/perpanjang", post(perpanjang_sesi))
         .route("/admin/v1/auth/logout", post(logout))
         .route("/admin/v1/auth/login", post(login::login))
+        .route("/admin/v1/auth/me", get(me::get_me))
+        .route(
+            "/admin/v1/auth/me/preferensi",
+            axum::routing::patch(me::update_preferensi),
+        )
         .with_state(state)
         .layer(RequestBodyLimitLayer::new(16 * 1024))
         .layer(SetResponseHeaderLayer::overriding(

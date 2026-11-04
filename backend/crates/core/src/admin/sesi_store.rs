@@ -166,6 +166,22 @@ impl SesiStore {
         Ok(Ok(StatusSesi::hitung(sesi.keadaan, sekarang, self.batas)))
     }
 
+    /// Who owns a live session, without writing anything. For endpoints that
+    /// must not touch the session (Addendum A §7.2 `PATCH auth/me/preferensi`).
+    pub async fn identitas(
+        &self,
+        hash: &HashToken,
+        sekarang: DateTime<Utc>,
+    ) -> Result<Result<SesiTersimpan, SesiDitolak>, GalatSesi> {
+        let Some(sesi) = self.baca(hash).await? else {
+            return Ok(Err(SesiDitolak::TidakDikenal));
+        };
+        if let EfekPermintaan::Ditolak(alasan) = evaluasi(sesi.keadaan, sekarang, self.batas) {
+            return Ok(Err(SesiDitolak::Kedaluwarsa(alasan)));
+        }
+        Ok(Ok(sesi))
+    }
+
     /// Authenticate an ordinary admin request: evaluate both limits and push
     /// `terakhir_aktif_at` to now when that is a change.
     pub async fn autentikasi(
