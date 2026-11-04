@@ -23,6 +23,18 @@ x-backend-env: &backend-env
   POOLROUTER_RABBITMQ_USER: ${RABBITMQ_USER:?isi RABBITMQ_USER di file env}
   POOLROUTER_RABBITMQ_PASSWORD_FILE: /run/secrets/rabbitmq_password
 
+# Hardening proses arsip dan restore (ADR-0006 rev 4 §8.1 butir 8, 9). Tanpa port, tanpa swap,
+# tanpa core dump. Egress dibatasi di luar compose: hanya PostgreSQL, bucket, dan secret manager.
+x-worker-hardened: &worker-hardened
+  read_only: true
+  tmpfs: [/tmp]
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+  ulimits:
+    core: 0
+  mem_limit: 512m
+  memswap_limit: 512m
+
 services:
   postgres:
     image: docker.io/library/postgres:17-alpine@sha256:266d3c257594e195b309ae9d1805e54c788f1d7b375f56bf6c367aac6c917e7b
@@ -190,6 +202,36 @@ services:
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
 
+  # Job arsip (ADR-0006 rev 4 §8.1 butir 9). Hanya kunci PUBLIK KEK arsip; kunci privat tidak ada di sini.
+  # Tanpa `ports`. Identitas role: pr_job_arsip (tanpa DeleteObject, tanpa kunci privat).
+  backend-worker-arsip:
+    <<: *worker-hardened
+    image: ${POOLROUTER_BACKEND_IMAGE:?isi POOLROUTER_BACKEND_IMAGE di file env}
+    profiles: ["app"]
+    command: ["worker"]
+    environment:
+      <<: *backend-env
+      POOLROUTER_WORKER_MODE: arsip
+      POOLROUTER_DB_JOB_ARSIP_PASSWORD_FILE: /run/secrets/pr_job_arsip
+      POOLROUTER_ARSIP_KEK_ID: ${POOLROUTER_ARSIP_KEK_ID:?isi POOLROUTER_ARSIP_KEK_ID di file env}
+      POOLROUTER_ARSIP_KEK_PUBLIK_FILE: /run/secrets/poolrouter_arsip_kek_publik
+    secrets: [pr_job_arsip, poolrouter_arsip_kek_publik, redis_password, rabbitmq_password]
+
+  # Restore arsip (ADR-0006 rev 4 §8.1 butir 9, 12). Satu-satunya proses dengan kunci privat KEK arsip.
+  # Binary sama dengan worker lain, mode berbeda, deployment terpisah. Tanpa `ports`.
+  backend-worker-restore:
+    <<: *worker-hardened
+    image: ${POOLROUTER_BACKEND_IMAGE:?isi POOLROUTER_BACKEND_IMAGE di file env}
+    profiles: ["app"]
+    command: ["worker"]
+    environment:
+      <<: *backend-env
+      POOLROUTER_WORKER_MODE: restore
+      POOLROUTER_DB_RESTORE_PASSWORD_FILE: /run/secrets/pr_restore
+      POOLROUTER_ARSIP_KEK_ID: ${POOLROUTER_ARSIP_KEK_ID:?isi POOLROUTER_ARSIP_KEK_ID di file env}
+      POOLROUTER_ARSIP_KEK_PRIVAT_FILE: /run/secrets/poolrouter_arsip_kek_privat
+    secrets: [pr_restore, poolrouter_arsip_kek_privat, redis_password, rabbitmq_password]
+
   frontend:
     image: ${POOLROUTER_FRONTEND_IMAGE:?isi POOLROUTER_FRONTEND_IMAGE di file env}
     profiles: ["app"]
@@ -230,6 +272,14 @@ secrets:
     file: ${POOLROUTER_SECRETS_DIR:?}/pr_webhook
   pr_worker:
     file: ${POOLROUTER_SECRETS_DIR:?}/pr_worker
+  pr_job_arsip:
+    file: ${POOLROUTER_SECRETS_DIR:?}/pr_job_arsip
+  pr_restore:
+    file: ${POOLROUTER_SECRETS_DIR:?}/pr_restore
+  poolrouter_arsip_kek_publik:
+    file: ${POOLROUTER_SECRETS_DIR:?}/poolrouter_arsip_kek_publik
+  poolrouter_arsip_kek_privat:
+    file: ${POOLROUTER_SECRETS_DIR:?}/poolrouter_arsip_kek_privat
   poolrouter_kek:
     file: ${POOLROUTER_SECRETS_DIR:?}/poolrouter_kek
   poolrouter_jwt_signing_key:

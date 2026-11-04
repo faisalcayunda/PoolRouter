@@ -27,6 +27,14 @@ services:
     environment:
       POOLROUTER_DB_SSLMODE: disable
 
+  backend-worker-arsip:
+    environment:
+      POOLROUTER_DB_SSLMODE: disable
+
+  backend-worker-restore:
+    environment:
+      POOLROUTER_DB_SSLMODE: disable
+
   mock-dukcapil:
     image: ${POOLROUTER_MOCK_DUKCAPIL_IMAGE:?isi POOLROUTER_MOCK_DUKCAPIL_IMAGE di file env}
     profiles: ["mock"]
