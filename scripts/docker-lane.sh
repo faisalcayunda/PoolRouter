@@ -17,7 +17,8 @@ require_issue() {
   [[ "${1:-}" =~ ^SHAA-[0-9]+$ ]] || die "argumen harus berbentuk SHAA-<n>"
 }
 
-free_gb() { df -BG --output=avail "$1" | tail -1 | tr -dc '0-9'; }
+# df -P -k berlaku di Linux dan macOS (df -BG hanya Linux); kolom 4 = tersedia dalam KiB.
+free_gb() { df -Pk "$1" | tail -1 | awk '{print int($4 / 1048576)}'; }
 
 check() {
   local root_dir free_root free_data
