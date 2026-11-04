@@ -151,9 +151,20 @@ lint: check-label $(CHECK_DISK)
 fmt: check-label $(CHECK_DISK)
 	$(RUN) cargo fmt --all
 
+# clean (SHAA-391): artefak build milik root (container menulis sebagai root), jadi `rm` dari host gagal
+# Permission denied. Container berlabel menghapus `target` dan `.cache`; yang di-mount hanya direktori
+# backend checkout ini (bukan /repo, bukan akar repo). Nama yang dihapus ditulis literal, tidak dari variabel.
+# Penjaga: cwd harus /work dan berisi Cargo.toml sebelum rm. Tidak memakai kunci build (bukan build berat).
+# RUNNER=native (CI): artefak milik user sendiri, rm host dengan penjaga yang sama terhadap direktori ini.
+ifneq ($(filter podman docker,$(RUNNER)),)
 clean: check-label
-	$(RUN) cargo clean
-	$(RUN) rm -rf -- .cache/cargo/registry/cache
+	$(CONTAINER_ENGINE) run --rm --label $(CONTAINER_LABEL) -v "$(CURDIR)":/work -w /work $(RUST_IMAGE) \
+		sh -c 'set -eu; [ "$$(pwd -P)" = /work ] && [ -f /work/Cargo.toml ] || { echo "clean: bukan direktori backend, berhenti" >&2; exit 1; }; rm -rf -- /work/target /work/.cache'
+else
+clean:
+	@set -eu; d=$$(pwd -P); [ -f "$$d/Cargo.toml" ] && [ -e "$$d/../.git" ] || { echo "clean: bukan direktori backend checkout, berhenti" >&2; exit 1; }; \
+	rm -rf -- "$$d/target" "$$d/.cache"
+endif
 
 # OpenAPI is generated from code (ADR-0004 section 4.1, utoipa code-first).
 openapi: check-label $(CHECK_DISK)
