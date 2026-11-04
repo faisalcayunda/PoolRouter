@@ -60,7 +60,7 @@ WORK_DIR := $(if $(filter podman docker,$(RUNNER)),/work,$(CURDIR))
 # Repo root on the execution side (/repo is the read-only mount in the podman container).
 REPO_DIR := $(if $(filter podman docker,$(RUNNER)),/repo,$(CURDIR)/..)
 
-.PHONY: help check-label setup test test-rust db-test uji-lua lua-rakit lua-rakit-check lint fmt clean openapi openapi-check
+.PHONY: help check-label setup test test-rust db-test uji-lua uji-redis uji-redis-cargo lua-rakit lua-rakit-check lint fmt clean openapi openapi-check
 
 # Podman toolchain containers must carry the owning issue label, so untracked containers cannot appear (SHAA-222).
 # Docker lane: cek ruang kosong sebelum target apa pun yang memakai container (SHAA-373).
@@ -99,7 +99,7 @@ setup: check-label $(CHECK_DISK)
 	install -m 0755 "$$t/cargo-deny-$(CARGO_DENY_VERSION)-$$arch-unknown-linux-musl/cargo-deny" "$$CARGO_HOME/bin/cargo-deny"; \
 	cargo deny --version'
 
-test: test-rust db-test uji-lua
+test: test-rust db-test uji-lua uji-redis
 
 test-rust: check-label $(CHECK_DISK)
 	$(HEAVY) cargo test --workspace --all-targets --locked
@@ -131,6 +131,17 @@ lua-rakit-check:
 LUA_ENGINE ?= $(if $(filter docker,$(RUNNER)),docker,podman)
 uji-lua: check-label $(CHECK_DISK) lua-rakit-check
 	CONTAINER_ENGINE=$(LUA_ENGINE) SHAA_ISSUE=$(patsubst shaal.issue=%,%,$(CONTAINER_LABEL)) sh lua/test/run.sh
+
+# Fail-closed, failover (`run_id` berubah) dan rebuild terhadap Redis sungguhan (SHAA-195).
+# Redis jalan di jaringan host (port UJI_REDIS_PORT, default 16391) supaya container cargo
+# menjangkaunya; `uji-redis-cargo` menjalankan uji `#[ignore]` di crate core lewat kunci build.
+uji-redis: check-label $(CHECK_DISK)
+	CONTAINER_ENGINE=$(LUA_ENGINE) SHAA_ISSUE=$(patsubst shaal.issue=%,%,$(CONTAINER_LABEL)) \
+	sh lua/test/uji-redis.sh "$(MAKE) uji-redis-cargo RUNNER=$(RUNNER) CONTAINER_LABEL=$(CONTAINER_LABEL)"
+
+uji-redis-cargo: BUILD_LOCK_OPTS += --network host -e POOLROUTER_TEST_REDIS -e POOLROUTER_TEST_FASE -e POOLROUTER_TEST_RUN_ID_LAMA
+uji-redis-cargo: check-label $(CHECK_DISK)
+	$(HEAVY) cargo test --locked -p poolrouter-core --test pemulihan_redis -- --ignored --test-threads=1 --nocapture
 
 lint: check-label $(CHECK_DISK)
 	$(RUN) cargo fmt --all --check
