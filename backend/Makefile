@@ -194,7 +194,7 @@ ifeq ($(RUNNER),docker)
 # Sisa lama (root-owned) dibersihkan lewat container root, hanya di dalam workdir ini.
 clean: check-label
 	docker run --rm $(if $(CONTAINER_LABEL),--label $(CONTAINER_LABEL)) -v "$(CURDIR)":/work -w /work $(RUST_IMAGE) \
-	  rm -rf -- target .cache/cargo .cache/rustup .cache/oasdiff
+	  rm -rf -- target .cache
 
 # Hapus isi target bersama dengan `cargo clean`, di bawah kunci heavy (exit 75 bila kunci dipegang build lain).
 # Hanya target build; cargo-home bersama tidak disentuh.
@@ -209,9 +209,9 @@ clean-cache-shared: check-label
 	@mkdir -p "$(SHARED_TARGET_DIR)" "$(SHARED_CARGO_HOME)/cargo" "$(SHARED_CARGO_HOME)/rustup"
 	$(HEAVY) sh -c 'rm -rf -- $(CT_CARGO_HOME)/registry $(CT_CARGO_HOME)/git $(if $(CLEAN_TOOLCHAIN),$(CT_CARGO_HOME)/bin $(CT_RUSTUP_HOME)/toolchains $(CT_RUSTUP_HOME)/settings.toml $(CT_RUSTUP_HOME)/update-hashes)'
 else
+# Mode podman menulis target dan .cache sebagai root di checkout ini; hapus lewat container, bukan `rm` host.
 clean: check-label
-	$(RUN) cargo clean
-	$(RUN) rm -rf -- .cache/cargo/registry/cache
+	$(RUN) rm -rf -- target .cache
 
 clean-shared:
 	@echo "clean-shared hanya untuk RUNNER=docker" >&2; exit 2
