@@ -7,6 +7,9 @@ SHELL := /bin/sh
 .NOTPARALLEL:
 
 RUNNER ?= podman
+# Engine kontainer untuk RUNNER=podman atau RUNNER=docker. Docker dipakai lane Docker (SHAA-373, keputusan Luca).
+CONTAINER_ENGINE := $(if $(filter docker,$(RUNNER)),docker,podman)
+export BUILD_LOCK_ENGINE := $(CONTAINER_ENGINE)
 # Must match rust-toolchain.toml and [workspace.package] rust-version (ADR-0004 section 2). Never `latest`.
 # Pinned by tag and digest, same literal as backend/Containerfile line 17, .github/workflows/backend.yml line 30,
 # and .github/workflows/contract.yml line 29. Changing one means changing all four (SHAA-207).
@@ -36,11 +39,11 @@ export CARGO_TERM_COLOR ?= never
 
 include ../scripts/build-lock.mk
 
-ifeq ($(RUNNER),podman)
-RUN_OPTS = podman run --rm --memory $(CONTAINER_MEMORY) $(if $(CONTAINER_LABEL),--label $(CONTAINER_LABEL)) \
+ifneq ($(filter podman docker,$(RUNNER)),)
+RUN_OPTS = $(CONTAINER_ENGINE) run --rm --memory $(CONTAINER_MEMORY) $(if $(CONTAINER_LABEL),--label $(CONTAINER_LABEL)) \
 	-v "$(CURDIR)":/work -v "$(CURDIR)/../":/repo:ro -w /work \
 	-e CARGO_HOME=/work/.cache/cargo -e RUSTUP_HOME=/work/.cache/rustup -e CARGO_TERM_COLOR=$(CARGO_TERM_COLOR) \
-	-e CARGO_BUILD_JOBS=$(JOBS) -e SQLX_OFFLINE=true -e POOLROUTER_REPO_ROOT=/repo \
+	-e CARGO_BUILD_JOBS=$(JOBS) -e CARGO_INCREMENTAL=0 -e CARGO_PROFILE_DEV_DEBUG=0 -e CARGO_PROFILE_TEST_DEBUG=0 -e SQLX_OFFLINE=true -e POOLROUTER_REPO_ROOT=/repo \
 	-e PATH=/work/.cache/cargo/bin:/usr/local/cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 RUN = $(RUN_OPTS) $(RUST_IMAGE)
 # Build berat (compile) lewat kunci bersama; satu build per host (K-41).
@@ -53,14 +56,14 @@ export SQLX_OFFLINE := true
 endif
 
 # Path backend di sisi eksekusi: /work di dalam container Podman, direktori checkout untuk RUNNER=native (CI).
-WORK_DIR := $(if $(filter podman,$(RUNNER)),/work,$(CURDIR))
+WORK_DIR := $(if $(filter podman docker,$(RUNNER)),/work,$(CURDIR))
 # Repo root on the execution side (/repo is the read-only mount in the podman container).
-REPO_DIR := $(if $(filter podman,$(RUNNER)),/repo,$(CURDIR)/..)
+REPO_DIR := $(if $(filter podman docker,$(RUNNER)),/repo,$(CURDIR)/..)
 
 .PHONY: help check-label setup test test-rust db-test uji-lua lua-rakit lua-rakit-check lint fmt clean openapi openapi-check
 
 # Podman toolchain containers must carry the owning issue label, so untracked containers cannot appear (SHAA-222).
-ifeq ($(RUNNER),podman)
+ifneq ($(filter podman docker,$(RUNNER)),)
 check-label:
 	@echo "$(CONTAINER_LABEL)" | grep -Eq '^shaal\.issue=SHAA-[0-9]+$$' || { echo "CONTAINER_LABEL wajib shaal.issue=SHAA-<n> untuk RUNNER=podman (contoh: make -C backend lint CONTAINER_LABEL=shaal.issue=SHAA-222)" >&2; exit 2; }
 else
@@ -99,7 +102,7 @@ test-rust: check-label
 # Schema tests (SHAA-193): roles bootstrap, migrations from empty, grant matrix, constraints, functions.
 # Starts a throwaway PostgreSQL 17 container labelled shaal.issue=<n> (from CONTAINER_LABEL) and removes it afterwards.
 # It needs a container engine on the host, so it is independent of RUNNER.
-DB_ENGINE ?= podman
+DB_ENGINE ?= $(if $(filter docker,$(RUNNER)),docker,podman)
 db-test: check-label
 	CONTAINER_ENGINE=$(DB_ENGINE) SHAA_ISSUE=$(patsubst shaal.issue=%,%,$(CONTAINER_LABEL)) sh db/test/run.sh
 
@@ -120,7 +123,7 @@ lua-rakit-check:
 
 # Harness runs the scripts against a real Redis (throwaway container, pinned image).
 # Like db-test it needs a container engine on the host, so it is independent of RUNNER.
-LUA_ENGINE ?= podman
+LUA_ENGINE ?= $(if $(filter docker,$(RUNNER)),docker,podman)
 uji-lua: check-label lua-rakit-check
 	CONTAINER_ENGINE=$(LUA_ENGINE) SHAA_ISSUE=$(patsubst shaal.issue=%,%,$(CONTAINER_LABEL)) sh lua/test/run.sh
 
