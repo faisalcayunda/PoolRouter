@@ -10,7 +10,7 @@ Runbook ini menjelaskan backup, cek rutin, restore PITR, restore setelah kehilan
 ## Prasyarat
 
 - Image `localhost/poolrouter-postgres:dev` dibangun dengan `make image-postgres` (dev) atau ditarik dari registry dengan digest (staging dan prod).
-- Secret di direktori di luar repo (`POOLROUTER_SECRETS_DIR`, mode `0700`, file `0444`). Untuk backup ditambah `pgbackrest_repo1_cipher_pass`, passphrase repo. Isi file tidak pernah ditulis di issue, komentar, atau repo.
+- Secret di direktori di luar repo (`POOLROUTER_SECRETS_DIR`, mode `0700`, file `0444`). Untuk backup ditambah `pgbackrest_repo1_cipher_pass`, passphrase repo. Di staging dan prod ditambah `pg_server_crt` dan `pg_server_key` (sertifikat TLS server dari PKI yang disetujui). Isi file tidak pernah ditulis di issue, komentar, atau repo.
 - File env di luar repo, dibuat dari `deploy/compose/env/<env>.env.example`. Variabel backup: `PGBACKREST_STANZA`, `PGBACKREST_REPO1_TYPE`, `PGBACKREST_REPO1_RETENTION_FULL` (bawaan 7), dan `PR_REPO1_RETENTION_DIFF` (kosong = bawaan pgBackRest; jadwal hemat mengisi 8), `PR_BACKUP_FULL_WEEKDAY` (`daily` atau 1–7, bawaan `daily`).
 - Di mesin lane (sandbox instabox): Docker lane SHAA-373 (`docs/runbook/docker-lane.md`), dengan cek ruang kosong dan label `shaal.issue=SHAA-381` pada setiap resource.
 
@@ -19,7 +19,8 @@ Runbook ini menjelaskan backup, cek rutin, restore PITR, restore setelah kehilan
 | Lokasi | Isi |
 |---|---|
 | `deploy/compose/backup/Containerfile` | Image PostgreSQL 17 (digest dipin) + pgBackRest 2.60.0 (versi dikunci), user 10001:10001 |
-| `deploy/compose/backup/pr-pg-entrypoint.sh` | Baca secret, buat sertifikat TLS dev bila belum ada, jalankan penjadwal, lalu entrypoint resmi |
+| `deploy/compose/backup/pr-pg-entrypoint.sh` | Baca secret, pasang sertifikat TLS (secret di staging dan prod, self-signed hanya dev), jalankan penjadwal, lalu entrypoint resmi |
+| `deploy/compose/backup/test/drive.sh` | Uji penjadwal dengan jam simulasi dan stub pgbackrest, tanpa Docker dan postgres |
 | `deploy/compose/backup/pr-backup-scheduler.sh` | Penjadwal: stanza-create dan check saat start, full, diferensial, dan verify |
 | `deploy/compose/backup/drill/pr-drill.sh` | Alat drill: penulis sentinel, checksum, restore, serve, dan hitung RPO |
 | `deploy/compose/compose.yaml` | Service `postgres` (argumen `archive_*`, `ssl`), volume `pg_backup_repo`, secret cipher |
@@ -35,7 +36,11 @@ Repo backup berada di volume `pg_backup_repo`, terpisah dari volume data `pg_dat
 | 19.00 UTC (02.00 WIB) | Verifikasi harian | `pgbackrest --stanza=poolrouter verify` |
 | Terus-menerus | Arsip WAL | `archive_command = pgbackrest archive-push %p`, `archive_timeout = 60`, `archive-async=y` |
 
-Penjadwal dan keluarannya ada di log container `postgres` (`docker logs <kontainer>`, baris berawalan `pr-backup`). Baris yang berisi `GAGAL` harus ditindaklanjuti. Penjadwal menulis baris hanya saat ada kegagalan atau saat backup mulai.
+Slot dihitung per jam UTC, tidak per menit. Jika loop tertunda, misalnya full berjalan lebih dari satu jam, slot jam berikutnya tetap dijalankan. Setiap jam yang terlewat dicatat sebagai `slot <jam> UTC dilewati`, dan verify yang terlewat dikejar. Start container di tengah jam tidak menjalankan slot jam itu, dan dicatat sebagai `tidak dijalankan ulang saat start`.
+
+Keluaran penjadwal ada di log container `postgres` (`docker logs <kontainer>`, baris berawalan `pr-backup`). Setiap backup yang mulai dicatat, begitu juga hasilnya (sukses atau `GAGAL`), setiap verify, dan setiap slot yang dilewati. Baris `GAGAL` atau `dilewati` harus ditindaklanjuti.
+
+**Pengawasan:** penjadwal berjalan sebagai proses latar belakang tanpa supervisi. Jika proses itu mati, backup berhenti tanpa gejala di log postgres. Deteksinya bergantung pada metrik umur backup terakhir dari exporter (SHAA-381 lingkup 4), yang harus dipasang sebagai syarat alert SHAA-382.
 
 ## Cek rutin
 
@@ -181,7 +186,7 @@ Alert dari SHAA-382 (Shiro) menaut ke anchor di bawah. Setiap bagian punya cek p
 
 - **Cek pertama:** `pgbackrest info` (timestamp full terakhir yang sukses) dan `docker logs <kontainer> 2>&1 | grep "pr-backup"`.
 - **Ambang:** 26 jam pada jadwal harian. 8 hari pada jadwal hemat (ADR-0005 §5.1 butir c).
-- **Penyebab umum:** penjadwal berhenti (kontainer atau proses penjadwal mati), full gagal (lihat log `GAGAL`), atau repo penuh.
+- **Penyebab umum:** penjadwal berhenti (kontainer atau proses penjadwal mati, tanpa supervisi, lihat bagian Jadwal), full gagal (lihat log `GAGAL`), atau repo penuh.
 - **Tindakan:** jalankan full manual sekali (`pgbackrest --stanza=poolrouter --type=full backup`) lalu cek `info`. Jika gagal berulang, eskalasi ke Huan.
 
 <a id="alert-verify-gagal"></a>
@@ -205,13 +210,25 @@ Alert dari SHAA-382 (Shiro) menaut ke anchor di bawah. Setiap bagian punya cek p
 - **Penyebab umum:** stanza baru dan belum berjalan 7 hari (wajar, catat sebagai ekspektasi, bukan insiden), expire terlalu agresif (retensi di env turun), atau full gagal berulang.
 - **Tindakan:** jangan menurunkan retensi untuk menutup alert. Pastikan full berjalan (lihat [full terlalu tua](#alert-full-terlalu-tua)). Jika stanza baru, catat tanggal mulai di issue.
 
+## Pembaruan versi pgBackRest
+
+Versi dikunci di `deploy/compose/backup/Containerfile` (`pgbackrest=2.60.0-1.pgdg12+1`). Repositori PGDG dapat menggeser versi itu, dan build akan rusak. Langkah bump:
+
+1. Di image dasar, cek versi kandidat: `apt-cache policy pgbackrest` (setelah `apt-get update`).
+2. Ubah baris `pgbackrest=<versi>` dan, bila base berubah, digest `FROM` di Containerfile. Digest base dipin dari image yang sudah ditarik.
+3. `make image-postgres CONTAINER_ENGINE=docker`, lalu `make compose-lint CONTAINER_ENGINE=docker`.
+4. Uji minimal: `check`, backup full, `verify`, dan satu skenario drill (a). Hasilnya dicatat di issue.
+5. Catat versi lama dan baru, hash commit, dan tanggal di issue.
+
 ## Batasan
 
 - **Belum diuji:** repo `s3` (OBS). Konfigurasi S3 belum ada di compose, dan secret kredensial S3 belum didefinisikan. Uji dilakukan terhadap object storage S3-compatible dari SHAA-334 bila sudah ada di `main`.
 - **Belum diuji:** penjadwal berjalan sesuai jam (18.00, 00/06/12, 19.00 UTC). Perintahnya diuji manual dengan urutan yang sama, tetapi jadwal nyata belum diamati.
 - **Belum diukur:** umur full tertua setelah lebih dari 8 hari (butir non-blocking, SHAA-206), dan volume repo per hari dengan `archive_timeout = 60` setelah 24 jam. Keduanya butuh waktu berjalan.
-- **TLS dev:** sertifikat server self-signed dibuat `pr-pg-entrypoint.sh` jika belum ada. Staging dan prod wajib memasang sertifikat sungguhan lewat volume.
+- **TLS:** di dev, sertifikat self-signed dibuat `pr-pg-entrypoint.sh` bila belum ada. Di staging dan prod, secret `pg_server_crt` dan `pg_server_key` wajib ada. Tanpa keduanya, start gagal, tidak ada self-signed diam-diam.
+- **Kontainer postgres tidak read_only dan tanpa tmpfs:** pengecualian yang dicatat, karena PGDATA, WAL, spool, dan log pgBackRest ditulis ke volume dan path yang ada. Kontrol lain tetap berlaku (cap_drop ALL, no-new-privileges, user 10001).
 - **Staging dan prod:** belum diuji. Mengikuti runbook deploy dan keputusan K-38.
+- Sentinel drill: interval nyata lebih dari 1 detik (`sleep 1` ditambah waktu `exec`). RPO tetap memakai `clock_timestamp()` server, jadi angkanya tidak terpengaruh.
 - Passphrase repo dan variabel S3 bisa dibaca dari `/proc/1/environ` oleh proses dengan uid yang sama di dalam container. Pola ini sama dengan RabbitMQ (KD-1). Container tidak diberi akses lain ke secret.
 
 ## Pembersihan

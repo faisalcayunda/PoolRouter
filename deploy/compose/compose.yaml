@@ -30,12 +30,16 @@ services:
     image: ${POOLROUTER_POSTGRES_IMAGE:?isi POOLROUTER_POSTGRES_IMAGE di file env}
     profiles: ["bundled-infra"]
     # Image berjalan sebagai 10001:10001 (Containerfile). Tanpa cap tambahan dan tanpa root.
+    # Pengecualian: tidak read_only dan tanpa tmpfs, karena PGDATA, WAL, spool, dan log pgBackRest ditulis
+    # ke volume dan path yang sudah ada (ADR-0005 §4.5). Lain-lain tetap: cap_drop ALL, no-new-privileges.
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
     environment:
       POSTGRES_DB: ${POSTGRES_DB:?isi POSTGRES_DB di file env}
       POSTGRES_USER: ${POSTGRES_USER:?isi POSTGRES_USER di file env}
       POSTGRES_PASSWORD_FILE: /run/secrets/db_password
+      # Menentukan apakah sertifikat self-signed boleh dibuat (hanya dev), pr-pg-entrypoint.sh.
+      POOLROUTER_ENV: ${POOLROUTER_ENV:?isi POOLROUTER_ENV di file env}
       # pgBackRest (ADR-0005 §4.5). Passphrase repo lewat secret pgbackrest_repo1_cipher_pass, bukan di sini.
       PGBACKREST_STANZA: ${PGBACKREST_STANZA:-poolrouter}
       PGBACKREST_PG1_PATH: /var/lib/postgresql/data

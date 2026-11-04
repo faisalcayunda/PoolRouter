@@ -16,6 +16,8 @@ services:
   postgres:
     restart: unless-stopped
     logging: *logging
+    # Sertifikat TLS server sungguhan (ssl = on). Tanpa ini start gagal, bukan self-signed diam-diam.
+    secrets: [pg_server_crt, pg_server_key]
     deploy:
       resources:
         limits: {cpus: "1.0", memory: 1g}
@@ -67,3 +69,10 @@ services:
     deploy:
       resources:
         limits: {cpus: "0.5", memory: 256m}
+
+# Sertifikat TLS server PostgreSQL (SHAA-381, Ridley review). Isi berkas dari PKI yang disetujui; tidak di repo.
+secrets:
+  pg_server_crt:
+    file: ${POOLROUTER_SECRETS_DIR:?isi POOLROUTER_SECRETS_DIR di file env}/pg_server_crt
+  pg_server_key:
+    file: ${POOLROUTER_SECRETS_DIR:?isi POOLROUTER_SECRETS_DIR di file env}/pg_server_key
