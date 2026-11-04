@@ -2552,6 +2552,7 @@ dependencies = [
  "apalis-amqp",
  "lapin",
  "poolrouter-core",
+ "uuid",
 ]
 
 [[package]]
