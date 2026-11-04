@@ -39,7 +39,7 @@ pub struct ProblemAdmin {
 }
 
 impl ProblemAdmin {
-    fn new(kode: ProblemKodeAdmin, status: u16) -> Self {
+    pub fn new(kode: ProblemKodeAdmin, status: u16) -> Self {
         Self {
             type_: kode.type_url(),
             title: kode.title().into(),
