@@ -133,7 +133,7 @@ uji-lua: check-label $(CHECK_DISK) lua-rakit-check
 	CONTAINER_ENGINE=$(LUA_ENGINE) SHAA_ISSUE=$(patsubst shaal.issue=%,%,$(CONTAINER_LABEL)) sh lua/test/run.sh
 
 # Fail-closed, failover (`run_id` berubah) dan rebuild terhadap Redis sungguhan (SHAA-195).
-# Redis jalan di jaringan host (port UJI_REDIS_PORT, default 16391) supaya container cargo
+# Redis jalan di jaringan host (port acak per proses, atau UJI_REDIS_PORT) supaya container cargo
 # menjangkaunya; `uji-redis-cargo` menjalankan uji `#[ignore]` di crate core lewat kunci build.
 uji-redis: check-label $(CHECK_DISK)
 	CONTAINER_ENGINE=$(LUA_ENGINE) SHAA_ISSUE=$(patsubst shaal.issue=%,%,$(CONTAINER_LABEL)) \
@@ -141,7 +141,7 @@ uji-redis: check-label $(CHECK_DISK)
 
 uji-redis-cargo: BUILD_LOCK_OPTS += --network host -e POOLROUTER_TEST_REDIS -e POOLROUTER_TEST_FASE -e POOLROUTER_TEST_RUN_ID_LAMA
 uji-redis-cargo: check-label $(CHECK_DISK)
-	$(HEAVY) cargo test --locked -p poolrouter-core --test pemulihan_redis -- --ignored --test-threads=1 --nocapture
+	$(HEAVY) cargo test --locked -p poolrouter-core --test pemulihan_redis --test kuota_store_redis -- --ignored --test-threads=1 --nocapture
 
 lint: check-label $(CHECK_DISK)
 	$(RUN) cargo fmt --all --check
