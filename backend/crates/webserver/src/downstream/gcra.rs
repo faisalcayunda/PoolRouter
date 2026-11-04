@@ -9,7 +9,10 @@ use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 /// Upper bound on tracked keys. Idle keys (theoretical arrival time already in
-/// the past) are dropped first, which never changes a decision.
+/// the past) are dropped first, which never changes a decision. When every key
+/// is still live the map stays full and a new key is refused (fail closed):
+/// the key space is attacker-controlled (unauthenticated `client_id`), so
+/// growth must be bounded and the O(n) sweep must not run per request.
 const MAX_KEYS: usize = 100_000;
 
 #[derive(Debug)]
@@ -18,7 +21,16 @@ pub struct Gcra {
     interval: Duration,
     /// Burst tolerance tau = (burst - 1) * T.
     tolerance: Duration,
-    tat: Mutex<HashMap<String, Instant>>,
+    state: Mutex<State>,
+}
+
+#[derive(Debug, Default)]
+struct State {
+    tat: HashMap<String, Instant>,
+    /// When the map was last swept; a sweep runs at most once per interval.
+    last_sweep: Option<Instant>,
+    /// Number of sweeps so far (observed by tests).
+    sweeps: u64,
 }
 
 impl Gcra {
@@ -30,7 +42,7 @@ impl Gcra {
         Self {
             interval,
             tolerance: interval * (burst - 1),
-            tat: Mutex::new(HashMap::new()),
+            state: Mutex::new(State::default()),
         }
     }
 
@@ -39,16 +51,27 @@ impl Gcra {
     pub fn check_at(&self, key: &str, now: Instant) -> Result<(), Duration> {
         // A poisoned lock only means another thread panicked mid-update; the map
         // stays structurally valid, so keep serving.
-        let mut map = self.tat.lock().unwrap_or_else(|e| e.into_inner());
-        if map.len() >= MAX_KEYS && !map.contains_key(key) {
-            map.retain(|_, tat| *tat > now);
+        let mut st = self.state.lock().unwrap_or_else(|e| e.into_inner());
+        if st.tat.len() >= MAX_KEYS && !st.tat.contains_key(key) {
+            let due = st
+                .last_sweep
+                .is_none_or(|t| now.saturating_duration_since(t) >= self.interval);
+            if due {
+                st.tat.retain(|_, tat| *tat > now);
+                st.last_sweep = Some(now);
+                st.sweeps += 1;
+            }
+            if st.tat.len() >= MAX_KEYS {
+                // Every tracked key is live: refuse the newcomer instead of growing.
+                return Err(self.interval);
+            }
         }
-        let tat = map.get(key).copied().map_or(now, |t| t.max(now));
+        let tat = st.tat.get(key).copied().map_or(now, |t| t.max(now));
         let ahead = tat - now;
         if ahead > self.tolerance {
             return Err(ahead - self.tolerance);
         }
-        map.insert(key.to_owned(), tat + self.interval);
+        st.tat.insert(key.to_owned(), tat + self.interval);
         Ok(())
     }
 
@@ -129,6 +152,33 @@ mod tests {
         }
         let later = t0 + Duration::from_secs(5);
         g.check_at("new", later).unwrap();
-        assert!(g.tat.lock().unwrap().len() < MAX_KEYS);
+        assert!(g.state.lock().unwrap().tat.len() < MAX_KEYS);
+    }
+
+    #[test]
+    fn full_map_of_live_keys_refuses_newcomers_without_growing_or_resweeping() {
+        let g = Gcra::per_minute(60, 1);
+        let t0 = Instant::now();
+        for i in 0..MAX_KEYS {
+            g.check_at(&format!("k{i}"), t0).unwrap();
+        }
+        // Newcomers inside the same interval: all keys are still live.
+        for i in 0..1_000 {
+            let wait = g.check_at(&format!("new{i}"), t0).unwrap_err();
+            assert_eq!(wait, Duration::from_secs(1));
+        }
+        let st = g.state.lock().unwrap();
+        assert_eq!(st.tat.len(), MAX_KEYS, "map must not grow");
+        assert!(
+            st.sweeps <= 1,
+            "sweep at most once per interval, got {}",
+            st.sweeps
+        );
+        drop(st);
+        // An existing key is still judged normally.
+        assert!(g.check_at("k0", t0).is_err());
+        // After the interval the keys are idle again, so a newcomer fits.
+        assert!(g.check_at("new", t0 + Duration::from_secs(2)).is_ok());
+        assert!(g.state.lock().unwrap().tat.len() < MAX_KEYS);
     }
 }
