@@ -512,7 +512,7 @@ CREATE CONSTRAINT TRIGGER blend_terminal_konsisten AFTER UPDATE OF status ON ble
 -- One row per change of the pair (effective state, dasar_hukum_ref), written under an advisory lock so instances that start
 -- together write once (compare-and-set against the last event). The trigger holds the rule for any writer; fn_catat_gerbang_blend
 -- is the entry point of the process start. DQ-63 (h)(i) read this table.
-CREATE TABLE gerbang_blend_peristiwa (
+CREATE TABLE audit_gerbang_blend (
   peristiwa_id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,   -- order of events
   terjadi_at timestamptz NOT NULL DEFAULT now(),
   jenis text NOT NULL CHECK (jenis IN ('gerbang_blend_dibuka', 'gerbang_blend_ditutup')),
@@ -528,15 +528,15 @@ CREATE TABLE gerbang_blend_peristiwa (
     OR (dasar_hukum_ref IS NULL AND sebab_tertutup IS NOT NULL
         AND (sebab_tertutup = 'rujukan_kosong') = coalesce(nilai_flag = 'true', false)))
 );
-CREATE FUNCTION tg_gerbang_blend_peristiwa() RETURNS trigger
+CREATE FUNCTION tg_audit_gerbang_blend() RETURNS trigger
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public AS $$
 DECLARE
-  v_terakhir gerbang_blend_peristiwa%ROWTYPE;
+  v_terakhir audit_gerbang_blend%ROWTYPE;
   v_lama_terbuka boolean := false;
   v_lama_ref text := '';
 BEGIN
-  PERFORM pg_advisory_xact_lock(hashtextextended('poolrouter.gerbang_blend_peristiwa', 0));
-  SELECT * INTO v_terakhir FROM gerbang_blend_peristiwa ORDER BY peristiwa_id DESC LIMIT 1;
+  PERFORM pg_advisory_xact_lock(hashtextextended('poolrouter.audit_gerbang_blend', 0));
+  SELECT * INTO v_terakhir FROM audit_gerbang_blend ORDER BY peristiwa_id DESC LIMIT 1;
   IF FOUND THEN
     v_lama_terbuka := v_terakhir.jenis = 'gerbang_blend_dibuka';
     v_lama_ref := coalesce(v_terakhir.dasar_hukum_ref, '');
@@ -548,11 +548,11 @@ BEGIN
   END IF;
   RETURN NEW;
 END $$;
-CREATE TRIGGER gerbang_blend_peristiwa_cas BEFORE INSERT ON gerbang_blend_peristiwa
-  FOR EACH ROW EXECUTE FUNCTION tg_gerbang_blend_peristiwa();
-CREATE TRIGGER gerbang_blend_peristiwa_append_only BEFORE UPDATE OR DELETE ON gerbang_blend_peristiwa
+CREATE TRIGGER audit_gerbang_blend_cas BEFORE INSERT ON audit_gerbang_blend
+  FOR EACH ROW EXECUTE FUNCTION tg_audit_gerbang_blend();
+CREATE TRIGGER audit_gerbang_blend_append_only BEFORE UPDATE OR DELETE ON audit_gerbang_blend
   FOR EACH ROW EXECUTE FUNCTION tg_append_only();
-CREATE TRIGGER gerbang_blend_peristiwa_no_truncate BEFORE TRUNCATE ON gerbang_blend_peristiwa
+CREATE TRIGGER audit_gerbang_blend_no_truncate BEFORE TRUNCATE ON audit_gerbang_blend
   FOR EACH STATEMENT EXECUTE FUNCTION tg_append_only();
 
 -- Process start: derive the effective state (GB-01: open only for the string 'true' AND a non-empty reference) and write the
@@ -565,11 +565,11 @@ DECLARE
 BEGIN
   IF p_nilai_flag IS NOT DISTINCT FROM 'true' AND v_ref IS NOT NULL THEN
     v_jenis := 'gerbang_blend_dibuka';
-    INSERT INTO gerbang_blend_peristiwa (jenis, nilai_flag, dasar_hukum_ref, instance) VALUES (v_jenis, p_nilai_flag, v_ref, p_instance);
+    INSERT INTO audit_gerbang_blend (jenis, nilai_flag, dasar_hukum_ref, instance) VALUES (v_jenis, p_nilai_flag, v_ref, p_instance);
   ELSE
     v_jenis := 'gerbang_blend_ditutup';
     v_ref := NULL;
-    INSERT INTO gerbang_blend_peristiwa (jenis, nilai_flag, dasar_hukum_ref, sebab_tertutup, instance)
+    INSERT INTO audit_gerbang_blend (jenis, nilai_flag, dasar_hukum_ref, sebab_tertutup, instance)
       VALUES (v_jenis, p_nilai_flag, NULL, CASE WHEN p_nilai_flag IS NOT DISTINCT FROM 'true' THEN 'rujukan_kosong' ELSE 'flag_bukan_true' END, p_instance);
   END IF;
   RETURN v_jenis;

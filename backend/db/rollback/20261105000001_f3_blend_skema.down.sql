@@ -5,7 +5,7 @@
 -- request rows: they are ordinary F0 requests once blend_id is dropped.
 DO $$
 BEGIN
-  IF (SELECT count(*) FROM blend) + (SELECT count(*) FROM endpoint_blend) + (SELECT count(*) FROM gerbang_blend_peristiwa)
+  IF (SELECT count(*) FROM blend) + (SELECT count(*) FROM endpoint_blend) + (SELECT count(*) FROM audit_gerbang_blend)
      + (SELECT count(*) FROM provider_penanda_audit WHERE aktor <> 'migrasi') + (SELECT count(*) FROM request WHERE blend_id IS NOT NULL)
      + (SELECT count(*) FROM audit_akses WHERE target_blend_id IS NOT NULL) + (SELECT count(*) FROM audit_konfigurasi WHERE entitas_jenis = 'endpoint_blend') > 0
      AND coalesce(current_setting('poolrouter.izinkan_hapus_data_f3', true), '') <> 'ya' THEN
@@ -57,12 +57,12 @@ ALTER TABLE audit_konfigurasi ADD CONSTRAINT audit_konfigurasi_entitas_jenis_che
   'endpoint_metadata_field', 'konfigurasi_platform', 'admin_user'));
 
 DROP TABLE blend_webhook_log, blend_status_history, blend;
-DROP TABLE gerbang_blend_peristiwa;
+DROP TABLE audit_gerbang_blend;
 DROP TRIGGER provider_penanda_guard ON provider;
 DROP TABLE provider_penanda_audit;
 ALTER TABLE provider DROP COLUMN butuh_dasar_hukum_blend;
 ALTER TABLE endpoint_blend DROP CONSTRAINT endpoint_blend_versi_fk;
 DROP TABLE endpoint_blend_komponen, endpoint_blend_versi, endpoint_blend;
 DROP FUNCTION tg_blend_transisi(), tg_blend_punya_history(), tg_blend_jumlah_anak(), tg_blend_terminal_konsisten(),
-  tg_gerbang_blend_peristiwa(), fn_catat_gerbang_blend(text, text, text), fn_purge_blend_payload(integer),
+  tg_audit_gerbang_blend(), fn_catat_gerbang_blend(text, text, text), fn_purge_blend_payload(integer),
   tg_provider_penanda_guard(), tg_endpoint_blend_aktivasi(), tg_blend_komponen_beku(), tg_blend_versi_min_komponen();

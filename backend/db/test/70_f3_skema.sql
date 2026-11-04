@@ -28,9 +28,9 @@ INSERT INTO f3_kolom VALUES
  ('blend_status_history','objek_pemicu_id','uuid','Y'),
  ('blend_webhook_log','blend_id','uuid','N'),('blend_webhook_log','attempt_no','integer','N'),('blend_webhook_log','hasil','text','N'),
  ('request','blend_id','uuid','Y'),('audit_akses','target_blend_id','uuid','Y'),
- ('gerbang_blend_peristiwa','jenis','text','N'),('gerbang_blend_peristiwa','nilai_flag','text','Y'),
- ('gerbang_blend_peristiwa','dasar_hukum_ref','character varying(200)','Y'),('gerbang_blend_peristiwa','sebab_tertutup','text','Y'),
- ('gerbang_blend_peristiwa','instance','character varying(128)','N');
+ ('audit_gerbang_blend','jenis','text','N'),('audit_gerbang_blend','nilai_flag','text','Y'),
+ ('audit_gerbang_blend','dasar_hukum_ref','character varying(200)','Y'),('audit_gerbang_blend','sebab_tertutup','text','Y'),
+ ('audit_gerbang_blend','instance','character varying(128)','N');
 
 SELECT t.ok(t.hitung($q$
   SELECT count(*) FROM f3_kolom k

@@ -280,19 +280,19 @@ SELECT t.ok(fn_catat_gerbang_blend('true', 'DOC-UJI-2', 'i1') = 'gerbang_blend_d
 SELECT t.ok(fn_catat_gerbang_blend('false', NULL, 'i1') = 'gerbang_blend_ditutup', 'GB-09: open -> closed writes one ditutup');
 SELECT t.ok(fn_catat_gerbang_blend(NULL, 'DOC-UJI-2', 'i1') IS NULL, 'GB-09: staying closed writes nothing, whatever the raw flag');
 SELECT t.ok(fn_catat_gerbang_blend('true', '  ', 'i1') IS NULL, 'GB-09: flag true without a reference stays closed and writes nothing');
-SELECT t.ok(t.hitung($q$SELECT count(*) FROM gerbang_blend_peristiwa$q$) = 3, 'GB-09: three events for the whole sequence');
-SELECT t.ok((SELECT sebab_tertutup FROM gerbang_blend_peristiwa WHERE jenis = 'gerbang_blend_ditutup') = 'flag_bukan_true', 'GB-09: ditutup records sebab_tertutup');
-SELECT t.gagal($$INSERT INTO gerbang_blend_peristiwa (jenis, nilai_flag, sebab_tertutup, instance) VALUES ('gerbang_blend_ditutup', 'false', 'flag_bukan_true', 'i9')$$, '23505',
+SELECT t.ok(t.hitung($q$SELECT count(*) FROM audit_gerbang_blend$q$) = 3, 'GB-09: three events for the whole sequence');
+SELECT t.ok((SELECT sebab_tertutup FROM audit_gerbang_blend WHERE jenis = 'gerbang_blend_ditutup') = 'flag_bukan_true', 'GB-09: ditutup records sebab_tertutup');
+SELECT t.gagal($$INSERT INTO audit_gerbang_blend (jenis, nilai_flag, sebab_tertutup, instance) VALUES ('gerbang_blend_ditutup', 'false', 'flag_bukan_true', 'i9')$$, '23505',
   'DQ-63 i: two ditutup in a row are refused for any writer');
-SELECT t.gagal($$INSERT INTO gerbang_blend_peristiwa (jenis, nilai_flag, dasar_hukum_ref, instance) VALUES ('gerbang_blend_dibuka', 'true', NULL, 'i9')$$, '23514',
+SELECT t.gagal($$INSERT INTO audit_gerbang_blend (jenis, nilai_flag, dasar_hukum_ref, instance) VALUES ('gerbang_blend_dibuka', 'true', NULL, 'i9')$$, '23514',
   'DQ-63 i: dibuka without dasar_hukum_ref is refused');
-SELECT t.gagal($$INSERT INTO gerbang_blend_peristiwa (jenis, nilai_flag, dasar_hukum_ref, instance) VALUES ('gerbang_blend_dibuka', 'false', 'DOC-X', 'i9')$$, '23514',
+SELECT t.gagal($$INSERT INTO audit_gerbang_blend (jenis, nilai_flag, dasar_hukum_ref, instance) VALUES ('gerbang_blend_dibuka', 'false', 'DOC-X', 'i9')$$, '23514',
   'DQ-63 i: dibuka needs nilai_flag = true');
-SELECT t.gagal($$INSERT INTO gerbang_blend_peristiwa (jenis, nilai_flag, instance) VALUES ('gerbang_blend_ditutup', 'false', 'i9')$$, '23514', 'DQ-63 i: ditutup needs sebab_tertutup');
-SELECT t.gagal($$INSERT INTO gerbang_blend_peristiwa (jenis, nilai_flag, sebab_tertutup, instance) VALUES ('gerbang_blend_ditutup', 'true', 'flag_bukan_true', 'i9')$$, '23514',
+SELECT t.gagal($$INSERT INTO audit_gerbang_blend (jenis, nilai_flag, instance) VALUES ('gerbang_blend_ditutup', 'false', 'i9')$$, '23514', 'DQ-63 i: ditutup needs sebab_tertutup');
+SELECT t.gagal($$INSERT INTO audit_gerbang_blend (jenis, nilai_flag, sebab_tertutup, instance) VALUES ('gerbang_blend_ditutup', 'true', 'flag_bukan_true', 'i9')$$, '23514',
   'sebab_tertutup matches the raw flag (true without reference = rujukan_kosong)');
-SELECT t.gagal($$DELETE FROM gerbang_blend_peristiwa$$, '23000', 'the gate trail is append-only');
-SELECT t.gagal($$TRUNCATE gerbang_blend_peristiwa$$, '23000', 'the gate trail cannot be truncated');
+SELECT t.gagal($$DELETE FROM audit_gerbang_blend$$, '23000', 'the gate trail is append-only');
+SELECT t.gagal($$TRUNCATE audit_gerbang_blend$$, '23000', 'the gate trail cannot be truncated');
 ROLLBACK;
 
 -- ================================================================ BP-01 / BP-02 / BP-05 payload retention

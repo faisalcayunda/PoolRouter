@@ -7,12 +7,12 @@ SELECT t.ok(t.hitung($q$
   SELECT count(*) FROM information_schema.role_table_grants
    WHERE table_schema = 'public' AND grantee <> 'poolrouter_owner'
      AND table_name IN ('endpoint_blend', 'endpoint_blend_versi', 'endpoint_blend_komponen', 'blend', 'blend_status_history', 'blend_webhook_log',
-                        'provider_penanda_audit', 'gerbang_blend_peristiwa')
+                        'provider_penanda_audit', 'audit_gerbang_blend')
      AND privilege_type IN ('DELETE', 'TRUNCATE', 'TRIGGER', 'REFERENCES')$q$) = 0, 'no role but the owner has DELETE / TRUNCATE / TRIGGER / REFERENCES on an F3 table');
 SELECT t.ok(t.hitung($q$
   SELECT count(*) FROM information_schema.role_table_grants
    WHERE table_schema = 'public' AND grantee = 'PUBLIC' AND table_name IN ('endpoint_blend', 'endpoint_blend_versi', 'endpoint_blend_komponen', 'blend',
-     'blend_status_history', 'blend_webhook_log', 'provider_penanda_audit', 'gerbang_blend_peristiwa')$q$) = 0, 'PUBLIC has no privilege on an F3 table');
+     'blend_status_history', 'blend_webhook_log', 'provider_penanda_audit', 'audit_gerbang_blend')$q$) = 0, 'PUBLIC has no privilege on an F3 table');
 -- DQ-66: nobody but the owner and the roles of BA-02 can read blend.output_payload
 SELECT t.ok(t.hitung($q$
   SELECT count(*) FROM information_schema.role_column_grants
