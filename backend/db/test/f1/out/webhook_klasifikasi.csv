@@ -1,0 +1,12 @@
+kelas,status_contoh,di_retry
+gagal_http_5xx,500,true
+gagal_http_5xx,503,true
+timeout_408,408,true
+rate_429,429,true
+gagal_jaringan,,true
+gagal_http_400,400,false
+gagal_http_404,404,false
+gagal_http_410,410,false
+redirect_301,301,false
+ditolak_allowlist,,false
+dekripsi_gagal,,false

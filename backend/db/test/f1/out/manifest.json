@@ -1,0 +1,55 @@
+{
+  "berkas": {
+    "alokasi_rute.csv": {
+      "baris": 6,
+      "sha256": "9864a08d4970e0c8f3f6b7c8407ca98db41d26fca4201b049db363dfd302b62b"
+    },
+    "arsip_log.csv": {
+      "baris": 50,
+      "sha256": "83d96467eff4fab6408a5382337d437e8a3c48cc22012b414cbe096228246df7"
+    },
+    "arsip_restore_permintaan.csv": {
+      "baris": 2,
+      "sha256": "2bfc56e22a49c4803010c2b43ad8af2c3afa3e9f09db19b5ec999ebac5bd52f5"
+    },
+    "data_balikan_batch.csv": {
+      "baris": 1,
+      "sha256": "b062faeb9f52a0ab87ea6323966b46ee4cc61f88b3fd57afeebce6e05c0e8e24"
+    },
+    "data_balikan_item.csv": {
+      "baris": 250,
+      "sha256": "f6e1ddbd2a8dc66a8b0fc36afae45429d74ba938c1bca195991a2d860bb08213"
+    },
+    "mfa_kode_daftar.csv": {
+      "baris": 3,
+      "sha256": "4c16037924df9682210aa9f994c0e9af9be645c5a804b240847b4a664a62f6bd"
+    },
+    "mfa_kode_pemulihan.csv": {
+      "baris": 10,
+      "sha256": "2d957bb40012e38c68b01730057967713442b0f6f960579ce2c30b10c4b5279b"
+    },
+    "mfa_pengguna.csv": {
+      "baris": 1,
+      "sha256": "4136097afc5f4233239985b5bb67599dcdd5207268c24b70fa351649cf067b5c"
+    },
+    "mfa_totp_vektor.csv": {
+      "baris": 6,
+      "sha256": "cda345a44ca48ebcbe4a61f360d1ecf52938c274ac39ff47863bc25b5ccdfff0"
+    },
+    "request_aging.csv": {
+      "baris": 14,
+      "sha256": "c70437aa7bf76d1530799835e8c5092259b80620825900801e4e00016b3e28b6"
+    },
+    "webhook_jadwal.csv": {
+      "baris": 6,
+      "sha256": "d6debc5220f8d502cd8935350abbc25eb914bce61451d4d57ec80648b07cdc8f"
+    },
+    "webhook_klasifikasi.csv": {
+      "baris": 11,
+      "sha256": "f8c8be29f6958c804981ae6d6ac2e119b7baef28321bb952c6433ddf6b54618e"
+    }
+  },
+  "contract": "data-contract-poolrouter-log-v0.9.5-final",
+  "seed": 166,
+  "sintetis": true
+}

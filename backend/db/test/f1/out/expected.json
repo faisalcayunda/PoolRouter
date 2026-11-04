@@ -1,0 +1,35 @@
+{
+  "d1_aging": {
+    "ambang_0_tidak_naik": 4,
+    "request_aging": 14
+  },
+  "d2_alokasi": {
+    "a_sisa_u61": 30,
+    "kelebihan_u64": 20,
+    "reserved_exact_A": 40,
+    "shareable_exact_B": 30,
+    "upstream_pool_Q": 100
+  },
+  "d3_webhook": {
+    "jadwal_detik_per_percobaan": [
+      27,
+      126,
+      491,
+      1630,
+      8035
+    ],
+    "klasifikasi_baris": 11
+  },
+  "d4_data_balikan": {
+    "batch_item": 250
+  },
+  "d6_arsip": {
+    "arsip_log": 50,
+    "restore_ada_nik": "0034128392238228",
+    "restore_tidak_ada_baris": 0
+  },
+  "d7_mfa": {
+    "pemulihan": 10,
+    "totp_vektor": 6
+  }
+}
