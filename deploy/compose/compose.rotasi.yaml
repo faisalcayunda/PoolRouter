@@ -1,0 +1,49 @@
+# Job satu kali rotasi KEK arsip (SHAA-361 butir 7; ADR-0006 rev 4 §8.1 butir 13).
+# Dipakai sebagai override: `make ... EXTRA_COMPOSE_FILES=deploy/compose/compose.rotasi.yaml COMPOSE_PROFILES=rotasi-kek`.
+# Aturan job ini:
+#   - identitas sendiri (poolrouter-arsip-rotasi, tanpa akses bucket); tidak ada secret objstore yang dipasang di sini;
+#   - tidak berbagi deployment dengan job arsip atau restore;
+#   - kredensial DB `pr_rotasi_kek` hanya ada di job ini;
+#   - kunci privat LAMA hanya ada di job ini, selama jendela rotasi; dicabut dan dicatat setelah selesai;
+#   - kunci publik BARU dan id-nya, bukan rahasia tetapi kritis integritasnya, lewat _FILE;
+#   - hardening seperti butir 8: tanpa port, read_only, tmpfs, cap_drop ALL, no-new-privileges;
+#   - dihapus setelah selesai: restart no, dijalankan sekali lewat `compose run --rm`.
+# Batasan: egress hanya ke PostgreSQL dan secret manager bergantung pada pemisahan jaringan di compose.dev.yaml (butir 8, SHAA-361 Tetsu).
+# Perintah `rotasi-kek-arsip` di binary backend mengikuti SHAA-341; sampai ada, container gagal start dengan sengaja.
+services:
+  rotasi-kek-arsip:
+    image: ${POOLROUTER_BACKEND_IMAGE:?isi POOLROUTER_BACKEND_IMAGE di file env}
+    profiles: ["rotasi-kek"]
+    command: ["rotasi-kek-arsip"]
+    environment:
+      POOLROUTER_ENV: ${POOLROUTER_ENV:?isi POOLROUTER_ENV di file env}
+      POOLROUTER_DB_HOST: ${POOLROUTER_DB_HOST:-postgres}
+      POOLROUTER_DB_PORT: ${POOLROUTER_DB_PORT:-5432}
+      POOLROUTER_DB_NAME: ${POSTGRES_DB:?isi POSTGRES_DB di file env}
+      POOLROUTER_DB_ROTASI_KEK_PASSWORD_FILE: /run/secrets/pr_rotasi_kek
+      # Kunci publik baru dan id-nya (dipasang di job arsip pada langkah (iii) rotasi).
+      POOLROUTER_ARSIP_KEK_PUBLIK_FILE: /run/secrets/poolrouter_arsip_kek_publik
+      POOLROUTER_ARSIP_KEK_ID: ${POOLROUTER_ARSIP_KEK_ID:?isi id KEK arsip baru di file env}
+      # Kunci privat lama dan id-nya (hanya selama jendela rotasi, lalu dicabut).
+      POOLROUTER_ARSIP_KEK_PRIVAT_LAMA_FILE: /run/secrets/poolrouter_arsip_kek_privat_lama
+      POOLROUTER_ARSIP_KEK_ID_LAMA: ${POOLROUTER_ARSIP_KEK_ID_LAMA:?isi id KEK arsip lama di file env}
+    secrets:
+      - pr_rotasi_kek
+      - poolrouter_arsip_kek_publik
+      - poolrouter_arsip_kek_privat_lama
+    restart: "no"
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    # Tanpa port, tanpa healthcheck HTTP: job satu kali. Core dump dan swap dimatikan di host (runbook, butir 8).
+    ulimits:
+      core: 0
+
+secrets:
+  pr_rotasi_kek:
+    file: ${POOLROUTER_SECRETS_DIR:?isi POOLROUTER_SECRETS_DIR di file env}/pr_rotasi_kek
+  poolrouter_arsip_kek_publik:
+    file: ${POOLROUTER_SECRETS_DIR:?isi POOLROUTER_SECRETS_DIR di file env}/poolrouter_arsip_kek_publik
+  poolrouter_arsip_kek_privat_lama:
+    file: ${POOLROUTER_SECRETS_DIR:?isi POOLROUTER_SECRETS_DIR di file env}/poolrouter_arsip_kek_privat_lama
