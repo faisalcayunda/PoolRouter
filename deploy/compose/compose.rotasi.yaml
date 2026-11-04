@@ -25,12 +25,14 @@ services:
       POOLROUTER_ARSIP_KEK_PUBLIK_FILE: /run/secrets/poolrouter_arsip_kek_publik
       POOLROUTER_ARSIP_KEK_ID: ${POOLROUTER_ARSIP_KEK_ID:?isi id KEK arsip baru di file env}
       # Kunci privat lama dan id-nya (hanya selama jendela rotasi, lalu dicabut).
-      POOLROUTER_ARSIP_KEK_PRIVAT_LAMA_FILE: /run/secrets/poolrouter_arsip_kek_privat_lama
+      # Pola yang sama dengan restore: satu berkas per id di satu direktori (keputusan Huan SHAA-361).
+      POOLROUTER_ARSIP_KEK_PRIVAT_DIR: /run/secrets/arsip-kek-privat
       POOLROUTER_ARSIP_KEK_ID_LAMA: ${POOLROUTER_ARSIP_KEK_ID_LAMA:?isi id KEK arsip lama di file env}
     secrets:
       - pr_rotasi_kek
       - poolrouter_arsip_kek_publik
-      - poolrouter_arsip_kek_privat_lama
+      - source: poolrouter_arsip_kek_privat_lama
+        target: arsip-kek-privat/${POOLROUTER_ARSIP_KEK_ID_LAMA:?isi id KEK arsip lama di file env}.pem
     restart: "no"
     read_only: true
     tmpfs: [/tmp]
