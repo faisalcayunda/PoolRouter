@@ -14,7 +14,8 @@ LANGUAGE sql AS $$
 $$;
 
 -- ================================================================ existing roles, new columns
-GRANT SELECT (aging_ambang_detik, prioritas_diubah_at, reject_lingkup, webhook_not_before) ON request TO pr_api, pr_worker, pr_controller;
+-- webhook_not_before is deliberately absent here: WR-07 / WR-08 (only pr_webhook reads it, never the client owner).
+GRANT SELECT (aging_ambang_detik, prioritas_diubah_at, reject_lingkup) ON request TO pr_api, pr_worker, pr_controller;
 GRANT SELECT (sumber_anggaran, downstream_pool_id) ON transaction_log TO pr_api, pr_controller;   -- pr_worker has table-level SELECT
 -- D1: the controller climbs priority and writes the aging history row (history INSERT is already granted).
 GRANT UPDATE (prioritas_efektif, prioritas_diubah_at) ON request TO pr_controller;
@@ -58,7 +59,8 @@ GRANT INSERT ON audit_akses TO pr_restore;
 GRANT EXECUTE ON FUNCTION fn_arsip_pulih_kedaluwarsa(uuid) TO pr_restore;
 
 -- The admin API creates restore requests (together with the minta_restore audit row, same transaction).
-GRANT SELECT ON arsip_manifest TO pr_admin_api;
+-- Column grant only: enough to find the HMAC key version of the objects in a range (nik_hmac_per_versi); never dek_terbungkus (Rahasia, AR-02c).
+GRANT SELECT (manifest_id, tabel_sumber, provider_id, tanggal_wib, kunci_hmac_versi, status) ON arsip_manifest TO pr_admin_api;
 GRANT SELECT, INSERT ON arsip_restore_permintaan TO pr_admin_api;
 GRANT EXECUTE ON FUNCTION fn_alokasi_kelebihan(uuid), fn_konfigurasi_int(text, integer) TO pr_admin_api;
 

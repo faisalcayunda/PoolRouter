@@ -35,8 +35,8 @@ Nama fisik mengikuti F0 (`timestamptz`, `text` + CHECK, `jsonb`); `sesi` di cont
 
 ## 3. Asumsi dan keputusan desain yang perlu disetujui Klaus
 
-1. **`aging_ambang_detik` ada di `downstream_pool`.** F1-2.1 menyebutnya konfigurasi level downstream pool, tetapi daftar kolom di F1-9 tidak memuatnya. Saya menambah kolom `downstream_pool.aging_ambang_detik NOT NULL DEFAULT 600`. Mohon konfirmasi atau koreksi contract.
-2. **"Rute aktif" tidak punya kolom di F0.** Dihitung sebagai rute yang `downstream_pool.aktif` benar. Tidak menambah kolom `aktif` pada `downstream_pool_rute` karena contract tidak menambahnya.
+1. **`aging_ambang_detik` ada di `downstream_pool`.** F1-2.1 menyebutnya konfigurasi level downstream pool, tetapi daftar kolom di F1-9 tidak memuatnya. Saya menambah kolom `downstream_pool.aging_ambang_detik NOT NULL DEFAULT 600`. Disetujui Klaus sebagai koreksi contract (patch v0.9.6).
+2. **"Rute aktif" tidak punya kolom di F0.** Definisi (sesuai kode): rute aktif = rute yang `downstream_pool.aktif = true`. Upstream pool hanya kunci pengelompokan AL-01, jadi tidak diuji terpisah. Tidak menambah kolom `aktif` pada `downstream_pool_rute` karena contract tidak menambahnya.
 3. **`boleh_pinjam` di database default `true`** supaya rute F0 (tanpa alokasi) memenuhi CHECK (ii). Admin API menulis `false` secara eksplisit untuk rute beralokasi (contract 3.1: "default false pada rute beralokasi").
 4. **AL-02/AL-04 (domain dan izin `sumber_anggaran`) tidak dibuat trigger.** Trigger di jalur tulis log bisa menggagalkan INSERT log setelah token diberikan dan melanggar M-03 (log ditulis sebelum panggilan). Tetap cek pipeline DQ-42.
 5. **Kolom "wajib sejak aktivasi F1" yang berlaku untuk baris baru saja** (`aging_ambang_detik`/`prioritas_diubah_at` pada async, `reject_lingkup` pada `kuota_habis`, `downstream_pool_id` log, `kunci_hmac_versi` audit) tidak bisa menjadi NOT NULL atau CHECK tanpa menggagalkan UPDATE baris F0. Tetap cek pipeline (bagian 4).
@@ -77,3 +77,9 @@ Cek pipeline ditulis sebagai SQL native terjadwal (tiap jam, jendela 2 jam, bers
 ## 6. Perubahan pada berkas uji F0
 
 Semua uji F0 tetap hijau; empat penyesuaian karena kontraknya memang berubah: `20_constraints.sql` (nilai `config_schema_version` yang ditolak jadi 3), `30_roles.sql` (tabel MFA masuk daftar DELETE yang sah untuk `pr_admin_api`, dipin ulang di `60_f1_roles.sql`), `40_functions.sql` (fixture batch mengisi `config_ref_version`), `run.sh` (tiga role baru, rollback). Tidak ada NIK nyata: semua NIK uji sintetis berprefiks `00`.
+
+## 6. Hak atas `arsip_manifest` (perbaikan review desain)
+
+- `pr_admin_api` hanya mendapat SELECT kolom `manifest_id`, `tabel_sumber`, `provider_id`, `tanggal_wib`, `kunci_hmac_versi`, `status`: cukup untuk menentukan `kunci_hmac_versi` objek dalam rentang restore (`nik_hmac_per_versi`). Tanpa `dek_terbungkus` (Rahasia), `objek_kunci`, `sha256`, dan kolom lain. Hanya `pr_restore` membaca manifest penuh (AR-02c).
+- `request.webhook_not_before`: SELECT dan UPDATE hanya `pr_webhook` (WR-07); `pr_api`, `pr_worker`, `pr_controller` tidak punya hak apa pun atas kolom itu (WR-08).
+- Dicatat untuk PR: temuan `ALTER DEFAULT PRIVILEGES` F0 (SHAA-193) berarti grant `EXECUTE` fungsi F0 tidak pernah efektif sebelum F1; perlu diketahui Ridley dan Platform & SRE.
