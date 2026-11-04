@@ -37,6 +37,7 @@ Jika kunci `shaal-build-heavy` dipegang, target **menunggu**, tidak gagal seketi
 - Batas habis: exit **75** (`EX_TEMPFAIL`), pesan menyebut label `shaal.issue` pemegang kunci dan panjang antrean. Tidak ada build yang jalan; push-main berhenti tanpa push.
 - Tiket milik proses yang mati (kill, VM restart) dibuang otomatis oleh run berikutnya, jadi antrean tidak tersumbat. Kunci container yang tertinggal (basi) tetap ditangani seperti sebelumnya (`build-lock-clean`; perbaikan lanjutan di SHAA-366).
 - Kunci tetap hanya milik container build (`--rm`); antrean hanya mengatur giliran mencoba. Run di luar skrip (memakai nama container yang sama langsung) tidak antre, tetapi run yang antre menunggunya selesai.
+- Batasan: tiket dianggap mati lewat `kill -0 <pid>`, jadi semua run harus satu host dan satu PID namespace (lane saat ini). Run dari container/PID namespace atau pengguna lain bisa dianggap mati dan tiketnya dibuang.
 - Pastikan `timeout` job/agent Anda lebih besar dari `BUILD_LOCK_WAIT_SECS` plus lama build.
 
 Uji manual (engine Docker, image apa saja yang punya `sleep`):
@@ -45,7 +46,7 @@ Uji manual (engine Docker, image apa saja yang punya `sleep`):
 export BUILD_LOCK_ENGINE=docker
 run() { sh scripts/build-lock.sh run -- docker run --rm --name shaal-build-heavy --label shaal.build=heavy --label shaal.issue=$1 --entrypoint sleep <image> $2; }
 run SHAA-A 6 & sleep 1; run SHAA-B 3 & sleep 1; run SHAA-C 3 & wait      # selesai berurutan A, B, C
-run SHAA-A 12 & sleep 2; BUILD_LOCK_WAIT_SECS=4 run SHAA-B 1; echo $?    # 75
+run SHAA-A 12 & sleep 2; (export BUILD_LOCK_WAIT_SECS=4; run SHAA-B 1; echo $?)    # 75
 ```
 
 ## Ambang ruang kosong
