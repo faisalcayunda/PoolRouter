@@ -56,6 +56,7 @@ $ENGINE exec -e POOLROUTER_SECRETS_DIR=/tmp/sec -e PGUSER=postgres -e PGHOST=127
 
 PW=$($ENGINE exec "$NAME" cat /tmp/sec/pr_admin_api)
 export POOLROUTER_TEST_DATABASE_URL="postgres://pr_admin_api:$PW@127.0.0.1:$PORT/poolrouter_test"
+export POOLROUTER_TEST_DATABASE_URL_SU="postgres://postgres:$SU_PW@127.0.0.1:$PORT/poolrouter_test"
 echo "uji-pg: PostgreSQL 127.0.0.1:$PORT sebagai pr_admin_api"
 $MAKE_CMD
 echo "uji-pg: lulus"
