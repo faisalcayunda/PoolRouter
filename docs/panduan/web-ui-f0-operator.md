@@ -5,7 +5,8 @@ Panduan ini untuk operator yang menelusuri transaksi lewat **Log transaksi** dan
 - **Pembaca:** operator PoolRouter
 - **Tanggal:** 2026-11-04
 - **Versi:** draf 0.1, dicocokkan dengan `main` hash `c6829a25`
-- **Status:** draft, lulus bersyarat; layar yang belum ada ditandai belum diuji
+- **Pemilik:** tim PoolRouter
+- **Status:** draf; bagian bertanda **Belum diuji** belum dicek pada aplikasi yang berjalan
 
 Penanda **Cocok dengan kode**, **Belum diuji**, dan **Selisih label** dijelaskan di `web-ui-f0-dasar.md`.
 
@@ -67,7 +68,7 @@ Kuota membantu menjelaskan penyebab umum penolakan 429 ketika kuota harian atau 
 
 Bila gagal dimuat, kartu terakhir yang berhasil tetap tampil dengan pesan "Data lama ditampilkan. Terakhir dimuat {waktu}." dan layar menawarkan **Coba lagi**. Bila belum ada upstream pool, tampil "Belum ada upstream pool"; mintalah platform admin menyiapkannya.
 
-Pemahaman angka: catatan di halaman menyebut bahwa angka dihitung dari jumlah percobaan ke Dukcapil. Selisih angka dengan log transaksi belum ditetapkan; jangan menyimpulkan kehilangan data dari selisih kecil.
+Pemahaman angka: catatan di halaman menyebut bahwa angka dihitung dari jumlah percobaan ke Dukcapil. Selisih kecil dengan log transaksi sedang ditinjau; jangan menyimpulkan kehilangan data dari selisih kecil.
 
 Operator tidak bisa mengubah kuota, rate limit, atau porsi sync. Perubahan dilakukan platform admin.
 

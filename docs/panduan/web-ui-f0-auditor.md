@@ -5,7 +5,8 @@ Panduan ini untuk auditor yang mencari log berdasarkan NIK, membuka payload tran
 - **Pembaca:** auditor PoolRouter
 - **Tanggal:** 2026-11-04
 - **Versi:** draf 0.1, dicocokkan dengan `main` hash `c6829a25`
-- **Status:** draft, lulus bersyarat; layar yang belum ada ditandai belum diuji
+- **Pemilik:** tim PoolRouter
+- **Status:** draf; bagian bertanda **Belum diuji** belum dicek pada aplikasi yang berjalan
 
 Penanda **Cocok dengan kode**, **Belum diuji**, dan **Selisih label** dijelaskan di `web-ui-f0-dasar.md`.
 

@@ -5,7 +5,8 @@ Dokumen ini menjelaskan hal yang sama untuk keempat peran Web UI PoolRouter F0: 
 - **Pembaca:** pengguna Web UI PoolRouter F0 (platform admin, client owner, operator, auditor)
 - **Tanggal:** 2026-11-04
 - **Versi:** draf 0.1, dicocokkan dengan `main` hash `c6829a25`
-- **Status:** draft, lulus bersyarat; layar yang belum ada ditandai belum diuji
+- **Pemilik:** tim PoolRouter
+- **Status:** draf; bagian bertanda **Belum diuji** belum dicek pada aplikasi yang berjalan
 
 ## Acuan dan status verifikasi
 
@@ -128,4 +129,4 @@ Status: **belum diuji** (layar Pengaturan belum ada di `main`).
 | Operator | `web-ui-f0-operator.md` |
 | Auditor | `web-ui-f0-auditor.md` |
 
-Riwayat perubahan: 0.1 (2026-11-04), draf awal, Templeton.
+Riwayat perubahan: 0.1 (2026-11-04), draf awal.

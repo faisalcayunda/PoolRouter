@@ -5,9 +5,10 @@ Panduan ini untuk client owner, yaitu pemilik aplikasi BGN yang memanggil PoolRo
 - **Pembaca:** client owner
 - **Tanggal:** 2026-11-04
 - **Versi:** draf 0.1, dicocokkan dengan `main` hash `c6829a25`
-- **Status:** draft, lulus bersyarat; layar yang belum ada ditandai belum diuji
+- **Pemilik:** tim PoolRouter
+- **Status:** draf; bagian bertanda **Belum diuji** belum dicek pada aplikasi yang berjalan
 
-**Status verifikasi seluruh panduan ini: belum diuji.** Layar Client dan kredensial serta Webhook belum ada di `main`, dan peran client owner belum tersedia di konteks peran kode UI (hanya platform admin, operator, dan auditor). Isi berdasar spec UI v0.3.2, UX F0 v0.3, dan katalog v0.14.
+**Status verifikasi seluruh panduan ini: belum diuji.** Layar Client dan kredensial serta Webhook belum ada di `main`, dan peran client owner belum tersedia di konteks peran kode UI (hanya platform admin, operator, dan auditor). Isi berdasar spec UI v0.3.2 dan katalog v0.14.
 
 ## Menu yang tersedia
 

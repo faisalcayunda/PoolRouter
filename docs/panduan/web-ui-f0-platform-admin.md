@@ -5,9 +5,10 @@ Panduan ini untuk platform admin yang menyiapkan PoC: secret, provider, upstream
 - **Pembaca:** platform admin PoolRouter
 - **Tanggal:** 2026-11-04
 - **Versi:** draf 0.1, dicocokkan dengan `main` hash `c6829a25`
-- **Status:** draft, lulus bersyarat; layar yang belum ada ditandai belum diuji
+- **Pemilik:** tim PoolRouter
+- **Status:** draf; bagian bertanda **Belum diuji** belum dicek pada aplikasi yang berjalan
 
-**Status verifikasi seluruh panduan ini: belum diuji.** Layar Secret, Provider, Upstream pool, Downstream pool, Client, dan Webhook belum ada di `main` pada hash di atas (menu sudah terdaftar, halamannya belum). Isi berdasar spec UI v0.3.2, UX F0 v0.3, dan katalog UX copy v0.14. Satu-satunya layar yang sudah ada dan relevan, **Kuota**, dijelaskan di `web-ui-f0-operator.md` dengan status **cocok dengan kode**.
+**Status verifikasi seluruh panduan ini: belum diuji.** Layar Secret, Provider, Upstream pool, Downstream pool, Client, dan Webhook belum ada di `main` pada hash di atas (menu sudah terdaftar, halamannya belum). Isi berdasar spec UI v0.3.2 dan katalog UX copy v0.14. Satu-satunya layar yang sudah ada dan relevan, **Kuota**, dijelaskan di `web-ui-f0-operator.md` dengan status **cocok dengan kode**.
 
 ## Urutan penyiapan
 
