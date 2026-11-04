@@ -69,7 +69,7 @@ check-disk:
 	@$(if $(filter docker,$(RUNNER)),../scripts/docker-lane.sh check,true)
 
 ifneq ($(filter podman docker,$(RUNNER)),)
-check-label: $(CHECK_DISK)
+check-label:
 	@echo "$(CONTAINER_LABEL)" | grep -Eq '^shaal\.issue=SHAA-[0-9]+$$' || { echo "CONTAINER_LABEL wajib shaal.issue=SHAA-<n> untuk RUNNER=podman (contoh: make -C backend lint CONTAINER_LABEL=shaal.issue=SHAA-222)" >&2; exit 2; }
 else
 check-label:
@@ -79,7 +79,7 @@ help:
 	@echo "targets: setup test test-rust db-test uji-lua lua-rakit lua-rakit-check lint fmt clean openapi openapi-check build-lock-status build-lock-clean (RUNNER=podman|native)"
 
 # Fetch the locked dependency set and install the pinned cargo-deny.
-setup: check-label
+setup: check-label $(CHECK_DISK)
 	mkdir -p .cache/cargo .cache/rustup
 	$(RUN) sh -c "[ -d /work/.cache/rustup/toolchains ] || cp -a /usr/local/rustup/. /work/.cache/rustup/; cargo fetch --locked"
 	$(RUN) sh -c 'set -eu; \
@@ -101,14 +101,14 @@ setup: check-label
 
 test: test-rust db-test uji-lua
 
-test-rust: check-label
+test-rust: check-label $(CHECK_DISK)
 	$(HEAVY) cargo test --workspace --all-targets --locked
 
 # Schema tests (SHAA-193): roles bootstrap, migrations from empty, grant matrix, constraints, functions.
 # Starts a throwaway PostgreSQL 17 container labelled shaal.issue=<n> (from CONTAINER_LABEL) and removes it afterwards.
 # It needs a container engine on the host, so it is independent of RUNNER.
 DB_ENGINE ?= $(if $(filter docker,$(RUNNER)),docker,podman)
-db-test: check-label
+db-test: check-label $(CHECK_DISK)
 	CONTAINER_ENGINE=$(DB_ENGINE) SHAA_ISSUE=$(patsubst shaal.issue=%,%,$(CONTAINER_LABEL)) sh db/test/run.sh
 
 # Lua quota scripts (SHAA-195). `lua/` holds sources with `-- sisip:` markers;
@@ -129,15 +129,15 @@ lua-rakit-check:
 # Harness runs the scripts against a real Redis (throwaway container, pinned image).
 # Like db-test it needs a container engine on the host, so it is independent of RUNNER.
 LUA_ENGINE ?= $(if $(filter docker,$(RUNNER)),docker,podman)
-uji-lua: check-label lua-rakit-check
+uji-lua: check-label $(CHECK_DISK) lua-rakit-check
 	CONTAINER_ENGINE=$(LUA_ENGINE) SHAA_ISSUE=$(patsubst shaal.issue=%,%,$(CONTAINER_LABEL)) sh lua/test/run.sh
 
-lint: check-label
+lint: check-label $(CHECK_DISK)
 	$(RUN) cargo fmt --all --check
 	$(HEAVY) cargo clippy --workspace --all-targets --locked -- -D warnings
 	$(RUN) cargo deny --locked check
 
-fmt: check-label
+fmt: check-label $(CHECK_DISK)
 	$(RUN) cargo fmt --all
 
 clean: check-label
@@ -145,13 +145,13 @@ clean: check-label
 	rm -rf -- .cache/cargo/registry/cache
 
 # OpenAPI is generated from code (ADR-0004 section 4.1, utoipa code-first).
-openapi: check-label
+openapi: check-label $(CHECK_DISK)
 	mkdir -p openapi
 	$(HEAVY) cargo run --locked -q -p poolrouter-webserver --bin openapi-gen -- openapi
 
 # Fails when the committed YAML differs from what the code generates, and when
 # the working-tree contracts break the baseline OASDIFF_BASE (oasdiff, SHAA-192, SHAA-278).
-openapi-check: check-label openapi oasdiff-breaking
+openapi-check: check-label $(CHECK_DISK) openapi oasdiff-breaking
 	@test -z "$$(git status --porcelain -- openapi)" || { echo "openapi: generated files are uncommitted or modified" >&2; git status --short -- openapi; exit 1; }
 	git diff --exit-code -- openapi
 
@@ -164,7 +164,7 @@ openapi-check: check-label openapi oasdiff-breaking
 _OASDIFF_SRC := $(if $(filter undefined,$(origin OASDIFF_BASE)),default,explicit)
 OASDIFF_BASE_SOURCE ?= $(_OASDIFF_SRC)
 OASDIFF_BASE ?= $(if $(filter true,$(CI)),,origin/main)
-oasdiff-breaking: check-label
+oasdiff-breaking: check-label $(CHECK_DISK)
 	@set -eu; \
 	base="$(OASDIFF_BASE)"; \
 	if [ -z "$$base" ]; then echo "oasdiff: OASDIFF_BASE must be set explicitly when CI=true" >&2; exit 1; fi; \
