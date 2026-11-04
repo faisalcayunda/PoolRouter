@@ -194,14 +194,26 @@ make test-dry-run
 
 ### Pengukuran disk frontend (2026-11-04, sandbox instabox, /data 20G)
 
+Diukur 2026-11-04 14:03 UTC pada hash `20a07ee` (HEAD `origin/main` saat ukur). Lane lain aktif saat itu: SHAA-402 (`shaal-build-heavy`, `cargo test`, dan `poolrouter-redistest-2233725`, dari `docker ps --filter label=shaal.issue`). Karena itu angka "Sesudah gate" di bawah **tidak terukur bersih**.
+
+Keluaran `df -h /data /var/lib/docker` pada pengukuran itu:
+
+```
+Filesystem      Size  Used Avail Use% Mounted on
+/dev/vdb         20G   18G  2.3G  89% /data
+/dev/vdb         20G   18G  2.3G  89% /var/lib/docker
+```
+
+Kedua path berada di satu partisi (`/dev/vdb`). Angka ini adalah ruang kosong saat SHAA-402 berjalan, bukan ruang kosong sesudah satu gate frontend.
+
 | Komponen | Sebelum Gate | Sesudah Gate | Catatan |
 |---|---|---|---|
-| Ruang kosong `/data` | 8,3G (58%) | 3,6G (82%) | Terukur via `df -h /data`; penurunan mencakup kompilasi target backend serta aktivitas konkuren lane lain di host |
-| Ruang kosong Docker root (`/var/lib/docker`) | 8,3G (58%) | 3,6G (82%) | Satu partisi (`/dev/vdb`) dengan `/data`; tetap di atas ambang minimum 3G |
+| Ruang kosong `/data` | 8,3G (58%) | tidak terukur bersih | Pembacaan 3,6G (82%) berasal dari gate sebelumnya (dilaporkan 10:51 UTC, sebelum gate `push-main` 10:56 UTC selesai), bukan ukur ulang. Ukur ulang 2026-11-04 14:03 UTC: 2,3G (89%), tetapi lane SHAA-402 sedang berjalan, jadi tidak dapat dikaitkan ke gate frontend |
+| Ruang kosong Docker root (`/var/lib/docker`) | 8,3G (58%) | tidak terukur bersih | Satu partisi (`/dev/vdb`) dengan `/data`, terbukti dari output `df` di atas, sehingga angkanya sama dengan baris `/data`. Ukur ulang 14:03 UTC: 2,3G (89%) dengan SHAA-402 aktif. Ambang `check-disk` 3G dibulatkan ke GB utuh; lihat keluaran `check-disk` pada run yang bersangkutan |
 | `frontend/node_modules` | 0 | 396M | 479 paket terinstal |
 | Store pnpm (`frontend/.cache/pnpm-store`) | 0 | 22M | Store lokal per checkout (keputusan SHAA-394) |
 | Cache frontend total (`frontend/.cache`) | 0 | 23M | Termasuk pnpm-store dan corepack |
 | Image Node pinned (`node:24.22.2-bookworm-slim`) | 333M | 333M | Dipakai runner Docker frontend |
-| Image Playwright pinned (`mcr.microsoft.com/playwright`) | Belum di-pull | Belum di-pull | Hanya ditarik saat target `e2e` dipanggil (ukuran manifest layer ~990MB terkompresi, estimasi uncompressed ~2,4GB) |
+| Image Playwright pinned (`mcr.microsoft.com/playwright`) | Belum di-pull | Belum di-pull | Hanya ditarik saat target `e2e` dipanggil (dari `docker manifest inspect`: ~990MB **compressed**; ~2,4GB uncompressed hanya perkiraan, bukan hasil `docker images`) |
 
-Penambahan disk lokal spesifik frontend adalah sekitar 420M (gabungan `node_modules` 396M dan `.cache` 23M). Total ruang kosong `/data` berkurang dari 8,3G ke 3,6G akibat kompilasi target backend bersamaan dengan aktivitas lane lain di host. Gate memeriksa ruang kosong sebelum target berat dijalankan dan menolak eksekusi bila di bawah ambang batas.
+Pemakaian frontend sendiri adalah sekitar 420M (`node_modules` 396M + `.cache` 23M); ini terukur langsung per direktori dan tidak bergantung pada lane lain. Penurunan ruang kosong total `/data` (8,3G sebelum gate, 3,6G pada pembacaan gate sebelumnya, 2,3G pada ukur ulang 14:03 UTC) lebih besar dari 420M karena ikut dipengaruhi kompilasi backend dan lane lain, sehingga tidak boleh dibaca sebagai biaya frontend. Gate memeriksa ruang kosong sebelum target berat dijalankan (`check-disk`) dan menolak eksekusi bila di bawah ambang batas.
