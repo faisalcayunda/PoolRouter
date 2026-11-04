@@ -60,6 +60,17 @@ argon2 = { version = "0.6", features = ["password-hash", "zeroize"] }
 jsonwebtoken = { version = "11.1", features = ["aws_lc_rs", "use_pem"] }
 secrecy = { version = "0.10.3", features = ["serde"] }
 zeroize = { version = "1.9", features = ["derive"] }
+# Pinned to the versions already in Cargo.lock (base64 has 0.22 and 0.23 in the
+# tree), so declaring them adds no new package. Both are needed by the admin
+# primitives: base64 for the opaque session token's text form, subtle for the
+# constant-time comparisons that keep verify/lookup free of timing leaks.
+base64 = "=0.22.1"
+subtle = "=2.6.1"
+# Already in the lock at 0.4.3 (argon2 -> password-hash). Used to mint session
+# tokens from the OS CSPRNG.
+getrandom = "=0.4.3"
+# Already in the lock at 0.10.9; used for the SHA-256 of a session token.
+sha2 = "=0.10.9"
 
 # 4.5 Observability (the four OpenTelemetry crates move in lockstep)
 tracing = "0.1.44"
