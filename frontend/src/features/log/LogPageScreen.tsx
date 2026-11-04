@@ -380,12 +380,6 @@ export function LogPageScreen({
                       >
                         {t('log.col.access')}
                       </th>
-                      <th
-                        scope="col"
-                        className="border-b border-outline-variant px-4 py-3 font-medium"
-                      >
-                        {t('log.col.requested_at')}
-                      </th>
                       {payloadAllowed ? (
                         <th
                           scope="col"
@@ -446,12 +440,6 @@ export function LogPageScreen({
                             <StatusLabel tone={accessTone(row.status_akses)}>
                               {enumLabel(i18n, 'status_akses', row.status_akses)}
                             </StatusLabel>
-                          </td>
-                          <td
-                            data-label={t('log.col.requested_at')}
-                            className="typescale-body-medium px-4 py-3 align-middle"
-                          >
-                            {format.tanggalWaktu(row.requested_at)}
                           </td>
                           {/* The action cell carries no data-label: its single button names itself. */}
                           {payloadAllowed ? (

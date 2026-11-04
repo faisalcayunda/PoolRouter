@@ -76,7 +76,8 @@
       "page_range": "{{dari, number}}–{{sampai, number}} dari {{total, number}}",
       "prev_page": "Halaman sebelumnya",
       "next_page": "Halaman berikutnya",
-      "page_number": "Halaman {{ke}} dari {{total}}"
+      "page_number": "Halaman {{ke}} dari {{total}}",
+      "page_current": "Halaman {{ke}}"
     },
     "empty": {
       "logs": {
@@ -308,7 +309,7 @@
       "help": "Hanya provider yang sudah tersimpan."
     },
     "daily_quota": {
-      "help": "Dihitung per hari menurut jam reset [menunggu OQ-03]."
+      "help": "Dihitung per hari menurut jam reset (pengaturan jam reset menyusul)."
     },
     "sync_share": {
       "help": "Sync sepi: async boleh memakai sisanya. Sync di atas porsi ditolak 429."
@@ -371,7 +372,7 @@
       "breadcrumb": "Downstream pool › {{nama}} › Endpoint",
       "add": "Tambah field",
       "info": "Metadata dicatat di log transaksi untuk data balikan. Metadata tidak dikirim ke Dukcapil.",
-      "note": "Request tanpa field wajib ditolak sebelum memakai kuota. Menambah field opsional tidak membuat request lama ditolak. Daftar field final menunggu data contract (SHAA-166, OQ-19)."
+      "note": "Request tanpa field wajib ditolak sebelum memakai kuota. Menambah field opsional tidak membuat request lama ditolak. Daftar field final menyusul setelah data contract disepakati."
     },
     "col": {
       "name": "Nama field",
@@ -495,7 +496,7 @@
       "hour": "Jam berjalan ({{rentang}})",
       "sync_heading": "Porsi sync",
       "sync_used": "Sync terpakai {{terpakai, number}} dari batas {{persen, number}}%",
-      "note": "Angka hitung dari jumlah percobaan ke Dukcapil. Selisih dengan log transaksi: rekonsiliasi menunggu OQ-12.",
+      "note": "Angka dihitung dari jumlah percobaan ke Dukcapil, termasuk percobaan ulang dan panggilan gagal. Selisih dengan log transaksi dapat terjadi.",
       "reload": "Muat ulang",
       "pool_filter": "Pool",
       "pool_unknown": "Pool upstream",
