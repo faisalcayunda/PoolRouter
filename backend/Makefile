@@ -53,9 +53,10 @@ ifeq ($(RUNNER),docker)
 # Di dalam container: target, cargo, dan rustup bersama di-mount di /cache/*.
 CT_CARGO_HOME := /cache/cargo
 CT_RUSTUP_HOME := /cache/rustup
-CT_TARGET_DIR := /cache/target
+# Subdirektori, bukan akar mount: `cargo clean` menghapus direktori targetnya sendiri, dan akar mount tidak bisa dihapus.
+CT_TARGET_DIR := /cache/target/build
 SHARED_OPTS = --user $(shell id -u):$(shell id -g) \
-	-v "$(SHARED_TARGET_DIR)":$(CT_TARGET_DIR) -v "$(SHARED_CARGO_HOME)/cargo":$(CT_CARGO_HOME) -v "$(SHARED_CARGO_HOME)/rustup":$(CT_RUSTUP_HOME) \
+	-v "$(SHARED_TARGET_DIR)":/cache/target -v "$(SHARED_CARGO_HOME)/cargo":$(CT_CARGO_HOME) -v "$(SHARED_CARGO_HOME)/rustup":$(CT_RUSTUP_HOME) \
 	-e CARGO_TARGET_DIR=$(CT_TARGET_DIR)
 else
 CT_CARGO_HOME := /work/.cache/cargo

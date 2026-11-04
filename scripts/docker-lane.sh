@@ -35,7 +35,12 @@ check_root() {
   if (( tsize > SHARED_TARGET_LIMIT_MB )); then
     [[ -n "$CLEAN_SHARED_CMD" ]] || die "target bersama ${tsize}M melebihi batas dan CLEAN_SHARED_CMD kosong"
     echo "target bersama melebihi batas; clean-shared di bawah kunci"
-    sh -c "$CLEAN_SHARED_CMD" || die "clean-shared gagal (exit $?); kunci heavy dipegang build lain bila exit 75"
+    local rc=0
+    sh -c "$CLEAN_SHARED_CMD" || rc=$?
+    if (( rc != 0 )); then
+      echo "ERROR: clean-shared gagal (exit $rc); kunci heavy dipegang build lain bila sub-exit 75" >&2
+      exit "$rc"
+    fi
     tsize="$(size_mb "$SHARED_TARGET_DIR")"
     echo "target bersama sesudah clean: ${tsize}M"
   fi
