@@ -33,5 +33,6 @@ run "setup test lint" setup test lint $V
 # shellcheck disable=SC2086
 run "backend uji-redis check-disk" -C backend uji-redis $V
 # shellcheck disable=SC2086
-run "push-main" push-main $V
+# REMOTE palsu: bila regresi, push-main.sh gagal di git fetch dan tidak sampai push.
+run "push-main" push-main $V REMOTE=shaa398-dry-run-tidak-ada
 exit "$fail"
