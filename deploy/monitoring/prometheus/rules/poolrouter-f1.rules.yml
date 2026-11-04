@@ -1,0 +1,164 @@
+# Aturan alert F1 PoolRouter (ADR-0006 §7 butir 4 dan §11).
+# Ambang dibaca dari gauge poolrouter_ambang_alert{nama} yang diekspor PoolRouter
+# (ADR-0006 §7 butir 3). Aturan ini statis di repo; mengubah angka cukup di konfigurasi PoolRouter.
+# Setiap alert punya severity (S1 = dampak langsung ke layanan atau keamanan, S2 = perlu tindakan
+# di jam kerja yang sama, S3 = perlu tindakan dalam sprint) dan runbook di docs/runbook/alert-f1.md.
+# Label hanya dari himpunan contract: upstream_pool_id, sumber_anggaran, error_class, hasil, komponen.
+# Tidak ada NIK, request_id, atau IP di label maupun anotasi.
+
+groups:
+  - name: poolrouter-f1-ambang
+    rules:
+      - alert: PoolRouterAmbangAlertHilang
+        expr: absent(poolrouter_ambang_alert) == 1
+        for: 5m
+        labels:
+          severity: S2
+          owner: platform-sre
+        annotations:
+          summary: "Gauge ambang alert tidak diekspor; alert ambang tidak aktif"
+          runbook: "docs/runbook/alert-f1.md#poolrouterambangalerthilang"
+
+  - name: poolrouter-f1-upstream
+    rules:
+      - alert: PoolRouterErrorUpstreamTinggi
+        expr: |
+          (
+            sum by (upstream_pool_id) (rate(poolrouter_upstream_attempts_total{error_class!=""}[10m]))
+            /
+            sum by (upstream_pool_id) (rate(poolrouter_upstream_attempts_total[10m]))
+          ) > on() group_left() poolrouter_ambang_alert{nama="upstream_error_rasio"}
+        for: 10m
+        labels:
+          severity: S2
+          owner: platform-sre
+        annotations:
+          summary: "Rasio error upstream {{ $labels.upstream_pool_id }} di atas ambang"
+          runbook: "docs/runbook/alert-f1.md#poolrouterupstreamtinggi"
+
+      - alert: PoolRouterRedisFailClosed
+        expr: increase(poolrouter_redis_failclosed_total[5m]) > on() group_left() poolrouter_ambang_alert{nama="redis_failclosed_naik"}
+        for: 0m
+        labels:
+          severity: S1
+          owner: platform-sre
+        annotations:
+          summary: "Redis fail-closed terdeteksi pada komponen {{ $labels.komponen }}"
+          runbook: "docs/runbook/alert-f1.md#poolrouterredisfailclosed"
+
+  - name: poolrouter-f1-kuota
+    rules:
+      - alert: PoolRouterKuotaMendekatiBatas
+        expr: |
+          (poolrouter_anggaran_terpakai / on (upstream_pool_id, sumber_anggaran) poolrouter_anggaran_efektif)
+          > on() group_left() poolrouter_ambang_alert{nama="kuota_peringatan_rasio"}
+        for: 5m
+        labels:
+          severity: S3
+          owner: platform-sre
+        annotations:
+          summary: "Anggaran {{ $labels.upstream_pool_id }} ({{ $labels.sumber_anggaran }}) mendekati batas"
+          runbook: "docs/runbook/alert-f1.md#poolrouterkuotamendekatibatas"
+
+      - alert: PoolRouterKuotaKritis
+        expr: |
+          (poolrouter_anggaran_terpakai / on (upstream_pool_id, sumber_anggaran) poolrouter_anggaran_efektif)
+          > on() group_left() poolrouter_ambang_alert{nama="kuota_kritis_rasio"}
+        for: 5m
+        labels:
+          severity: S2
+          owner: platform-sre
+        annotations:
+          summary: "Anggaran {{ $labels.upstream_pool_id }} ({{ $labels.sumber_anggaran }}) kritis"
+          runbook: "docs/runbook/alert-f1.md#poolrouterkuotakritis"
+
+  - name: poolrouter-f1-antrean-webhook
+    rules:
+      - alert: PoolRouterAntreanTertua
+        expr: max by (upstream_pool_id) (poolrouter_antrean_umur_tertua_seconds) > on() group_left() poolrouter_ambang_alert{nama="antrean_umur_tertua_detik"}
+        for: 5m
+        labels:
+          severity: S2
+          owner: platform-sre
+        annotations:
+          summary: "Request tertua di antrean {{ $labels.upstream_pool_id }} terlalu lama menunggu"
+          runbook: "docs/runbook/alert-f1.md#poolrouterantreantertua"
+
+      - alert: PoolRouterWebhookGagalTinggi
+        expr: |
+          (
+            sum(increase(poolrouter_webhook_total{hasil="gagal"}[30m]))
+            /
+            sum(increase(poolrouter_webhook_total[30m]))
+          ) > on() group_left() poolrouter_ambang_alert{nama="webhook_gagal_rasio"}
+        for: 15m
+        labels:
+          severity: S3
+          owner: platform-sre
+        annotations:
+          summary: "Rasio webhook gagal di atas ambang"
+          runbook: "docs/runbook/alert-f1.md#poolrouterwebhookgagaltinggi"
+
+  - name: poolrouter-f1-data-balikan-arsip
+    rules:
+      - alert: PoolRouterDataBalikanGagalPermanen
+        expr: increase(poolrouter_data_balikan_batch_total{hasil="gagal_permanen"}[1h]) > on() group_left() poolrouter_ambang_alert{nama="data_balikan_gagal_permanen"}
+        for: 0m
+        labels:
+          severity: S2
+          owner: platform-sre
+        annotations:
+          summary: "Batch data balikan gagal permanen"
+          runbook: "docs/runbook/alert-f1.md#poolrouterdatabalikangagalpermanen"
+
+      - alert: PoolRouterDataBalikanTertunda
+        expr: poolrouter_data_balikan_tertunda > on() group_left() poolrouter_ambang_alert{nama="data_balikan_tertunda"}
+        for: 30m
+        labels:
+          severity: S3
+          owner: platform-sre
+        annotations:
+          summary: "Item data balikan yang eligible menunggu terlalu lama"
+          runbook: "docs/runbook/alert-f1.md#poolrouterdatabalikantertunda"
+
+      - alert: PoolRouterArsipJobGagal
+        expr: increase(poolrouter_arsip_job_total{hasil="gagal"}[1h]) > on() group_left() poolrouter_ambang_alert{nama="arsip_job_gagal"}
+        for: 0m
+        labels:
+          severity: S2
+          owner: platform-sre
+        annotations:
+          summary: "Job arsip gagal"
+          runbook: "docs/runbook/alert-f1.md#poolrouterarsipjobgagal"
+
+      - alert: PoolRouterArsipTertunda
+        expr: poolrouter_arsip_tertunda_hari > on() group_left() poolrouter_ambang_alert{nama="arsip_tertunda_hari"}
+        for: 1h
+        labels:
+          severity: S3
+          owner: platform-sre
+        annotations:
+          summary: "Arsip log tertinggal dari jadwal"
+          runbook: "docs/runbook/alert-f1.md#poolrouterarsiptertunda"
+
+  - name: poolrouter-f1-dlq-keamanan
+    rules:
+      - alert: PoolRouterDLQTerisi
+        expr: poolrouter_dlq_pesan > on() group_left() poolrouter_ambang_alert{nama="dlq_pesan"}
+        for: 5m
+        labels:
+          severity: S2
+          owner: platform-sre
+        annotations:
+          summary: "Ada pesan di dead letter queue"
+          runbook: "docs/runbook/alert-f1.md#poolrouterdlqterisi"
+
+      - alert: PoolRouterAdminMFAKurang
+        expr: poolrouter_admin_mfa_aktif < on() group_left() poolrouter_ambang_alert{nama="admin_mfa_minimum"}
+        for: 0m
+        labels:
+          severity: S1
+          owner: platform-sre
+        annotations:
+          summary: "Platform admin ber-MFA kurang dari batas minimum"
+          runbook: "docs/runbook/alert-f1.md#poolrouteradminmfakurang"

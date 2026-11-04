@@ -1,0 +1,125 @@
+# Unit test alert F1 (ADR-0006 §7, §11). Jalankan lewat promtool di container, lihat docs/runbook/alert-f1.md.
+rule_files:
+  - ../rules/poolrouter-f1.rules.yml
+
+evaluation_interval: 1m
+
+tests:
+  - name: kuota kritis menyala di atas ambang 0.95
+    interval: 1m
+    input_series:
+      - series: 'poolrouter_anggaran_terpakai{upstream_pool_id="u-sintetis-1",sumber_anggaran="sisa"}'
+        values: '96x20'
+      - series: 'poolrouter_anggaran_efektif{upstream_pool_id="u-sintetis-1",sumber_anggaran="sisa"}'
+        values: '100x20'
+      - series: 'poolrouter_ambang_alert{nama="kuota_kritis_rasio"}'
+        values: '0.95x20'
+    alert_rule_test:
+      - eval_time: 3m
+        alertname: PoolRouterKuotaKritis
+        exp_alerts: []
+      - eval_time: 10m
+        alertname: PoolRouterKuotaKritis
+        exp_alerts:
+          - exp_labels:
+              severity: S2
+              owner: platform-sre
+              upstream_pool_id: u-sintetis-1
+              sumber_anggaran: sisa
+              alertname: PoolRouterKuotaKritis
+            exp_annotations:
+              summary: "Anggaran u-sintetis-1 (sisa) kritis"
+              runbook: "docs/runbook/alert-f1.md#poolrouterkuotakritis"
+
+  - name: kuota di bawah ambang tidak menyala
+    interval: 1m
+    input_series:
+      - series: 'poolrouter_anggaran_terpakai{upstream_pool_id="u-sintetis-1",sumber_anggaran="sisa"}'
+        values: '90x20'
+      - series: 'poolrouter_anggaran_efektif{upstream_pool_id="u-sintetis-1",sumber_anggaran="sisa"}'
+        values: '100x20'
+      - series: 'poolrouter_ambang_alert{nama="kuota_kritis_rasio"}'
+        values: '0.95x20'
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: PoolRouterKuotaKritis
+        exp_alerts: []
+
+  - name: ambang alert hilang menyala setelah 5 menit
+    interval: 1m
+    input_series: []
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: PoolRouterAmbangAlertHilang
+        exp_alerts: []
+      - eval_time: 6m
+        alertname: PoolRouterAmbangAlertHilang
+        exp_alerts:
+          - exp_labels:
+              severity: S2
+              owner: platform-sre
+              alertname: PoolRouterAmbangAlertHilang
+            exp_annotations:
+              summary: "Gauge ambang alert tidak diekspor; alert ambang tidak aktif"
+              runbook: "docs/runbook/alert-f1.md#poolrouterambangalerthilang"
+
+  - name: admin MFA kurang dari 2 menyala langsung
+    interval: 1m
+    input_series:
+      - series: 'poolrouter_admin_mfa_aktif'
+        values: '1x5'
+      - series: 'poolrouter_ambang_alert{nama="admin_mfa_minimum"}'
+        values: '2x5'
+    alert_rule_test:
+      - eval_time: 1m
+        alertname: PoolRouterAdminMFAKurang
+        exp_alerts:
+          - exp_labels:
+              severity: S1
+              owner: platform-sre
+              alertname: PoolRouterAdminMFAKurang
+            exp_annotations:
+              summary: "Platform admin ber-MFA kurang dari batas minimum"
+              runbook: "docs/runbook/alert-f1.md#poolrouteradminmfakurang"
+
+  - name: DLQ terisi menyala setelah 5 menit
+    interval: 1m
+    input_series:
+      - series: 'poolrouter_dlq_pesan'
+        values: '3x10'
+      - series: 'poolrouter_ambang_alert{nama="dlq_pesan"}'
+        values: '0x10'
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: PoolRouterDLQTerisi
+        exp_alerts: []
+      - eval_time: 6m
+        alertname: PoolRouterDLQTerisi
+        exp_alerts:
+          - exp_labels:
+              severity: S2
+              owner: platform-sre
+              alertname: PoolRouterDLQTerisi
+            exp_annotations:
+              summary: "Ada pesan di dead letter queue"
+              runbook: "docs/runbook/alert-f1.md#poolrouterdlqterisi"
+
+  - name: redis fail-closed menyala saat counter naik
+    interval: 1m
+    input_series:
+      - series: 'poolrouter_redis_failclosed_total{komponen="webserver"}'
+        values: '0 1x10'
+      - series: 'poolrouter_ambang_alert{nama="redis_failclosed_naik"}'
+        values: '0x10'
+    alert_rule_test:
+      - eval_time: 2m
+        alertname: PoolRouterRedisFailClosed
+        exp_alerts:
+          - exp_labels:
+              severity: S1
+              owner: platform-sre
+              komponen: webserver
+              alertname: PoolRouterRedisFailClosed
+            exp_annotations:
+              summary: "Redis fail-closed terdeteksi pada komponen webserver"
+              runbook: "docs/runbook/alert-f1.md#poolrouterredisfailclosed"
