@@ -24,8 +24,12 @@ services:
       POOLROUTER_DB_SSLMODE: disable
 
   backend-worker:
+    # Egress dev ke placeholder Data Balikan lewat alamat tetap (ADR-0002 D4). IP egress produksi
+    # (NAT dan allowlist) berada di luar dev dan di luar PR ini.
+    networks: [default, egress]
     environment:
       POOLROUTER_DB_SSLMODE: disable
+      DATA_BALIKAN_URL: ${DATA_BALIKAN_URL:-http://10.90.0.10:8080}
 
   mock-dukcapil:
     image: ${POOLROUTER_MOCK_DUKCAPIL_IMAGE:?isi POOLROUTER_MOCK_DUKCAPIL_IMAGE di file env}
@@ -84,6 +88,16 @@ services:
         aws --endpoint-url "$$EP" s3api put-bucket-versioning --bucket "$$B" --versioning-configuration Status=Enabled
         aws --endpoint-url "$$EP" s3api put-object-lock-configuration --bucket "$$B" \
           --object-lock-configuration "{\"ObjectLockEnabled\":\"Enabled\",\"Rule\":{\"DefaultRetention\":{\"Mode\":\"GOVERNANCE\",\"Days\":$${POOLROUTER_ARSIP_RETENSI_HARI:-1}}}}"
+        # Tetap hidup dan healthy setelah selesai, supaya `make compose-up` (--wait) tidak gagal
+        # karena one-shot keluar. Dihentikan oleh compose-down.
+        touch /tmp/init-ok
+        exec sleep infinity
+    healthcheck:
+      test: ["CMD", "test", "-f", "/tmp/init-ok"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+      start_period: 5s
     environment:
       POOLROUTER_ARSIP_BUCKET: ${POOLROUTER_ARSIP_BUCKET:-poolrouter-arsip-dev}
       POOLROUTER_ARSIP_RETENSI_HARI: ${POOLROUTER_ARSIP_RETENSI_HARI:-1}
@@ -93,6 +107,54 @@ services:
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
     restart: "no"
+
+  # Inisialisasi IAM dev (SHAA-334): policy dan user worker tanpa Delete. Idempoten.
+  objstore-iam-init:
+    image: docker.io/library/python@sha256:e6dae589c1c05976188fd3bd019afd091445fc533ed2ea29001beddc7368a9c8
+    profiles: ["objstore"]
+    depends_on:
+      object-storage:
+        condition: service_healthy
+    command:
+      - sh
+      - -c
+      - |
+        set -eu
+        python3 -I /app/iam-init.py
+        touch /tmp/iam-ok
+        exec sleep infinity
+    healthcheck:
+      test: ["CMD", "test", "-f", "/tmp/iam-ok"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+      start_period: 5s
+    environment:
+      OBJSTORE_HOST: object-storage:9000
+      POOLROUTER_ARSIP_BUCKET: ${POOLROUTER_ARSIP_BUCKET:-poolrouter-arsip-dev}
+      OBJSTORE_WORKER_ACCESS_KEY: ${OBJSTORE_WORKER_ACCESS_KEY:-poolrouter-worker-arsip}
+    volumes:
+      - ./objstore/iam-init.py:/app/iam-init.py:ro
+    secrets: [objstore_root_user, objstore_root_password, objstore_worker_secret]
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    restart: "no"
+
+  # Placeholder Data Balikan untuk dev (ADR-0002 D4). Alamat tetap 10.90.0.10 di network egress.
+  # Bukan layanan Dukcapil atau Data Balikan sungguhan. Echo request saja.
+  data-balikan-mock:
+    image: docker.io/traefik/whoami@sha256:200689790a0a0ea48ca45992e0450bc26ccab5307375b41c84dfc4f2475937ab
+    profiles: ["egress-mock"]
+    networks:
+      egress:
+        ipv4_address: 10.90.0.10
+    environment:
+      WHOAMI_PORT_NUMBER: "8080"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
 
   # Monitoring internal (ADR-0006 D5), profile monitoring. Tanpa port host.
   prometheus:
@@ -141,6 +203,13 @@ volumes:
   prom_data: {}
   am_data: {}
 
+networks:
+  egress:
+    internal: true
+    ipam:
+      config:
+        - subnet: 10.90.0.0/24
+
 # Secret hanya dev (kontrak §2, POOLROUTER_SEED_PASSWORD_FILE).
 secrets:
   poolrouter_seed_password:
@@ -149,3 +218,5 @@ secrets:
     file: ${POOLROUTER_SECRETS_DIR:?isi POOLROUTER_SECRETS_DIR di file env}/objstore_root_user
   objstore_root_password:
     file: ${POOLROUTER_SECRETS_DIR:?isi POOLROUTER_SECRETS_DIR di file env}/objstore_root_password
+  objstore_worker_secret:
+    file: ${POOLROUTER_SECRETS_DIR:?isi POOLROUTER_SECRETS_DIR di file env}/objstore_worker_secret

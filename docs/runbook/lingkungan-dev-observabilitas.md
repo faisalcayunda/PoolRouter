@@ -4,14 +4,19 @@ Dokumen ini menjelaskan cara menyalakan, memeriksa, dan membersihkan tiga kompon
 
 ## Prasyarat
 - File env dev sudah ada (`deploy/compose/env/dev.env`, dari `dev.env.example`). Isi `POOLROUTER_SECRETS_DIR` dengan direktori di luar repo.
-- Di direktori secret (dir 0700, file 0444) ada `objstore_root_user` dan `objstore_root_password`. Nilainya dibuat lokal dan tidak masuk repo.
+- Di direktori secret (dir 0700, file 0444) ada `objstore_root_user`, `objstore_root_password`, dan `objstore_worker_secret`. Nilainya dibuat lokal dan tidak masuk repo. File harus 0444; 0600 membuat container gagal membaca secret.
 
 ## Menyalakan
 ```sh
-make compose-config ENV=dev CONTAINER_ENGINE=podman ENV_FILE=deploy/compose/env/dev.env COMPOSE_PROFILES="objstore monitoring" EXTRA_MOUNTS=<dir-secret>
+make compose-config ENV=dev CONTAINER_ENGINE=podman ENV_FILE=deploy/compose/env/dev.env COMPOSE_PROFILES="objstore monitoring egress-mock" EXTRA_MOUNTS=<dir-secret>
 make compose-up     ENV=dev CONTAINER_ENGINE=podman ENV_FILE=deploy/compose/env/dev.env COMPOSE_PROFILES="objstore monitoring" EXTRA_MOUNTS=<dir-secret>
 ```
-Urutan: `object-storage` healthy, lalu `objstore-init` membuat bucket `poolrouter-arsip-dev` dengan versioning dan object lock (GOVERNANCE, default retensi `POOLROUTER_ARSIP_RETENSI_HARI`), lalu keluar dengan kode 0. `prometheus` dan `alertmanager` healthy. Tidak ada port host yang dibuka oleh ketiganya.
+Urutan: `object-storage` healthy, lalu:
+- `objstore-init` membuat bucket `poolrouter-arsip-dev` dengan versioning dan object lock (GOVERNANCE, default retensi `POOLROUTER_ARSIP_RETENSI_HARI`).
+- `objstore-iam-init` membuat policy `worker-arsip-nodelete` dan user worker (`OBJSTORE_WORKER_ACCESS_KEY`, secret dari `objstore_worker_secret`). Policy hanya mengizinkan PutObject, GetObject, ListBucket, GetBucketLocation, GetBucketVersioning, GetObjectVersion, dan ListBucketVersions. Tidak ada DeleteObject, DeleteObjectVersion, atau BypassGovernanceRetention.
+- `data-balikan-mock` (alamat tetap 10.90.0.10:8080 di network `egress`, internal) sebagai placeholder egress worker.
+
+Kedua init tetap hidup dan healthy setelah selesai (`sleep infinity`), supaya `compose-up` (`--wait`) tidak gagal karena one-shot keluar. Hentikan dengan `compose-down`. `prometheus` dan `alertmanager` healthy. Tidak ada port host yang dibuka oleh layanan-layanan ini.
 
 ## Memeriksa
 - `make compose-ps ...` menampilkan status. `objstore-init` berstatus `Exited (0)` itu normal.
