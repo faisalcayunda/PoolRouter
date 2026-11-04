@@ -60,6 +60,8 @@ function DrawerNav({ pathname, onNavigate }: { pathname: string; onNavigate?: ()
 export interface AppShellProps {
   /** Current route path, used to mark the active drawer item. */
   pathname?: string;
+  /** Signed-in identity shown at the right of the top app bar (spec section 13.1). */
+  user?: { username: string; peran: string } | null;
   /** Screen rendered inside `<main>`. */
   children?: ReactNode;
 }
@@ -72,7 +74,7 @@ export interface AppShellProps {
  *   opened from the menu button.
  * - expanded and up (>= 840 px): `NavigationDrawer variant="standard"`, always visible.
  */
-export function AppShell({ pathname = '/', children }: AppShellProps) {
+export function AppShell({ pathname = '/', user, children }: AppShellProps) {
   const { t } = useTranslation();
   const isExpanded = useIsExpanded();
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -85,7 +87,7 @@ export function AppShell({ pathname = '/', children }: AppShellProps) {
   return (
     <div className="min-h-dvh bg-surface text-on-surface">
       <a
-        href="#main-content"
+        href="#konten"
         className="typescale-label-large sr-only rounded-full bg-primary px-4 py-2 text-on-primary focus:not-sr-only focus:absolute focus:top-2 focus:left-2 focus:z-50"
       >
         {t('nav.skip_link')}
@@ -100,6 +102,11 @@ export function AppShell({ pathname = '/', children }: AppShellProps) {
             </IconButton>
           )
         }
+        trailing={user ? (
+          <span className="typescale-body-medium text-on-surface-variant">
+            {user.username} · {t(`enum.peran.${user.peran}`)}
+          </span>
+        ) : undefined}
         title={<span className="font-brand px-2 text-primary">{t('common.app.name')}</span>}
       />
 
@@ -113,7 +120,7 @@ export function AppShell({ pathname = '/', children }: AppShellProps) {
           <DrawerNav pathname={pathname} onNavigate={isExpanded ? undefined : closeDrawer} />
         </NavigationDrawer>
 
-        <main id="main-content" tabIndex={-1} className="min-w-0 flex-1 p-4">
+        <main id="konten" tabIndex={-1} className="min-w-0 flex-1 p-4">
           {/* Section 4: content is capped at 1200 px so long tables stay readable on a wide screen. */}
           <div className="mx-auto w-full max-w-[1200px]">
             <Suspense
