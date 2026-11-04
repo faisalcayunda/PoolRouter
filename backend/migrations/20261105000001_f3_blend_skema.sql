@@ -215,11 +215,11 @@ CREATE TABLE blend (
   CONSTRAINT chk_blend_ringkasan CHECK (
     CASE WHEN status IN ('berjalan', 'rejected') THEN ringkasan_komponen IS NULL
          ELSE ringkasan_komponen IS NOT NULL AND fn_ringkasan_komponen_valid(ringkasan_komponen) END),
-  -- the polling window is frozen at intake for accepted async blends (async rejected blends have no queue_id)
+  -- the polling window is frozen at intake for accepted async blends. A rejected blend is never polled (no queue_id) and
+  -- its pool TTL may not even have been read, so it carries none (Klaus, SHAA-354: async non-rejected NOT NULL, rest NULL).
   CONSTRAINT chk_blend_ttl_polling CHECK (
-    CASE WHEN mode = 'sync' THEN ttl_polling_detik IS NULL
-         WHEN status = 'rejected' THEN true
-         ELSE ttl_polling_detik IS NOT NULL END),
+    CASE WHEN mode = 'async' AND status <> 'rejected' THEN ttl_polling_detik IS NOT NULL
+         ELSE ttl_polling_detik IS NULL END),
   -- idempotency: async only, never on a rejected blend (BL-07)
   CONSTRAINT chk_blend_idem CHECK (
     (idempotency_key IS NULL) = (idempotency_fingerprint IS NULL)
@@ -484,7 +484,7 @@ CREATE CONSTRAINT TRIGGER blend_terminal_konsisten AFTER UPDATE OF status ON ble
 -- Kept in its own typed table rather than as jsonb in audit_konfigurasi (physical form is Engineering's call, delta 0);
 -- same class (Terbatas), same retention as audit_akses (section 6).
 CREATE TABLE audit_gerbang_blend (
-  peristiwa_id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  urutan bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,     -- monotonic order for compare-and-set (timestamps can tie)
   terjadi_at timestamptz NOT NULL DEFAULT clock_timestamp(),
   peristiwa text NOT NULL CHECK (peristiwa IN ('gerbang_blend_dibuka', 'gerbang_blend_ditutup')),
   nilai_flag varchar(64) NOT NULL,                            -- raw value of ${POOLROUTER_BLEND_DATA_KEPENDUDUKAN_DIIZINKAN}
@@ -521,7 +521,7 @@ BEGIN
     RAISE EXCEPTION 'gerbang efektif terbuka hanya bila flag persis true dan rujukan tidak kosong (GB-01)' USING ERRCODE = 'check_violation';
   END IF;
   PERFORM pg_advisory_xact_lock(hashtextextended('poolrouter.audit_gerbang_blend', 0));
-  SELECT * INTO v_terakhir FROM audit_gerbang_blend ORDER BY terjadi_at DESC, peristiwa_id DESC LIMIT 1;
+  SELECT * INTO v_terakhir FROM audit_gerbang_blend ORDER BY urutan DESC LIMIT 1;
   IF FOUND THEN
     v_terbuka_lama := v_terakhir.peristiwa = 'gerbang_blend_dibuka';
     v_ref_lama := v_terakhir.dasar_hukum_ref;

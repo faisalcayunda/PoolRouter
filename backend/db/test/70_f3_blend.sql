@@ -36,7 +36,11 @@ DECLARE
     'ttl_polling_detik', 86400, 'batas_waktu_at', now() + interval '10 minutes', 'requested_at', now(), 'webhook_attempt_count', 0);
   rec blend;
 BEGIN
-  rec := jsonb_populate_record(NULL::blend, base || p);
+  base := base || p;
+  IF NOT (p ? 'ttl_polling_detik') AND (base ->> 'status' = 'rejected' OR base ->> 'mode' = 'sync') THEN
+    base := base || '{"ttl_polling_detik": null}'::jsonb;      -- Klaus (SHAA-354) butir 6: NULL on rejected and on sync
+  END IF;
+  rec := jsonb_populate_record(NULL::blend, base);
   INSERT INTO blend SELECT rec.*;
   INSERT INTO blend_status_history (blend_id, seq, status_dari, status_ke, aktor, alasan)
     VALUES (rec.blend_id, 1, NULL, rec.status, 'webserver', rec.reject_reason);
@@ -99,7 +103,36 @@ ROLLBACK;
 BEGIN;
 SELECT t.gagal($$SELECT t.buat_blend('{"idempotency_key":"k1"}', false)$$, '23514', 'chk_blend_idem: key and fingerprint go together');
 SELECT t.gagal($$SELECT t.buat_blend('{"mode":"sync","ttl_polling_detik":86400}', false)$$, '23514', 'sync blend has no polling window');
+SELECT t.gagal($$SELECT t.buat_blend('{"ttl_polling_detik":null}', false)$$, '23514', 'DQ-62 / butir 6: an accepted async blend needs ttl_polling_detik');
+SELECT t.gagal($$SELECT t.buat_blend('{"ttl_polling_detik":0}', false)$$, '23514', 'ttl_polling_detik must be > 0');
 SELECT t.gagal($$SELECT t.buat_blend('{"batas_waktu_at":"2000-01-01T00:00:00Z"}', false)$$, '23514', 'batas_waktu_at after requested_at');
+ROLLBACK;
+
+-- butir 6: ttl_polling_detik, three sides. (async running = filled is the helper default and is covered by the parent-child block)
+BEGIN;
+SELECT t.jalan($$SELECT t.buat_blend('{"status":"rejected","reject_reason":"kuota_habis","reject_http_status":429,"completed_at":"2026-11-05T00:00:00Z","webhook_status":"tidak_dikirim"}', false)$$,
+  'butir 6: async rejected blend with ttl_polling_detik NULL is accepted');
+SELECT t.gagal($$SELECT t.buat_blend('{"status":"rejected","reject_reason":"kuota_habis","reject_http_status":429,"completed_at":"2026-11-05T00:00:00Z","webhook_status":"tidak_dikirim","ttl_polling_detik":86400}', false)$$,
+  '23514', 'butir 6: async rejected blend with ttl_polling_detik filled is refused');
+SELECT t.jalan($$SELECT t.buat_blend('{"mode":"sync","status":"rejected","reject_reason":"kuota_habis","reject_http_status":429,"completed_at":"2026-11-05T00:00:00Z","webhook_status":"tidak_dikirim"}', false)$$,
+  'butir 6: sync rejected blend with NULL is accepted');
+-- DQ-63 (c), butir 4: objek_nonaktif with 403 (and 503) is a legal rejection that is NOT a gate rejection
+SELECT t.jalan($$SELECT t.buat_blend('{"status":"rejected","reject_reason":"objek_nonaktif","reject_http_status":403,"completed_at":"2026-11-05T00:00:00Z","webhook_status":"tidak_dikirim"}', false)$$,
+  'DQ-63 c: objek_nonaktif/403 with gerbang tidak_berlaku is accepted (the 403 alone does not mark the gate)');
+SELECT t.jalan($$SELECT t.buat_blend('{"status":"rejected","reject_reason":"objek_nonaktif","reject_http_status":503,"completed_at":"2026-11-05T00:00:00Z","webhook_status":"tidak_dikirim"}', false)$$,
+  'objek_nonaktif/503 is accepted');
+SELECT t.gagal($$SELECT t.buat_blend('{"status":"rejected","reject_reason":"objek_nonaktif","reject_http_status":403,"completed_at":"2026-11-05T00:00:00Z","webhook_status":"tidak_dikirim","gerbang_dasar_hukum":"ditolak"}', false)$$,
+  '23514', 'DQ-63 c: objek_nonaktif/403 must not carry the gate evidence ditolak');
+ROLLBACK;
+
+-- butir 7: fungsi_gagal belongs to blend.failure_reason (section 4.3) but not to the F0 request enum
+BEGIN;
+SELECT t.ok(NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = 'request'::regclass AND contype = 'c' AND pg_get_constraintdef(oid) LIKE '%fungsi_gagal%'),
+  'butir 7: no request constraint accepts fungsi_gagal');
+SELECT t.ok(EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = 'request'::regclass AND contype = 'c' AND pg_get_constraintdef(oid) LIKE '%failure_reason%retry_habis%'),
+  'butir 7: the request failure_reason domain is still the F0 list');
+SELECT t.ok((SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conrelid = 'blend'::regclass AND contype = 'c' AND pg_get_constraintdef(oid) LIKE '%timeout_sync%') LIKE '%fungsi_gagal%',
+  'butir 7: blend.failure_reason accepts fungsi_gagal');
 ROLLBACK;
 
 -- ================================================================ parent-child (BL-01..BL-03, DQ-60)
@@ -248,4 +281,74 @@ ROLLBACK;
 BEGIN; SET LOCAL ROLE pr_worker;
 SELECT t.gagal('SELECT 1 FROM blend', '42501', 'pr_worker: no access to blend');
 SELECT t.gagal('SELECT 1 FROM endpoint_blend', '42501', 'pr_worker: no access to blend configuration');
+ROLLBACK;
+
+-- ================================================================ closing a blend: DQ-61 (b)-(e), BL-05, BL-06
+CREATE OR REPLACE FUNCTION t.anak_tutup(p_rid uuid, p_ke text) RETURNS void LANGUAGE plpgsql AS $$
+DECLARE v_dari text; v_log uuid; v_aktor text := 'worker'; v_alasan text;
+BEGIN
+  SELECT status INTO v_dari FROM request WHERE request_id = p_rid;
+  IF p_ke = 'done' THEN
+    v_log := t.buat_log(p_rid, '{"status_akses":"berhasil"}');
+    UPDATE request SET status = 'done', completed_at = now(), output_payload = '{"identitas":{"status":"sesuai","skor":1}}', final_kode_transaksi = v_log,
+           sumber_hasil = 'provider', webhook_status = 'tidak_dikirim' WHERE request_id = p_rid;
+  ELSIF p_ke = 'failed' THEN
+    v_log := t.buat_log(p_rid, '{"status_akses":"tidak_diketahui"}'); v_alasan := 'retry_habis';
+    UPDATE request SET status = 'failed', failure_reason = 'retry_habis', completed_at = now(), final_kode_transaksi = v_log,
+           webhook_status = 'tidak_dikirim' WHERE request_id = p_rid;
+  ELSIF p_ke = 'expired' THEN
+    v_aktor := 'controller';
+    UPDATE request SET status = 'expired', completed_at = now(), webhook_status = 'tidak_dikirim' WHERE request_id = p_rid;
+  ELSE
+    v_aktor := 'client'; v_alasan := 'dibatalkan_client';
+    UPDATE request SET status = 'cancelled', cancel_reason = 'dibatalkan_client', cancelled_by = 'client', completed_at = now(),
+           webhook_status = 'tidak_dikirim' WHERE request_id = p_rid;
+  END IF;
+  INSERT INTO request_status_history (request_id, seq, status_dari, status_ke, alasan, aktor) VALUES (p_rid, 2, v_dari, p_ke, v_alasan, v_aktor);
+END $$;
+
+-- p_a / p_b: terminal state of the child on component 1 / 2; p_ke: terminal state the blend is closed to.
+CREATE OR REPLACE FUNCTION t.skenario(p_a text, p_b text, p_ke text) RETURNS void LANGUAGE plpgsql AS $$
+DECLARE
+  v_blend uuid := t.buat_blend('{}', false);
+  v_batas timestamptz; v_ra uuid; v_rb uuid; v_ring jsonb; v_penentu uuid;
+BEGIN
+  SELECT batas_waktu_at INTO v_batas FROM blend WHERE blend_id = v_blend;
+  v_ra := t.buat_request(jsonb_build_object('blend_id', v_blend, 'ttl_expires_at', v_batas, 'downstream_endpoint_id', '50000000-0000-7000-8000-000000000001',
+    'status', CASE WHEN p_a IN ('done', 'failed') THEN 'in_flight' ELSE 'queued' END, 'attempt_count', CASE WHEN p_a IN ('done', 'failed') THEN 1 ELSE 0 END,
+    'dispatched_at', now(), 'first_attempt_at', CASE WHEN p_a IN ('done', 'failed') THEN now() END));
+  v_rb := t.buat_request(jsonb_build_object('blend_id', v_blend, 'ttl_expires_at', v_batas, 'downstream_endpoint_id', '50000000-0000-7000-8000-000000000002',
+    'provider_id', '20000000-0000-7000-8000-000000000002',
+    'status', CASE WHEN p_b IN ('done', 'failed') THEN 'in_flight' ELSE 'queued' END, 'attempt_count', CASE WHEN p_b IN ('done', 'failed') THEN 1 ELSE 0 END,
+    'dispatched_at', now(), 'first_attempt_at', CASE WHEN p_b IN ('done', 'failed') THEN now() END));
+  PERFORM t.anak_tutup(v_ra, p_a);
+  PERFORM t.anak_tutup(v_rb, p_b);
+  SELECT jsonb_agg(jsonb_build_object('nama_komponen', k.nama_komponen, 'request_id', r.request_id, 'status_api', r.status) ORDER BY k.prioritas)
+    INTO v_ring FROM request r JOIN endpoint_blend_komponen k ON k.endpoint_blend_id = 'b1000000-0000-7000-8000-000000000001' AND k.config_version = 1
+                                                              AND k.downstream_endpoint_id = r.downstream_endpoint_id WHERE r.blend_id = v_blend;
+  SELECT request_id INTO v_penentu FROM request WHERE blend_id = v_blend ORDER BY (status = 'failed') DESC, request_id LIMIT 1;
+  UPDATE blend SET status = p_ke, completed_at = now(), ringkasan_komponen = v_ring, webhook_status = 'menunggu',
+         output_payload = CASE WHEN p_ke = 'done' THEN '{"identitas":{}}'::jsonb END,
+         failure_reason = CASE WHEN p_ke = 'failed' THEN 'retry_habis' END, anak_penentu_request_id = CASE WHEN p_ke = 'failed' THEN v_penentu END,
+         cancel_reason = CASE WHEN p_ke = 'cancelled' THEN 'dibatalkan_client' END, cancelled_by = CASE WHEN p_ke = 'cancelled' THEN 'client' END
+   WHERE blend_id = v_blend;
+  INSERT INTO blend_status_history (blend_id, seq, status_dari, status_ke, aktor, alasan)
+    VALUES (v_blend, 2, 'berjalan', p_ke, 'controller', CASE p_ke WHEN 'failed' THEN 'retry_habis' WHEN 'cancelled' THEN 'dibatalkan_client' END);
+END $$;
+GRANT EXECUTE ON FUNCTION t.anak_tutup(uuid, text), t.skenario(text, text, text) TO PUBLIC;
+
+BEGIN; SELECT t.jalan_commit($$SELECT t.skenario('done', 'done', 'done')$$, 'BL-05 1: done with every child done is accepted'); ROLLBACK;
+BEGIN; SELECT t.gagal_commit($$SELECT t.skenario('done', 'expired', 'done')$$, '23000', 'BL-05 1: done with a child not done is refused'); ROLLBACK;
+BEGIN; SELECT t.jalan_commit($$SELECT t.skenario('done', 'failed', 'failed')$$, 'BL-05 2: failed with one failed child and a deciding child is accepted'); ROLLBACK;
+BEGIN; SELECT t.gagal_commit($$SELECT t.skenario('done', 'done', 'failed')$$, '23000', 'BL-05 2: failed with every child done is refused'); ROLLBACK;
+BEGIN; SELECT t.jalan_commit($$SELECT t.skenario('cancelled', 'cancelled', 'cancelled')$$, 'DQ-61 c: cancelled with all children cancelled and no attempts is accepted'); ROLLBACK;
+BEGIN; SELECT t.gagal_commit($$SELECT t.skenario('cancelled', 'done', 'cancelled')$$, '23000', 'DQ-61 c: cancelled while a child had an attempt is refused'); ROLLBACK;
+BEGIN; SELECT t.jalan_commit($$SELECT t.skenario('expired', 'expired', 'expired')$$, 'DQ-61 d: expired with all children expired, no attempts, no log is accepted'); ROLLBACK;
+BEGIN; SELECT t.gagal_commit($$SELECT t.skenario('expired', 'done', 'expired')$$, '23000', 'DQ-61 d: expired while a child is done is refused'); ROLLBACK;
+BEGIN; SELECT t.gagal_commit($$SELECT t.skenario('expired', 'cancelled', 'expired')$$, '23000', 'DQ-61 d: expired while a child is cancelled is refused'); ROLLBACK;
+BEGIN; SELECT t.gagal_commit($$SELECT t.skenario('failed', 'expired', 'expired')$$, '23000', 'DQ-61 d: expired while a child is failed is refused'); ROLLBACK;
+-- BL-06: a terminal blend with its children terminal is frozen afterwards
+BEGIN;
+SELECT t.skenario('done', 'done', 'done');
+SELECT t.gagal($$UPDATE blend SET status = 'failed' WHERE status = 'done'$$, '23514', 'T-05: a done blend never becomes failed');
 ROLLBACK;

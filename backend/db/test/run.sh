@@ -78,6 +78,16 @@ for t in "$here"/[1-9]*.sql; do
   psql_su -d poolrouter_test -t -A -f - < "$t" >/dev/null
 done
 
+# GB-09 / U-118 butir 8: three instances start at the same moment -> one gate event (advisory lock + compare-and-set)
+echo "==> gate trail: 3 concurrent starts"
+for i in 1 2 3; do
+  psql_su -d poolrouter_test -t -A -c "SELECT fn_gerbang_blend_catat(true, 'true', 'DOC-CONC', 'inst-$i')" >/dev/null &
+done
+wait
+[ "$(psql_su -d poolrouter_test -t -A -c "SELECT count(*) FROM audit_gerbang_blend WHERE dasar_hukum_ref = 'DOC-CONC'")" = "1" ] \
+  || { echo "FAIL: 3 concurrent starts must write exactly one gate event" >&2; exit 1; }
+echo "gate trail: 3 concurrent starts wrote one event: ok"
+
 # ---- rollback: F0 -> F1 -> (refused with data) -> F0 must leave the schema identical to F0; F1 must apply again afterwards
 echo "==> rollback of the F1 migrations"
 psql_su -d postgres -c 'CREATE DATABASE poolrouter_rb'
@@ -116,4 +126,32 @@ f0_after=$(dump_schema)
 echo "rollback leaves the F0 schema identical: ok"
 apply_migrations poolrouter_rb '20261104*'
 echo "F1 applies again after rollback: ok"
+# ---- F3: initial marker values (GB-03, butir 3), rollback (down 02, then down 01) and re-apply
+echo "==> F3 migration on a database with providers, and its rollback"
+psql_su -d poolrouter_rb -c "INSERT INTO provider (provider_id, nama, data_balikan_aktif, wajib_log_nik) VALUES
+  ('20000000-0000-7000-8000-0000000000e1', 'rb-wajib', true, true), ('20000000-0000-7000-8000-0000000000e2', 'rb-mock', false, false)"
+f1_dump=$(dump_schema)
+apply_migrations poolrouter_rb '20261105*'
+[ "$(psql_su -d poolrouter_rb -t -A -c "SELECT count(*) FROM provider WHERE wajib_log_nik AND NOT butuh_dasar_hukum_blend")" = "0" ] \
+  || { echo "FAIL: a provider with wajib_log_nik must start with the marker true" >&2; exit 1; }
+[ "$(psql_su -d poolrouter_rb -t -A -c "SELECT butuh_dasar_hukum_blend FROM provider WHERE nama = 'rb-mock'")" = "f" ] \
+  || { echo "FAIL: a provider without wajib_log_nik starts false" >&2; exit 1; }
+[ "$(psql_su -d poolrouter_rb -t -A -c "SELECT count(*) FROM audit_konfigurasi WHERE aktor = 'migrasi' AND entitas_jenis = 'provider_penanda_blend' AND blend_terdampak IS NULL AND length(btrim(alasan)) > 0")" = "$(psql_su -d poolrouter_rb -t -A -c 'SELECT count(*) FROM provider')" ] \
+  || { echo "FAIL: exactly one migrasi audit entry per provider" >&2; exit 1; }
+echo "initial marker values and audit entries: ok"
+rollback_f3() {
+  for f in 2 1; do
+    { echo "SET ROLE poolrouter_owner;"; cat "$rb_dir"/2026110500000${f}_*.down.sql; } | psql_su -d poolrouter_rb -1 || return 1
+  done
+}
+psql_su -d poolrouter_rb -c "INSERT INTO endpoint_blend (endpoint_blend_id, nama) VALUES ('b1000000-0000-7000-8000-0000000000ff', 'rb_blend')"
+if rollback_f3 2>/dev/null; then echo "FAIL: rollback F3 ran although blend configuration exists" >&2; exit 1; fi
+echo "rollback F3 refuses while F3 data exists: ok"
+psql_su -d poolrouter_rb -c "DELETE FROM endpoint_blend"
+rollback_f3
+f1_after=$(dump_schema)
+[ "$f1_dump" = "$f1_after" ] || { echo "FAIL: schema after F3 rollback differs from F1" >&2; printf '%s\n' "$f1_dump" > "$here/../f1.before"; printf '%s\n' "$f1_after" > "$here/../f1.after"; diff "$here/../f1.before" "$here/../f1.after" >&2; exit 1; }
+echo "rollback F3 leaves the F1 schema identical: ok"
+apply_migrations poolrouter_rb '20261105*'
+echo "F3 applies again after rollback: ok"
 echo "DB TESTS PASSED"
