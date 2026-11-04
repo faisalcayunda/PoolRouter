@@ -4,6 +4,8 @@
 //! call each other directly; they talk through PostgreSQL and the queue
 //! (ADR-0001 section 2).
 
+pub mod admin;
+pub mod audit;
 pub mod config;
 pub mod kredensial;
 pub mod kuota;
