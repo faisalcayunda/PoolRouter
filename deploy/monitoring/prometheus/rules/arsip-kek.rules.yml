@@ -1,34 +1,44 @@
 # Aturan alert arsip log dan KEK arsip (SHAA-361, ADR-0006 rev 4 §8.1 butir 7 dan 11 d).
-# Pemilik: Platform & SRE. Direview: Huan. Ambang di sini bersifat tetap (nol kegagalan),
-# karena tidak ada ambang yang boleh dibiarkan lolos untuk jalur arsip.
-# Nilai label `hasil="gagal"` mengikuti ADR-0006 rev 4 §8.1 butir 7 dan 11 (c);
-# himpunan nilai lengkap `hasil` ada di contract (belum dirinci per metrik) dan perlu dikonfirmasi Klaus.
+# Pemilik: Platform & SRE. Direview: Huan. Ambang bersifat tetap (nol kegagalan).
+#
+# Ketergantungan pada counter (wajib dibaca sebelum mengubah jendela):
+# - `increase()` hanya menghitung kenaikan di dalam jendela. Sampel pertama sebuah
+#   series tidak punya titik pembanding, jadi counter yang muncul pertama kali
+#   langsung bernilai 1 tidak memicu alert. Alert ini karena itu mengandalkan
+#   series `hasil="gagal"` yang diinisialisasi 0 saat proses start (lihat uji
+#   `job-arsip-series-muncul-di-nilai-1`).
+# - Konfirmasi nilai `hasil` dan inisialisasi 0 ada di contract (keputusan Klaus,
+#   SHAA-361). Sampai ada konfirmasi, rule memakai `hasil="gagal"` seperti di ADR.
+#
+# Jendela 96h menutup akhir pekan: kegagalan Jumat malam tetap menyala sampai
+# tenggat 1 hari kerja (Senin). Saran di runbook: gauge "satuan tertahan" dari
+# instrumentasi sebagai pengganti jendela tetap.
 
 groups:
   - name: poolrouter-arsip-kek
     rules:
       - alert: PoolRouterArsipJobGagal
-        expr: increase(poolrouter_arsip_job_total{hasil="gagal"}[24h]) > 0
+        expr: increase(poolrouter_arsip_job_total{hasil="gagal"}[96h]) > 0
         for: 0m
         labels:
           severity: S1
           owner: platform-sre
-          tenggat_tindakan: 1h-kerja
+          tenggat_tindakan: 1-hari-kerja
         annotations:
           summary: "Job arsip log gagal (baris online melewati retensi)"
-          description: "Ada job arsip dengan hasil gagal dalam 24 jam terakhir. Baris online tetap, dan retensinya tertahan sampai satuan itu berhasil. Tenggat tindakan operator: 1 hari kerja."
-          runbook: "docs/runbook/rotasi-kek-arsip.md#4a-job-arsip-gagal"
+          description: "Ada job arsip dengan hasil gagal dalam 96 jam terakhir. Baris online tetap, dan retensinya tertahan sampai satuan itu berhasil. Tenggat tindakan operator: 1 hari kerja."
+          runbook: "docs/runbook/arsip-kek.md#4a"
           dasar: "ADR-0006 rev 4 §8.1 butir 7 (L terlampaui, gagal tertutup) dan butir 11 (c)"
 
+      # Tanpa label tenggat: ADR rev 4 §8.1 butir 11 (d) tidak menyebut tenggat untuk kanari.
       - alert: PoolRouterArsipKanariGagal
         expr: increase(poolrouter_arsip_kanari_total{hasil="gagal"}[24h]) > 0
         for: 0m
         labels:
           severity: S2
           owner: platform-sre
-          tenggat_tindakan: 1h-kerja
         annotations:
           summary: "Kanari KEK arsip gagal: kunci privat atau versi objek tidak sesuai"
           description: "Kanari harian di proses restore gagal membuka dek_terbungkus manifest terbaru atau tidak menemukan versi objek yang disematkan. Arsip baru mungkin tidak bisa dipulihkan sampai penyebabnya ditutup."
-          runbook: "docs/runbook/rotasi-kek-arsip.md#kanari-gagal"
+          runbook: "docs/runbook/arsip-kek.md#kanari-gagal"
           dasar: "ADR-0006 rev 4 §8.1 butir 11 (d)"

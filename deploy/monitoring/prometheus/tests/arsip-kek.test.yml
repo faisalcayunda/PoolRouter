@@ -1,6 +1,7 @@
 # Uji unit aturan arsip-kek.rules.yml (promtool test rules).
 # Jalankan dari root repo lewat container (Podman):
 #   podman run --rm -v "$PWD/deploy/monitoring/prometheus:/work:Z" -w /work/tests --entrypoint promtool docker.io/prom/prometheus:v3.5.0 test rules arsip-kek.test.yml
+
 rule_files:
   - ../rules/arsip-kek.rules.yml
 
@@ -33,16 +34,63 @@ tests:
           - exp_labels:
               severity: S1
               owner: platform-sre
-              tenggat_tindakan: 1h-kerja
+              tenggat_tindakan: 1-hari-kerja
               hasil: gagal
               instance: worker-arsip-1
             exp_annotations:
               summary: "Job arsip log gagal (baris online melewati retensi)"
-              description: "Ada job arsip dengan hasil gagal dalam 24 jam terakhir. Baris online tetap, dan retensinya tertahan sampai satuan itu berhasil. Tenggat tindakan operator: 1 hari kerja."
-              runbook: "docs/runbook/rotasi-kek-arsip.md#4a-job-arsip-gagal"
+              description: "Ada job arsip dengan hasil gagal dalam 96 jam terakhir. Baris online tetap, dan retensinya tertahan sampai satuan itu berhasil. Tenggat tindakan operator: 1 hari kerja."
+              runbook: "docs/runbook/arsip-kek.md#4a"
               dasar: "ADR-0006 rev 4 §8.1 butir 7 (L terlampaui, gagal tertutup) dan butir 11 (c)"
 
-  # Kegagalan kanari: alert menyala dengan severity S2.
+  # Jendela 96h: sampel per jam, kegagalan di jam ke-10 (Jumat malam).
+  # Masih menyala 72 jam sesudahnya (melewati akhir pekan) ...
+  - name: job-arsip-bertahan-72h-setelah-kegagalan
+    interval: 1h
+    input_series:
+      - series: 'poolrouter_arsip_job_total{hasil="gagal", instance="worker-arsip-1"}'
+        values: '0x10 1x200'
+    alert_rule_test:
+      - eval_time: 82h
+        alertname: PoolRouterArsipJobGagal
+        exp_alerts:
+          - exp_labels:
+              severity: S1
+              owner: platform-sre
+              tenggat_tindakan: 1-hari-kerja
+              hasil: gagal
+              instance: worker-arsip-1
+            exp_annotations:
+              summary: "Job arsip log gagal (baris online melewati retensi)"
+              description: "Ada job arsip dengan hasil gagal dalam 96 jam terakhir. Baris online tetap, dan retensinya tertahan sampai satuan itu berhasil. Tenggat tindakan operator: 1 hari kerja."
+              runbook: "docs/runbook/arsip-kek.md#4a"
+              dasar: "ADR-0006 rev 4 §8.1 butir 7 (L terlampaui, gagal tertutup) dan butir 11 (c)"
+
+  # ... dan padam sesudah jendela 96h lewat (kegagalan di jam ke-10, eval 120h > 10h + 96h).
+  - name: job-arsip-padam-setelah-jendela-96h
+    interval: 1h
+    input_series:
+      - series: 'poolrouter_arsip_job_total{hasil="gagal", instance="worker-arsip-1"}'
+        values: '0x10 1x200'
+    alert_rule_test:
+      - eval_time: 120h
+        alertname: PoolRouterArsipJobGagal
+        exp_alerts: []
+
+  # Series yang muncul pertama kali di nilai 1 tidak terdeteksi increase():
+  # tidak ada titik pembanding. Perilaku ini didokumentasikan; rule mengandalkan
+  # inisialisasi 0 saat proses start (lihat komentar di rule).
+  - name: job-arsip-series-muncul-di-nilai-1-tidak-berbunyi
+    interval: 1m
+    input_series:
+      - series: 'poolrouter_arsip_job_total{hasil="gagal", instance="worker-arsip-1"}'
+        values: '1x60'
+    alert_rule_test:
+      - eval_time: 30m
+        alertname: PoolRouterArsipJobGagal
+        exp_alerts: []
+
+  # Kegagalan kanari: alert menyala dengan severity S2 tanpa label tenggat.
   - name: kanari-gagal-berbunyi-s2
     interval: 1m
     input_series:
@@ -55,13 +103,12 @@ tests:
           - exp_labels:
               severity: S2
               owner: platform-sre
-              tenggat_tindakan: 1h-kerja
               hasil: gagal
               instance: worker-restore-1
             exp_annotations:
               summary: "Kanari KEK arsip gagal: kunci privat atau versi objek tidak sesuai"
               description: "Kanari harian di proses restore gagal membuka dek_terbungkus manifest terbaru atau tidak menemukan versi objek yang disematkan. Arsip baru mungkin tidak bisa dipulihkan sampai penyebabnya ditutup."
-              runbook: "docs/runbook/rotasi-kek-arsip.md#kanari-gagal"
+              runbook: "docs/runbook/arsip-kek.md#kanari-gagal"
               dasar: "ADR-0006 rev 4 §8.1 butir 11 (d)"
 
   # Kanari sehat (hasil lain, bukan gagal): alert tidak boleh menyala.
