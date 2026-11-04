@@ -11,8 +11,10 @@
 #   sh scripts/build-lock.sh clean    # hapus kunci basi saja (container berhenti, belum terhapus)
 #
 # Exit code:
-#   - run: exit code perintah yang dibungkus, kecuali kunci dipegang: 75 (EX_TEMPFAIL).
-#     Exit 75 hanya bila podman melaporkan bentrok nama container.
+#   - run: exit code perintah yang dibungkus. Bila kunci dipegang, run mengantre (FIFO) dan menunggu
+#     sampai BUILD_LOCK_WAIT_SECS (default 1800 = 30 menit); habis waktu: exit 75 (EX_TEMPFAIL)
+#     dengan pesan yang menyebut shaal.issue pemegang. Env: BUILD_LOCK_WAIT_SECS, BUILD_LOCK_POLL_SECS,
+#     BUILD_LOCK_QUEUE_DIR.
 #   - clean: 0 bila tidak ada kunci basi atau sudah dihapus; 1 bila kunci masih dipegang container jalan.
 set -u
 
@@ -52,28 +54,81 @@ attempt() {
 	rc=$(cat "$WD/rc")
 }
 
+# --- Antrean FIFO (SHAA-395) ---
+# Run yang menemui kunci terpegang tidak gagal seketika: ia mengambil tiket di antrean bersama host
+# (BUILD_LOCK_QUEUE_DIR), lalu menunggu sampai tiketnya paling depan dan kunci container bebas.
+# Nama tiket = <nanodetik>-<pid>, jadi urutan nama = urutan datang. Tiket milik proses yang sudah mati
+# dibuang otomatis, jadi run yang di-kill tidak menyumbat antrean. Kunci container tetap dipegang
+# hanya oleh container build (--rm), seperti sebelumnya; antrean hanya mengatur siapa yang boleh
+# mencoba berikutnya. Kunci basi tetap dibersihkan oleh remove_stale (tidak diubah, lihat SHAA-366).
+QUEUE="${BUILD_LOCK_QUEUE_DIR:-${TMPDIR:-/tmp}/shaal-build-lock-queue}"
+WAIT_SECS="${BUILD_LOCK_WAIT_SECS:-1800}"
+POLL_SECS="${BUILD_LOCK_POLL_SECS:-2}"
+
+now_secs() { date +%s; }
+
+# queue_head: nama tiket paling depan yang prosesnya masih hidup (tiket mati dibuang).
+queue_head() {
+	for t in $(ls "$QUEUE" 2>/dev/null | sort); do
+		pid=${t##*-}
+		if kill -0 "$pid" 2>/dev/null; then
+			echo "$t"
+			return 0
+		fi
+		rm -f "$QUEUE/$t"
+	done
+	return 1
+}
+
+queue_len() { ls "$QUEUE" 2>/dev/null | wc -l | tr -d ' '; }
+
+is_conflict() {
+	[ "$rc" = 125 ] && grep -Eq "(container name \"/?$NAME\" is already in use|The container name \"/?$NAME\" is already in use)" "$WD/log"
+}
+
+# try_once <cmd...>: 0 bila perintah sempat jalan (exit code di $rc), 1 bila kunci terpegang.
+try_once() {
+	if "$ENGINE" container inspect "$NAME" >/dev/null 2>&1; then
+		remove_stale || return 1
+		echo "build-lock: kunci basi dihapus." >&2
+	fi
+	attempt "$@"
+	if is_conflict; then
+		return 1
+	fi
+	return 0
+}
+
 cmd_run() {
 	[ "${1:-}" = "--" ] && shift
 	[ $# -gt 0 ] || { echo "build-lock: perintah kosong" >&2; return 2; }
 	mkdir -p .cache
+	mkdir -p "$QUEUE" && chmod 1777 "$QUEUE" 2>/dev/null
 	# Direktori kerja unik per run: dua run dari worktree yang sama tidak saling menimpa.
 	WD=$(mktemp -d .cache/build-lock.XXXXXX) || return 1
-	trap 'rm -rf "$WD"' EXIT
-	attempt "$@"
-	if [ "$rc" = 125 ] && grep -Fq "container name \"$NAME\" is already in use" "$WD/log"; then
-		if remove_stale; then
-			echo "build-lock: kunci basi dihapus, mencoba sekali lagi." >&2
-			attempt "$@"
-			if [ "$rc" = 125 ] && grep -Fq "container name \"$NAME\" is already in use" "$WD/log"; then
-				echo "build-lock: kunci dipegang $(holder_text). Jalankan pekerjaan non-compile, atau tunggu sampai container itu selesai." >&2
-				rc=$EX_TEMPFAIL
+	TICKET="$QUEUE/$(date +%s%N)-$$"
+	: >"$TICKET"
+	trap 'rm -rf "$WD"; rm -f "$TICKET"' EXIT
+	trap 'exit 130' INT TERM
+	deadline=$(( $(now_secs) + WAIT_SECS ))
+	announced=0
+	while :; do
+		head=$(queue_head || true)
+		if [ "$head" = "${TICKET##*/}" ]; then
+			if try_once "$@"; then
+				return "$rc"
 			fi
-		else
-			echo "build-lock: kunci dipegang $(holder_text). Jalankan pekerjaan non-compile, atau tunggu sampai container itu selesai." >&2
-			rc=$EX_TEMPFAIL
 		fi
-	fi
-	return "$rc"
+		if [ "$(now_secs)" -ge "$deadline" ]; then
+			echo "build-lock: batas tunggu ${WAIT_SECS} detik habis; kunci dipegang $(holder_text), antrean $(queue_len) run. Tidak ada build yang dijalankan." >&2
+			return "$EX_TEMPFAIL"
+		fi
+		if [ "$announced" -le "$(now_secs)" ]; then
+			echo "build-lock: menunggu giliran (kunci dipegang $(holder_text); antrean $(queue_len) run; batas ${WAIT_SECS} detik)." >&2
+			announced=$(( $(now_secs) + 60 ))
+		fi
+		sleep "$POLL_SECS"
+	done
 }
 
 cmd_status() {

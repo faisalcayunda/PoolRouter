@@ -25,7 +25,28 @@ RUNNER=docker CONTAINER_LABEL=shaal.issue=SHAA-<n> make -C backend test
 
 `test` menjalankan `test-rust`, `db-test` (PostgreSQL 17 sementara), dan `uji-lua` (Redis sementara). Keduanya memakai engine Docker dari `DB_ENGINE` dan `LUA_ENGINE`, yang mengikuti `RUNNER`.
 
-Setiap target `HEAVY` (`test-rust`, `lint` clippy, `test`) lewat kunci `scripts/build-lock.sh` dengan `BUILD_LOCK_ENGINE=docker`. Jika kunci dipegang, target keluar dengan exit 75. Tunggu, lalu ulangi.
+Setiap target `HEAVY` (`test-rust`, `lint` clippy, `test`, dan `pnpm install` frontend) lewat kunci `scripts/build-lock.sh` dengan `BUILD_LOCK_ENGINE=docker`.
+
+### Kunci build: antre FIFO (SHAA-395)
+
+Jika kunci `shaal-build-heavy` dipegang, target **menunggu**, tidak gagal seketika:
+
+- Run mengambil tiket di antrean host (`BUILD_LOCK_QUEUE_DIR`, default `${TMPDIR:-/tmp}/shaal-build-lock-queue`; nama tiket = nanodetik datang + PID). Hanya run dengan tiket paling depan yang boleh mencoba memulai container, jadi urutannya FIFO dan tidak ada yang direbut run yang datang belakangan.
+- Pesan `build-lock: menunggu giliran (kunci dipegang ... shaal.issue=SHAA-<n> ...)` muncul saat mulai menunggu dan tiap 60 detik.
+- Batas tunggu: `BUILD_LOCK_WAIT_SECS`, default **1800** (30 menit). Contoh: `BUILD_LOCK_WAIT_SECS=3600 make push-main ...`. Interval cek: `BUILD_LOCK_POLL_SECS` (default 2).
+- Batas habis: exit **75** (`EX_TEMPFAIL`), pesan menyebut label `shaal.issue` pemegang kunci dan panjang antrean. Tidak ada build yang jalan; push-main berhenti tanpa push.
+- Tiket milik proses yang mati (kill, VM restart) dibuang otomatis oleh run berikutnya, jadi antrean tidak tersumbat. Kunci container yang tertinggal (basi) tetap ditangani seperti sebelumnya (`build-lock-clean`; perbaikan lanjutan di SHAA-366).
+- Kunci tetap hanya milik container build (`--rm`); antrean hanya mengatur giliran mencoba. Run di luar skrip (memakai nama container yang sama langsung) tidak antre, tetapi run yang antre menunggunya selesai.
+- Pastikan `timeout` job/agent Anda lebih besar dari `BUILD_LOCK_WAIT_SECS` plus lama build.
+
+Uji manual (engine Docker, image apa saja yang punya `sleep`):
+
+```sh
+export BUILD_LOCK_ENGINE=docker
+run() { sh scripts/build-lock.sh run -- docker run --rm --name shaal-build-heavy --label shaal.build=heavy --label shaal.issue=$1 --entrypoint sleep <image> $2; }
+run SHAA-A 6 & sleep 1; run SHAA-B 3 & sleep 1; run SHAA-C 3 & wait      # selesai berurutan A, B, C
+run SHAA-A 12 & sleep 2; BUILD_LOCK_WAIT_SECS=4 run SHAA-B 1; echo $?    # 75
+```
 
 ## Ambang ruang kosong
 
