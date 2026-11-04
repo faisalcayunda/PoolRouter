@@ -58,7 +58,7 @@ pub enum GalatPemulihan {
 
 /// Pool ids go into the key between braces (a hash tag), so they may not
 /// contain anything that changes how the key parses.
-fn periksa_pool(pool: &str) -> Result<(), GalatPemulihan> {
+pub(super) fn periksa_pool(pool: &str) -> Result<(), GalatPemulihan> {
     let sah = !pool.is_empty()
         && pool
             .chars()
@@ -102,6 +102,12 @@ pub fn kunci_rl(pool: &str, jenis: &str, porsi_sync: bool) -> String {
     } else {
         format!("pr:rl:{{{pool}}}:{jenis}")
     }
+}
+
+/// `pr:tolak:{<client_id>}`, the rejection limiter of one client (ADR-0002 rev 5
+/// D6). Separate from every pool key.
+pub fn kunci_tolak(client: &str) -> String {
+    format!("pr:tolak:{{{client}}}")
 }
 
 /// Slot member `<request_id>:<nomor_percobaan>` (D1.2). One function, so a slot
@@ -491,6 +497,7 @@ mod tests {
         assert_eq!(kunci_rl("p1", "tps", false), "pr:rl:{p1}:tps");
         assert_eq!(kunci_rl("p1", "tph", true), "pr:rl:{p1}:tph:sync");
         assert_eq!(member_slot("req-1", 2), "req-1:2");
+        assert_eq!(kunci_tolak("c1"), "pr:tolak:{c1}");
     }
 
     #[test]
