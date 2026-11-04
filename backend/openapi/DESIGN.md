@@ -284,7 +284,7 @@ hash yang di-review (lihat komentar issue untuk hash dan exit code per target).
 `enqueueAsync` memakai path `/v1/endpoints/{endpoint_id}/async` (U-4, diputuskan).
 Penolakan yang masih terbuka dicatat di tabel §7.
 
-## 7. Keputusan review (U-1…U-11 sudah ditutup)
+## 7. Keputusan review (U-1…U-15 sudah ditutup)
 
 Semua butir di bawah sudah diputuskan oleh Shu dan berlaku di YAML. Tabelnya
 dipertahankan sebagai riwayat keputusan, bukan permintaan baru.
@@ -302,5 +302,11 @@ dipertahankan sebagai riwayat keputusan, bukan permintaan baru.
 | U-9 | Lokasi kesalahan template di `errors[{field, kode, batas}]` | **Diterima:** `field` = nama field seperti yang dikirim; `batas` = parameter angka aturan (`type: number`) |
 | U-10 | Daftar request milik client untuk CO tidak punya story F0 | **Diterima:** tidak dimasukkan |
 | U-11 | Pembacaan audit konfigurasi di UI tidak ada di lingkup issue | **Diterima:** tidak dimasukkan |
+| U-12 | Bentuk `client_id` di kabel (SHAA-198 bagian 1b) | **Diputuskan Shu:** UUID `client.client_id`, bukan `client.nama` (nama bisa diubah dan berspasi). `sub` JWT dan label metrik `client_id` memakai UUID yang sama. `TokenRequest.client_id` mendapat `format: uuid`. `client_id` yang tidak bisa di-parse → 401 `tidak_terautentikasi` tanpa query DB |
+| U-13 | Format API key dan lookup | **Diputuskan Shu:** `pr_<credential_id 32 hex>_<secret 256 bit base64url>`. `kunci_hash` = SHA-256 atas bagian secret saja. Lookup dari `credential_id`, bandingkan waktu-konstan; format rusak → 401 tanpa query DB. Lolos bila jenis API key, aktif, `kedaluwarsa_at` > now, dan client aktif. Client secret: lookup dari `client_id`, argon2id terhadap ≤ 2 kredensial aktif yang belum kedaluwarsa. Pembangkit dan parser satu kali di `core::kredensial` (dipakai juga SHAA-196); `CredentialSecret.secret` untuk API key berisi string `pr_…` lengkap |
+| U-14 | Kunci JWT dan `kid` | **Diputuskan Shu:** `POOLROUTER_JWT_SIGNING_KEY_FILE` berisi PEM PKCS#8; Ed25519 → EdDSA (default), P-256 → ES256, jenis lain → gagal start. `kid` = JWK thumbprint RFC 7638 (SHA-256, base64url). `POOLROUTER_JWT_VERIFY_KEY_FILE` opsional, PEM kunci publik, untuk rotasi (§5a.5). Algoritma diambil dari kunci, bukan header; `kid` tak dikenal → 401; leeway 60 s |
+| U-15 | Alamat dan throttle token | **Diputuskan Shu:** `POOLROUTER_API_ADDR` default `127.0.0.1:8081`, `POOLROUTER_ADMIN_ADDR` default `127.0.0.1:9090`; compose men-set `0.0.0.0` di jaringan internal tanpa port host untuk 9090. Throttle endpoint token wajib di Redis untuk F0 (kunci terpisah per `client_id` dan per IP; Redis mati → 503 fail-closed). `gcra.rs` in-process hanya transisi sampai bagian 2; R-05 (throttle) baru diklaim lulus setelah bagian 2 |
+
+Sumber U-12…U-15: keputusan Shu, komentar `01a1a57e-a4df-7720-b3af-2410e5c74294` di SHAA-198 (2026-11-04 07.38 UTC). Akan masuk revisi ADR-0001 §5a.5 berikutnya.
 
 Cek terhadap UI (layar, copy) tidak saya lakukan di dokumen ini; itu bagian review Fitcher.
