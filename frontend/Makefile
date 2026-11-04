@@ -22,6 +22,12 @@ CONTAINER_MEMORY ?= 2g
 PNPM_HOME_DIR := /work/frontend/.cache/corepack
 # Keep the pnpm store and metadata cache in .cache/ (git- and lint-ignored) so retries are incremental.
 CACHE_ENV := -e npm_config_store_dir=/work/frontend/.cache/pnpm-store -e npm_config_cache=/work/frontend/.cache/npm
+# Docker lane (SHAA-394): store pnpm dan cache npm dipakai bersama semua checkout di host (dibatasi di docker-lane.sh),
+# bergantian di bawah kunci heavy. Pembersihan: `make clean-cache-shared`. RUNNER lain tetap per checkout.
+SHARED_PNPM_DIR ?= /data/workspace/shaal-build/pnpm
+ifeq ($(FRONTEND_RUNNER),docker)
+CACHE_ENV := -v "$(SHARED_PNPM_DIR)":/cache/pnpm -e npm_config_store_dir=/cache/pnpm/store -e npm_config_cache=/cache/pnpm/npm
+endif
 PNPM_INSTALL_FLAGS ?= --network-concurrency 2
 NODE_CMD = $(NODE_IMAGE) sh -c 'corepack enable && exec "$$@"' sh
 
@@ -60,7 +66,7 @@ endif
 
 PNPM = $(RUN) pnpm
 
-.PHONY: help check-label setup test lint fmt clean gen-api gen-api-check build build-e2e e2e i18n-check i18n-types build-lock-status build-lock-clean
+.PHONY: help check-label clean-cache-shared setup test lint fmt clean gen-api gen-api-check build build-e2e e2e i18n-check i18n-types build-lock-status build-lock-clean
 
 help:
 	@echo "targets: setup test lint fmt clean gen-api gen-api-check build build-e2e e2e i18n-check i18n-types"
@@ -83,7 +89,18 @@ check-disk:
 # Heavy targets run under the K-41 lock: they create node_modules or compile bundles.
 # setup (pnpm install), build (vite build), test (vitest), and e2e (Chromium) are locked.
 # A held lock exits 75 (EX_TEMPFAIL): switch to non-compile work and retry, don't wait.
+# Kosongkan store pnpm bersama (eksplisit, di bawah kunci heavy). Hanya isi /cache/pnpm; node_modules checkout tak disentuh.
+ifeq ($(FRONTEND_RUNNER),docker)
+clean-cache-shared: check-label
+	@mkdir -p "$(SHARED_PNPM_DIR)"
+	$(HEAVY) sh -c 'rm -rf -- /cache/pnpm/store /cache/pnpm/npm'
+else
+clean-cache-shared:
+	@echo "clean-cache-shared hanya untuk FRONTEND_RUNNER=docker" >&2; exit 2
+endif
+
 setup: check-label $(CHECK_DISK)
+	$(if $(filter docker,$(FRONTEND_RUNNER)),@mkdir -p "$(SHARED_PNPM_DIR)")
 	$(HEAVY) pnpm install --frozen-lockfile $(PNPM_INSTALL_FLAGS)
 
 test: check-label $(CHECK_DISK)

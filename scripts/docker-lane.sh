@@ -26,6 +26,17 @@ free_gb() { df -BG --output=avail "$1" | tail -1 | tr -dc '0-9'; }
 free_mb() { df -BM --output=avail "$1" | tail -1 | tr -dc '0-9'; }
 size_mb() { [[ -d "$1" ]] && du -sm "$1" | cut -f1 || echo 0; }
 
+SHARED_CARGO_HOME="${SHARED_CARGO_HOME:-/data/workspace/shaal-build/cargo-home}"
+SHARED_CARGO_HOME_LIMIT_MB="${SHARED_CARGO_HOME_LIMIT_MB:-2560}"   # cargo-home + rustup bersama (SHAA-394)
+
+# Penjaga cargo-home bersama (SHAA-394): melapor ukuran; di atas batas => berhenti, TIDAK menghapus apa pun.
+check_cargo_home() {
+  local csize
+  csize="$(size_mb "$SHARED_CARGO_HOME")"
+  echo "cargo-home bersama $SHARED_CARGO_HOME: ${csize}M (batas ${SHARED_CARGO_HOME_LIMIT_MB}M)"
+  (( csize <= SHARED_CARGO_HOME_LIMIT_MB )) || die "cargo-home bersama ${csize}M melebihi batas; jalankan 'make -C backend clean-cache-shared RUNNER=docker CONTAINER_LABEL=...' atau naikkan SHARED_CARGO_HOME_LIMIT_MB dengan keputusan tertulis."
+}
+
 # Penjaga /: (1) target bersama > batas => cargo clean di bawah kunci (exit 75 bila kunci dipegang);
 # (2) bebas / harus >= ROOT_MIN_FREE_MB + sisa ruang tumbuh target sampai batasnya. Di bawah itu: exit non-nol.
 check_root() {
@@ -61,6 +72,7 @@ check() {
   if (( free_root < MIN_FREE_ROOT_GB )) || (( free_data < MIN_FREE_DATA_GB )); then
     die "ruang kosong di bawah ambang; run berhenti. Jangan diakali, lapor blocker."
   fi
+  [[ -d "$SHARED_CARGO_HOME" ]] && check_cargo_home
   [[ -d "$(dirname "$SHARED_TARGET_DIR")" ]] && check_root
   echo "OK: ruang kosong di atas ambang"
 }
