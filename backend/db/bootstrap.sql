@@ -17,12 +17,16 @@
 \set pw_controller `cat "$POOLROUTER_SECRETS_DIR/pr_controller"`
 \set pw_worker `cat "$POOLROUTER_SECRETS_DIR/pr_worker"`
 \set pw_webhook `cat "$POOLROUTER_SECRETS_DIR/pr_webhook"`
+\set pw_job_balikan `cat "$POOLROUTER_SECRETS_DIR/pr_job_balikan"`
+\set pw_job_arsip `cat "$POOLROUTER_SECRETS_DIR/pr_job_arsip"`
+\set pw_restore `cat "$POOLROUTER_SECRETS_DIR/pr_restore"`
 
 DO $$
 DECLARE
   r text;
 BEGIN
-  FOREACH r IN ARRAY ARRAY['poolrouter_owner', 'pr_api', 'pr_admin_api', 'pr_controller', 'pr_worker', 'pr_webhook']
+  FOREACH r IN ARRAY ARRAY['poolrouter_owner', 'pr_api', 'pr_admin_api', 'pr_controller', 'pr_worker', 'pr_webhook',
+                           'pr_job_balikan', 'pr_job_arsip', 'pr_restore']
   LOOP
     IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = r) THEN
       EXECUTE format('CREATE ROLE %I LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS', r);
@@ -37,6 +41,10 @@ ALTER ROLE pr_admin_api PASSWORD :'pw_admin_api';
 ALTER ROLE pr_controller PASSWORD :'pw_controller';
 ALTER ROLE pr_worker PASSWORD :'pw_worker';
 ALTER ROLE pr_webhook PASSWORD :'pw_webhook';
+-- F1 (SHAA-333): separate job roles for the data-balikan, archive and restore workers (contract F1-5.4, F1-6.5).
+ALTER ROLE pr_job_balikan PASSWORD :'pw_job_balikan';
+ALTER ROLE pr_job_arsip PASSWORD :'pw_job_arsip';
+ALTER ROLE pr_restore PASSWORD :'pw_restore';
 
 -- Never let a statement from the application roles leak parameters into the server log
 -- (ADR-0001 section 7.1, contract R-04). Two settings, both needed:
@@ -48,6 +56,12 @@ ALTER ROLE pr_admin_api SET log_parameter_max_length_on_error = 0;
 ALTER ROLE pr_controller SET log_parameter_max_length_on_error = 0;
 ALTER ROLE pr_worker SET log_parameter_max_length_on_error = 0;
 ALTER ROLE pr_webhook SET log_parameter_max_length_on_error = 0;
+ALTER ROLE pr_job_balikan SET log_parameter_max_length_on_error = 0;
+ALTER ROLE pr_job_arsip SET log_parameter_max_length_on_error = 0;
+ALTER ROLE pr_restore SET log_parameter_max_length_on_error = 0;
+ALTER ROLE pr_job_balikan SET log_parameter_max_length = 0;
+ALTER ROLE pr_job_arsip SET log_parameter_max_length = 0;
+ALTER ROLE pr_restore SET log_parameter_max_length = 0;
 ALTER ROLE pr_api SET log_parameter_max_length = 0;
 ALTER ROLE pr_admin_api SET log_parameter_max_length = 0;
 ALTER ROLE pr_controller SET log_parameter_max_length = 0;
@@ -62,9 +76,10 @@ ALTER ROLE pr_webhook SET log_parameter_max_length = 0;
 -- The database and the public schema belong to poolrouter_owner; nobody else may create objects.
 SELECT format('ALTER DATABASE %I OWNER TO poolrouter_owner', :'dbname') \gexec
 SELECT format('REVOKE ALL ON DATABASE %I FROM PUBLIC', :'dbname') \gexec
-SELECT format('GRANT CONNECT ON DATABASE %I TO pr_api, pr_admin_api, pr_controller, pr_worker, pr_webhook', :'dbname') \gexec
+SELECT format('GRANT CONNECT ON DATABASE %I TO pr_api, pr_admin_api, pr_controller, pr_worker, pr_webhook, pr_job_balikan, pr_job_arsip, pr_restore', :'dbname') \gexec
 
 \connect :dbname
 ALTER SCHEMA public OWNER TO poolrouter_owner;
 REVOKE ALL ON SCHEMA public FROM PUBLIC;
-GRANT USAGE ON SCHEMA public TO pr_api, pr_admin_api, pr_controller, pr_worker, pr_webhook;
+GRANT USAGE ON SCHEMA public TO pr_api, pr_admin_api, pr_controller, pr_worker, pr_webhook,
+  pr_job_balikan, pr_job_arsip, pr_restore;

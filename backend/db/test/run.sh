@@ -14,6 +14,7 @@ NAME="poolrouter-dbtest-$$"
 here=$(cd "$(dirname "$0")" && pwd)
 db_dir=$(cd "$here/.." && pwd)
 mig_dir=$(cd "$db_dir/../migrations" && pwd)
+rb_dir=$(cd "$db_dir/rollback" && pwd)
 
 cleanup() {
   $ENGINE rm -f -v "$NAME" >/dev/null 2>&1 || true
@@ -41,7 +42,7 @@ psql_su() { $ENGINE exec -i "$NAME" psql -U postgres -h 127.0.0.1 --no-psqlrc -q
 echo "==> secrets and role bootstrap"
 $ENGINE exec "$NAME" sh -c '
   umask 077; mkdir -p /tmp/sec
-  for r in poolrouter_owner pr_api pr_admin_api pr_controller pr_worker pr_webhook; do
+  for r in poolrouter_owner pr_api pr_admin_api pr_controller pr_worker pr_webhook pr_job_balikan pr_job_arsip pr_restore; do
     od -An -N18 -tx1 /dev/urandom | tr -d " \n" > /tmp/sec/$r
   done'
 $ENGINE exec "$NAME" mkdir -p /tmp/db
@@ -57,11 +58,12 @@ $ENGINE exec -e POOLROUTER_SECRETS_DIR=/tmp/sec -e PGUSER=postgres -e PGHOST=127
 echo "bootstrap: ok (run twice)"
 
 echo "==> migrations from empty"
+# apply_migrations <database> [glob]: every migration (or those matching the glob) as one transaction, as poolrouter_owner
 apply_migrations() {
-  { echo "SET ROLE poolrouter_owner;"; for f in "$mig_dir"/*.sql; do echo "-- $(basename "$f")"; cat "$f"; echo; done; } \
-    | psql_su -d poolrouter_test -1
+  { echo "SET ROLE poolrouter_owner;"; for f in "$mig_dir"/${2:-*}.sql; do echo "-- $(basename "$f")"; cat "$f"; echo; done; } \
+    | psql_su -d "$1" -1
 }
-apply_migrations
+apply_migrations poolrouter_test
 echo "migrations: ok"
 
 echo "==> assertions"
@@ -75,4 +77,32 @@ for t in "$here"/[1-9]*.sql; do
   echo "--- $(basename "$t")"
   psql_su -d poolrouter_test -t -A -f - < "$t" >/dev/null
 done
+
+# ---- rollback: F0 -> F1 -> (refused with data) -> F0 must leave the schema identical to F0; F1 must apply again afterwards
+echo "==> rollback of the F1 migrations"
+psql_su -d postgres -c 'CREATE DATABASE poolrouter_rb'
+$ENGINE exec -e POOLROUTER_SECRETS_DIR=/tmp/sec -e PGUSER=postgres -e PGHOST=127.0.0.1 -e PGPASSWORD="$SU_PW" \
+  "$NAME" sh /tmp/db/bootstrap.sh poolrouter_rb
+dump_schema() { $ENGINE exec -e PGPASSWORD="$SU_PW" "$NAME" pg_dump -U postgres -h 127.0.0.1 -s --no-comments -d poolrouter_rb | grep -v -E '^.(un)?restrict '; }
+rollback_all() {
+  for f in 4 3 2 1; do
+    { echo "SET ROLE poolrouter_owner;"; cat "$rb_dir"/2026110400000${f}_*.down.sql; } | psql_su -d poolrouter_rb -1 || return 1
+  done
+}
+apply_migrations poolrouter_rb '20261103*'
+f0_dump=$(dump_schema)
+apply_migrations poolrouter_rb '20261104*'
+# with F1 data the rollback must refuse and leave everything in place
+psql_su -d poolrouter_rb -c "INSERT INTO admin_user (pengguna_id, username, password_hash) VALUES ('00000000-0000-7000-8000-0000000000a1', 'rb-user', '\$argon2id\$synthetic');
+  INSERT INTO pengguna_mfa (pengguna_id, secret_ciphertext, secret_dek_terbungkus, secret_nonce, kek_id, status)
+  VALUES ('00000000-0000-7000-8000-0000000000a1', '\\xaa', '\\xbb', '\\xcc', 'kek-1', 'menunggu_konfirmasi')"
+if rollback_all 2>/dev/null; then echo "FAIL: rollback ran although MFA data exists" >&2; exit 1; fi
+echo "rollback refuses while F1 data exists: ok"
+psql_su -d poolrouter_rb -c "DELETE FROM pengguna_mfa; DELETE FROM admin_user WHERE username = 'rb-user'"
+rollback_all
+f0_after=$(dump_schema)
+[ "$f0_dump" = "$f0_after" ] || { echo "FAIL: schema after rollback differs from F0" >&2; printf '%s\n' "$f0_dump" > "$here/../f0.before"; printf '%s\n' "$f0_after" > "$here/../f0.after"; diff "$here/../f0.before" "$here/../f0.after" >&2; exit 1; }
+echo "rollback leaves the F0 schema identical: ok"
+apply_migrations poolrouter_rb '20261104*'
+echo "F1 applies again after rollback: ok"
 echo "DB TESTS PASSED"

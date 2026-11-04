@@ -146,8 +146,8 @@ SELECT t.ok(t.hitung($q$SELECT count(*) FROM request r JOIN _x ON r.request_id =
 SELECT t.ok(t.hitung($q$SELECT count(*) FROM request r JOIN _x ON r.request_id = _x.rid WHERE _x.n = 2 AND r.input_payload IS NULL AND r.output_payload IS NULL AND r.payload_purged_at IS NOT NULL$q$) = 1, 'P-03: purged request lost input and output');
 SELECT t.ok(t.hitung($q$SELECT count(*) FROM request r WHERE status = 'done' AND completed_at > now() - interval '1 hour' AND payload_purged_at IS NOT NULL$q$) = 0, 'P-03: nothing inside the polling window is purged (S-05)');
 -- H-02: reported (diterima) releases the hold
-INSERT INTO data_balikan_batch (batch_id, provider_id, pemicu, periode_mulai_at, periode_selesai_at, jumlah_item, status, jadwal_kirim_at, payload_hash)
-  VALUES ('c0000000-0000-7000-8000-000000000001', '20000000-0000-7000-8000-000000000001', 'periode', now(), now(), 1, 'diterima', now(), repeat('b', 64));
+INSERT INTO data_balikan_batch (batch_id, provider_id, pemicu, periode_mulai_at, periode_selesai_at, jumlah_item, status, jadwal_kirim_at, payload_hash, config_ref_version)
+  VALUES ('c0000000-0000-7000-8000-000000000001', '20000000-0000-7000-8000-000000000001', 'periode', now(), now(), 1, 'diterima', now(), repeat('b', 64), 1);
 INSERT INTO data_balikan_item SELECT 'c0000000-0000-7000-8000-000000000001', rid, kode, '0000000000000021', '{}', '{}', '2026-10-01 00:00+00' FROM _x WHERE n = 1;
 SELECT t.ok(NOT (SELECT fn_ditahan_data_balikan(rid) FROM _x WHERE n = 1), 'H-02: hold released once the batch is diterima');
 ROLLBACK;
