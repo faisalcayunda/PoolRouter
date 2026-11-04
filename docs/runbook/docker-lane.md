@@ -29,7 +29,7 @@ Setiap target `HEAVY` (`test-rust`, `lint` clippy, `test`) lewat kunci `scripts/
 
 ## Ambang ruang kosong
 
-Sebelum setiap langkah, jalankan:
+Di `RUNNER=docker`, Makefile menjalankan `check-disk` (`scripts/docker-lane.sh check`) sebagai prasyarat `check-label`. Jadi setiap target yang memakai container (`setup`, `test-rust`, `lint`, `test`, `db-test`, `uji-lua`) berhenti dengan exit ≠ 0 sebelum container jalan, bila ruang di bawah ambang. Cek manual:
 
 ```sh
 scripts/docker-lane.sh check
@@ -37,7 +37,7 @@ scripts/docker-lane.sh check
 
 - Ambang: 3G untuk filesystem Docker root (`/var/lib/docker`), 1G untuk `/data`.
 - Di bawah ambang: run berhenti dan melapor. Jangan diakali, jangan turunkan ambang tanpa keputusan Luca.
-- Pakai `MIN_FREE_ROOT_GB` atau `MIN_FREE_DATA_GB` hanya dengan keputusan tertulis.
+- Pakai `MIN_FREE_ROOT_GB` atau `MIN_FREE_DATA_GB` hanya dengan keputusan tertulis. Bukti guard: `MIN_FREE_DATA_GB=999 make -C backend test-rust RUNNER=docker CONTAINER_LABEL=shaal.issue=SHAA-<n>` keluar exit 2 sebelum container apa pun dibuat.
 
 Selama build, pantau dengan `df -BG /data`. Jika ruang turun di bawah 3G, hentikan build (Ctrl-C, lalu `docker ps --filter label=shaal.issue=SHAA-<n>`), bersihkan (lihat di bawah), lalu laporkan angka puncak.
 
@@ -57,7 +57,16 @@ scripts/docker-lane.sh builder-prune
 
 Yang dilarang di lane ini: `docker system prune` dalam bentuk apa pun, `docker volume prune`, `docker image prune -a`, dan `docker rm` tanpa filter label. Container milik layanan lain di host (`shaal-9router-*`, `shaal-hermes-*`, `dokploy-traefik`, container tanpa label `shaal.issue`) tidak boleh disentuh.
 
-Cache repo di `backend/.cache/` dan `backend/target/` tinggal di checkout (di-gitignore). Hapus manual dengan `make -C backend clean` bila perlu ruang.
+Cache repo di `backend/.cache/` dan `backend/target/` tinggal di checkout (di-gitignore).
+
+### Batas cache
+
+- Batas `backend/.cache/` dan `backend/target/` gabungan: **2G**. Di atas itu, jalankan `make -C backend clean` di checkout itu sebelum build berikutnya. Hasilnya build ulang penuh, jadi lakukan hanya saat ruang kritis.
+- Pada pengukuran 2026-11-04, `target/` 1.1G dan `.cache/` 1.3G, jadi sudah di atas batas itu. Keputusan ini diterima dengan konsekuensi build ulang.
+
+### Kepemilikan file
+
+Container berjalan sebagai root, jadi file di `backend/target/` dan `backend/.cache/` dimiliki root. Akibatnya `make -C backend clean` berhasil lewat container, tetapi `rm -rf` langsung di host bisa gagal dengan izin. Pakai `make -C backend clean` untuk menghapus. Agent lain di checkout yang sama mungkin perlu `sudo` bila membersihkan manual.
 
 ## Pengukuran (2026-11-04, sandbox instabox, /data 20G)
 

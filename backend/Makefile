@@ -63,8 +63,13 @@ REPO_DIR := $(if $(filter podman docker,$(RUNNER)),/repo,$(CURDIR)/..)
 .PHONY: help check-label setup test test-rust db-test uji-lua lua-rakit lua-rakit-check lint fmt clean openapi openapi-check
 
 # Podman toolchain containers must carry the owning issue label, so untracked containers cannot appear (SHAA-222).
+# Docker lane: cek ruang kosong sebelum target apa pun yang memakai container (SHAA-373).
+CHECK_DISK := $(if $(filter docker,$(RUNNER)),check-disk,)
+check-disk:
+	@$(if $(filter docker,$(RUNNER)),../scripts/docker-lane.sh check,true)
+
 ifneq ($(filter podman docker,$(RUNNER)),)
-check-label:
+check-label: $(CHECK_DISK)
 	@echo "$(CONTAINER_LABEL)" | grep -Eq '^shaal\.issue=SHAA-[0-9]+$$' || { echo "CONTAINER_LABEL wajib shaal.issue=SHAA-<n> untuk RUNNER=podman (contoh: make -C backend lint CONTAINER_LABEL=shaal.issue=SHAA-222)" >&2; exit 2; }
 else
 check-label:

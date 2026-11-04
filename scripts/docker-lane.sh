@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Lane build/test PoolRouter di Docker dengan penjaga storage (SHAA-373). Lihat docs/runbook/docker-lane.md.
 # Pemakaian:
-#   lane.sh check <SHAA-n>      cek ruang kosong dan ambang, tanpa mengubah apa pun
+#   lane.sh check               cek ruang kosong dan ambang, tanpa mengubah apa pun
 #   lane.sh cleanup <SHAA-n>    hapus container, volume, dan network berlabel shaal.issue=<SHAA-n> saja
 #   lane.sh builder-prune       batasi cache build Docker (builder prune --keep-storage)
 # Dilarang di skrip ini: system prune, volume prune, image prune -a, rm tanpa filter.
@@ -36,7 +36,7 @@ cleanup() {
   local issue="$1" ids
   require_issue "$issue"
   ids="$(docker ps -aq --filter "label=shaal.issue=${issue}")"
-  [[ -n "$ids" ]] && docker rm -f $ids
+  [[ -n "$ids" ]] && docker rm -fv $ids
   ids="$(docker volume ls -q --filter "label=shaal.issue=${issue}")"
   [[ -n "$ids" ]] && docker volume rm $ids
   ids="$(docker network ls -q --filter "label=shaal.issue=${issue}")"
