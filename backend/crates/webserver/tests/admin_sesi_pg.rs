@@ -3,10 +3,12 @@
 //! `#[ignore]`d because it needs `POOLROUTER_TEST_DATABASE_URL`. The clock is
 //! injected, so expiry is tested by moving it.
 
+use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 
 use axum::Router;
 use axum::body::{Body, to_bytes};
+use axum::extract::connect_info::MockConnectInfo;
 use axum::http::{Method, Request, StatusCode, header};
 use chrono::{DateTime, Duration, TimeZone, Utc};
 use poolrouter_core::admin::sesi::ABSOLUT_DETIK;
@@ -53,10 +55,10 @@ async fn siapkan() -> Uji {
         .unwrap();
     let jam = Arc::new(Mutex::new(t0()));
     let jam2 = jam.clone();
-    let state = AdminState::baru(store, AsalUi::baru(ASAL).unwrap())
+    let state = AdminState::baru(pool.clone(), AsalUi::baru(ASAL).unwrap())
         .dengan_jam(Arc::new(move || *jam2.lock().unwrap()));
     Uji {
-        app: router(state),
+        app: router(state).layer(MockConnectInfo(SocketAddr::from(([203, 0, 113, 9], 4000)))),
         pool,
         jam,
         cookie: format!("{COOKIE_SESI}={}", token.sebagai_b64()),
@@ -256,4 +258,176 @@ async fn logout_menghapus_sesi_dan_mengakhiri_cookie() {
 
     let (st, ..) = u.kirim(Method::GET, SESI, Some(&u.cookie), None).await;
     assert_eq!(st, StatusCode::UNAUTHORIZED);
+}
+
+// ---------------------------------------------------------------- login
+
+use poolrouter_core::admin::password::{KebijakanPassword, ParameterArgon2, hash_password};
+
+const PASSWORD: &str = "kata-sandi-sintetis-15+";
+const LOGIN: &str = "/admin/v1/auth/login";
+
+async fn pool_super() -> PgPool {
+    let url = std::env::var("POOLROUTER_TEST_DATABASE_URL_SU").expect(
+        "POOLROUTER_TEST_DATABASE_URL_SU belum diset; jalankan lewat `make -C backend uji-pg`",
+    );
+    PgPool::connect(&url).await.expect("database (superuser)")
+}
+
+async fn pengguna_login(pool: &PgPool, aktif: bool) -> (Uuid, String) {
+    let uid = Uuid::now_v7();
+    let nama = format!("sintetis-{}", uid.simple());
+    let hash = hash_password(PASSWORD, KebijakanPassword::f0(), ParameterArgon2::OWASP).unwrap();
+    sqlx::query("INSERT INTO admin_user (pengguna_id, username, password_hash, aktif) VALUES ($1, $2, $3, $4)")
+        .bind(uid)
+        .bind(&nama)
+        .bind(hash.as_str())
+        .bind(aktif)
+        .execute(pool)
+        .await
+        .unwrap();
+    (uid, nama)
+}
+
+impl Uji {
+    async fn login(
+        &self,
+        username: &str,
+        password: &str,
+        origin: Option<&str>,
+    ) -> (StatusCode, axum::http::HeaderMap, Value) {
+        let body = serde_json::json!({"username": username, "password": password}).to_string();
+        self.login_mentah(body, origin).await
+    }
+
+    async fn login_mentah(
+        &self,
+        body: String,
+        origin: Option<&str>,
+    ) -> (StatusCode, axum::http::HeaderMap, Value) {
+        let mut req = Request::builder()
+            .method(Method::POST)
+            .uri(LOGIN)
+            .header(header::CONTENT_TYPE, "application/json");
+        if let Some(o) = origin {
+            req = req.header(header::ORIGIN, o);
+        }
+        let res = self
+            .app
+            .clone()
+            .oneshot(req.body(Body::from(body)).unwrap())
+            .await
+            .unwrap();
+        let (parts, body) = res.into_parts();
+        let bytes = to_bytes(body, 64 * 1024).await.unwrap();
+        (
+            parts.status,
+            parts.headers,
+            serde_json::from_slice(&bytes).unwrap_or(Value::Null),
+        )
+    }
+}
+
+async fn jumlah_audit(su: &PgPool, uid: Option<Uuid>, hasil: &str) -> i64 {
+    sqlx::query_scalar(
+        "SELECT count(*) FROM audit_login WHERE pengguna_id IS NOT DISTINCT FROM $1 AND hasil = $2",
+    )
+    .bind(uid)
+    .bind(hasil)
+    .fetch_one(su)
+    .await
+    .unwrap()
+}
+
+#[tokio::test]
+#[ignore]
+async fn login_berhasil_menerbitkan_cookie_yang_berlaku_dan_tercatat() {
+    let u = siapkan().await;
+    let su = pool_super().await;
+    let (uid, nama) = pengguna_login(&u.pool, true).await;
+
+    let (st, h, _) = u.login(&nama, PASSWORD, Some(ASAL)).await;
+    assert_eq!(st, StatusCode::NO_CONTENT);
+    assert_eq!(h[header::CACHE_CONTROL], "no-store");
+    let sc = h[header::SET_COOKIE].to_str().unwrap().to_owned();
+    assert!(sc.starts_with("__Host-pr_session="));
+    for bagian in ["Path=/", "HttpOnly", "Secure", "SameSite=Strict"] {
+        assert!(sc.contains(bagian), "{sc}");
+    }
+    assert!(!sc.contains("Domain"));
+    let cookie = sc.split(';').next().unwrap().to_owned();
+    let (st, ..) = u.kirim(Method::GET, SESI, Some(&cookie), None).await;
+    assert_eq!(st, StatusCode::OK);
+    assert_eq!(jumlah_audit(&su, Some(uid), "berhasil").await, 1);
+}
+
+#[tokio::test]
+#[ignore]
+async fn login_gagal_tidak_membedakan_pengguna_salah_dan_password_salah() {
+    let u = siapkan().await;
+    let su = pool_super().await;
+    let (uid, nama) = pengguna_login(&u.pool, true).await;
+    let (inaktif, nama_inaktif) = pengguna_login(&u.pool, false).await;
+
+    let (s1, h1, j1) = u.login(&nama, "password-salah-sekali-ya", Some(ASAL)).await;
+    let (s2, _, j2) = u.login("tidak-ada-orang-ini", PASSWORD, Some(ASAL)).await;
+    let (s3, _, j3) = u.login(&nama_inaktif, PASSWORD, Some(ASAL)).await;
+    for (st, j) in [(s1, &j1), (s2, &j2), (s3, &j3)] {
+        assert_eq!(st, StatusCode::UNAUTHORIZED);
+        assert_eq!(j["kode"], "kredensial_salah");
+    }
+    assert_eq!(j1, j2);
+    assert!(h1.get(header::SET_COOKIE).is_none());
+    assert_eq!(jumlah_audit(&su, Some(uid), "gagal").await, 1);
+    assert_eq!(jumlah_audit(&su, Some(inaktif), "gagal").await, 1);
+}
+
+#[tokio::test]
+#[ignore]
+async fn lima_kegagalan_mengunci_username_lima_belas_menit() {
+    let u = siapkan().await;
+    let (_, nama) = pengguna_login(&u.pool, true).await;
+    for i in 0..5 {
+        u.maju(Duration::minutes(i));
+        let (st, ..) = u.login(&nama, "password-salah-sekali-ya", Some(ASAL)).await;
+        assert_eq!(st, StatusCode::UNAUTHORIZED, "percobaan {i}");
+    }
+    // Locked: even the right password is refused, with Retry-After.
+    u.maju(Duration::minutes(5));
+    let (st, h, j) = u.login(&nama, PASSWORD, Some(ASAL)).await;
+    assert_eq!(st, StatusCode::TOO_MANY_REQUESTS);
+    assert_eq!(j["kode"], "login_dibatasi");
+    assert!(
+        h[header::RETRY_AFTER]
+            .to_str()
+            .unwrap()
+            .parse::<u64>()
+            .unwrap()
+            >= 1
+    );
+    // After the lock the right password works again.
+    u.maju(Duration::minutes(4 + 15));
+    let (st, ..) = u.login(&nama, PASSWORD, Some(ASAL)).await;
+    assert_eq!(st, StatusCode::NO_CONTENT);
+}
+
+#[tokio::test]
+#[ignore]
+async fn login_origin_asing_403_dan_body_salah_422_tanpa_sesi() {
+    let u = siapkan().await;
+    let (uid, nama) = pengguna_login(&u.pool, true).await;
+    for origin in [Some("https://jahat.example"), None] {
+        let (st, _, j) = u.login(&nama, PASSWORD, origin).await;
+        assert_eq!(st, StatusCode::FORBIDDEN);
+        assert_eq!(j["kode"], "origin_tidak_valid");
+    }
+    let (st, _, j) = u.login_mentah("{\"username\": 5}".into(), Some(ASAL)).await;
+    assert_eq!(st, StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(j["kode"], "validasi_gagal");
+    let n: i64 = sqlx::query_scalar("SELECT count(*) FROM admin_session WHERE pengguna_id = $1")
+        .bind(uid)
+        .fetch_one(&u.pool)
+        .await
+        .unwrap();
+    assert_eq!(n, 0);
 }
