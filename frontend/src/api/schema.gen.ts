@@ -1758,7 +1758,34 @@ export interface components {
         };
         /**
          * @description Upstream pool configuration body (US-04/05; KP-01/KP-02 ranges enforced
-         *     server-side with 422).
+         *     server-side with 422, SHAA-280).
+         *
+         *     Ranges follow KP-01 (ADR-0001 section 5a "Parameter per upstream pool dan
+         *     rentangnya") exactly as decided for SHAA-280; the table lives in
+         *     `backend/openapi/DESIGN.md` section 3.2 and `KP01` in `api/tests.rs` asserts
+         *     it on the generated document.
+         *
+         *     Seven fields are **required with no default**, so the server never silently
+         *     picks a value the operator did not choose: `provider_id`, `jeda_min`,
+         *     `jeda_maks`, `ambang_berdampingan`, `kuota_harian`, `rate_limit_per_jam`, and
+         *     `porsi_sync`. The remaining parameters keep the KP-01 defaults.
+         *
+         *     Bounds that `minimum`/`maximum` cannot express are documented here and
+         *     enforced by [`UpstreamPoolConfig::validate`] (wiring into the handlers
+         *     follows SHAA-175):
+         *     - `retry_backoff_cap_detik` must be greater than or equal to
+         *       `retry_backoff_base_detik`;
+         *     - `jeda_maks` must be greater than or equal to `jeda_min`;
+         *     - both `jeda_min` and `jeda_maks` must be at most
+         *       `floor(3_600_000 / rate_limit_per_jam)` milliseconds. That is the mean
+         *       inter-request spacing the hourly rate limit allows, so a longer pause
+         *       would drop the pool below `rate_limit_per_jam` on its own. The `maximum`
+         *       of 60_000 below is only the static ceiling for `rate_limit_per_jam = 60`
+         *       and above; for example `rate_limit_per_jam = 36_000` caps both delays at
+         *       100 ms.
+         *
+         *     The `example` values are deliberately values a caller could send, not the
+         *     defaults.
          */
         UpstreamPoolConfig: {
             /**
@@ -1768,43 +1795,54 @@ export interface components {
             alasan?: string | null;
             /**
              * Format: int64
-             * @description Concurrency threshold (`ambang berdampingan`).
-             * @example 4
+             * @description Concurrency threshold (`ambang berdampingan`, US-22), at least 1 with no
+             *     upper bound. Required: no default.
+             * @example 8
              */
             ambang_berdampingan: number;
             /**
              * Format: int64
-             * @description 1..5 attempts (KP-01).
-             * @example 3
+             * @description Attempts per request, 1..=5 (KP-01). Default 3.
+             * @default 3
+             * @example 2
              */
             batas_percobaan: number;
             /**
              * Format: int64
-             * @description Maximum inter-request delay in milliseconds.
-             * @example 800
+             * @description Maximum inter-request delay in milliseconds, 0..=60_000 and at most
+             *     `floor(3_600_000 / rate_limit_per_jam)`, and never below `jeda_min`
+             *     (cross-field 422). Required: no default.
+             * @example 1500
              */
             jeda_maks: number;
             /**
              * Format: int64
-             * @description Minimum inter-request delay in milliseconds.
-             * @example 200
+             * @description Minimum inter-request delay in milliseconds, 0..=60_000 and at most
+             *     `floor(3_600_000 / rate_limit_per_jam)` (cross-field 422). Required: no
+             *     default.
+             * @example 250
              */
             jeda_min: number;
             jendela_kuota: components["schemas"]["JendelaKuota"];
             /**
              * Format: int64
+             * @description Daily upstream quota, at least 1 with no upper bound (range kept as it
+             *     was before SHAA-280). Required: no default, so a create must state the
+             *     quota it wants.
              * @example 500
              */
             kuota_harian: number;
             /**
              * Format: double
-             * @description 0.001..0.200 (KP-01).
+             * @description Quota reservation margin, 0.001..0.200 (KP-01). Default 0.01.
+             * @default 0.01
              * @example 0.05
              */
             margin_kuota: number;
             /**
              * Format: double
-             * @description Sync portion of the pool, 0.0..1.0.
+             * @description Sync portion of the pool, 0.0..1.0 (KP-01: `porsi_sync_maks`). Required:
+             *     no default.
              * @example 0.1
              */
             porsi_sync: number;
@@ -1812,37 +1850,55 @@ export interface components {
             provider_id: string;
             /**
              * Format: int64
+             * @description Upstream rate limit per hour, at least 1 with no upper bound (range kept
+             *     as it was before SHAA-280). Required: no default. Also caps
+             *     `jeda_min`/`jeda_maks` at `floor(3_600_000 / rate_limit_per_jam)`
+             *     milliseconds.
              * @example 60
              */
             rate_limit_per_jam: number;
             /**
              * Format: int64
-             * @description Hour of the period reset (0..23), interpreted in `reset_kuota_zona`.
+             * @description Hour of the period reset (0..=23), interpreted in `reset_kuota_zona`.
+             * @default 0
              * @example 0
              */
             reset_kuota_jam: number;
             /**
              * @description IANA time zone; the offset is pinned to this zone (KP-02).
-             * @example Asia/Jakarta
+             * @default Asia/Jakarta
+             * @example Asia/Jayapura
              */
             reset_kuota_zona: string;
             /**
              * Format: int64
+             * @description Backoff base in seconds, 1..=300 (KP-01). Default 5.
+             * @default 5
              * @example 2
              */
             retry_backoff_base_detik: number;
             /**
              * Format: int64
+             * @description Backoff cap in seconds, `retry_backoff_base_detik`..=3600. The lower
+             *     bound is per request, not a fixed `minimum`: `retry_backoff_cap_detik`
+             *     must be greater than or equal to `retry_backoff_base_detik` (cross-field
+             *     422, see [`UpstreamPoolConfig::validate`]). Default 300.
+             * @default 300
              * @example 60
              */
             retry_backoff_cap_detik: number;
             /**
              * Format: int64
+             * @description Retry budget floor per hour, 0..=10_000 (KP-01). Default 20.
+             * @default 20
              * @example 10
              */
             retry_min_per_jam: number;
             /**
              * Format: double
+             * @description Retry budget as a ratio of `kuota_harian`, 0.0..=0.5 (KP-01).
+             *     Default 0.1.
+             * @default 0.1
              * @example 0.5
              */
             retry_rasio: number;
