@@ -29,8 +29,8 @@
       "sha256": "2d957bb40012e38c68b01730057967713442b0f6f960579ce2c30b10c4b5279b"
     },
     "mfa_pengguna.csv": {
-      "baris": 5,
-      "sha256": "89d86c48089d2de932e77ed1c42160d776b460be6f879c9da4c0acf63abe5763"
+      "baris": 6,
+      "sha256": "f9514d16067882abf1e5d56db0a560d97a6a9c5544b4b539442e6f29f5276d30"
     },
     "mfa_totp_vektor.csv": {
       "baris": 6,

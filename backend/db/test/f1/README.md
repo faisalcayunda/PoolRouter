@@ -33,7 +33,7 @@ Hanya stdlib Python 3. Tidak ada instalasi di mesin owner. Keluaran deterministi
 | `webhook_jadwal_cepat.csv` | T-06B-01 | Jalur cepat batas retry 3, fixture terpisah |
 | `webhook_klien.csv` | T-06B-03, T-06B-09, T-06B-10 | Dua client webhook (`client-a`, `client-b`) dengan riwayat terpisah |
 | `arsip_log.csv`, `arsip_restore_permintaan.csv` | U-76 | 50 baris log dengan NIK sintetis dan `nik_hmac`; restore NIK ada dan tidak ada |
-| `mfa_*.csv` | U-79, U-81, U-83 | Vektor TOTP RFC 6238 (dihitung ulang dan dicocokkan), kode pemulihan, kode pendaftaran kedaluwarsa, gagal ≥ 5; `mfa_pengguna.csv` berisi lima akun uji (auditor, dua platform admin, operator, client owner) |
+| `mfa_*.csv` | U-79, U-81, U-83 | Vektor TOTP RFC 6238 (dihitung ulang dan dicocokkan), kode pemulihan, kode pendaftaran kedaluwarsa, gagal ≥ 5; `mfa_pengguna.csv` berisi enam akun uji sesuai §7 rev 1 (auditor, dua platform admin, operator, dua client owner) |
 | `expected.json` | semua | Angka harapan yang ditulis sebelum implementasi |
 | `manifest.json` | semua | Jumlah baris dan SHA-256 per berkas |
 
