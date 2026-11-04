@@ -431,3 +431,159 @@ async fn login_origin_asing_403_dan_body_salah_422_tanpa_sesi() {
         .unwrap();
     assert_eq!(n, 0);
 }
+
+// ---------------------------------------------------------------- me / preferensi
+
+const ME: &str = "/admin/v1/auth/me";
+const PREFERENSI: &str = "/admin/v1/auth/me/preferensi";
+
+impl Uji {
+    async fn pengguna_id(&self) -> Uuid {
+        let tok = self.cookie.split('=').nth(1).unwrap().to_owned();
+        let hash = TokenSesi::dari_b64(tok).unwrap().hash();
+        sqlx::query_scalar(
+            "SELECT pengguna_id FROM admin_session WHERE token_sha256 = decode($1, 'hex')",
+        )
+        .bind(hash.as_str())
+        .fetch_one(&self.pool)
+        .await
+        .unwrap()
+    }
+
+    async fn patch(
+        &self,
+        cookie: Option<&str>,
+        origin: Option<&str>,
+        body: &str,
+    ) -> (StatusCode, axum::http::HeaderMap, Value) {
+        let mut req = Request::builder()
+            .method(Method::PATCH)
+            .uri(PREFERENSI)
+            .header(header::CONTENT_TYPE, "application/json");
+        if let Some(c) = cookie {
+            req = req.header(header::COOKIE, c);
+        }
+        if let Some(o) = origin {
+            req = req.header(header::ORIGIN, o);
+        }
+        let res = self
+            .app
+            .clone()
+            .oneshot(req.body(Body::from(body.to_owned())).unwrap())
+            .await
+            .unwrap();
+        let (parts, body) = res.into_parts();
+        let bytes = to_bytes(body, 64 * 1024).await.unwrap();
+        (
+            parts.status,
+            parts.headers,
+            serde_json::from_slice(&bytes).unwrap_or(Value::Null),
+        )
+    }
+
+    async fn bahasa(&self, uid: Uuid) -> Option<String> {
+        sqlx::query_scalar("SELECT bahasa_ui FROM admin_user WHERE pengguna_id = $1")
+            .bind(uid)
+            .fetch_one(&self.pool)
+            .await
+            .unwrap()
+    }
+}
+
+#[tokio::test]
+#[ignore]
+async fn get_me_memuat_identitas_peran_dan_bahasa_ui() {
+    let u = siapkan().await;
+    let uid = u.pengguna_id().await;
+    let (st, _, j) = u.kirim(Method::GET, ME, Some(&u.cookie), None).await;
+    assert_eq!(st, StatusCode::OK);
+    assert_eq!(j["pengguna_id"], uid.to_string());
+    assert_eq!(j["peran"], serde_json::json!([]));
+    assert!(
+        j.get("bahasa_ui").is_none(),
+        "belum diatur: field tidak ada"
+    );
+    assert!(j.get("client_id").is_none());
+
+    sqlx::query(
+        "INSERT INTO admin_user_peran (pengguna_id, peran, diajukan_oleh) VALUES ($1, 'platform_admin', $1)",
+    )
+    .bind(uid)
+    .execute(&u.pool)
+    .await
+    .unwrap();
+    u.patch(Some(&u.cookie), Some(ASAL), r#"{"bahasa_ui":"en"}"#)
+        .await;
+    let (_, _, j) = u.kirim(Method::GET, ME, Some(&u.cookie), None).await;
+    assert_eq!(j["peran"], serde_json::json!(["platform_admin"]));
+    assert_eq!(j["bahasa_ui"], "en");
+
+    let (st, ..) = u.kirim(Method::GET, ME, None, None).await;
+    assert_eq!(st, StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+#[ignore]
+async fn patch_preferensi_sukses_tanpa_menyentuh_sesi_dan_tanpa_audit_akses() {
+    let u = siapkan().await;
+    let su = pool_super().await;
+    let uid = u.pengguna_id().await;
+    u.maju(Duration::minutes(10));
+
+    let (st, h, j) = u
+        .patch(Some(&u.cookie), Some(ASAL), r#"{"bahasa_ui":"en"}"#)
+        .await;
+    assert_eq!(st, StatusCode::OK);
+    assert_eq!(h[header::CACHE_CONTROL], "no-store");
+    assert!(h.get(header::SET_COOKIE).is_none());
+    assert_eq!(j, serde_json::json!({"bahasa_ui": "en"}));
+    assert_eq!(u.bahasa(uid).await.as_deref(), Some("en"));
+    // The session was not touched: idle still counts from login.
+    assert_eq!(u.terakhir_aktif().await, t0());
+    let n: i64 = sqlx::query_scalar("SELECT count(*) FROM audit_akses WHERE pengguna_id = $1")
+        .bind(uid)
+        .fetch_one(&su)
+        .await
+        .unwrap();
+    assert_eq!(n, 0);
+}
+
+#[tokio::test]
+#[ignore]
+async fn patch_preferensi_ditolak_tanpa_sesi_origin_asing_dan_nilai_salah() {
+    let u = siapkan().await;
+    let uid = u.pengguna_id().await;
+
+    let (st, ..) = u.patch(None, Some(ASAL), r#"{"bahasa_ui":"en"}"#).await;
+    assert_eq!(st, StatusCode::UNAUTHORIZED);
+
+    for origin in [Some("https://jahat.example"), None] {
+        let (st, _, j) = u
+            .patch(Some(&u.cookie), origin, r#"{"bahasa_ui":"en"}"#)
+            .await;
+        assert_eq!(st, StatusCode::FORBIDDEN);
+        assert_eq!(j["kode"], "origin_tidak_valid");
+    }
+    for badan in [r#"{"bahasa_ui":"fr"}"#, r#"{}"#, "bukan json"] {
+        let (st, _, j) = u.patch(Some(&u.cookie), Some(ASAL), badan).await;
+        assert_eq!(st, StatusCode::UNPROCESSABLE_ENTITY, "{badan}");
+        assert_eq!(j["kode"], "validasi_gagal");
+    }
+    assert_eq!(u.bahasa(uid).await, None);
+}
+
+#[tokio::test]
+#[ignore]
+async fn patch_preferensi_tidak_bisa_mengubah_pengguna_lain() {
+    let u = siapkan().await;
+    let (lain, _) = pengguna_login(&u.pool, true).await;
+    // Any attempt to name another user is an unknown field, hence 422.
+    let badan = format!(r#"{{"bahasa_ui":"en","pengguna_id":"{lain}"}}"#);
+    let (st, ..) = u.patch(Some(&u.cookie), Some(ASAL), &badan).await;
+    assert_eq!(st, StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(u.bahasa(lain).await, None);
+    // And a valid call changes only the caller.
+    u.patch(Some(&u.cookie), Some(ASAL), r#"{"bahasa_ui":"en"}"#)
+        .await;
+    assert_eq!(u.bahasa(lain).await, None);
+}
