@@ -6,7 +6,7 @@ use serde_json::Value;
 use utoipa::OpenApi;
 
 use crate::api::{
-    admin, downstream,
+    admin, downstream, enums,
     problem::{JumlahNamaTidakCocok, ProblemKodeAdmin, ProblemKodeDown},
 };
 
@@ -696,4 +696,556 @@ fn penjaga_rujukan_menangkap_dan_meloloskan_contoh() {
             "penjaga salah menolak teks klien: {baris}"
         );
     }
+}
+
+/// One row of the KP-01 table: the bounds the schema must advertise and the
+/// default, if any. `default: None` means the field is required and the schema
+/// must not carry a `default` for it.
+struct BarisKp01 {
+    nama: &'static str,
+    minimum: Option<f64>,
+    maximum: Option<f64>,
+    default: Option<&'static str>,
+}
+
+/// KP-01 table as decided by Shu for SHAA-280 (ADR-0001 section 5a "Parameter
+/// per upstream pool dan rentangnya"). Kept as the expected values in one place
+/// so a later edit to `UpstreamPoolConfig` cannot silently drop a bound.
+const KP01: &[BarisKp01] = &[
+    // Required: no default (Shu, SHAA-280).
+    BarisKp01 {
+        nama: "kuota_harian",
+        minimum: Some(1.0),
+        maximum: None,
+        default: None,
+    },
+    BarisKp01 {
+        nama: "rate_limit_per_jam",
+        minimum: Some(1.0),
+        maximum: None,
+        default: None,
+    },
+    BarisKp01 {
+        nama: "porsi_sync",
+        minimum: Some(0.0),
+        maximum: Some(1.0),
+        default: None,
+    },
+    BarisKp01 {
+        nama: "jeda_min",
+        minimum: Some(0.0),
+        maximum: Some(60_000.0),
+        default: None,
+    },
+    BarisKp01 {
+        nama: "jeda_maks",
+        minimum: Some(0.0),
+        maximum: Some(60_000.0),
+        default: None,
+    },
+    // `ambang_berdampingan` has a lower bound only.
+    BarisKp01 {
+        nama: "ambang_berdampingan",
+        minimum: Some(1.0),
+        maximum: None,
+        default: None,
+    },
+    // KP-01 defaults kept.
+    BarisKp01 {
+        nama: "margin_kuota",
+        minimum: Some(0.001),
+        maximum: Some(0.2),
+        default: Some("0.01"),
+    },
+    BarisKp01 {
+        nama: "batas_percobaan",
+        minimum: Some(1.0),
+        maximum: Some(5.0),
+        default: Some("3"),
+    },
+    BarisKp01 {
+        nama: "retry_backoff_base_detik",
+        minimum: Some(1.0),
+        maximum: Some(300.0),
+        default: Some("5"),
+    },
+    BarisKp01 {
+        nama: "retry_backoff_cap_detik",
+        minimum: Some(1.0),
+        maximum: Some(3600.0),
+        default: Some("300"),
+    },
+    BarisKp01 {
+        nama: "retry_rasio",
+        minimum: Some(0.0),
+        maximum: Some(0.5),
+        default: Some("0.1"),
+    },
+    BarisKp01 {
+        nama: "retry_min_per_jam",
+        minimum: Some(0.0),
+        maximum: Some(10_000.0),
+        default: Some("20"),
+    },
+];
+
+/// Fields that must never advertise a `default` in the write body
+/// (`provider_id`, the jeda triad, the three quota inputs) plus `alasan`, which
+/// is context rather than a setting.
+const TANPA_DEFAULT: &[&str] = &[
+    "provider_id",
+    "kuota_harian",
+    "rate_limit_per_jam",
+    "porsi_sync",
+    "jeda_min",
+    "jeda_maks",
+    "ambang_berdampingan",
+    "alasan",
+];
+
+fn angka(value: &Value) -> Option<f64> {
+    value.as_f64()
+}
+
+/// SHAA-280 AC 1/2: the upstream pool body carries the KP-01 ranges decided for
+/// SHAA-280, the seven required fields advertise no `default`, and the
+/// cross-field formula is written into the `description` of both jeda fields and
+/// of `UpstreamPoolConfig` itself (JSON Schema cannot express it as a bound).
+#[test]
+fn e2e_upstream_pool() {
+    let doc = admin_doc();
+    let skema = &doc["components"]["schemas"]["UpstreamPoolConfig"];
+    let properti = skema["properties"]
+        .as_object()
+        .expect("properties UpstreamPoolConfig");
+    for baris in KP01 {
+        let nama = baris.nama;
+        assert!(
+            properti.contains_key(nama),
+            "field {nama} hilang dari UpstreamPoolConfig"
+        );
+    }
+    for baris in KP01 {
+        let nama = baris.nama;
+        let field = &properti[nama];
+        assert_eq!(
+            angka(&field["minimum"]),
+            baris.minimum,
+            "{nama}: minimum tidak sesuai KP-01: {field}"
+        );
+        assert_eq!(
+            angka(&field["maximum"]),
+            baris.maximum,
+            "{nama}: maximum tidak sesuai KP-01: {field}"
+        );
+        match baris.default {
+            Some(nilai) => {
+                assert_eq!(
+                    angka(&field["default"]),
+                    Some(nilai.parse::<f64>().expect("default numerik")),
+                    "{nama}: default tidak sesuai KP-01: {field}"
+                );
+                assert_ne!(
+                    angka(&field["example"]),
+                    angka(&field["default"]),
+                    "{nama}: example sama dengan default, mudah terbaca sebagai default"
+                );
+            }
+            None => assert!(
+                field.get("default").is_none(),
+                "{nama}: tidak boleh punya default (wajib diisi): {field}"
+            ),
+        }
+    }
+    // `porsi_sync` is a fraction, so a kept `default` must stay a JSON number.
+    assert!(
+        properti["porsi_sync"].get("default").is_none(),
+        "porsi_sync tidak boleh punya default: {}",
+        properti["porsi_sync"]
+    );
+
+    // `ambang_berdampingan` has no upper bound at all (Shu, SHAA-280): not a
+    // missing key in the table, but an explicitly absent `maximum`.
+    assert!(
+        properti["ambang_berdampingan"].get("maximum").is_none(),
+        "ambang_berdampingan tidak boleh punya maximum: {}",
+        properti["ambang_berdampingan"]
+    );
+
+    // AC 2: the cross-field formula lives in the descriptions a client reads.
+    let formula = "floor(3_600_000 / rate_limit_per_jam)";
+    for nama in ["jeda_min", "jeda_maks"] {
+        let deskripsi = properti[nama]["description"]
+            .as_str()
+            .unwrap_or_else(|| panic!("{nama} tanpa description"));
+        assert!(
+            deskripsi.contains(formula),
+            "{nama}: description tanpa rumus {formula}: {deskripsi}"
+        );
+    }
+    let deskripsi_skema = skema["description"]
+        .as_str()
+        .expect("description UpstreamPoolConfig");
+    assert!(
+        deskripsi_skema.contains(formula),
+        "UpstreamPoolConfig: description tanpa rumus {formula}: {deskripsi_skema}"
+    );
+    assert!(
+        deskripsi_skema.contains("retry_backoff_base_detik"),
+        "UpstreamPoolConfig: description tanpa batas silang retry cap: {deskripsi_skema}"
+    );
+
+    // Fields outside the KP-01 table still carry a bound; reset_kuota_* keep
+    // their KP-02 defaults.
+    assert_eq!(
+        angka(&properti["reset_kuota_jam"]["minimum"]),
+        Some(0.0),
+        "reset_kuota_jam tanpa minimum"
+    );
+    assert_eq!(
+        angka(&properti["reset_kuota_jam"]["maximum"]),
+        Some(23.0),
+        "reset_kuota_jam tanpa maximum"
+    );
+    assert!(properti["reset_kuota_jam"]["default"].is_number());
+    let zona = &properti["reset_kuota_zona"];
+    assert!(
+        zona["default"].as_str().is_some_and(|z| !z.is_empty()),
+        "reset_kuota_zona tanpa default: {zona}"
+    );
+    assert_ne!(
+        zona["example"], zona["default"],
+        "reset_kuota_zona: example sama dengan default"
+    );
+
+    // The seven required fields plus `alasan` (context, not a setting) must
+    // never advertise a default.
+    for tanpa_default in TANPA_DEFAULT {
+        assert!(
+            properti[*tanpa_default].get("default").is_none(),
+            "{tanpa_default} tidak boleh punya default"
+        );
+    }
+
+    // The 422 is still advertised on both write operations.
+    for (method, op) in operations(&doc) {
+        if op["operationId"] != "createUpstreamPool" && op["operationId"] != "updateUpstreamPool" {
+            continue;
+        }
+        let status: Vec<&str> = op["responses"]
+            .as_object()
+            .expect("responses")
+            .keys()
+            .map(String::as_str)
+            .collect();
+        assert!(
+            status.contains(&"422"),
+            "{method}: {op:?} tanpa respons 422"
+        );
+    }
+}
+
+/// Valid body at the KP-01 boundaries as decided for SHAA-280; each unit test
+/// below starts from this and changes exactly one or two fields.
+fn pool_valid() -> admin::UpstreamPoolConfig {
+    admin::UpstreamPoolConfig {
+        provider_id: uuid::Uuid::nil(),
+        kuota_harian: 500,
+        rate_limit_per_jam: 60,
+        porsi_sync: 0.2,
+        margin_kuota: 0.01,
+        batas_percobaan: 3,
+        retry_backoff_base_detik: 5,
+        retry_backoff_cap_detik: 300,
+        retry_rasio: 0.1,
+        retry_min_per_jam: 20,
+        jendela_kuota: enums::JendelaKuota::Bergulir24j,
+        reset_kuota_jam: 0,
+        reset_kuota_zona: "Asia/Jakarta".to_string(),
+        jeda_min: 200,
+        jeda_maks: 800,
+        ambang_berdampingan: 4,
+        alasan: None,
+    }
+}
+
+fn field_errors(pool: &admin::UpstreamPoolConfig) -> Vec<String> {
+    pool.validate()
+        .expect_err("body seharusnya ditolak")
+        .into_iter()
+        .map(|e| e.field.to_string())
+        .collect()
+}
+
+/// AC 3: the pure validator accepts the reference body.
+#[test]
+fn validate_pool_valid_lolos() {
+    assert_eq!(pool_valid().validate(), Ok(()));
+}
+
+/// AC 3: every field with both bounds accepts them exactly at `minimum` and at
+/// `maximum` (inclusive), and rejects one unit outside either end.
+#[test]
+fn validate_pool_batas_bawah_atas_dan_di_luar() {
+    // (field name, setter to min, setter to max); the body is otherwise valid so
+    // the cross-field rules also hold at each boundary.
+    // `kuota_harian` and `rate_limit_per_jam` keep the pre-SHAA-280 range:
+    // `minimum = 1` only, no maximum (Shu, 2026-11-04).
+    let mut pool = pool_valid();
+    pool.kuota_harian = 1;
+    assert_eq!(pool.validate(), Ok(()), "kuota_harian = minimum");
+    pool.kuota_harian = 1_000_001;
+    assert_eq!(pool.validate(), Ok(()), "kuota_harian tanpa maximum");
+    pool.kuota_harian = 0;
+    assert_eq!(field_errors(&pool), ["kuota_harian"]);
+
+    let mut pool = pool_valid();
+    pool.rate_limit_per_jam = 1;
+    // rate_limit_per_jam = 1 caps the delays at 3_600_000 ms, which the jeda
+    // fields stay under.
+    assert_eq!(pool.validate(), Ok(()), "rate_limit_per_jam = minimum");
+    pool.rate_limit_per_jam = 36_000;
+    // 3_600_000 / 36_000 = 100 ms, so the delays must come down with it.
+    pool.jeda_min = 50;
+    pool.jeda_maks = 100;
+    assert_eq!(pool.validate(), Ok(()), "rate_limit_per_jam tanpa maximum");
+    pool.jeda_maks = 800;
+    assert_eq!(field_errors(&pool), ["jeda_maks"], "ceiling ikut turun");
+    pool.jeda_maks = 100;
+    pool.rate_limit_per_jam = 0;
+    // Non-positive rate: only the range error, no spurious delay error.
+    assert_eq!(field_errors(&pool), ["rate_limit_per_jam"]);
+
+    let mut pool = pool_valid();
+    pool.batas_percobaan = 1;
+    assert_eq!(pool.validate(), Ok(()), "batas_percobaan = minimum");
+    pool.batas_percobaan = 5;
+    assert_eq!(pool.validate(), Ok(()), "batas_percobaan = maximum");
+    pool.batas_percobaan = 0;
+    assert_eq!(field_errors(&pool), ["batas_percobaan"]);
+    pool.batas_percobaan = 6;
+    assert_eq!(field_errors(&pool), ["batas_percobaan"]);
+
+    let mut pool = pool_valid();
+    pool.retry_backoff_base_detik = 1;
+    pool.retry_backoff_cap_detik = 1;
+    assert_eq!(pool.validate(), Ok(()), "base = minimum, cap = base");
+    pool.retry_backoff_base_detik = 300;
+    pool.retry_backoff_cap_detik = 300;
+    assert_eq!(pool.validate(), Ok(()), "base = maximum");
+    pool.retry_backoff_base_detik = 0;
+    assert_eq!(field_errors(&pool), ["retry_backoff_base_detik"]);
+    pool.retry_backoff_base_detik = 301;
+    // Out of range *and* above the cap: two different fields, so both are
+    // reported. (One error per field, not one per rule.)
+    assert_eq!(
+        field_errors(&pool),
+        ["retry_backoff_base_detik", "retry_backoff_cap_detik"]
+    );
+
+    let mut pool = pool_valid();
+    pool.retry_backoff_cap_detik = 3_600;
+    assert_eq!(pool.validate(), Ok(()), "cap = maximum");
+    pool.retry_backoff_cap_detik = 3_601;
+    assert_eq!(field_errors(&pool), ["retry_backoff_cap_detik"]);
+
+    let mut pool = pool_valid();
+    pool.retry_rasio = 0.0;
+    assert_eq!(pool.validate(), Ok(()), "retry_rasio = minimum");
+    pool.retry_rasio = 0.5;
+    assert_eq!(pool.validate(), Ok(()), "retry_rasio = maximum");
+    pool.retry_rasio = 0.500_1;
+    assert_eq!(field_errors(&pool), ["retry_rasio"]);
+
+    let mut pool = pool_valid();
+    pool.retry_min_per_jam = 0;
+    assert_eq!(pool.validate(), Ok(()), "retry_min_per_jam = minimum");
+    pool.retry_min_per_jam = 10_000;
+    assert_eq!(pool.validate(), Ok(()), "retry_min_per_jam = maximum");
+    pool.retry_min_per_jam = 10_001;
+    assert_eq!(field_errors(&pool), ["retry_min_per_jam"]);
+
+    let mut pool = pool_valid();
+    pool.margin_kuota = 0.001;
+    assert_eq!(pool.validate(), Ok(()), "margin_kuota = minimum");
+    pool.margin_kuota = 0.2;
+    assert_eq!(pool.validate(), Ok(()), "margin_kuota = maximum");
+    pool.margin_kuota = 0.000_9;
+    assert_eq!(field_errors(&pool), ["margin_kuota"]);
+    pool.margin_kuota = 0.201;
+    assert_eq!(field_errors(&pool), ["margin_kuota"]);
+
+    let mut pool = pool_valid();
+    pool.porsi_sync = 0.0;
+    assert_eq!(pool.validate(), Ok(()), "porsi_sync = minimum");
+    pool.porsi_sync = 1.0;
+    assert_eq!(pool.validate(), Ok(()), "porsi_sync = maximum");
+    pool.porsi_sync = 1.01;
+    assert_eq!(field_errors(&pool), ["porsi_sync"]);
+
+    let mut pool = pool_valid();
+    pool.reset_kuota_jam = 23;
+    assert_eq!(pool.validate(), Ok(()), "reset_kuota_jam = maximum");
+    pool.reset_kuota_jam = 24;
+    assert_eq!(field_errors(&pool), ["reset_kuota_jam"]);
+    pool.reset_kuota_jam = -1;
+    assert_eq!(field_errors(&pool), ["reset_kuota_jam"]);
+}
+
+/// AC 3: `ambang_berdampingan` is bounded below only, at exactly 1, with no
+/// maximum at all (Shu, SHAA-280 replaced the previous 1..=100 proposal).
+#[test]
+fn validate_pool_ambang_berdampingan_tanpa_maksimum() {
+    let mut pool = pool_valid();
+    pool.ambang_berdampingan = 1;
+    assert_eq!(pool.validate(), Ok(()), "ambang_berdampingan = minimum");
+    pool.ambang_berdampingan = 0;
+    assert_eq!(field_errors(&pool), ["ambang_berdampingan"]);
+    // Large values are accepted: there is no ceiling.
+    pool.ambang_berdampingan = 1_000_000;
+    assert_eq!(pool.validate(), Ok(()), "tanpa maximum");
+}
+
+/// AC 3: the jeda delay ceiling follows `floor(3_600_000 / rate_limit_per_jam)`,
+/// and both boundaries of that formula hold: for 60 per hour the ceiling is
+/// exactly 60_000 ms (accepted), one millisecond above it is refused, and at
+/// 36_000 per hour the ceiling is 100 ms.
+#[test]
+fn validate_pool_batas_jeda_mengikuti_rate_limit() {
+    let mut pool = pool_valid();
+    pool.rate_limit_per_jam = 60;
+    assert_eq!(
+        pool.batas_jeda_dari_rate_limit(),
+        Some(60_000),
+        "3_600_000 / 60"
+    );
+    pool.jeda_min = 60_000;
+    pool.jeda_maks = 60_000;
+    assert_eq!(pool.validate(), Ok(()), "jeda tepat di ceiling");
+    pool.jeda_maks = 60_001;
+    assert_eq!(field_errors(&pool), ["jeda_maks"]);
+
+    // The case named in AC 3: 36_000 requests per hour leave exactly 100 ms
+    // each. `rate_limit_per_jam` has no maximum, so 36_000 is a valid input and
+    // the only thing under test is the 100 ms jeda ceiling it derives.
+    let mut pool = pool_valid();
+    pool.rate_limit_per_jam = 36_000;
+    assert_eq!(
+        pool.batas_jeda_dari_rate_limit(),
+        Some(100),
+        "3_600_000 / 36_000 = 100"
+    );
+    pool.jeda_min = 100;
+    pool.jeda_maks = 100;
+    assert_eq!(pool.validate(), Ok(()), "jeda = 100 ms tepat di ceiling");
+    pool.jeda_min = 0;
+    pool.jeda_maks = 101;
+    assert_eq!(field_errors(&pool), ["jeda_maks"]);
+    // `jeda_min` above the ceiling while `jeda_maks` sits below it is also
+    // `jeda_maks < jeda_min`, so the ordering rule reports `jeda_maks` too.
+    pool.jeda_min = 101;
+    pool.jeda_maks = 100;
+    assert_eq!(field_errors(&pool), ["jeda_maks", "jeda_min"]);
+    // Both above the ceiling: both reported, so the client fixes both at once.
+    pool.jeda_min = 200;
+    pool.jeda_maks = 800;
+    assert_eq!(field_errors(&pool), ["jeda_min", "jeda_maks"]);
+
+    // One request per hour above that: the ceiling is still derived from the
+    // submitted value (3_600_000 / 36_001 = 99).
+    pool.rate_limit_per_jam = 36_001;
+    assert_eq!(pool.batas_jeda_dari_rate_limit(), Some(99));
+    pool.jeda_min = 0;
+    pool.jeda_maks = 100;
+    assert_eq!(field_errors(&pool), ["jeda_maks"]);
+}
+
+/// AC 3: cross-field rules. `jeda_maks` never below `jeda_min`, and
+/// `retry_backoff_cap_detik` never below `retry_backoff_base_detik`.
+#[test]
+fn validate_pool_batas_silang() {
+    // jeda_maks < jeda_min.
+    let mut pool = pool_valid();
+    pool.jeda_min = 800;
+    pool.jeda_maks = 799;
+    assert_eq!(field_errors(&pool), ["jeda_maks"]);
+    pool.jeda_maks = 800;
+    assert_eq!(pool.validate(), Ok(()), "jeda_maks = jeda_min");
+
+    // retry_backoff_cap_detik < retry_backoff_base_detik.
+    let mut pool = pool_valid();
+    pool.retry_backoff_base_detik = 10;
+    pool.retry_backoff_cap_detik = 9;
+    assert_eq!(field_errors(&pool), ["retry_backoff_cap_detik"]);
+    pool.retry_backoff_cap_detik = 10;
+    assert_eq!(pool.validate(), Ok(()), "cap = base");
+
+    // Several independent violations come back together, in field order, one
+    // error per field.
+    let mut pool = pool_valid();
+    pool.kuota_harian = 0;
+    pool.retry_backoff_cap_detik = 400;
+    pool.retry_backoff_base_detik = 500;
+    pool.jeda_min = 900;
+    assert_eq!(
+        field_errors(&pool),
+        [
+            "kuota_harian",
+            "retry_backoff_base_detik",
+            "retry_backoff_cap_detik",
+            "jeda_maks"
+        ]
+    );
+}
+
+/// SHAA-280: "required with no default" is enforced two ways, and both are
+/// pinned here. The schema lists the field in `required` (utoipa derives that
+/// from the plain, non-`Option` Rust types) and carries no `default`, so a body
+/// that omits it is invalid *and* the server never fills it in.
+#[test]
+fn e2e_upstream_pool_wajib_tanpa_default() {
+    let doc = admin_doc();
+    let skema = &doc["components"]["schemas"]["UpstreamPoolConfig"];
+    let wajib: Vec<&str> = skema["required"]
+        .as_array()
+        .expect("required UpstreamPoolConfig")
+        .iter()
+        .map(|v| v.as_str().expect("nama field"))
+        .collect();
+    for nama in TANPA_DEFAULT {
+        // `alasan` is optional context, not a required field.
+        if *nama == "alasan" {
+            continue;
+        }
+        assert!(wajib.contains(nama), "field {nama} tidak wajib: {wajib:?}");
+    }
+    // The other KP-01 parameters keep their default *and* stay in `required`:
+    // the client must send them, and the schema also shows the value the ADR
+    // recommends. `TANPA_DEFAULT` above covers the inversion rule.
+    for baris in KP01.iter().filter(|b| b.default.is_none()) {
+        let nama = baris.nama;
+        assert!(
+            skema["properties"][nama].get("default").is_none(),
+            "field wajib {nama} tidak boleh punya default"
+        );
+    }
+}
+
+/// The read entity mirrors stored values, so it must not advertise a default
+/// (SHAA-280 scopes KP-01 ranges/defaults to the write body).
+#[test]
+fn upstream_pool_tanpa_default() {
+    let doc = admin_doc();
+    let properti = doc["components"]["schemas"]["UpstreamPool"]["properties"]
+        .as_object()
+        .expect("properties UpstreamPool");
+    let dengan_default: Vec<&str> = properti
+        .iter()
+        .filter(|(_, field)| field.get("default").is_some())
+        .map(|(nama, _)| nama.as_str())
+        .collect();
+    assert!(
+        dengan_default.is_empty(),
+        "UpstreamPool tidak boleh punya default: {dengan_default:?}"
+    );
 }

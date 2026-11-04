@@ -39,5 +39,6 @@ tracing-opentelemetry = { workspace = true }
 metrics = { workspace = true }
 
 [dev-dependencies]
+metrics-exporter-prometheus = { workspace = true }
 proptest = { workspace = true }
 wiremock = { workspace = true }

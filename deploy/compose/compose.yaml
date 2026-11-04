@@ -181,6 +181,11 @@ services:
       POOLROUTER_UI_ORIGIN: ${POOLROUTER_UI_ORIGIN:?isi POOLROUTER_UI_ORIGIN di file env}
       POOLROUTER_KEK_FILE: /run/secrets/poolrouter_kek
       POOLROUTER_JWT_SIGNING_KEY_FILE: /run/secrets/poolrouter_jwt_signing_key
+      # Alamat listener (SHAA-198 U-15). Default biner loopback; di jaringan internal compose perlu 0.0.0.0.
+      # Port 9090 (probe dan metrik) tidak dipublikasikan ke host. Kunci verifikasi kedua untuk rotasi:
+      # POOLROUTER_JWT_VERIFY_KEY_FILE (PEM kunci publik, opsional) bersama secret-nya.
+      POOLROUTER_API_ADDR: 0.0.0.0:8081
+      POOLROUTER_ADMIN_ADDR: 0.0.0.0:9090
       POOLROUTER_NIK_HMAC_KEY_FILE: /run/secrets/poolrouter_nik_hmac_key
       POOLROUTER_IDEMPOTENCY_HMAC_KEY_FILE: /run/secrets/poolrouter_idempotency_hmac_key
     secrets:
@@ -192,8 +197,8 @@ services:
       - poolrouter_jwt_signing_key
       - poolrouter_nik_hmac_key
       - poolrouter_idempotency_hmac_key
-    # Healthcheck lewat subcommand binary `webserver` (ADR-0001 rev 15 §2 dan §5a.9, keputusan Shu SHAA-191). Image belum ada
-    # sampai Bagian 2; subcommand `healthcheck` menunggu SHAA-175.
+    # Healthcheck lewat subcommand binary `webserver` (ADR-0001 rev 15 §2 dan §5a.9, keputusan Shu SHAA-191). Subcommand
+    # sudah ada (SHAA-198); ia memeriksa /readyz di POOLROUTER_ADMIN_ADDR lewat loopback.
     healthcheck:
       test: ["CMD", "webserver", "healthcheck"]
       interval: 10s

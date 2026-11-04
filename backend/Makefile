@@ -39,12 +39,40 @@ export CARGO_TERM_COLOR ?= never
 
 include ../scripts/build-lock.mk
 
+# Docker lane (SHAA-390): satu CARGO_TARGET_DIR bersama di / dan satu CARGO_HOME/RUSTUP_HOME bersama di /data,
+# dipakai bergantian oleh semua workdir di bawah kunci shaal-build-heavy. Semua path lewat variabel ini (override
+# lewat env atau argumen make). Container berjalan dengan uid:gid host, jadi user biasa bisa menghapus isinya tanpa sudo.
+SHARED_TARGET_DIR ?= /var/tmp/shaal-build/poolrouter-target
+SHARED_CARGO_HOME ?= /data/workspace/shaal-build/cargo-home
+# Batas ukuran target bersama (MB): di atasnya check-disk menjalankan clean-shared di bawah kunci.
+SHARED_TARGET_LIMIT_MB ?= 2560
+# Batas ukuran cargo-home + rustup bersama di /data (MB, SHAA-394). Dilewati => check-disk gagal (exit non-nol),
+# tidak menghapus apa pun; bersihkan dengan `make clean-cache-shared` (eksplisit, di bawah kunci).
+SHARED_CARGO_HOME_LIMIT_MB ?= 2560
+# Sisa bebas minimum di / untuk sistem (MB), di luar ruang tumbuh target sampai batasnya.
+ROOT_MIN_FREE_MB ?= 2048
+
+ifeq ($(RUNNER),docker)
+# Di dalam container: target, cargo, dan rustup bersama di-mount di /cache/*.
+CT_CARGO_HOME := /cache/cargo
+CT_RUSTUP_HOME := /cache/rustup
+# Subdirektori, bukan akar mount: `cargo clean` menghapus direktori targetnya sendiri, dan akar mount tidak bisa dihapus.
+CT_TARGET_DIR := /cache/target/build
+SHARED_OPTS = --user $(shell id -u):$(shell id -g) \
+	-v "$(SHARED_TARGET_DIR)":/cache/target -v "$(SHARED_CARGO_HOME)/cargo":$(CT_CARGO_HOME) -v "$(SHARED_CARGO_HOME)/rustup":$(CT_RUSTUP_HOME) \
+	-e CARGO_TARGET_DIR=$(CT_TARGET_DIR)
+else
+CT_CARGO_HOME := /work/.cache/cargo
+CT_RUSTUP_HOME := /work/.cache/rustup
+SHARED_OPTS =
+endif
+
 ifneq ($(filter podman docker,$(RUNNER)),)
-RUN_OPTS = $(CONTAINER_ENGINE) run --rm --memory $(CONTAINER_MEMORY) $(if $(CONTAINER_LABEL),--label $(CONTAINER_LABEL)) \
+RUN_OPTS = $(CONTAINER_ENGINE) run --rm --memory $(CONTAINER_MEMORY) $(if $(CONTAINER_LABEL),--label $(CONTAINER_LABEL)) $(SHARED_OPTS) \
 	-v "$(CURDIR)":/work -v "$(CURDIR)/../":/repo:ro -w /work \
-	-e CARGO_HOME=/work/.cache/cargo -e RUSTUP_HOME=/work/.cache/rustup -e CARGO_TERM_COLOR=$(CARGO_TERM_COLOR) \
+	-e CARGO_HOME=$(CT_CARGO_HOME) -e RUSTUP_HOME=$(CT_RUSTUP_HOME) -e CARGO_TERM_COLOR=$(CARGO_TERM_COLOR) \
 	-e CARGO_BUILD_JOBS=$(JOBS) -e CARGO_INCREMENTAL=0 -e CARGO_PROFILE_DEV_DEBUG=0 -e CARGO_PROFILE_TEST_DEBUG=0 -e SQLX_OFFLINE=true -e POOLROUTER_REPO_ROOT=/repo \
-	-e PATH=/work/.cache/cargo/bin:/usr/local/cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+	-e PATH=$(CT_CARGO_HOME)/bin:/usr/local/cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 RUN = $(RUN_OPTS) $(RUST_IMAGE)
 # Build berat (compile) lewat kunci bersama; satu build per host (K-41).
 HEAVY = $(BUILD_LOCK_SH) run -- $(RUN_OPTS) $(BUILD_LOCK_OPTS) $(RUST_IMAGE)
@@ -60,13 +88,20 @@ WORK_DIR := $(if $(filter podman docker,$(RUNNER)),/work,$(CURDIR))
 # Repo root on the execution side (/repo is the read-only mount in the podman container).
 REPO_DIR := $(if $(filter podman docker,$(RUNNER)),/repo,$(CURDIR)/..)
 
-.PHONY: help check-label setup test test-rust db-test uji-lua lua-rakit lua-rakit-check lint fmt clean openapi openapi-check
+.PHONY: help check-label check-disk clean-shared clean-cache-shared setup test test-rust db-test uji-lua uji-redis uji-redis-cargo lua-rakit lua-rakit-check lint fmt clean openapi openapi-check
 
 # Podman toolchain containers must carry the owning issue label, so untracked containers cannot appear (SHAA-222).
 # Docker lane: cek ruang kosong sebelum target apa pun yang memakai container (SHAA-373).
 CHECK_DISK := $(if $(filter docker,$(RUNNER)),check-disk,)
 check-disk:
-	@$(if $(filter docker,$(RUNNER)),../scripts/docker-lane.sh check,true)
+ifeq ($(RUNNER),docker)
+	@mkdir -p "$(SHARED_TARGET_DIR)" "$(SHARED_CARGO_HOME)/cargo" "$(SHARED_CARGO_HOME)/rustup"
+	@SHARED_CARGO_HOME="$(SHARED_CARGO_HOME)" SHARED_CARGO_HOME_LIMIT_MB="$(SHARED_CARGO_HOME_LIMIT_MB)" \
+	  SHARED_TARGET_DIR="$(SHARED_TARGET_DIR)" SHARED_TARGET_LIMIT_MB="$(SHARED_TARGET_LIMIT_MB)" ROOT_MIN_FREE_MB="$(ROOT_MIN_FREE_MB)" \
+	  CLEAN_SHARED_CMD='$(MAKE) --no-print-directory clean-shared' ../scripts/docker-lane.sh check
+else
+	@true
+endif
 
 ifneq ($(filter podman docker,$(RUNNER)),)
 check-label:
@@ -78,11 +113,13 @@ endif
 help:
 	@echo "targets: setup test test-rust db-test uji-lua lua-rakit lua-rakit-check lint fmt clean openapi openapi-check build-lock-status build-lock-clean (RUNNER=podman|native)"
 
-# Fetch the locked dependency set and install the pinned cargo-deny.
+# Fetch the locked dependency set and install the pinned cargo-deny. Toolchain copy, fetch dan install cargo-deny
+# menulis ke cache bersama, jadi jalan di bawah kunci shaal-build-heavy (SHAA-394); checkout kedua hanya
+# menemukan toolchain dan registry sudah ada dan tidak mengunduh ulang.
 setup: check-label $(CHECK_DISK)
-	mkdir -p .cache/cargo .cache/rustup
-	$(RUN) sh -c "[ -d /work/.cache/rustup/toolchains ] || cp -a /usr/local/rustup/. /work/.cache/rustup/; cargo fetch --locked"
-	$(RUN) sh -c 'set -eu; \
+	$(if $(filter docker,$(RUNNER)),,mkdir -p .cache/cargo .cache/rustup)
+	$(HEAVY) sh -c "[ -d $(CT_RUSTUP_HOME)/toolchains ] || cp -a /usr/local/rustup/. $(CT_RUSTUP_HOME)/; cargo fetch --locked"
+	$(HEAVY) sh -c 'set -eu; \
 	if cargo deny --version 2>/dev/null | grep -q "$(CARGO_DENY_VERSION)"; then exit 0; fi; \
 	arch=$$(uname -m); \
 	case "$$arch" in \
@@ -99,7 +136,7 @@ setup: check-label $(CHECK_DISK)
 	install -m 0755 "$$t/cargo-deny-$(CARGO_DENY_VERSION)-$$arch-unknown-linux-musl/cargo-deny" "$$CARGO_HOME/bin/cargo-deny"; \
 	cargo deny --version'
 
-test: test-rust db-test uji-lua
+test: test-rust db-test uji-lua uji-redis
 
 test-rust: check-label $(CHECK_DISK)
 	$(HEAVY) cargo test --workspace --all-targets --locked
@@ -132,6 +169,17 @@ LUA_ENGINE ?= $(if $(filter docker,$(RUNNER)),docker,podman)
 uji-lua: check-label $(CHECK_DISK) lua-rakit-check
 	CONTAINER_ENGINE=$(LUA_ENGINE) SHAA_ISSUE=$(patsubst shaal.issue=%,%,$(CONTAINER_LABEL)) sh lua/test/run.sh
 
+# Fail-closed, failover (`run_id` berubah) dan rebuild terhadap Redis sungguhan (SHAA-195).
+# Redis jalan di jaringan host (port acak per proses, atau UJI_REDIS_PORT) supaya container cargo
+# menjangkaunya; `uji-redis-cargo` menjalankan uji `#[ignore]` di crate core lewat kunci build.
+uji-redis: check-label $(CHECK_DISK)
+	CONTAINER_ENGINE=$(LUA_ENGINE) SHAA_ISSUE=$(patsubst shaal.issue=%,%,$(CONTAINER_LABEL)) \
+	sh lua/test/uji-redis.sh "$(MAKE) uji-redis-cargo RUNNER=$(RUNNER) CONTAINER_LABEL=$(CONTAINER_LABEL)"
+
+uji-redis-cargo: BUILD_LOCK_OPTS += --network host -e POOLROUTER_TEST_REDIS -e POOLROUTER_TEST_FASE -e POOLROUTER_TEST_RUN_ID_LAMA
+uji-redis-cargo: check-label $(CHECK_DISK)
+	$(HEAVY) cargo test --locked -p poolrouter-core --test pemulihan_redis --test kuota_store_redis -- --ignored --test-threads=1 --nocapture
+
 lint: check-label $(CHECK_DISK)
 	$(RUN) cargo fmt --all --check
 	$(HEAVY) cargo clippy --workspace --all-targets --locked -- -D warnings
@@ -140,9 +188,37 @@ lint: check-label $(CHECK_DISK)
 fmt: check-label $(CHECK_DISK)
 	$(RUN) cargo fmt --all
 
+# clean hanya membersihkan sisa lokal di workdir ini (aturan akhir run gate). Di RUNNER=docker target dan cargo-home
+# bersama TIDAK disentuh; itu urusan clean-shared (dijalankan penjaga ukuran di check-disk, di bawah kunci).
+ifeq ($(RUNNER),docker)
+# Sisa lama (root-owned) dibersihkan lewat container root, hanya di dalam workdir ini.
 clean: check-label
-	$(RUN) cargo clean
-	$(RUN) rm -rf -- .cache/cargo/registry/cache
+	docker run --rm $(if $(CONTAINER_LABEL),--label $(CONTAINER_LABEL)) -v "$(CURDIR)":/work -w /work $(RUST_IMAGE) \
+	  rm -rf -- target .cache
+
+# Hapus isi target bersama dengan `cargo clean`, di bawah kunci heavy (exit 75 bila kunci dipegang build lain).
+# Hanya target build; cargo-home bersama tidak disentuh.
+clean-shared: check-label
+	@mkdir -p "$(SHARED_TARGET_DIR)" "$(SHARED_CARGO_HOME)/cargo" "$(SHARED_CARGO_HOME)/rustup"
+	$(HEAVY) cargo clean
+
+# Pembersihan cache bersama (registry, git, dan opsional toolchain), eksplisit dan di bawah kunci heavy (SHAA-394).
+# Tanpa argumen: hanya cache registry/git yang bisa diunduh ulang (setup berikutnya mengisi lagi). Toolchain rustup
+# dan cargo-deny hanya dihapus dengan CLEAN_TOOLCHAIN=1. Path tetap di dalam mount bersama, tanpa glob ke luar.
+clean-cache-shared: check-label
+	@mkdir -p "$(SHARED_TARGET_DIR)" "$(SHARED_CARGO_HOME)/cargo" "$(SHARED_CARGO_HOME)/rustup"
+	$(HEAVY) sh -c 'rm -rf -- $(CT_CARGO_HOME)/registry $(CT_CARGO_HOME)/git $(if $(CLEAN_TOOLCHAIN),$(CT_CARGO_HOME)/bin $(CT_RUSTUP_HOME)/toolchains $(CT_RUSTUP_HOME)/settings.toml $(CT_RUSTUP_HOME)/update-hashes)'
+else
+# Mode podman menulis target dan .cache sebagai root di checkout ini; hapus lewat container, bukan `rm` host.
+clean: check-label
+	$(RUN) rm -rf -- target .cache
+
+clean-shared:
+	@echo "clean-shared hanya untuk RUNNER=docker" >&2; exit 2
+
+clean-cache-shared:
+	@echo "clean-cache-shared hanya untuk RUNNER=docker" >&2; exit 2
+endif
 
 # OpenAPI is generated from code (ADR-0004 section 4.1, utoipa code-first).
 openapi: check-label $(CHECK_DISK)
