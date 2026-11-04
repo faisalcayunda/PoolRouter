@@ -14,6 +14,12 @@ use poolrouter_core::kuota::store::{
 };
 use redis::aio::MultiplexedConnection;
 
+/// The restart phases of `pemulihan_redis` own the Redis between restarts; these
+/// tests flush it, so they only run when no phase is selected.
+fn lewati() -> bool {
+    std::env::var("POOLROUTER_TEST_FASE").is_ok_and(|f| !f.is_empty())
+}
+
 struct Kosong;
 
 impl SumberRebuild for Kosong {
@@ -80,6 +86,9 @@ fn permintaan(id: &str, burst: i64, ttl: i64) -> PermintaanToken {
 #[tokio::test]
 #[ignore = "butuh Redis: make -C backend uji-redis"]
 async fn siklus_percobaan_lewat_semua_skrip() {
+    if lewati() {
+        return;
+    }
     let (_c, store) = siap().await;
     let k = ctx("pool-a", 100);
 
@@ -146,6 +155,9 @@ async fn siklus_percobaan_lewat_semua_skrip() {
 #[tokio::test]
 #[ignore = "butuh Redis: make -C backend uji-redis"]
 async fn slot_kedaluwarsa_berarti_jangan_panggil_upstream() {
+    if lewati() {
+        return;
+    }
     let (_c, store) = siap().await;
     let k = ctx("pool-b", 100);
 
@@ -182,6 +194,9 @@ async fn slot_kedaluwarsa_berarti_jangan_panggil_upstream() {
 #[tokio::test]
 #[ignore = "butuh Redis: make -C backend uji-redis"]
 async fn penolakan_token_bertipe() {
+    if lewati() {
+        return;
+    }
     let (_c, store) = siap().await;
 
     // Quota 3: the third slot reaches terpakai(0) + slots(3) >= 3 on the 4th call.
@@ -258,6 +273,9 @@ async fn penolakan_token_bertipe() {
 #[tokio::test]
 #[ignore = "butuh Redis: make -C backend uji-redis"]
 async fn limiter_penolakan_per_client() {
+    if lewati() {
+        return;
+    }
     let (_c, store) = siap().await;
     for i in 0..BURST_PENOLAKAN {
         let h = store
@@ -291,6 +309,9 @@ async fn limiter_penolakan_per_client() {
 #[tokio::test]
 #[ignore = "butuh Redis: make -C backend uji-redis"]
 async fn belum_siap_dipetakan_sekali_dan_pulih_setelah_rebuild() {
+    if lewati() {
+        return;
+    }
     let mut c = koneksi().await;
     redis::cmd("FLUSHALL")
         .query_async::<()>(&mut c)
@@ -350,6 +371,9 @@ async fn belum_siap_dipetakan_sekali_dan_pulih_setelah_rebuild() {
 #[tokio::test]
 #[ignore = "butuh Redis: make -C backend uji-redis"]
 async fn run_id_usang_di_store_gagal_tertutup_lalu_mengikuti() {
+    if lewati() {
+        return;
+    }
     let (mut c, store) = siap().await;
     let k = ctx("pool-h", 100);
     let live = baca_run_id(&mut c).await.unwrap();
@@ -381,6 +405,9 @@ async fn run_id_usang_di_store_gagal_tertutup_lalu_mengikuti() {
 #[tokio::test]
 #[ignore = "butuh Redis: make -C backend uji-redis"]
 async fn argumen_tidak_sah_ditolak_sebelum_redis() {
+    if lewati() {
+        return;
+    }
     let (mut c, store) = siap().await;
     let sebelum: i64 = redis::cmd("DBSIZE").query_async(&mut c).await.unwrap();
 

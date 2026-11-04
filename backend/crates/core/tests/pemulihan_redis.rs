@@ -15,9 +15,9 @@
 
 use chrono::{DateTime, Utc};
 use poolrouter_core::kuota::pemulihan::{
-    GalatPemulihan, JendelaRate, KUNCI_SIAP, KeadaanPool, Kesiapan, SlotAktif, SumberRebuild,
-    baca_run_id, bangun_ulang, kunci_antre, kunci_attempts, kunci_ember, kunci_retry, kunci_rl,
-    kunci_slot, nomor_ember_absolut, periksa_kesiapan, pulihkan_bila_perlu,
+    GalatPemulihan, HasilRebuild, JendelaRate, KUNCI_REBUILD, KUNCI_SIAP, KeadaanPool, Kesiapan,
+    SlotAktif, SumberRebuild, baca_run_id, bangun_ulang, kunci_antre, kunci_attempts, kunci_ember,
+    kunci_retry, kunci_rl, kunci_slot, nomor_ember_absolut, periksa_kesiapan, pulihkan_bila_perlu,
 };
 use redis::Value;
 use redis::aio::MultiplexedConnection;
@@ -473,4 +473,158 @@ async fn restart_fase_sesudah() {
         ambil_token(&mut c, &baru, sekarang, k.periode_mulai, "req-s5", 33).await,
         "ok"
     );
+}
+
+/// Review 225be8d, blocking 1: a second rebuild for the same `run_id` must not
+/// overwrite state that is already serving.
+#[tokio::test]
+#[ignore = "butuh Redis: make -C backend uji-redis"]
+async fn rebuild_kedua_tidak_menimpa_state_yang_sudah_hidup() {
+    if !fase().is_empty() {
+        return;
+    }
+    let mut c = koneksi().await;
+    bersihkan(&mut c).await;
+    let sekarang = Utc::now();
+    let k = keadaan(sekarang);
+    let run_id = baca_run_id(&mut c).await.unwrap();
+    let sumber = Tetap(vec![k.clone()]);
+
+    let pertama = bangun_ulang(&mut c, &run_id, &sumber, sekarang)
+        .await
+        .unwrap();
+    assert!(matches!(pertama, HasilRebuild::Dibangun(_)), "{pertama:?}");
+
+    // Dispatch is serving now: one more slot is claimed and a rate token spent.
+    assert_eq!(
+        ambil_token(
+            &mut c,
+            &run_id,
+            sekarang,
+            k.periode_mulai,
+            "req-hidup",
+            1000
+        )
+        .await,
+        "ok"
+    );
+    let slot_sebelum: Vec<String> = redis::cmd("ZRANGE")
+        .arg(kunci_slot(POOL))
+        .arg(0)
+        .arg(-1)
+        .query_async(&mut c)
+        .await
+        .unwrap();
+    assert!(slot_sebelum.contains(&"req-hidup:1".to_owned()));
+    let tat_sebelum: String = redis::cmd("GET")
+        .arg(kunci_rl(POOL, "tps", false))
+        .query_async(&mut c)
+        .await
+        .unwrap();
+
+    // A slower rebuilder arrives with the same run_id and older facts.
+    let kedua = bangun_ulang(&mut c, &run_id, &sumber, sekarang)
+        .await
+        .unwrap();
+    assert_eq!(kedua, HasilRebuild::SudahSiap);
+
+    let slot_sesudah: Vec<String> = redis::cmd("ZRANGE")
+        .arg(kunci_slot(POOL))
+        .arg(0)
+        .arg(-1)
+        .query_async(&mut c)
+        .await
+        .unwrap();
+    assert_eq!(
+        slot_sebelum, slot_sesudah,
+        "slot yang sudah di-claim hilang"
+    );
+    let tat_sesudah: String = redis::cmd("GET")
+        .arg(kunci_rl(POOL, "tps", false))
+        .query_async(&mut c)
+        .await
+        .unwrap();
+    assert_eq!(
+        tat_sebelum, tat_sesudah,
+        "bucket rate kembali ke satu token"
+    );
+    // Counter did not go back either: the live attempt count is untouched.
+    let r = baca(&mut c, &run_id, sekarang, k.periode_mulai, 1000).await;
+    assert_eq!(angka(&r[3]), 3, "tiga slot: dua dari rebuild, satu hidup");
+    // The lock is released.
+    let lock: Option<String> = redis::cmd("GET")
+        .arg(KUNCI_REBUILD)
+        .query_async(&mut c)
+        .await
+        .unwrap();
+    assert_eq!(lock, None);
+}
+
+/// Two rebuilders at once: exactly one writes, the other backs off.
+#[tokio::test]
+#[ignore = "butuh Redis: make -C backend uji-redis"]
+async fn dua_rebuild_serentak_hanya_satu_yang_menulis() {
+    if !fase().is_empty() {
+        return;
+    }
+    let mut c = koneksi().await;
+    bersihkan(&mut c).await;
+    let sekarang = Utc::now();
+    let run_id = baca_run_id(&mut c).await.unwrap();
+    let sumber = Tetap(vec![keadaan(sekarang)]);
+    let mut a = koneksi().await;
+    let mut b = koneksi().await;
+
+    let (x, y) = tokio::join!(
+        bangun_ulang(&mut a, &run_id, &sumber, sekarang),
+        bangun_ulang(&mut b, &run_id, &sumber, sekarang),
+    );
+    let hasil = [x.unwrap(), y.unwrap()];
+    let dibangun = hasil
+        .iter()
+        .filter(|h| matches!(h, HasilRebuild::Dibangun(_)))
+        .count();
+    assert_eq!(dibangun, 1, "{hasil:?}");
+    assert!(matches!(
+        periksa_kesiapan(&mut c).await.unwrap(),
+        Kesiapan::Siap { .. }
+    ));
+}
+
+/// A held lock means somebody else is rebuilding: write nothing, mark nothing.
+#[tokio::test]
+#[ignore = "butuh Redis: make -C backend uji-redis"]
+async fn rebuild_yang_kuncinya_dipegang_orang_lain_tidak_menulis() {
+    if !fase().is_empty() {
+        return;
+    }
+    let mut c = koneksi().await;
+    bersihkan(&mut c).await;
+    let sekarang = Utc::now();
+    let run_id = baca_run_id(&mut c).await.unwrap();
+    redis::cmd("SET")
+        .arg(KUNCI_REBUILD)
+        .arg("pemegang-lain")
+        .arg("PX")
+        .arg(30_000)
+        .query_async::<()>(&mut c)
+        .await
+        .unwrap();
+
+    let hasil = bangun_ulang(&mut c, &run_id, &Tetap(vec![keadaan(sekarang)]), sekarang)
+        .await
+        .unwrap();
+    assert_eq!(hasil, HasilRebuild::DikerjakanLain);
+    let siap: Option<String> = redis::cmd("GET")
+        .arg(KUNCI_SIAP)
+        .query_async(&mut c)
+        .await
+        .unwrap();
+    assert_eq!(siap, None);
+    let kunci: Vec<String> = redis::cmd("KEYS")
+        .arg("pr:*")
+        .query_async(&mut c)
+        .await
+        .unwrap();
+    assert_eq!(kunci, vec![KUNCI_REBUILD.to_owned()], "{kunci:?}");
 }
