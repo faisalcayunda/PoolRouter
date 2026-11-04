@@ -13,6 +13,8 @@ ifeq ($(filter podman docker local,$(FRONTEND_RUNNER)),)
 $(error FRONTEND_RUNNER=$(FRONTEND_RUNNER) tidak dikenal: pakai podman, docker, atau local)
 endif
 CONTAINER_ENGINE := $(if $(filter docker,$(FRONTEND_RUNNER)),docker,podman)
+# Lane Docker (SHAA-373): build-lock.sh ikut engine yang dipakai, bukan default podman.
+export BUILD_LOCK_ENGINE := $(CONTAINER_ENGINE)
 # Must match .nvmrc major and package.json engines. Never `latest`.
 NODE_IMAGE ?= docker.io/library/node:24.22.2-bookworm-slim@sha256:c86ecead9e55a5210ac1727de38a4ca840bf03dcaf34dc9749addbf383b1920c
 # Playwright image: the tag must match @playwright/test in package.json, and the
@@ -107,18 +109,18 @@ i18n-check: check-label $(CHECK_DISK)
 i18n-types: check-label $(CHECK_DISK)
 	$(PNPM) exec i18next-cli types
 
-fmt: check-label
+fmt: check-label $(CHECK_DISK)
 	$(PNPM) exec prettier --write .
 
 clean: check-label
 	rm -rf dist coverage test-results playwright-report node_modules/.vite
 
 # gen-api: ADR-0003 section 4.2. backend/openapi/admin-api.yaml is owned by the backend stack.
-gen-api: check-label
+gen-api: check-label $(CHECK_DISK)
 	@test -f ../backend/openapi/admin-api.yaml || { echo "gen-api: ../backend/openapi/admin-api.yaml does not exist yet (backend stack); nothing to generate" >&2; exit 0; }
 	$(PNPM) exec openapi-typescript ../backend/openapi/admin-api.yaml -o src/api/schema.gen.ts
 
-gen-api-check: check-label
+gen-api-check: check-label $(CHECK_DISK)
 	@test -f ../backend/openapi/admin-api.yaml || { echo "gen-api-check: ../backend/openapi/admin-api.yaml does not exist yet; skipped" >&2; exit 0; }
 	$(MAKE) gen-api
 	git diff --exit-code -- src/api/schema.gen.ts
