@@ -30,8 +30,8 @@ use sqlx::PgPool;
 use tower_http::limit::RequestBodyLimitLayer;
 use tower_http::set_header::SetResponseHeaderLayer;
 
-use super::login;
 use super::pembatas::PembatasMemori;
+use super::{login, me};
 
 use crate::api::problem::ProblemKodeAdmin;
 use crate::api::problem_admin::ProblemAdmin;
@@ -76,6 +76,11 @@ pub fn router(state: AdminState) -> Router {
         .route("/admin/v1/auth/sesi/perpanjang", post(perpanjang_sesi))
         .route("/admin/v1/auth/logout", post(logout))
         .route("/admin/v1/auth/login", post(login::login))
+        .route("/admin/v1/auth/me", get(me::get_me))
+        .route(
+            "/admin/v1/auth/me/preferensi",
+            axum::routing::patch(me::update_preferensi),
+        )
         .with_state(state)
         .layer(RequestBodyLimitLayer::new(16 * 1024))
         .layer(SetResponseHeaderLayer::overriding(
