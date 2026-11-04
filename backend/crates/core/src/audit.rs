@@ -521,6 +521,8 @@ impl fmt::Display for AksiLogin {
 pub enum HasilLogin {
     Berhasil,
     Gagal,
+    /// Refused by the login limiter before any password work.
+    Terkunci,
 }
 
 impl HasilLogin {
@@ -528,6 +530,7 @@ impl HasilLogin {
         match self {
             Self::Berhasil => "berhasil",
             Self::Gagal => "gagal",
+            Self::Terkunci => "terkunci",
         }
     }
 }
@@ -744,5 +747,6 @@ mod tests {
         assert_eq!(TampilanNik::TidakAda.to_string(), "tidak_ada");
         assert_eq!(AksiLogin::Login.to_string(), "login");
         assert_eq!(HasilLogin::Gagal.to_string(), "gagal");
+        assert_eq!(HasilLogin::Terkunci.to_string(), "terkunci");
     }
 }

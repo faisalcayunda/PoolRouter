@@ -79,6 +79,32 @@ fn throttled(wait: Duration) -> ApiError {
     .retry_after(retry_after_secs(wait))
 }
 
+/// RFC 6749 section 2.3.1: the id and secret are form-urlencoded before they
+/// are joined and base64-encoded, so `+` is a space and `%XX` is one byte.
+fn form_decode(value: &str) -> Option<String> {
+    let bytes = value.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        match bytes[i] {
+            b'+' => {
+                out.push(b' ');
+                i += 1;
+            }
+            b'%' => {
+                let hex = std::str::from_utf8(bytes.get(i + 1..i + 3)?).ok()?;
+                out.push(u8::from_str_radix(hex, 16).ok()?);
+                i += 3;
+            }
+            b => {
+                out.push(b);
+                i += 1;
+            }
+        }
+    }
+    String::from_utf8(out).ok()
+}
+
 /// `Authorization: Basic base64(client_id:client_secret)`.
 fn basic_credentials(headers: &HeaderMap) -> Option<(String, String)> {
     let value = headers.get(AUTHORIZATION)?.to_str().ok()?;
@@ -95,7 +121,7 @@ fn basic_credentials(headers: &HeaderMap) -> Option<(String, String)> {
         .collect();
     let raw = String::from_utf8(base64url_decode(&url)?).ok()?;
     let (id, secret) = raw.split_once(':')?;
-    Some((id.to_owned(), secret.to_owned()))
+    Some((form_decode(id)?, form_decode(secret)?))
 }
 
 pub async fn issue_token(
@@ -138,7 +164,7 @@ pub async fn issue_token(
         app.throttle.client(id).map_err(throttled)?;
     }
 
-    let client = app
+    let (client, credential) = app
         .auth
         .client_secret(&client_id, &secret)
         .await
@@ -156,11 +182,42 @@ pub async fn issue_token(
     let (access_token, expires_in) = app
         .auth
         .keys()
-        .issue(client, now)
+        .issue(client, credential, now)
         .map_err(|_| ApiError::unavailable())?;
     Ok(Json(TokenResponse {
         access_token,
         token_type: TipeToken::Bearer,
         expires_in: i64::try_from(expires_in).unwrap_or(900),
     }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn form_decode_plus_is_space_percent_xx_bytes() {
+        assert_eq!(form_decode("abc"), Some("abc".to_owned()));
+        assert_eq!(form_decode("+"), Some(" ".to_owned()));
+        assert_eq!(form_decode("a+b"), Some("a b".to_owned()));
+        assert_eq!(form_decode("%41B"), Some("AB".to_owned()));
+        assert_eq!(form_decode("A%20B+C"), Some("A B C".to_owned()));
+        // Invalid hex returns None (no leak)
+        assert_eq!(form_decode("%GG"), None);
+        assert_eq!(form_decode("%2"), None);
+    }
+
+    #[test]
+    fn basic_credentials_decodes_form_encoding_correctly() {
+        use axum::http::header::{AUTHORIZATION, HeaderMap};
+        let mut headers = HeaderMap::new();
+        // client_secret: `+` is space; `abc def` → base64url
+        let spec = "client_id:abc+def";
+        let b64 = poolrouter_core::kredensial::base64url_encode(spec.as_bytes());
+        headers.insert(AUTHORIZATION, format!("Basic {}", b64).parse().unwrap());
+        assert_eq!(
+            basic_credentials(&headers),
+            Some(("client_id".into(), "abc def".into()))
+        );
+    }
 }

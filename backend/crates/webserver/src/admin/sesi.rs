@@ -30,7 +30,7 @@ use sqlx::PgPool;
 use tower_http::limit::RequestBodyLimitLayer;
 use tower_http::set_header::SetResponseHeaderLayer;
 
-use super::pembatas::PembatasMemori;
+use super::pembatas::PembatasLogin;
 use super::{login, me};
 
 use crate::api::problem::ProblemKodeAdmin;
@@ -50,17 +50,17 @@ pub struct AdminState {
     pub pool: PgPool,
     pub asal: AsalUi,
     pub jam: Jam,
-    pub pembatas: Arc<PembatasMemori>,
+    pub pembatas: Arc<PembatasLogin>,
 }
 
 impl AdminState {
-    pub fn baru(pool: PgPool, asal: AsalUi) -> Self {
+    pub fn baru(pool: PgPool, asal: AsalUi, pembatas: PembatasLogin) -> Self {
         Self {
             sesi: SesiStore::baru(pool.clone()),
             pool,
             asal,
             jam: Arc::new(Utc::now),
-            pembatas: Arc::new(PembatasMemori::baru()),
+            pembatas: Arc::new(pembatas),
         }
     }
 

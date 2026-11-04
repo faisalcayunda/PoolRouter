@@ -19,10 +19,19 @@ here=$(cd "$(dirname "$0")" && pwd)
 db_dir=$(cd "$here/.." && pwd)
 mig_dir=$(cd "$db_dir/../migrations" && pwd)
 
+RPORT=${UJI_PG_REDIS_PORT:-$((40000 + $$ % 20000))}
+RIMAGE=${REDIS_IMAGE:-docker.io/library/redis:7-alpine@sha256:8da19c7399dca900c6822a1cf30f9d2285585e2c4b457ff4095b0f4500054d3f}
+RNAME="poolrouter-ujipg-redis-$$"
+
 bersihkan() {
   $ENGINE rm -f -v "$NAME" >/dev/null 2>&1 || true
+  $ENGINE rm -f -v "$RNAME" >/dev/null 2>&1 || true
 }
 trap bersihkan EXIT INT TERM
+
+# Redis for the login limiter (SHAA-196): throwaway, labelled, no persistence.
+$ENGINE run -d --name "$RNAME" --label "shaal.issue=$ISSUE" -p "127.0.0.1:$RPORT:6379" "$RIMAGE" \
+  redis-server --save '' --appendonly no >/dev/null
 
 SU_PW=$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')
 $ENGINE run -d --name "$NAME" --label "shaal.issue=$ISSUE" -p "127.0.0.1:$PORT:5432" \
@@ -37,6 +46,13 @@ until $ENGINE exec "$NAME" pg_isready -U postgres -h 127.0.0.1 >/dev/null 2>&1; 
 done
 sleep 2
 until $ENGINE exec "$NAME" pg_isready -U postgres -h 127.0.0.1 >/dev/null 2>&1; do sleep 1; done
+
+i=0
+until $ENGINE exec "$RNAME" redis-cli ping >/dev/null 2>&1; do
+  i=$((i + 1))
+  [ "$i" -le 60 ] || { echo "redis tidak siap" >&2; exit 1; }
+  sleep 1
+done
 
 psql_su() { $ENGINE exec -i "$NAME" psql -U postgres -h 127.0.0.1 --no-psqlrc -q -v ON_ERROR_STOP=1 "$@"; }
 
@@ -56,6 +72,7 @@ $ENGINE exec -e POOLROUTER_SECRETS_DIR=/tmp/sec -e PGUSER=postgres -e PGHOST=127
 
 PW=$($ENGINE exec "$NAME" cat /tmp/sec/pr_admin_api)
 export POOLROUTER_TEST_DATABASE_URL="postgres://pr_admin_api:$PW@127.0.0.1:$PORT/poolrouter_test"
+export POOLROUTER_TEST_REDIS="redis://127.0.0.1:$RPORT"
 export POOLROUTER_TEST_DATABASE_URL_SU="postgres://postgres:$SU_PW@127.0.0.1:$PORT/poolrouter_test"
 echo "uji-pg: PostgreSQL 127.0.0.1:$PORT sebagai pr_admin_api"
 $MAKE_CMD

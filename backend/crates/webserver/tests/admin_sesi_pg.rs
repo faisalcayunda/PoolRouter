@@ -14,6 +14,7 @@ use chrono::{DateTime, Duration, TimeZone, Utc};
 use poolrouter_core::admin::sesi::ABSOLUT_DETIK;
 use poolrouter_core::admin::sesi_store::SesiStore;
 use poolrouter_core::admin::{AsalUi, TokenSesi};
+use poolrouter_webserver::admin::pembatas::PembatasLogin;
 use poolrouter_webserver::admin::sesi::{AdminState, COOKIE_SESI, router};
 use serde_json::Value;
 use sqlx::PgPool;
@@ -21,6 +22,30 @@ use tower::ServiceExt;
 use uuid::Uuid;
 
 const ASAL: &str = "https://ui.example.test";
+
+/// The key the tests give the limiter; also used to derive the expected Redis
+/// key. Synthetic.
+const KUNCI_HMAC: &[u8] = b"kunci-hmac-sintetis-untuk-uji";
+
+fn redis_ujian() -> String {
+    std::env::var("POOLROUTER_TEST_REDIS")
+        .expect("POOLROUTER_TEST_REDIS belum diset; jalankan lewat `make -C backend uji-pg`")
+}
+
+fn pembatas(redis_url: &str) -> PembatasLogin {
+    PembatasLogin::baru(redis::Client::open(redis_url).unwrap(), KUNCI_HMAC)
+}
+
+/// One admin app instance (its own `AdminState`) against the given Redis.
+fn app_baru(pool: &PgPool, redis_url: &str, jam: Arc<Mutex<DateTime<Utc>>>) -> Router {
+    let state = AdminState::baru(
+        pool.clone(),
+        AsalUi::baru(ASAL).unwrap(),
+        pembatas(redis_url),
+    )
+    .dengan_jam(Arc::new(move || *jam.lock().unwrap()));
+    router(state).layer(MockConnectInfo(SocketAddr::from(([203, 0, 113, 9], 4000))))
+}
 
 struct Uji {
     app: Router,
@@ -54,11 +79,9 @@ async fn siapkan() -> Uji {
         .await
         .unwrap();
     let jam = Arc::new(Mutex::new(t0()));
-    let jam2 = jam.clone();
-    let state = AdminState::baru(pool.clone(), AsalUi::baru(ASAL).unwrap())
-        .dengan_jam(Arc::new(move || *jam2.lock().unwrap()));
+    let app = app_baru(&pool, &redis_ujian(), jam.clone());
     Uji {
-        app: router(state).layer(MockConnectInfo(SocketAddr::from(([203, 0, 113, 9], 4000)))),
+        app,
         pool,
         jam,
         cookie: format!("{COOKIE_SESI}={}", token.sebagai_b64()),
@@ -382,33 +405,172 @@ async fn login_gagal_tidak_membedakan_pengguna_salah_dan_password_salah() {
     assert_eq!(jumlah_audit(&su, Some(inaktif), "gagal").await, 1);
 }
 
+async fn login_pada(
+    app: &Router,
+    username: &str,
+    password: &str,
+) -> (StatusCode, axum::http::HeaderMap, Value) {
+    let body = serde_json::json!({"username": username, "password": password}).to_string();
+    let req = Request::builder()
+        .method(Method::POST)
+        .uri(LOGIN)
+        .header(header::CONTENT_TYPE, "application/json")
+        .header(header::ORIGIN, ASAL)
+        .body(Body::from(body))
+        .unwrap();
+    let res = app.clone().oneshot(req).await.unwrap();
+    let (parts, body) = res.into_parts();
+    let bytes = to_bytes(body, 64 * 1024).await.unwrap();
+    (
+        parts.status,
+        parts.headers,
+        serde_json::from_slice(&bytes).unwrap_or(Value::Null),
+    )
+}
+
+fn retry_after(h: &axum::http::HeaderMap) -> u64 {
+    h[header::RETRY_AFTER].to_str().unwrap().parse().unwrap()
+}
+
+async fn redis_koneksi() -> redis::aio::MultiplexedConnection {
+    redis::Client::open(redis_ujian())
+        .unwrap()
+        .get_multiplexed_async_connection()
+        .await
+        .unwrap()
+}
+
 #[tokio::test]
 #[ignore]
-async fn lima_kegagalan_mengunci_username_lima_belas_menit() {
+async fn lima_kegagalan_mengunci_username_dan_pulih_setelah_jendela() {
     let u = siapkan().await;
     let (_, nama) = pengguna_login(&u.pool, true).await;
     for i in 0..5 {
-        u.maju(Duration::minutes(i));
         let (st, ..) = u.login(&nama, "password-salah-sekali-ya", Some(ASAL)).await;
         assert_eq!(st, StatusCode::UNAUTHORIZED, "percobaan {i}");
     }
-    // Locked: even the right password is refused, with Retry-After.
-    u.maju(Duration::minutes(5));
+    // Locked: even the right password is refused, with Retry-After from PTTL.
+    // The refusal is audited as `terkunci` without a user id: the limiter runs
+    // before any lookup, so a known and an unknown name look the same.
+    let su = pool_super().await;
+    let sebelum = jumlah_audit(&su, None, "terkunci").await;
     let (st, h, j) = u.login(&nama, PASSWORD, Some(ASAL)).await;
     assert_eq!(st, StatusCode::TOO_MANY_REQUESTS);
     assert_eq!(j["kode"], "login_dibatasi");
-    assert!(
-        h[header::RETRY_AFTER]
-            .to_str()
-            .unwrap()
-            .parse::<u64>()
-            .unwrap()
-            >= 1
-    );
-    // After the lock the right password works again.
-    u.maju(Duration::minutes(4 + 15));
+    assert!((1..=900).contains(&retry_after(&h)), "{h:?}");
+    assert_eq!(jumlah_audit(&su, None, "terkunci").await, sebelum + 1);
+    // The window ends (Redis expiry stands in for 15 minutes): login works again.
+    let kunci = pembatas(&redis_ujian()).kunci_redis(&nama);
+    let mut c = redis_koneksi().await;
+    let _: i64 = redis::cmd("PEXPIRE")
+        .arg(&kunci)
+        .arg(1)
+        .query_async(&mut c)
+        .await
+        .unwrap();
+    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
     let (st, ..) = u.login(&nama, PASSWORD, Some(ASAL)).await;
     assert_eq!(st, StatusCode::NO_CONTENT);
+    // A success clears the count.
+    let ada: i64 = redis::cmd("EXISTS")
+        .arg(&kunci)
+        .query_async(&mut c)
+        .await
+        .unwrap();
+    assert_eq!(ada, 0);
+}
+
+#[tokio::test]
+#[ignore]
+async fn dua_instance_berbagi_redis_dan_batasnya_gabungan() {
+    let a = siapkan().await;
+    let b = app_baru(&a.pool, &redis_ujian(), a.jam.clone());
+    let (_, nama) = pengguna_login(&a.pool, true).await;
+    for i in 0..5 {
+        let app = if i % 2 == 0 { &a.app } else { &b };
+        let (st, ..) = login_pada(app, &nama, "password-salah-sekali-ya").await;
+        assert_eq!(st, StatusCode::UNAUTHORIZED);
+    }
+    for app in [&a.app, &b] {
+        let (st, _, j) = login_pada(app, &nama, PASSWORD).await;
+        assert_eq!(st, StatusCode::TOO_MANY_REQUESTS);
+        assert_eq!(j["kode"], "login_dibatasi");
+    }
+}
+
+#[tokio::test]
+#[ignore]
+async fn username_tak_dikenal_terkunci_dengan_respons_identik() {
+    let u = siapkan().await;
+    let (_, dikenal) = pengguna_login(&u.pool, true).await;
+    let tak_dikenal = format!("tidak-ada-{}", Uuid::now_v7().simple());
+    for nama in [&dikenal, &tak_dikenal] {
+        for _ in 0..5 {
+            let (st, ..) = u.login(nama, "password-salah-sekali-ya", Some(ASAL)).await;
+            assert_eq!(st, StatusCode::UNAUTHORIZED);
+        }
+    }
+    let (s1, h1, j1) = u.login(&dikenal, PASSWORD, Some(ASAL)).await;
+    let (s2, h2, j2) = u.login(&tak_dikenal, PASSWORD, Some(ASAL)).await;
+    assert_eq!(
+        (s1, s2),
+        (StatusCode::TOO_MANY_REQUESTS, StatusCode::TOO_MANY_REQUESTS)
+    );
+    assert_eq!(j1, j2);
+    assert!(retry_after(&h1).abs_diff(retry_after(&h2)) <= 5);
+}
+
+#[tokio::test]
+#[ignore]
+async fn redis_mati_login_503_tanpa_sesi_dan_tanpa_verifikasi() {
+    let u = siapkan().await;
+    let mati = app_baru(&u.pool, "redis://127.0.0.1:1/", u.jam.clone());
+    let (uid, nama) = pengguna_login(&u.pool, true).await;
+    let (st, h, j) = login_pada(&mati, &nama, PASSWORD).await;
+    assert_eq!(st, StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(j["kode"], "layanan_tidak_tersedia");
+    assert!(h.get(header::SET_COOKIE).is_none());
+    let n: i64 = sqlx::query_scalar("SELECT count(*) FROM admin_session WHERE pengguna_id = $1")
+        .bind(uid)
+        .fetch_one(&u.pool)
+        .await
+        .unwrap();
+    assert_eq!(n, 0);
+    // The same user logs in fine on a working instance: the 503 was Redis, not the user.
+    let (st, ..) = login_pada(&u.app, &nama, PASSWORD).await;
+    assert_eq!(st, StatusCode::NO_CONTENT);
+}
+
+#[tokio::test]
+#[ignore]
+async fn redis_tidak_menyimpan_username_mentah() {
+    let u = siapkan().await;
+    let nama = format!("rahasia-{}", Uuid::now_v7().simple());
+    u.login(&nama, "password-salah-sekali-ya", Some(ASAL)).await;
+    let mut c = redis_koneksi().await;
+    let mut kursor = 0u64;
+    let mut ditemukan = Vec::new();
+    loop {
+        let (next, kunci): (u64, Vec<String>) = redis::cmd("SCAN")
+            .arg(kursor)
+            .arg("COUNT")
+            .arg(1000)
+            .query_async(&mut c)
+            .await
+            .unwrap();
+        ditemukan.extend(kunci);
+        if next == 0 {
+            break;
+        }
+        kursor = next;
+    }
+    assert!(!ditemukan.is_empty());
+    assert!(
+        ditemukan.iter().all(|k| !k.contains("rahasia")),
+        "{ditemukan:?}"
+    );
+    let ada = ditemukan.contains(&pembatas(&redis_ujian()).kunci_redis(&nama));
+    assert!(ada, "kunci HMAC username harus ada");
 }
 
 #[tokio::test]
