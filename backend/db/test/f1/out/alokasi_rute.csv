@@ -1,0 +1,7 @@
+upstream_pool_id,downstream_pool_id,alokasi_jenis,alokasi_nilai,sifat,boleh_pinjam,skenario
+9cf8ee9e-0db8-54f3-b44c-35528792a158,de8c8ae4-e310-573e-8cf3-e6018e4ce4e5,exact,40.00,reserved,false,U-61
+9cf8ee9e-0db8-54f3-b44c-35528792a158,014383b9-e495-57bb-8017-a1343df4967a,exact,30.00,shareable,true,U-61
+9cf8ee9e-0db8-54f3-b44c-35528792a158,f239d2fa-042d-53eb-877c-75c6128cb86f,,,,true,U-61
+32191cc0-bd57-53b2-9f21-891d6b916dfd,976d59b6-5e1c-55c4-b67a-847113e0f429,exact,70.00,reserved,false,U-64a
+32191cc0-bd57-53b2-9f21-891d6b916dfd,8e290df3-0160-5acc-b7ea-ae385715907b,exact,50.00,reserved,false,U-64a
+51f10409-9182-5499-b651-b478ba114ca8,afe81d87-82c6-5f48-9b07-a3fcedc70259,,,,false,U-65
