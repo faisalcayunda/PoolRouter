@@ -93,7 +93,7 @@ STACKS := backend $(if $(wildcard frontend/Makefile),frontend)
 
 help:
 	@echo "gate resmi: make setup test lint RUNNER=docker FRONTEND_RUNNER=docker CONTAINER_LABEL=shaal.issue=SHAA-<n>; push: make push-main dengan variabel yang sama"
-	@echo "targets: setup test lint fmt clean (gate repo, delegasi ke stack); test-dry-run (uji regresi make -n, tanpa Docker); push-main (gate penuh lalu push ke main, wajib CONTAINER_LABEL=shaal.issue=SHAA-<n>); compose-up compose-down compose-ps compose-logs compose-config compose-migrate compose-lint compose-test-dind image image-frontend"
+	@echo "targets: setup test lint fmt clean (gate repo, delegasi ke stack); test-dry-run (uji regresi make -n dan size_mb, tanpa Docker); push-main (gate penuh lalu push ke main, wajib CONTAINER_LABEL=shaal.issue=SHAA-<n>); compose-up compose-down compose-ps compose-logs compose-config compose-migrate compose-lint compose-test-dind image image-frontend"
 
 # push-main: satu-satunya jalur push ke main (CLAUDE.md). Gate penuh harus hijau pada hash yang di-push (SHAA-328).
 push-main:
@@ -102,6 +102,7 @@ push-main:
 # test-dry-run: bukti `make -n` tidak menyentuh engine kontainer (stub docker/podman di PATH, SHAA-398).
 test-dry-run:
 	@sh scripts/test-dry-run.sh
+	@bash scripts/test-size-mb.sh
 
 setup test lint fmt clean:
 	@set -e; for s in $(STACKS); do \

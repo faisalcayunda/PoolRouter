@@ -24,7 +24,23 @@ require_issue() {
 
 free_gb() { df -BG --output=avail "$1" | tail -1 | tr -dc '0-9'; }
 free_mb() { df -BM --output=avail "$1" | tail -1 | tr -dc '0-9'; }
-size_mb() { [[ -d "$1" ]] && du -sm "$1" | cut -f1 || echo 0; }
+# size_mb <dir>: selalu mencetak tepat satu bilangan bulat (MB). Direktori tidak ada => 0.
+# `du` keluar 1 bila berkas hilang di tengah pemindaian (lane lain menulis ke target bersama); itu diterima
+# sebagai perkiraan bawah (SHAA-405). Error lain (mis. izin baca) tetap gagal dengan pesan jelas.
+size_mb() {
+  [[ -d "$1" ]] || { echo 0; return 0; }
+  local out err rc=0 n
+  err="$(mktemp)"
+  out="$(LC_ALL=C du -sm "$1" 2>"$err")" || rc=$?
+  if (( rc != 0 )) && grep -v 'No such file or directory' "$err" | grep -q .; then
+    echo "ERROR: du gagal mengukur $1 (exit $rc): $(grep -v 'No such file or directory' "$err" | head -1)" >&2
+    rm -f "$err"; return 1
+  fi
+  rm -f "$err"
+  n="$(printf '%s\n' "$out" | tail -1 | cut -f1)"
+  [[ "$n" =~ ^[0-9]+$ ]] || { echo "ERROR: du tidak mengeluarkan ukuran untuk $1" >&2; return 1; }
+  echo "$n"
+}
 
 SHARED_CARGO_HOME="${SHARED_CARGO_HOME:-/data/workspace/shaal-build/cargo-home}"
 SHARED_CARGO_HOME_LIMIT_MB="${SHARED_CARGO_HOME_LIMIT_MB:-2560}"   # cargo-home + rustup bersama (SHAA-394)
@@ -93,9 +109,11 @@ builder_prune() {
   docker builder prune --keep-storage "$BUILD_CACHE_KEEP" --force
 }
 
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
 case "${1:-}" in
   check) check ;;
   cleanup) cleanup "${2:-}" ;;
   builder-prune) builder_prune ;;
   *) die "pakai: check | cleanup <SHAA-n> | builder-prune" ;;
 esac
+fi
