@@ -82,7 +82,14 @@ image:
 # included once it has a Makefile, so adding it needs no change here.
 STACKS := backend $(if $(wildcard frontend/Makefile),frontend)
 
-.PHONY: setup test lint fmt clean
+.PHONY: help setup test lint fmt clean push-main
+
+help:
+	@echo "targets: setup test lint fmt clean (gate repo, delegasi ke stack); push-main (gate penuh lalu push ke main, wajib CONTAINER_LABEL=shaal.issue=SHAA-<n>); compose-up compose-down compose-ps compose-logs compose-config compose-migrate compose-lint compose-test-dind image"
+
+# push-main: satu-satunya jalur push ke main (CLAUDE.md). Gate penuh harus hijau pada hash yang di-push (SHAA-328).
+push-main:
+	@CONTAINER_LABEL="$(CONTAINER_LABEL)" MAKE="$(MAKE)" sh scripts/push-main.sh
 
 setup test lint fmt clean:
 	@set -e; for s in $(STACKS); do \

@@ -12,7 +12,11 @@ Dasar wewenang: keputusan owner K-34 dan K-35 (2026-11-03, dicatat Fitcher di SH
 ## Pull request dan merge
 - PR ke `main` tidak wajib. Perubahan boleh di-push langsung ke `main`.
 - Ridley me-review post-hoc hash commit di `main` setelah pelaksana (Flik atau Viktor) me-mention. Temuan blocking diperbaiki dengan push lanjutan ke `main`.
-- Sebelum push ke `main`: rebase atau merge `main` terbaru ke branch kerja, jalankan gate penuh repo, dan pastikan lolos (`shaal-eng-standards` §6).
+- Sebelum push ke `main`: rebase atau merge `main` terbaru ke branch kerja (`shaal-eng-standards` §6).
+- Push ke `main` hanya lewat `make push-main CONTAINER_LABEL=shaal.issue=SHAA-<n>`. Gate penuh `make setup test lint` wajib exit 0 pada hash persis yang di-push. `cargo check`, test parsial, dan `git diff --check` bukan pengganti gate.
+- Gate tidak bisa dijalankan (kunci, timeout, tool tidak ada) berarti tidak push. Pekerjaan tetap di branch, lalu dilaporkan di issue.
+- Laporan push ke `main` wajib mengutip blok bukti dari `make push-main`. Push tanpa bukti adalah temuan blocking di review post-hoc Ridley.
+- `main` merah: pemilik commit pemicu memperbaikinya dengan prioritas di atas pekerjaan lain. Pengecualian satu-satunya: commit perbaikan untuk `main` yang merah boleh di-push bila gate pada hash itu tidak menambah kegagalan baru dibanding `main`. Issue perbaikannya disebut di pesan commit, dan pengecualian ini dicatat di laporan.
 - Board of Directors tidak commit, push, atau merge.
 
 ## Rahasia dan data
