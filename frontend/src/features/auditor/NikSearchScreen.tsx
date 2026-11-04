@@ -23,6 +23,7 @@ import { ReasonDialog } from '../common/ReasonDialog';
 import { PageHeader, EmptyState, LoadingState, QueryError } from '../common/page';
 import { useQuery } from '../common/useQuery';
 import { useDocumentTitle, useFocusOnMount } from '../common/a11y';
+import { MaskedNik } from '../common/MaskedNik';
 import { ScrollArea } from '../common/ScrollArea';
 import { accessTone } from '../log/accessTone';
 import { PayloadDialog } from '../log/PayloadDialog';
@@ -321,7 +322,7 @@ export function NikSearchScreen({ client = api }: NikSearchScreenProps): ReactNo
                           {row.client_nama}
                         </td>
                         <td data-label={t('log.col.nik')} className="typescale-body-medium px-4">
-                          {row.nik}
+                          <MaskedNik value={row.nik} />
                         </td>
                         <td data-label={t('log.col.access')} className="typescale-body-medium px-4">
                           <StatusLabel tone={accessTone(row.status_akses)}>

@@ -50,8 +50,12 @@ describe('S11 log transaksi', () => {
     // Both ends of the default 24-hour window travel in the body, not the URL.
     expect(body.dari).toMatch(/\+07:00$/);
     expect(body.sampai).toMatch(/\+07:00$/);
-    // The operator sees the masked value exactly as sent; the screen never re-formats a NIK.
-    expect(screen.getByText('••••••••••••0001')).toBeInTheDocument();
+    // The operator sees the masked value exactly as sent; the screen never re-formats a NIK. The
+    // trailing four digits sit in their own element so a narrow column cannot split them, hence
+    // the check compares the cell's text rather than one text node.
+    expect(screen.getAllByRole('cell').map((cell) => cell.textContent)).toContain(
+      '••••••••••••0001',
+    );
   });
 
   it('uses POST so the code filter stays out of the access log', async () => {
