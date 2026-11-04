@@ -1,6 +1,6 @@
 # Unit test alert F1 (ADR-0006 §7, §11). Jalankan lewat promtool di container, lihat docs/runbook/alert-f1.md.
 rule_files:
-  - ../../../compose/monitoring/prometheus/rules/poolrouter-f1.rules.yml
+  - ../rules/poolrouter-f1.rules.yml
 
 evaluation_interval: 1m
 
