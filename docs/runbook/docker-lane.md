@@ -4,7 +4,7 @@ Runbook ini menjelaskan cara menjalankan gate backend di Docker, menjaga ruang k
 
 - **Pemilik:** Tetsu (Platform & SRE), reviewer Ridley, Huan untuk runbook.
 - **Tanggal:** 2026-11-04.
-- **Status:** gate backend lolos di sandbox instabox (lihat Pengukuran). Gate frontend belum diukur.
+- **Status:** gate backend dan frontend lolos di sandbox instabox (lihat Pengukuran dan Pengukuran disk frontend).
 
 ## Prasyarat
 
@@ -158,22 +158,33 @@ Puncak pemakaian: 5G (image 2.2G, target dan cache sekitar 2.5G). Angka ini peng
 
 ## Batasan
 
-- Dengan 20G, lane hanya muat satu gate backend. Gate frontend (`pnpm install`) belum diukur dan butuh ruang lebih.
+- Dengan 20G, lane dapat menjalankan gate backend dan frontend secara berurutan; rincian pemakaian disk tercatat pada tabel Pengukuran di atas dan Pengukuran disk frontend di bawah.
 - Resize `/data` ke 40G masih rekomendasi untuk jangka panjang.
-- Gate penuh `make setup test lint` di akar repo belum ada target setup/test/lint di Makefile akar. Gate yang dijalankan adalah target backend di atas.
 
 ## Root Docker gate (SHAA-379)
 
-Gate akar (menjalankan seluruh lane dan push fast-forward):
+Gate akar menjalankan verifikasi seluruh stack (backend dan frontend). Dua perintah yang tersedia dari akar repo:
 
 ```sh
-RUNNER=docker FRONTEND_RUNNER=docker CONTAINER_LABEL=shaal.issue=SHAA-379 make push-main
+# Verifikasi lokal tanpa push (setup, test, lint untuk backend dan frontend):
+RUNNER=docker FRONTEND_RUNNER=docker CONTAINER_LABEL=shaal.issue=SHAA-<n> make setup test lint
+
+# Gate penuh seluruh stack lalu push fast-forward ke main:
+RUNNER=docker FRONTEND_RUNNER=docker CONTAINER_LABEL=shaal.issue=SHAA-<n> make push-main
 ```
 
-This is the only root gate command. It runs the backend and frontend gates and
-pushes only after every target exits zero.
+Perintah `push-main` di atas adalah satu-satunya perintah gate akar untuk push ke `main`. Perintah ini menjalankan gate backend dan frontend (`setup`, `test`, `lint`), dan hanya melakukan push bila setiap target keluar dengan exit code 0.
 
-Catat sebelum dan sesudah gate: `df -h /data`; ukuran `frontend/node_modules` dan
-store pnpm; ukuran image Node pinned dan image Playwright pinned (`docker images`),
-serta ruang kosong `/data`. Gate memeriksa ruang kosong sebelum target berat dan
-menolak eksekusi bila di bawah ambang.
+### Pengukuran disk frontend (2026-11-04, sandbox instabox, /data 20G)
+
+| Komponen | Sebelum Gate | Sesudah Gate | Catatan |
+|---|---|---|---|
+| Ruang kosong `/data` | 8,3G (58%) | 8,3G (58%) | Ambang minimum 1G terpenuhi |
+| Ruang kosong Docker root (`/var/lib/docker`) | 8,3G | 8,3G | Ambang minimum 3G terpenuhi |
+| `frontend/node_modules` | 0 | 396M | 479 paket terinstal |
+| Store pnpm (`frontend/.cache/pnpm-store`) | 0 | 22M | Store lokal per checkout (keputusan SHAA-394) |
+| Cache frontend total (`frontend/.cache`) | 0 | 23M | Termasuk pnpm-store dan corepack |
+| Image Node pinned (`node:24.22.2-bookworm-slim`) | 333M | 333M | Dipakai runner Docker frontend |
+| Image Playwright pinned (`mcr.microsoft.com/playwright`) | Belum di-pull | Belum di-pull | Hanya ditarik saat target `e2e` dipanggil |
+
+Puncak pemakaian disk frontend sekitar 420M (node_modules dan cache lokal). Gate memeriksa ruang kosong sebelum target berat dijalankan dan menolak eksekusi bila di bawah ambang batas.
