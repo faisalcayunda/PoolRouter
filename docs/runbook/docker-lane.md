@@ -86,3 +86,22 @@ Puncak pemakaian: 5G (image 2.2G, target dan cache sekitar 2.5G). Angka ini peng
 - Dengan 20G, lane hanya muat satu gate backend. Gate frontend (`pnpm install`) belum diukur dan butuh ruang lebih.
 - Resize `/data` ke 40G masih rekomendasi untuk jangka panjang.
 - Gate penuh `make setup test lint` di akar repo belum ada target setup/test/lint di Makefile akar. Gate yang dijalankan adalah target backend di atas.
+
+## Frontend Docker lane (SHAA-379)
+
+Gate akar (menjalankan seluruh lane dan push fast-forward):
+
+```sh
+make push-main FRONTEND_RUNNER=docker CONTAINER_LABEL=shaal.issue=SHAA-379
+```
+
+Padanan tanpa push, untuk diagnosis lokal:
+
+```sh
+make -C frontend setup test lint build e2e FRONTEND_RUNNER=docker CONTAINER_LABEL=shaal.issue=SHAA-379
+```
+
+Catat sebelum dan sesudah gate: `df -h /data`; ukuran `frontend/node_modules` dan
+store pnpm; ukuran image Node pinned dan image Playwright pinned (`docker images`),
+serta ruang kosong `/data`. Gate memeriksa ruang kosong sebelum target berat dan
+menolak eksekusi bila di bawah ambang.
