@@ -88,13 +88,13 @@
       "wib": "{{tanggal}}, {{jam}} WIB"
     },
     "date": {
-      "format_error": "Tanggal belum sah. Tulis dengan format 03/11/2026.",
+      "format_error": "Tanggal tidak valid. Tulis dengan format 03/11/2026.",
       "format_hint": "Format: 03/11/2026",
       "from": "Dari",
       "from_picker": "Pilih tanggal mulai",
       "from_time": "Jam mulai",
       "only_note": "Pilih tanggal dan jam mulai serta akhir untuk mencari.",
-      "order_error": "Tanggal akhir harus sama dengan atau setelah tanggal awal.",
+      "order_error": "Tanggal akhir harus sama dengan atau setelah tanggal mulai.",
       "to": "Sampai",
       "to_picker": "Pilih tanggal akhir",
       "to_time": "Jam akhir"
@@ -498,7 +498,7 @@
       "note": "Angka hitung dari jumlah percobaan ke Dukcapil. Selisih dengan log transaksi: rekonsiliasi masih ditinjau.",
       "empty_action": "Atur upstream pool",
       "pool_filter": "Pool",
-      "pool_unknown": "Pool upstream",
+      "pool_unknown": "Upstream pool",
       "reload": "Muat ulang",
       "stale": "Data lama ditampilkan. Terakhir dimuat {{waktu}}."
     },
@@ -523,8 +523,8 @@
       "code": "Kode transaksi",
       "client": "Client",
       "range": "Rentang waktu",
-      "code_help": "Cari rekaman menggunakan kode transaksi.",
-      "queue": "Queue ID",
+      "code_help": "Cari catatan menggunakan kode transaksi.",
+      "queue": "queue_id",
       "queue_help": "Masukkan queue_id untuk mencari transaksi."
     },
     "chip": {
@@ -536,8 +536,8 @@
       "client": "Client",
       "nik": "NIK",
       "access": "Status akses",
-      "queue": "Queue ID",
-      "request_id": "ID permintaan",
+      "queue": "queue_id",
+      "request_id": "ID request",
       "requested_at": "Diminta pada"
     },
     "row": {
@@ -558,12 +558,12 @@
       "open": "Lihat payload",
       "readonly": "Hanya baca",
       "reason": {
-        "error": "Alasan wajib diisi dengan 10–500 karakter.",
-        "supporting": "Wajib diisi. Pembukaan payload tercatat di audit."
+        "error": "Isi alasan sepanjang 10–500 karakter.",
+        "supporting": "Wajib diisi. Pembukaan payload tercatat di audit akses."
       },
       "rejected_no_input": "Ditolak tanpa input.",
       "snackbar": {
-        "opened": "Payload dibuka. Akses ini tercatat di audit."
+        "opened": "Payload dibuka. Akses ini tercatat di audit akses."
       },
       "summary": "Ringkasan transaksi",
       "title": "Payload transaksi"
@@ -580,7 +580,7 @@
       "export": "Ekspor hasil",
       "payload": "Payload",
       "retention": "Data di luar retensi online belum bisa dicari. Pencarian arsip tersedia pada tahap berikutnya.",
-      "export_help": "Masukkan NIK 16 digit yang sah untuk mengaktifkan ekspor."
+      "export_help": "Masukkan NIK 16 digit yang valid untuk mengaktifkan ekspor."
     },
     "reason": {
       "title": "Alasan mencari log NIK",
@@ -749,7 +749,7 @@
       "action": "Coba lagi",
       "body": "Hasil ekspor belum bisa dibuat. Coba lagi.",
       "title": "Ekspor tidak bisa dilakukan",
-      "too_large": "Hasil terlalu besar. Persempit rentang waktu hingga paling banyak 10.000 record."
+      "too_large": "Hasil terlalu besar. Persempit rentang waktu hingga paling banyak 10.000 catatan."
     }
   }
 }

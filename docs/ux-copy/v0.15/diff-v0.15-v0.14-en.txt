@@ -1,0 +1,64 @@
++ audit.col.reason	Reason
++ audit.col.result	Result
++ audit.col.time	Time
++ audit.error.action	Try again
++ audit.error.body	The access audit data could not be loaded. Try again.
++ audit.error.range	The time range is invalid.
++ audit.error.title	Access audit unavailable
++ audit.filter.note	The filter applies to access audit records.
++ audit.filter.range	Time range
++ audit.filter.range_help	Choose a time range to show access audit records.
++ common.date.format_error	The date is not valid. Write it as 03/11/2026.
++ common.date.format_hint	Format: 03/11/2026
++ common.date.from	From
++ common.date.from_picker	Choose start date
++ common.date.from_time	Start time
++ common.date.only_note	Choose a start and an end date and time to search.
++ common.date.order_error	The end date must be on or after the start date.
++ common.date.to	To
++ common.date.to_picker	Choose end date
++ common.date.to_time	End time
++ common.pagination.page_number	Page {{ke}} of {{total}}
++ enum.aksi_audit.lihat_payload	View payload
++ enum.hasil.berhasil	Succeeded
++ enum.hasil.diizinkan	Allowed
++ enum.hasil.ditolak	Denied
++ export.error.action	Try again
++ export.error.body	The export could not be created. Try again.
++ export.error.title	Export unavailable
++ export.error.too_large	The result is too large. Narrow the time range to 10,000 records or fewer.
++ log.col.queue	queue_id
++ log.col.request_id	Request ID
++ log.col.requested_at	Requested at
++ log.error.action	Try again
++ log.error.body	The log data could not be loaded. Try again.
++ log.error.title	Logs unavailable
++ log.filter.code_help	Find a record using its transaction code.
++ log.filter.queue	queue_id
++ log.filter.queue_help	Enter the queue_id to search for transactions.
++ log.payload.dialog_title	Transaction payload
++ log.payload.error_purged	Payload has been purged.
++ log.payload.hasil	Result
++ log.payload.input	Input
++ log.payload.metadata	Metadata
++ log.payload.not_available	Not available.
++ log.payload.open	View payload
++ log.payload.readonly	Read-only
++ log.payload.reason.error	Enter a reason between 10 and 500 characters.
++ log.payload.reason.supporting	Required. Opening the payload is recorded in the access audit.
++ log.payload.rejected_no_input	Rejected without input.
++ log.payload.snackbar.opened	Payload opened. This access was recorded in the access audit.
++ log.payload.summary	Transaction summary
++ log.payload.title	Transaction payload
++ nik.error.action	Try again
++ nik.error.body	The search results could not be loaded. Try again.
++ nik.error.title	Search unavailable
++ nik.page.export_help	Enter a valid 16-digit NIK to enable export.
++ quota.error.action	Try again
++ quota.error.body	The quota data could not be loaded. Try again.
++ quota.error.title	Quota unavailable
++ quota.page.empty_action	Set up an upstream pool
++ quota.page.pool_filter	Pool
++ quota.page.pool_unknown	Upstream pool
++ quota.page.reload	Reload
++ quota.page.stale	Showing earlier data. Last loaded {{waktu}}.

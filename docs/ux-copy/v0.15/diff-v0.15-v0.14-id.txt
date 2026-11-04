@@ -1,0 +1,64 @@
++ audit.col.reason	Alasan
++ audit.col.result	Hasil
++ audit.col.time	Waktu
++ audit.error.action	Coba lagi
++ audit.error.body	Data audit akses belum bisa dimuat. Coba lagi.
++ audit.error.range	Rentang waktu tidak valid.
++ audit.error.title	Audit akses belum bisa dimuat
++ audit.filter.note	Filter diterapkan pada catatan audit akses.
++ audit.filter.range	Rentang waktu
++ audit.filter.range_help	Pilih rentang waktu untuk menampilkan catatan audit.
++ common.date.format_error	Tanggal tidak valid. Tulis dengan format 03/11/2026.
++ common.date.format_hint	Format: 03/11/2026
++ common.date.from	Dari
++ common.date.from_picker	Pilih tanggal mulai
++ common.date.from_time	Jam mulai
++ common.date.only_note	Pilih tanggal dan jam mulai serta akhir untuk mencari.
++ common.date.order_error	Tanggal akhir harus sama dengan atau setelah tanggal mulai.
++ common.date.to	Sampai
++ common.date.to_picker	Pilih tanggal akhir
++ common.date.to_time	Jam akhir
++ common.pagination.page_number	Halaman {{ke}} dari {{total}}
++ enum.aksi_audit.lihat_payload	Lihat payload
++ enum.hasil.berhasil	Berhasil
++ enum.hasil.diizinkan	Diizinkan
++ enum.hasil.ditolak	Ditolak
++ export.error.action	Coba lagi
++ export.error.body	Hasil ekspor belum bisa dibuat. Coba lagi.
++ export.error.title	Ekspor tidak bisa dilakukan
++ export.error.too_large	Hasil terlalu besar. Persempit rentang waktu hingga paling banyak 10.000 catatan.
++ log.col.queue	queue_id
++ log.col.request_id	ID request
++ log.col.requested_at	Diminta pada
++ log.error.action	Coba lagi
++ log.error.body	Data log belum bisa dimuat. Coba lagi.
++ log.error.title	Log belum bisa dimuat
++ log.filter.code_help	Cari catatan menggunakan kode transaksi.
++ log.filter.queue	queue_id
++ log.filter.queue_help	Masukkan queue_id untuk mencari transaksi.
++ log.payload.dialog_title	Payload transaksi
++ log.payload.error_purged	Payload sudah dihapus.
++ log.payload.hasil	Hasil
++ log.payload.input	Input
++ log.payload.metadata	Metadata
++ log.payload.not_available	Tidak tersedia.
++ log.payload.open	Lihat payload
++ log.payload.readonly	Hanya baca
++ log.payload.reason.error	Isi alasan sepanjang 10–500 karakter.
++ log.payload.reason.supporting	Wajib diisi. Pembukaan payload tercatat di audit akses.
++ log.payload.rejected_no_input	Ditolak tanpa input.
++ log.payload.snackbar.opened	Payload dibuka. Akses ini tercatat di audit akses.
++ log.payload.summary	Ringkasan transaksi
++ log.payload.title	Payload transaksi
++ nik.error.action	Coba lagi
++ nik.error.body	Hasil pencarian belum bisa dimuat. Coba lagi.
++ nik.error.title	Pencarian belum bisa dilakukan
++ nik.page.export_help	Masukkan NIK 16 digit yang valid untuk mengaktifkan ekspor.
++ quota.error.action	Coba lagi
++ quota.error.body	Data kuota belum bisa dimuat. Coba lagi.
++ quota.error.title	Kuota belum bisa dimuat
++ quota.page.empty_action	Atur upstream pool
++ quota.page.pool_filter	Pool
++ quota.page.pool_unknown	Upstream pool
++ quota.page.reload	Muat ulang
++ quota.page.stale	Data lama ditampilkan. Terakhir dimuat {{waktu}}.

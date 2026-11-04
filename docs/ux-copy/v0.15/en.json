@@ -88,7 +88,7 @@
       "wib": "{{tanggal}}, {{jam}} WIB"
     },
     "date": {
-      "format_error": "The date is not valid yet. Write it as 03/11/2026.",
+      "format_error": "The date is not valid. Write it as 03/11/2026.",
       "format_hint": "Format: 03/11/2026",
       "from": "From",
       "from_picker": "Choose start date",
@@ -526,7 +526,7 @@
       "client": "Client",
       "range": "Time range",
       "code_help": "Find a record using its transaction code.",
-      "queue": "Queue ID",
+      "queue": "queue_id",
       "queue_help": "Enter the queue_id to search for transactions."
     },
     "chip": {
@@ -538,7 +538,7 @@
       "client": "Client",
       "nik": "NIK",
       "access": "Access status",
-      "queue": "Queue ID",
+      "queue": "queue_id",
       "request_id": "Request ID",
       "requested_at": "Requested at"
     },
@@ -561,11 +561,11 @@
       "readonly": "Read-only",
       "reason": {
         "error": "Enter a reason between 10 and 500 characters.",
-        "supporting": "Required. Opening the payload is recorded in the audit log."
+        "supporting": "Required. Opening the payload is recorded in the access audit."
       },
       "rejected_no_input": "Rejected without input.",
       "snackbar": {
-        "opened": "Payload opened. This access was recorded in the audit log."
+        "opened": "Payload opened. This access was recorded in the access audit."
       },
       "summary": "Transaction summary",
       "title": "Transaction payload"
