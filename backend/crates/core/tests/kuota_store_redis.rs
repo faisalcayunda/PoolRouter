@@ -71,7 +71,8 @@ fn permintaan(id: &str, burst: i64, ttl: i64) -> PermintaanToken {
         sync: false,
         maks_konkurensi: 50,
         ttl_slot_mikro: ttl,
-        batas_retry: 0,
+        rasio_retry: 0.1,
+        retry_min: 20,
         porsi_sync: 0.2,
         jendela_rate: vec![JendelaRate {
             jenis: "tps".into(),
@@ -443,4 +444,61 @@ async fn argumen_tidak_sah_ditolak_sebelum_redis() {
 
     let sesudah: i64 = redis::cmd("DBSIZE").query_async(&mut c).await.unwrap();
     assert_eq!(sebelum, sesudah);
+}
+
+/// Retry budget over the last hour (ADR-0001 5a.3) through the store: retries
+/// beyond `retry_min` are refused with a typed answer, first attempts never.
+#[tokio::test]
+#[ignore = "butuh Redis: make -C backend uji-redis"]
+async fn retry_budget_jendela_satu_jam() {
+    if lewati() {
+        return;
+    }
+    let (_c, store) = siap().await;
+    let k = ctx("pool-r", 1_000_000);
+    let mut p = permintaan("rt-0", 1_000_000, 60_000_000);
+    p.jendela_rate[0].t_mikro = 1;
+    p.maks_konkurensi = 1000;
+    p.rasio_retry = 0.0;
+    p.retry_min = 2;
+    p.nomor_percobaan = 2;
+
+    let mut hasil = Vec::new();
+    for i in 0..4 {
+        p.request_id = format!("rt-{i}");
+        hasil.push(store.ambil_token(&k, &p).await.unwrap());
+    }
+    assert!(hasil[0].diberikan() && hasil[1].diberikan(), "{hasil:?}");
+    assert!(
+        matches!(hasil[2], HasilToken::RetryBudgetHabis(_)),
+        "{hasil:?}"
+    );
+    assert!(
+        matches!(hasil[3], HasilToken::RetryBudgetHabis(_)),
+        "{hasil:?}"
+    );
+    assert!(!hasil[2].diberikan());
+
+    // A first attempt is never limited by the retry budget.
+    p.request_id = "baru".into();
+    p.nomor_percobaan = 1;
+    assert!(store.ambil_token(&k, &p).await.unwrap().diberikan());
+
+    // 0 and 0: no retry at all (there is no "no budget" value).
+    let k0 = ctx("pool-r0", 1_000_000);
+    p.request_id = "r0".into();
+    p.nomor_percobaan = 2;
+    p.retry_min = 0;
+    assert!(matches!(
+        store.ambil_token(&k0, &p).await.unwrap(),
+        HasilToken::RetryBudgetHabis(_)
+    ));
+
+    // Bad ratio comes back as a script error, not as a decision.
+    p.rasio_retry = 1.5;
+    let r = store.ambil_token(&k0, &p).await;
+    assert!(
+        matches!(r, Err(GalatStore::Skrip(ref k)) if k == "rasio_retry_tidak_sah"),
+        "{r:?}"
+    );
 }

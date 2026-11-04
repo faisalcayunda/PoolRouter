@@ -18,6 +18,15 @@
 //! - **`slot_kedaluwarsa` means do not call the upstream.** See
 //!   [`HasilTambah::SlotKedaluwarsa`].
 //!
+//! **Topology: one non-cluster Redis** (review 370c692, non-blocking 5). The
+//! deployment config carries a single `host:port` (`RedisConfig`), compose runs
+//! one `redis` service, and addendum D1.7 states the assumption. Per-pool keys
+//! carry a `{pool}` hash tag, but `pr:siap` (`KEYS[1]` of every script) and
+//! `pr:rebuild` are global, so a script touching `pr:siap` and a pool key would
+//! raise `CROSSSLOT` on Redis Cluster. If BGN's managed Redis turns out to be a
+//! cluster, ADR-0001 is reopened before the PoC (section 5a.2 point 5); there
+//! is no silent fallback.
+//!
 //! Period and bucket arguments come from the caller, computed once from
 //! `requested_at` (section 5a.1 point 1d); this module never reads a clock.
 
@@ -102,8 +111,13 @@ pub struct PermintaanToken {
     pub sync: bool,
     pub maks_konkurensi: i64,
     pub ttl_slot_mikro: i64,
-    /// Retries allowed per minute; 0 disables the budget.
-    pub batas_retry: i64,
+    /// `retry_rasio` of the pool, `0..=1` (ADR-0001 rev 15 section 5a.3,
+    /// default 0.10). A retry (`nomor_percobaan > 1`) gets a token only while
+    /// `retry_jendela < max(retry_min, rasio_retry * percobaan_jendela)` over
+    /// the last hour. There is no "no budget" value: 0 and 0 means no retry.
+    pub rasio_retry: f64,
+    /// `retry_min_per_jam` of the pool, at least 0 (default 20).
+    pub retry_min: i64,
     pub porsi_sync: f64,
     pub jendela_rate: Vec<JendelaRate>,
 }
@@ -571,7 +585,8 @@ where
             no_ember(ctx).to_string(),
             p.maks_konkurensi.to_string(),
             p.ttl_slot_mikro.to_string(),
-            p.batas_retry.to_string(),
+            p.rasio_retry.to_string(),
+            p.retry_min.to_string(),
             p.porsi_sync.to_string(),
             p.jendela_rate.len().to_string(),
         ];
