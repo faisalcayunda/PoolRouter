@@ -6,13 +6,24 @@ SHELL := /bin/sh
 .DEFAULT_GOAL := help
 .NOTPARALLEL:
 
-FRONTEND_RUNNER ?= podman
+# Runner frontend: podman, docker, atau local. Default mengikuti RUNNER seperti DB_ENGINE di backend
+# (SHAA-373, keputusan Shu). FRONTEND_RUNNER=local menjalankan Node di host, hanya bila dipilih eksplisit.
+FRONTEND_RUNNER ?= $(if $(filter docker,$(RUNNER)),docker,podman)
+# Engine kontainer untuk FRONTEND_RUNNER=podman atau docker. Dipakai juga oleh kunci build (BUILD_LOCK_ENGINE).
+CONTAINER_ENGINE := $(if $(filter docker,$(FRONTEND_RUNNER)),docker,podman)
+# Penjaga nilai: nilai di luar daftar gagal dengan exit 2 sebelum perintah apa pun jalan. Tanpa fallback diam-diam.
+ifeq ($(filter podman docker local,$(FRONTEND_RUNNER)),)
+$(error FRONTEND_RUNNER=$(FRONTEND_RUNNER) tidak dikenal: pakai podman, docker, atau local)
+endif
+ifeq ($(filter podman docker native,$(RUNNER)),)
+$(error RUNNER=$(RUNNER) tidak dikenal: pakai podman, docker, atau native)
+endif
 # Must match .nvmrc major and package.json engines. Never `latest`.
 NODE_IMAGE ?= docker.io/library/node:24.22.2-bookworm-slim@sha256:c86ecead9e55a5210ac1727de38a4ca840bf03dcaf34dc9749addbf383b1920c
 # Playwright image: the tag must match @playwright/test in package.json, and the
 # digest pins the multi-arch image index (ADR-0003 section 6). Never a bare tag.
 PLAYWRIGHT_IMAGE ?= mcr.microsoft.com/playwright:v1.64.1-noble@sha256:2f05f8a734509a7b3f26a912639488ee08f58a7b292d14d62271bcff9038768f
-# Podman label, required when FRONTEND_RUNNER=podman: CONTAINER_LABEL=shaal.issue=SHAA-<n>
+# Label kontainer, required when FRONTEND_RUNNER=podman or docker: CONTAINER_LABEL=shaal.issue=SHAA-<n>
 # (playbook section 6, same contract as backend/Makefile after SHAA-222; checked by check-label).
 CONTAINER_LABEL ?=
 # Memory cap for every frontend container, same variable name as backend/Makefile.
@@ -27,13 +38,14 @@ NODE_CMD = $(NODE_IMAGE) sh -c 'corepack enable && exec "$$@"' sh
 # Shared "one heavy build per host" lock (SHAA-194, K-41). Same include and HEAVY
 # shape as backend/Makefile; there is no second lock implementation in this repo.
 include ../scripts/build-lock.mk
+export BUILD_LOCK_ENGINE := $(CONTAINER_ENGINE)
 
-ifeq ($(FRONTEND_RUNNER),podman)
+ifneq ($(filter podman docker,$(FRONTEND_RUNNER)),)
 # The repository root is mounted at /work and the workdir is /work/frontend, so
 # paths written relative to frontend/ resolve as they do on the host: ../docs for
 # the ADR a test asserts against, ../backend/openapi for gen-api. Mounting only
 # frontend/ silently broke both.
-RUN_OPTS = podman run --rm --memory $(CONTAINER_MEMORY) --label $(CONTAINER_LABEL) \
+RUN_OPTS = $(CONTAINER_ENGINE) run --rm --memory $(CONTAINER_MEMORY) --label $(CONTAINER_LABEL) \
 	-v "$(CURDIR)/..":/work -w /work/frontend \
 	-e COREPACK_HOME=$(PNPM_HOME_DIR) -e COREPACK_ENABLE_DOWNLOAD_PROMPT=0 -e CI=1 $(CACHE_ENV)
 RUN = $(RUN_OPTS) $(NODE_CMD)
@@ -41,7 +53,7 @@ RUN = $(RUN_OPTS) $(NODE_CMD)
 # with the host IPC namespace, --shm-size is rejected, so it is not set.
 # The Playwright image has no corepack and needs no package manager: the repo's
 # node_modules is bind-mounted, so the pinned binaries run directly.
-RUN_PW_OPTS = podman run --rm --memory $(CONTAINER_MEMORY) --ipc=host --label $(CONTAINER_LABEL) \
+RUN_PW_OPTS = $(CONTAINER_ENGINE) run --rm --memory $(CONTAINER_MEMORY) --ipc=host --label $(CONTAINER_LABEL) \
 	-e HOME=/tmp -e CI=1 \
 	-v "$(CURDIR)/..":/work -w /work/frontend
 RUN_PW = $(RUN_PW_OPTS) $(PLAYWRIGHT_IMAGE)
@@ -59,70 +71,75 @@ endif
 
 PNPM = $(RUN) pnpm
 
-.PHONY: help check-label setup test lint fmt clean gen-api gen-api-check build build-e2e e2e i18n-check i18n-types build-lock-status build-lock-clean
+.PHONY: help check-label check-disk setup test lint fmt clean gen-api gen-api-check build build-e2e e2e i18n-check i18n-types build-lock-status build-lock-clean
 
 help:
 	@echo "targets: setup test lint fmt clean gen-api gen-api-check build build-e2e e2e i18n-check i18n-types"
 	@echo "lock:    build-lock-status build-lock-clean (K-41 heavy build lock, shared with backend)"
 
-# Every podman container must carry shaal.issue=SHAA-<n> (playbook section 6).
+# Every podman or docker container must carry shaal.issue=SHAA-<n> (playbook section 6).
 # Skipped for FRONTEND_RUNNER=local, where no container is created.
+# FRONTEND_RUNNER=docker also runs the disk floor (scripts/docker-lane.sh check) before any container, SHAA-373.
 
-ifeq ($(FRONTEND_RUNNER),podman)
+ifneq ($(filter podman docker,$(FRONTEND_RUNNER)),)
 check-label:
-	@echo "$(CONTAINER_LABEL)" | grep -Eq '^shaal\.issue=SHAA-[0-9]+$$' || { echo "CONTAINER_LABEL wajib shaal.issue=SHAA-<n> untuk FRONTEND_RUNNER=podman (contoh: make -C frontend lint CONTAINER_LABEL=shaal.issue=SHAA-197)" >&2; exit 2; }
+	@echo "$(CONTAINER_LABEL)" | grep -Eq '^shaal\.issue=SHAA-[0-9]+$$' || { echo "CONTAINER_LABEL wajib shaal.issue=SHAA-<n> untuk FRONTEND_RUNNER=$(FRONTEND_RUNNER) (contoh: make -C frontend lint CONTAINER_LABEL=shaal.issue=SHAA-197)" >&2; exit 2; }
 else
 check-label:
 endif
 
+CHECK_DISK := $(if $(filter docker,$(FRONTEND_RUNNER)),check-disk,)
+check-disk:
+	@$(if $(filter docker,$(FRONTEND_RUNNER)),../scripts/docker-lane.sh check,true)
+
 # Heavy targets run under the K-41 lock: they create node_modules or compile bundles.
 # setup (pnpm install), build (vite build), test (vitest), and e2e (Chromium) are locked.
 # A held lock exits 75 (EX_TEMPFAIL): switch to non-compile work and retry, don't wait.
-setup: check-label
+setup: check-label $(CHECK_DISK)
 	$(HEAVY) pnpm install --frozen-lockfile $(PNPM_INSTALL_FLAGS)
 
-test: check-label
+test: check-label $(CHECK_DISK)
 	$(HEAVY) pnpm exec vitest run
 
 # lint = ESLint + Prettier --check + tsc --noEmit + i18n-check (Addendum A section 8).
-lint: check-label i18n-check
+lint: check-label $(CHECK_DISK) i18n-check
 	$(PNPM) exec eslint .
 	$(PNPM) exec prettier --check .
 	$(PNPM) exec tsc --noEmit
 
 # i18n-check: Addendum A rev 2 section 8. checkIdentical is a gate, see scripts/i18n-check.sh.
-i18n-check: check-label
+i18n-check: check-label $(CHECK_DISK)
 	$(RUN) sh scripts/i18n-check.sh
 
-i18n-types: check-label
+i18n-types: check-label $(CHECK_DISK)
 	$(PNPM) exec i18next-cli types
 
-fmt: check-label
+fmt: check-label $(CHECK_DISK)
 	$(PNPM) exec prettier --write .
 
 clean: check-label
 	rm -rf dist coverage test-results playwright-report node_modules/.vite
 
 # gen-api: ADR-0003 section 4.2. backend/openapi/admin-api.yaml is owned by the backend stack.
-gen-api: check-label
+gen-api: check-label $(CHECK_DISK)
 	@test -f ../backend/openapi/admin-api.yaml || { echo "gen-api: ../backend/openapi/admin-api.yaml does not exist yet (backend stack); nothing to generate" >&2; exit 0; }
 	$(PNPM) exec openapi-typescript ../backend/openapi/admin-api.yaml -o src/api/schema.gen.ts
 
-gen-api-check: check-label
+gen-api-check: check-label $(CHECK_DISK)
 	@test -f ../backend/openapi/admin-api.yaml || { echo "gen-api-check: ../backend/openapi/admin-api.yaml does not exist yet; skipped" >&2; exit 0; }
 	$(MAKE) gen-api
 	git diff --exit-code -- src/api/schema.gen.ts
 
-build: check-label
+build: check-label $(CHECK_DISK)
 	$(HEAVY) pnpm exec vite build
 
 # The e2e suite needs the role seam (`?peran=`) that production builds must not have, so it builds
 # with the `playwright` mode; see `define` in vite.config.ts.
-build-e2e: check-label
+build-e2e: check-label $(CHECK_DISK)
 	$(HEAVY) pnpm exec vite build --mode playwright
 
 # e2e: Playwright (Chromium) against the built SPA served by `vite preview`, in the pinned
 # Playwright image. Full Compose stack arrives with the screens. The `build-e2e` prerequisite takes
 # the lock and releases it before this recipe runs, so the two never nest.
-e2e: check-label build-e2e
+e2e: check-label build-e2e $(CHECK_DISK)
 	$(HEAVY_PW) ./node_modules/.bin/playwright test

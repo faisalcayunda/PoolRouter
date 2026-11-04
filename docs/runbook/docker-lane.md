@@ -86,3 +86,27 @@ Puncak pemakaian: 5G (image 2.2G, target dan cache sekitar 2.5G). Angka ini peng
 - Dengan 20G, lane hanya muat satu gate backend. Gate frontend (`pnpm install`) belum diukur dan butuh ruang lebih.
 - Resize `/data` ke 40G masih rekomendasi untuk jangka panjang.
 - Gate penuh `make setup test lint` di akar repo belum ada target setup/test/lint di Makefile akar. Gate yang dijalankan adalah target backend di atas.
+
+## Frontend di lane Docker (SHAA-373)
+
+Frontend memakai pola yang sama dengan backend:
+
+- `RUNNER=docker` membuat `FRONTEND_RUNNER` bernilai `docker`. Bisa juga dipilih langsung dengan `FRONTEND_RUNNER=docker`.
+- Untuk `docker`, setiap target container (`setup`, `test`, `lint`, `i18n-check`, `build`, `build-e2e`, `e2e`, `fmt`, `i18n-types`, `gen-api`, `gen-api-check`) menjalankan `check-disk` lebih dulu. `check-disk` memanggil `scripts/docker-lane.sh check`, dan bila ruang di bawah ambang target berhenti sebelum container dibuat.
+- `CONTAINER_LABEL=shaal.issue=SHAA-<n>` wajib untuk `podman` dan `docker`.
+- Kunci build (`shaal-build-heavy`) memakai engine yang sama (`BUILD_LOCK_ENGINE`).
+- `FRONTEND_RUNNER=local` menjalankan Node langsung di host. Ini hanya bila dipilih eksplisit, dan tidak pernah menjadi cadangan diam-diam.
+
+Penjaga nilai: `FRONTEND_RUNNER` selain `podman|docker|local`, atau `RUNNER` selain `podman|docker|native`, berhenti dengan exit 2 sebelum perintah apa pun jalan. Backend memakai penjaga `RUNNER` yang sama.
+
+Cek tanpa container:
+
+```sh
+FRONTEND_RUNNER=dockr make -C frontend setup; echo $?   # 2, tanpa container atau perintah host
+```
+
+Gate lengkap di lane Docker dari akar repo:
+
+```sh
+RUNNER=docker CONTAINER_LABEL=shaal.issue=SHAA-<n> make setup test lint
+```
