@@ -1,2 +1,6 @@
 pengguna_id,status,langkah_terakhir,secret_ciphertext_palsu,skenario
-e0e43323-37f2-5b8b-9d45-97d9ba27ff17,aktif,0,SINTETIS-PLACEHOLDER,U-79
+e0e43323-37f2-5b8b-9d45-97d9ba27ff17,aktif,0,${TOTP_TEST_SEED},auditor
+3bdc9a74-5d6c-5edf-9990-488c9f8452e7,aktif,0,${TOTP_TEST_SEED},platform_admin
+0838cf6b-2255-5551-a12d-087c734290a5,aktif,0,${TOTP_TEST_SEED},platform_admin
+da88ff0d-b64b-5bfe-8187-1ddcc187bef0,aktif,0,${TOTP_TEST_SEED},operator
+c6305123-4b9b-5a7e-9b77-d9b4a1942dbd,aktif,0,${TOTP_TEST_SEED},client_owner
