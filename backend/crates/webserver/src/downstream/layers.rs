@@ -14,7 +14,8 @@ const PROBLEM_JSON: &str = "application/problem+json";
 /// `detail` never carries input values, NIK or secrets: callers pass fixed text only.
 #[derive(Debug, Clone)]
 pub struct ApiError {
-    problem: Problem,
+    // Boxed: `Problem` is large and ApiError travels in every `Result` (clippy::result_large_err).
+    problem: Box<Problem>,
     retry_after: Option<u64>,
     www_authenticate: Option<&'static str>,
 }
@@ -22,7 +23,7 @@ pub struct ApiError {
 impl ApiError {
     pub fn new(status: StatusCode, kode: ProblemKodeDown) -> Self {
         Self {
-            problem: Problem::new(kode, status.as_u16()),
+            problem: Box::new(Problem::new(kode, status.as_u16())),
             retry_after: None,
             www_authenticate: None,
         }
