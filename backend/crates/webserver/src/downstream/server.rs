@@ -15,7 +15,7 @@ use axum::extract::MatchedPath;
 use axum::http::{Request, StatusCode};
 use axum::middleware::{self, Next};
 use axum::response::Response;
-use axum::routing::post;
+use axum::routing::{get, post};
 use metrics_exporter_prometheus::{PrometheusBuilder, PrometheusHandle};
 use poolrouter_core::config::{Config, DbRole};
 use poolrouter_core::kuota::pemulihan::{Kesiapan, periksa_kesiapan};
@@ -29,6 +29,8 @@ use tower_http::limit::RequestBodyLimitLayer;
 use super::auth::Authenticator;
 use super::credential::{CachedStore, PgCredentialStore};
 use super::jwt::JwtKeys;
+use super::konfigurasi_endpoint::{CachedKonfigurasi, KonfigurasiStore, PgKonfigurasiStore};
+use super::kontrak::get_endpoint_kontrak;
 use super::layers::{ApiError, no_store};
 use super::probe::{self, ADMIN_ADDR_VAR, DEFAULT_ADMIN_ADDR, Readiness};
 use super::token::{LocalThrottle, TokenThrottle, issue_token};
@@ -44,10 +46,16 @@ const MAX_BODY_BYTES: usize = 16 * 1024;
 /// Redis command budget (ADR-0001 5a.4).
 const REDIS_TIMEOUT: Duration = Duration::from_millis(250);
 
+/// Clock the endpoint-config cache stamps entries with; injected so tests move
+/// time forward instead of sleeping.
+pub type Jam = Arc<dyn Fn() -> Instant + Send + Sync>;
+
 #[derive(Clone)]
 pub struct AppState {
     pub auth: Arc<Authenticator>,
     pub throttle: Arc<dyn TokenThrottle>,
+    pub konfig: Arc<dyn KonfigurasiStore>,
+    pub jam: Jam,
 }
 
 async fn tidak_ditemukan() -> ApiError {
@@ -79,6 +87,10 @@ async fn http_metrics(req: Request<axum::body::Body>, next: Next) -> Response {
 pub fn api_router(state: AppState) -> Router {
     Router::new()
         .route("/v1/oauth/token", post(issue_token))
+        .route(
+            "/v1/endpoints/{endpoint_id}/kontrak",
+            get(get_endpoint_kontrak),
+        )
         .fallback(tidak_ditemukan)
         .with_state(state)
         .layer(RequestBodyLimitLayer::new(MAX_BODY_BYTES))
@@ -229,6 +241,10 @@ async fn start(cfg: Config) -> Result<(), String> {
     let state = AppState {
         auth: Arc::new(Authenticator::new(store, keys)),
         throttle: Arc::new(LocalThrottle::new()),
+        konfig: Arc::new(CachedKonfigurasi::new(Arc::new(PgKonfigurasiStore::new(
+            pg.clone(),
+        )))),
+        jam: Arc::new(Instant::now),
     };
     let api = api_router(state);
     let redis_admin = redis.clone();
@@ -306,6 +322,7 @@ mod tests {
         app: Router,
         fake: Arc<FakeStore>,
         client: Uuid,
+        konfig: Arc<crate::downstream::konfigurasi_endpoint::fake::FakeKonfigurasi>,
     }
 
     fn harness_with(throttle: Arc<dyn TokenThrottle>) -> Harness {
@@ -320,13 +337,22 @@ mod tests {
             aktif: true,
             kedaluwarsa_at: None,
         });
+        let konfig =
+            Arc::new(crate::downstream::konfigurasi_endpoint::fake::FakeKonfigurasi::default());
         let state = AppState {
             auth: Arc::new(Authenticator::new(fake.clone(), keys())),
             throttle,
+            konfig: konfig.clone(),
+            jam: Arc::new(Instant::now),
         };
         let app =
             api_router(state).layer(MockConnectInfo(SocketAddr::from(([203, 0, 113, 7], 5555))));
-        Harness { app, fake, client }
+        Harness {
+            app,
+            fake,
+            client,
+            konfig,
+        }
     }
 
     fn harness() -> Harness {
@@ -606,6 +632,10 @@ mod tests {
         let state = AppState {
             auth: Arc::new(Authenticator::new(h.fake.clone(), keys())),
             throttle: Arc::new(LocalThrottle::new()),
+            konfig: Arc::new(
+                crate::downstream::konfigurasi_endpoint::fake::FakeKonfigurasi::default(),
+            ),
+            jam: Arc::new(Instant::now),
         };
         // Different signing key => bearer from `h` must be refused here.
         let protected = Router::new()
@@ -661,6 +691,188 @@ mod tests {
         assert!(ssl_mode("require").is_ok());
         assert!(ssl_mode("verify-full").is_ok());
         assert!(ssl_mode("bogus").is_err());
+    }
+
+    use crate::api::downstream::{EndpointKontrak, FieldMetadata};
+    use serde_json::Value;
+
+    /// AC-1: the served body carries no key the OpenAPI schema does not
+    /// declare, and every required property is there.
+    fn assert_sesuai_skema(body: &Value, nama: &str) {
+        let doc = serde_json::to_value(crate::api::downstream::doc()).unwrap();
+        let skema = &doc["components"]["schemas"][nama];
+        let prop = skema["properties"].as_object().expect("properties");
+        let obj = body.as_object().expect("objek");
+        for k in obj.keys() {
+            assert!(prop.contains_key(k), "{nama}: `{k}` tidak ada di skema");
+        }
+        for wajib in skema["required"].as_array().cloned().unwrap_or_default() {
+            let k = wajib.as_str().unwrap();
+            assert!(obj.contains_key(k), "{nama}: `{k}` wajib tapi hilang");
+        }
+    }
+
+    fn kontrak_uji(endpoint_id: Uuid) -> EndpointKontrak {
+        EndpointKontrak {
+            endpoint_id,
+            endpoint_config_version: 1,
+            field_input: Vec::new(),
+            field_metadata: vec![FieldMetadata {
+                nama_field: "status_penerima_manfaat".to_owned(),
+                tipe: "string".to_owned(),
+                wajib: true,
+                nilai_diizinkan: Some(vec!["sesuai".to_owned()]),
+                deskripsi: "Sintetis.".to_owned(),
+                versi: 1,
+            }],
+        }
+    }
+
+    fn kontrak_req(endpoint_id: Uuid, kredensial: Option<(&str, String)>) -> Request<Body> {
+        let mut r = Request::builder()
+            .method("GET")
+            .uri(format!("/v1/endpoints/{endpoint_id}/kontrak"));
+        if let Some((nama, nilai)) = kredensial {
+            r = r.header(nama, nilai);
+        }
+        r.body(Body::empty()).unwrap()
+    }
+
+    /// AC-9 + AC-2: the assigned endpoint's contract, no-store.
+    #[tokio::test]
+    async fn kontrak_dijawab_200_dengan_no_store() {
+        let h = harness();
+        let ep = Uuid::now_v7();
+        h.konfig.taruh(h.client, kontrak_uji(ep));
+        let credential_id = Uuid::now_v7();
+        let key = buat_api_key(credential_id).unwrap();
+        h.fake.kredensial.lock().unwrap().push(Kredensial {
+            credential_id,
+            client_id: h.client,
+            jenis: Jenis::ApiKey,
+            kunci_hash: key.kunci_hash.to_vec(),
+            aktif: true,
+            kedaluwarsa_at: None,
+        });
+        let res = h
+            .app
+            .clone()
+            .oneshot(kontrak_req(ep, Some(("x-api-key", key.kunci.clone()))))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), 200);
+        assert_eq!(res.headers()[header::CACHE_CONTROL], "no-store");
+        let v = json(res).await;
+        assert_eq!(v["endpoint_id"], ep.to_string());
+        assert_eq!(v["endpoint_config_version"], 1);
+        assert_eq!(v["field_input"], serde_json::json!([]));
+        assert_eq!(
+            v["field_metadata"][0]["nama_field"],
+            "status_penerima_manfaat"
+        );
+        assert_sesuai_skema(&v, "EndpointKontrak");
+    }
+
+    /// AC-3: an assigned but inactive endpoint still answers 200 (GW3).
+    #[tokio::test]
+    async fn kontrak_endpoint_nonaktif_tetap_200() {
+        let h = harness();
+        let ep = Uuid::now_v7();
+        h.konfig.taruh(h.client, kontrak_uji(ep));
+        let mut status = crate::downstream::konfigurasi_endpoint::fake::aktif_semua();
+        status.endpoint = false;
+        h.konfig
+            .entri
+            .lock()
+            .unwrap()
+            .get_mut(&(h.client, ep))
+            .unwrap()
+            .status = Some(status);
+        let body = format!(
+            "grant_type=client_credentials&client_id={}&client_secret=s3cret",
+            h.client
+        );
+        let bearer = json(h.app.clone().oneshot(form(&body)).await.unwrap()).await;
+        let token = bearer["access_token"].as_str().unwrap().to_owned();
+        let res = h
+            .app
+            .clone()
+            .oneshot(kontrak_req(
+                ep,
+                Some(("authorization", format!("Bearer {token}"))),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), 200, "GW3: nonaktif bukan 404");
+    }
+
+    /// AC-9: unknown endpoint and another client's endpoint give one identical 404.
+    #[tokio::test]
+    async fn kontrak_endpoint_asing_dan_tidak_ada_sama_404() {
+        let h = harness();
+        let ep_asing = Uuid::now_v7();
+        h.konfig.taruh(Uuid::now_v7(), kontrak_uji(ep_asing));
+        let body = format!(
+            "grant_type=client_credentials&client_id={}&client_secret=s3cret",
+            h.client
+        );
+        let bearer = json(h.app.clone().oneshot(form(&body)).await.unwrap()).await;
+        let auth = format!("Bearer {}", bearer["access_token"].as_str().unwrap());
+        let mut bodies = Vec::new();
+        for ep in [ep_asing, Uuid::now_v7()] {
+            let res = h
+                .app
+                .clone()
+                .oneshot(kontrak_req(ep, Some(("authorization", auth.clone()))))
+                .await
+                .unwrap();
+            assert_eq!(res.status(), 404);
+            assert_eq!(res.headers()[header::CACHE_CONTROL], "no-store");
+            bodies.push(to_bytes(res.into_body(), 64 * 1024).await.unwrap());
+        }
+        assert_eq!(bodies[0], bodies[1], "body 404 harus byte-sama");
+        let problem: Value = serde_json::from_slice(&bodies[0]).unwrap();
+        assert_sesuai_skema(&problem, "Problem");
+    }
+
+    /// AC-3: no credential is refused before the path is even looked at.
+    #[tokio::test]
+    async fn kontrak_tanpa_kredensial_401_dan_tanpa_query() {
+        let h = harness();
+        let res = h
+            .app
+            .clone()
+            .oneshot(kontrak_req(Uuid::now_v7(), None))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), 401);
+        assert_eq!(res.headers()[header::WWW_AUTHENTICATE], "Bearer");
+        assert_eq!(h.konfig.calls(), 0, "auth runs before the config store");
+    }
+
+    /// A store outage is the ordinary 503 with `Retry-After: 5`, never a 500.
+    #[tokio::test]
+    async fn kontrak_gangguan_store_503_dengan_retry_after() {
+        let h = harness();
+        *h.konfig.fail.lock().unwrap() = true;
+        let body = format!(
+            "grant_type=client_credentials&client_id={}&client_secret=s3cret",
+            h.client
+        );
+        let bearer = json(h.app.clone().oneshot(form(&body)).await.unwrap()).await;
+        let token = bearer["access_token"].as_str().unwrap().to_owned();
+        let res = h
+            .app
+            .clone()
+            .oneshot(kontrak_req(
+                Uuid::now_v7(),
+                Some(("authorization", format!("Bearer {token}"))),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), 503);
+        assert_eq!(res.headers()[header::RETRY_AFTER], "5");
+        assert_eq!(json(res).await["kode"], "layanan_tidak_tersedia");
     }
 
     #[tokio::test]
