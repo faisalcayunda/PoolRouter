@@ -231,8 +231,10 @@ pub(super) async fn search_log_by_nik(
         .map_err(|_| Galat::layanan())?;
 
     let baris: Vec<BarisNik> = sqlx::query_as(
-        "SELECT kode_transaksi, request_id, client_id, requested_at, status_akses
+        "SELECT l.kode_transaksi, l.request_id, l.client_id, l.requested_at, l.status_akses,
+                c.nama AS client_nama
            FROM fn_auditor_cari_nik($1, $2, $3, $4, $5, $6, $7, $8)
+             l JOIN client c ON c.client_id = l.client_id
           ORDER BY requested_at DESC, kode_transaksi DESC",
     )
     .bind(peminta.pengguna_id)
@@ -249,17 +251,17 @@ pub(super) async fn search_log_by_nik(
 
     // AC-34: the answer carries no payload and no secret metadata, and only the
     // auditor sees the full NIK the caller already supplied.
-    let tersamar = nik.tersamar();
+    let nik_utuh = nik.utuh().expose().to_string();
     let baris = baris
         .into_iter()
         .map(|b| LogBaris {
-            nik: tersamar.clone(),
+            nik: nik_utuh.clone(),
             requested_at: b.requested_at,
             status_akses: b.status_akses.unwrap_or_default(),
             kode_transaksi: b.kode_transaksi.to_string(),
             queue_id: b.request_id,
             client_id: b.client_id,
-            client_nama: String::new(),
+            client_nama: b.client_nama,
         })
         .collect();
 
@@ -642,6 +644,7 @@ fn filter_cari_log(body: &LogCariRequest) -> Value {
         "dari": body.dari,
         "sampai": body.sampai,
         "kode_transaksi": body.kode_transaksi,
+        "queue_id": body.queue_id,
         "client_id": body.client_id,
         "status_akses": body.status_akses,
     })
@@ -656,7 +659,8 @@ async fn baris_log(s: &AdminState, body: &LogCariRequest) -> Result<Vec<LogBaris
           WHERE v.requested_at >= $1 AND v.requested_at < $2
             AND ($3::uuid IS NULL OR v.kode_transaksi = $3)
             AND ($4::uuid IS NULL OR v.client_id = $4)
-            AND ($5::text IS NULL OR v.status_akses = $5)
+            AND ($5::uuid IS NULL OR v.request_id = $5)
+            AND ($6::text IS NULL OR v.status_akses = $6)
           ORDER BY v.requested_at DESC, v.kode_transaksi DESC
           LIMIT $6",
     )
@@ -668,6 +672,7 @@ async fn baris_log(s: &AdminState, body: &LogCariRequest) -> Result<Vec<LogBaris
             .and_then(|k| Uuid::parse_str(k).ok()),
     )
     .bind(body.client_id)
+    .bind(body.queue_id)
     .bind(&body.status_akses)
     .bind(BATAS_BARIS)
     .fetch_all(&s.pool)
@@ -747,6 +752,7 @@ struct BarisNik {
     client_id: Uuid,
     requested_at: DateTime<Utc>,
     status_akses: Option<String>,
+    client_nama: String,
 }
 
 #[derive(sqlx::FromRow)]
