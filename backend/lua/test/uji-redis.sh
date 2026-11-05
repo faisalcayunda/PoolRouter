@@ -14,6 +14,8 @@ set -eu
 ENGINE=${CONTAINER_ENGINE:-podman}
 ISSUE=$ARC_ISSUE
 : "${ARC_ISSUE:?isi ARC_ISSUE, mis. ARC-123}"
+# Gagal di awal dengan pesan jelas, bukan nanti saat `podman`/`docker` dipanggil.
+command -v "$ENGINE" >/dev/null 2>&1 || { echo "uji-redis.sh: '$ENGINE' tidak ada di PATH; set CONTAINER_ENGINE=docker atau pasang engine-nya" >&2; exit 127; }
 # Port acak per proses supaya dua lane paralel di VM yang sama tidak bertabrakan
 # (review 225be8d, non-blocking 4); UJI_REDIS_PORT menimpanya.
 PORT=${UJI_REDIS_PORT:-$((20000 + $$ % 20000))}

@@ -9,6 +9,8 @@ set -eu
 ENGINE=${CONTAINER_ENGINE:-podman}
 ISSUE=$ARC_ISSUE
 : "${ARC_ISSUE:?isi ARC_ISSUE, mis. ARC-123}"
+# Gagal di awal dengan pesan jelas, bukan nanti saat `podman`/`docker` dipanggil.
+command -v "$ENGINE" >/dev/null 2>&1 || { echo "run.sh: '$ENGINE' tidak ada di PATH; set CONTAINER_ENGINE=docker atau pasang engine-nya" >&2; exit 127; }
 # Same pinned image as deploy/compose/compose.yaml (never `latest`).
 IMAGE=${PG_IMAGE:-docker.io/library/postgres:17-alpine@sha256:266d3c257594e195b309ae9d1805e54c788f1d7b375f56bf6c367aac6c917e7b}
 NAME="poolrouter-dbtest-$$"
