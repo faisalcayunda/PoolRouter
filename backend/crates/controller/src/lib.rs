@@ -9,3 +9,4 @@ pub mod jadwal;
 pub mod leader;
 pub mod rebuild;
 pub mod snapshot;
+pub mod webhook;

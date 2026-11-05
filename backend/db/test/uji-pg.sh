@@ -82,6 +82,9 @@ export POOLROUTER_TEST_DATABASE_URL_SU="postgres://postgres:$SU_PW@127.0.0.1:$PO
 # stricter pr_admin_api ones, and not as superuser.
 PW_C=$($ENGINE exec "$NAME" cat /tmp/sec/pr_controller)
 export POOLROUTER_TEST_DATABASE_URL_CONTROLLER="postgres://pr_controller:$PW_C@127.0.0.1:$PORT/poolrouter_test"
-echo "uji-pg: PostgreSQL 127.0.0.1:$PORT sebagai pr_admin_api"
+# AC-73: webhook job runs as pr_webhook, which needs its own pool and role grants.
+PW_W=$($ENGINE exec "$NAME" cat /tmp/sec/pr_webhook)
+export POOLROUTER_TEST_DATABASE_URL_WEBHOOK="postgres://pr_webhook:$PW_W@127.0.0.1:$PORT/poolrouter_test"
+echo "uji-pg: PostgreSQL 127.0.0.1:$PORT sebagai pr_admin_api (dan pr_webhook untuk uji ARC-73)"
 $MAKE_CMD
 echo "uji-pg: lulus"
