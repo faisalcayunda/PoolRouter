@@ -486,7 +486,7 @@ async fn nik_dan_payload_sintetis_tidak_muncul_di_log() {
     let (_, au) = u.pengguna(&["auditor"]).await;
     let (kode, req_id, nik) = u.siapkan_log().await;
     let payload = "payload-sintetis-rahasia";
-    sqlx::query("UPDATE transaction_log SET request_body = $1 WHERE request_id = $2")
+    sqlx::query("UPDATE transaction_log SET request_payload = $1 WHERE request_id = $2")
         .bind(serde_json::json!({"isi": payload}))
         .bind(req_id)
         .execute(&u.su)
