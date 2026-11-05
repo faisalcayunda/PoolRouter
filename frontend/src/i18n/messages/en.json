@@ -161,7 +161,9 @@
     },
     "error": {
       "invalid": "The username or password doesn't match.",
-      "throttled": "Too many attempts. Try again in 15 minutes."
+      "throttled": "Too many attempts. Try again in 15 minutes.",
+      "throttled_retry": "Too many attempts. Try again in {{detik}} seconds.",
+      "network": "Couldn't connect. Check your network, then try again."
     }
   },
   "provider": {
@@ -748,7 +750,8 @@
       "body": "You have been inactive for {{jam}} hour(s). Your session will expire in {{detik}} seconds and can be extended by pressing the Extend session button below.",
       "btn_extend": "Extend session",
       "btn_exit": "Exit",
-      "extend_success": "Session extended"
+      "extend_success": "Session extended",
+      "extend_error": "The session could not be extended. Check your connection, then extend again."
     },
     "absolute_dialog": {
       "title": "Session has expired",

@@ -290,7 +290,9 @@ export default interface Resources {
     "login": {
       "error": {
         "invalid": "Nama pengguna atau kata sandi tidak cocok.",
-        "throttled": "Terlalu banyak percobaan. Coba lagi dalam 15 menit."
+        "network": "Belum bisa terhubung. Periksa jaringan, lalu coba lagi.",
+        "throttled": "Terlalu banyak percobaan. Coba lagi dalam 15 menit.",
+        "throttled_retry": "Terlalu banyak percobaan. Coba lagi dalam {{detik}} detik."
       },
       "page": {
         "password": "Kata sandi",
@@ -617,7 +619,7 @@ export default interface Resources {
     },
     "sesi": {
       "absolute_dialog": {
-        "body": "Anda sudah tidak bisa memperpanjang waktu sesi lagi. Sesi Anda telah berakhir sejak {{waktu}} WIB dan tidak boleh simpan isian Anda sekarang.",
+        "body": "Anda tidak bisa memperpanjang sesi lagi. Sesi Anda berakhir pada {{waktu}} WIB dan tidak dapat diperbarui. Simpan pekerjaan Anda sekarang.",
         "btn_ok": "Mengerti",
         "title": "Sesi telah berakhir"
       },
@@ -628,6 +630,7 @@ export default interface Resources {
         "body": "Anda sedang tidak aktif selama {{jam}} jam. Sesi Anda akan berakhir dalam {{detik}} detik dan dapat diperpanjang dengan menekan tombol Perpanjang sesi di bawah ini.",
         "btn_exit": "Keluar",
         "btn_extend": "Perpanjang sesi",
+        "extend_error": "Sesi belum bisa diperpanjang. Periksa koneksi, lalu perpanjang lagi.",
         "extend_success": "Sesi diperpanjang",
         "title": "Sesi akan berakhir"
       }

@@ -43,12 +43,15 @@ export interface EksporBerkas {
 export class ApiError extends Error {
   readonly status: number;
   readonly problem: Problem | null;
+  /** Seconds from the `Retry-After` header, when the server sent one (ADR-0003 3.6 throttle). */
+  readonly retryAfterDetik: number | null;
 
-  constructor(status: number, problem: Problem | null) {
+  constructor(status: number, problem: Problem | null, retryAfterDetik: number | null = null) {
     super(problem?.kode ?? problem?.title ?? `HTTP ${status}`);
     this.name = 'ApiError';
     this.status = status;
     this.problem = problem;
+    this.retryAfterDetik = retryAfterDetik;
   }
 
   /** Stable code from the problem body, or a synthetic `http_<status>` when the body had none. */
@@ -117,6 +120,15 @@ function announce401(response: Response): void {
   }
 }
 
+/** `Retry-After` is either delta-seconds or an HTTP date; screens only show whole seconds. */
+function retryAfterFrom(response: Response): number | null {
+  const raw = response.headers.get('Retry-After')?.trim();
+  if (!raw) return null;
+  if (/^\d+$/.test(raw)) return Number(raw);
+  const at = Date.parse(raw);
+  return Number.isFinite(at) ? Math.max(0, Math.ceil((at - Date.now()) / 1000)) : null;
+}
+
 function problemFrom(status: number, body: unknown): Problem | null {
   if (body && typeof body === 'object') {
     const obj = body as Record<string, unknown>;
@@ -173,7 +185,11 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
   const ok = <T>(result: { data?: T; error?: unknown; response: Response }): T => {
     if (!result.response.ok) {
       announce401(result.response);
-      throw new ApiError(result.response.status, problemFrom(result.response.status, result.error));
+      throw new ApiError(
+        result.response.status,
+        problemFrom(result.response.status, result.error),
+        retryAfterFrom(result.response),
+      );
     }
     return result.data as T;
   };

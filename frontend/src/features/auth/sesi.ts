@@ -3,12 +3,7 @@ import type { SesiStatus } from '../../api/client';
 /** Handoff spec section 12.1: the warning window before both deadlines. */
 export const PERINGATAN_MS = 2 * 60 * 1000;
 
-export type FaseSesi =
-  | 'memuat'
-  | 'aman'
-  | 'peringatan_idle'
-  | 'peringatan_absolut'
-  | 'berakhir';
+export type FaseSesi = 'memuat' | 'aman' | 'peringatan_idle' | 'peringatan_absolut' | 'berakhir';
 
 /**
  * Which session state a screen shows at `saat` (epoch ms). The absolute limit wins over the idle

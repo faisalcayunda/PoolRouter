@@ -102,11 +102,13 @@ export function AppShell({ pathname = '/', user, children }: AppShellProps) {
             </IconButton>
           )
         }
-        trailing={user ? (
-          <span className="typescale-body-medium text-on-surface-variant">
-            {user.username} · {t(`enum.peran.${user.peran}`)}
-          </span>
-        ) : undefined}
+        trailing={
+          user ? (
+            <span className="typescale-body-medium text-on-surface-variant">
+              {user.username} · {t(`enum.peran.${user.peran}`)}
+            </span>
+          ) : undefined
+        }
         title={<span className="font-brand px-2 text-primary">{t('common.app.name')}</span>}
       />
 

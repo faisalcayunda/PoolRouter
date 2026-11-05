@@ -52,11 +52,14 @@ export function useSesi({ client = api, onBerakhir, onKeluar }: SesiArgs): SesiS
 
   const sekarang = useCallback(() => Date.now() + offset.current, []);
 
-  const pakai = useCallback((next: SesiStatus) => {
-    offset.current = offsetServer(next, Date.now());
-    setSesi(next);
-    setFase(fasePada(next, sekarang()));
-  }, [sekarang]);
+  const pakai = useCallback(
+    (next: SesiStatus) => {
+      offset.current = offsetServer(next, Date.now());
+      setSesi(next);
+      setFase(fasePada(next, sekarang()));
+    },
+    [sekarang],
+  );
 
   const muat = useCallback(
     (signal?: AbortSignal) => {

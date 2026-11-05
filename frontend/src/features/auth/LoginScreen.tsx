@@ -21,12 +21,16 @@ export function LoginScreen({ client = api, search = '', onBerhasil }: Props) {
   const [password, setPassword] = useState('');
   const [mengirim, setMengirim] = useState(false);
   const [galat, setGalat] = useState<GalatLogin>(null);
+  // Only the server's `Retry-After` can make the throttle copy specific; without it the catalog
+  // fallback stands (ADR-0003 3.6: the wait window is the server's, never a guess in the UI).
+  const [tungguDetik, setTungguDetik] = useState<number | null>(null);
 
   const masuk = async (event: FormEvent) => {
     event.preventDefault();
     if (mengirim) return;
     setMengirim(true);
     setGalat(null);
+    setTungguDetik(null);
     try {
       await client.login({ username: username.trim(), password });
       // Full navigation: the session cookie is now set and every cached screen must start clean.
@@ -35,8 +39,10 @@ export function LoginScreen({ client = api, search = '', onBerhasil }: Props) {
     } catch (error) {
       if (error instanceof ApiError) {
         if (error.status === 401) setGalat('invalid');
-        else if (error.status === 429 || error.kode === 'login_dibatasi') setGalat('throttled');
-        else setGalat('network');
+        else if (error.status === 429 || error.kode === 'login_dibatasi') {
+          setGalat('throttled');
+          setTungguDetik(error.retryAfterDetik);
+        } else setGalat('network');
       } else {
         setGalat('network');
       }
@@ -65,7 +71,11 @@ export function LoginScreen({ client = api, search = '', onBerhasil }: Props) {
       {galat ? (
         <div className="w-full max-w-[360px]">
           <InlineAlert tone="error" live="assertive">
-            {galat === 'network' ? t('error.network.load') : t(`login.error.${galat}`)}
+            {galat === 'network'
+              ? t('login.error.network')
+              : galat === 'throttled' && tungguDetik !== null
+                ? t('login.error.throttled_retry', { detik: tungguDetik })
+                : t(`login.error.${galat}`)}
           </InlineAlert>
         </div>
       ) : null}

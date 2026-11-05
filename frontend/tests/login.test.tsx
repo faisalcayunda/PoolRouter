@@ -19,13 +19,18 @@ describe('S01 masuk', () => {
     await userEvent.type(screen.getByLabelText('Kata sandi'), 'rahasia-panjang');
     await userEvent.click(screen.getByRole('button', { name: 'Masuk' }));
 
-    expect(client.login).toHaveBeenCalledWith({ username: 'auditor_01', password: 'rahasia-panjang' });
+    expect(client.login).toHaveBeenCalledWith({
+      username: 'auditor_01',
+      password: 'rahasia-panjang',
+    });
     expect(onBerhasil).toHaveBeenCalledTimes(1);
   });
 
   it('maps a 401 to the invalid-credentials copy, not a network error', async () => {
     const client = stub({
-      login: vi.fn().mockRejectedValue(new ApiError(401, { status: 401, kode: 'kredensial_salah' })),
+      login: vi
+        .fn()
+        .mockRejectedValue(new ApiError(401, { status: 401, kode: 'kredensial_salah' })),
     });
     renderWithI18n(<LoginScreen client={client} />);
 
@@ -39,7 +44,24 @@ describe('S01 masuk', () => {
     expect(screen.queryByText(/koneksi/i)).not.toBeInTheDocument();
   });
 
-  it('maps a throttled login to the 15-minute copy', async () => {
+  it('reports the Retry-After seconds a throttled login asked us to wait', async () => {
+    const client = stub({
+      login: vi
+        .fn()
+        .mockRejectedValue(new ApiError(429, { status: 429, kode: 'login_dibatasi' }, 37)),
+    });
+    renderWithI18n(<LoginScreen client={client} />);
+
+    await userEvent.type(screen.getByLabelText('Nama pengguna'), 'auditor_01');
+    await userEvent.type(screen.getByLabelText('Kata sandi'), 'rahasia-panjang');
+    await userEvent.click(screen.getByRole('button', { name: 'Masuk' }));
+
+    expect(
+      await screen.findByText('Terlalu banyak percobaan. Coba lagi dalam 37 detik.'),
+    ).toBeInTheDocument();
+  });
+
+  it('falls back to the static throttle copy when the 429 carries no Retry-After', async () => {
     const client = stub({
       login: vi.fn().mockRejectedValue(new ApiError(429, { status: 429, kode: 'login_dibatasi' })),
     });
@@ -51,6 +73,19 @@ describe('S01 masuk', () => {
 
     expect(
       await screen.findByText('Terlalu banyak percobaan. Coba lagi dalam 15 menit.'),
+    ).toBeInTheDocument();
+  });
+
+  it('shows the catalog network copy when the request never reaches the server', async () => {
+    const client = stub({ login: vi.fn().mockRejectedValue(new TypeError('Failed to fetch')) });
+    renderWithI18n(<LoginScreen client={client} />);
+
+    await userEvent.type(screen.getByLabelText('Nama pengguna'), 'auditor_01');
+    await userEvent.type(screen.getByLabelText('Kata sandi'), 'rahasia-panjang');
+    await userEvent.click(screen.getByRole('button', { name: 'Masuk' }));
+
+    expect(
+      await screen.findByText('Belum bisa terhubung. Periksa jaringan, lalu coba lagi.'),
     ).toBeInTheDocument();
   });
 

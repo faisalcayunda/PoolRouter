@@ -65,6 +65,22 @@ describe('dialog sesi', () => {
     expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
   });
 
+  it('offers a retry, without leaving the dialog, when extending fails', async () => {
+    const perpanjang = vi.fn().mockResolvedValue(false);
+    renderWithI18n(
+      <SesiDialogs sesi={state({ fase: 'peringatan_idle', perpanjang, perpanjangGalat: true })} />,
+    );
+
+    await userEvent.click(screen.getByRole('button', { name: 'Perpanjang sesi' }));
+
+    const dialog = screen.getByRole('alertdialog');
+    expect(dialog).toContainElement(screen.getByRole('alert'));
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      'Sesi belum bisa diperpanjang. Periksa koneksi, lalu perpanjang lagi.',
+    );
+    expect(screen.getByRole('button', { name: 'Perpanjang sesi' })).toBeEnabled();
+  });
+
   it('offers only Keluar and Perpanjang while idle', () => {
     renderWithI18n(<SesiDialogs sesi={state({ fase: 'peringatan_idle' })} />);
     const dialog = screen.getByRole('alertdialog');

@@ -58,7 +58,7 @@ export function SesiDialogs({ sesi }: { sesi: SesiState }) {
       >
         {sesi.perpanjangGalat ? (
           <InlineAlert tone="error" live="assertive">
-            {t('common.error.network.load')}
+            {t('sesi.idle_dialog.extend_error')}
           </InlineAlert>
         ) : null}
       </Dialog>
