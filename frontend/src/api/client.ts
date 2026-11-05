@@ -140,7 +140,10 @@ function digestFrom(header: string | null): string | null {
 
 export function createApiClient(options: ApiClientOptions = {}): ApiClient {
   const origin =
-    options.origin ?? import.meta.env.VITE_ADMIN_API_BASE ?? globalThis.location?.origin ?? 'http://localhost';
+    options.origin ??
+    import.meta.env.VITE_ADMIN_API_BASE ??
+    globalThis.location?.origin ??
+    'http://localhost';
   const client = createClient<paths>({
     baseUrl: origin,
     fetch: options.fetch,
@@ -158,7 +161,8 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
     opts.alasan === undefined ? {} : { 'X-Alasan': opts.alasan };
 
   const ok = <T>(result: { data?: T; error?: unknown; response: Response }): T => {
-    if (!result.response.ok) throw new ApiError(result.response.status, problemFrom(result.response.status, result.error));
+    if (!result.response.ok)
+      throw new ApiError(result.response.status, problemFrom(result.response.status, result.error));
     return result.data as T;
   };
 
@@ -183,10 +187,20 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
     },
 
     me: async (opts = {}) =>
-      ok(await client.GET(`${ADMIN_PREFIX}/auth/me`, { headers: headers(opts), signal: opts.signal })),
+      ok(
+        await client.GET(`${ADMIN_PREFIX}/auth/me`, {
+          headers: headers(opts),
+          signal: opts.signal,
+        }),
+      ),
 
     getSesi: async (opts = {}) =>
-      ok(await client.GET(`${ADMIN_PREFIX}/auth/sesi`, { headers: headers(opts), signal: opts.signal })),
+      ok(
+        await client.GET(`${ADMIN_PREFIX}/auth/sesi`, {
+          headers: headers(opts),
+          signal: opts.signal,
+        }),
+      ),
 
     perpanjangSesi: async (opts = {}) =>
       ok(
@@ -241,7 +255,10 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
         parseAs: 'blob',
       });
       if (!result.response.ok) {
-        throw new ApiError(result.response.status, problemFrom(result.response.status, result.error));
+        throw new ApiError(
+          result.response.status,
+          problemFrom(result.response.status, result.error),
+        );
       }
       return {
         blob: result.data as Blob,
