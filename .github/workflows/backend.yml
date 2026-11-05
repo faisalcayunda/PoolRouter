@@ -1,5 +1,4 @@
-# Gate backend (ADR-0003 section 5, SHAA-194). Menjalankan gate backend
-# `make -C backend setup test lint`.
+# Gate backend (ADR-0003 section 5, SHAA-194). Menjalankan gate repo `make setup test lint` untuk backend.
 # Tidak ada secret yang dipakai. Tidak menyentuh stack Compose (milik SHAA-207).
 # Action dan image di-pin dengan tag dan digest.
 name: backend
@@ -48,9 +47,5 @@ jobs:
           restore-keys: |
             backend-${{ runner.os }}-rust-1.99.1-
 
-      # Hanya test-rust: db-test, uji-pg, uji-lua, dan uji-redis membuat container
-      # berlabel arctiva.issue=ARC-<n>, dan job ini berjalan di dalam container image
-      # rust yang tidak punya docker/podman. Gate akar juga masuk ke frontend
-      # (butuh corepack/pnpm), makanya `-C backend` dan target tanpa container.
-      - name: Gate (setup, test-rust, lint)
-        run: make -C backend setup test-rust lint
+      - name: Gate (setup, test, lint)
+        run: make setup test lint
