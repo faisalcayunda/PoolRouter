@@ -276,6 +276,101 @@ paths:
           $ref: '#/components/responses/Problem422Admin'
       security:
       - sessionCookie: []
+  /admin/v1/auth/mfa:
+    post:
+      tags:
+      - admin
+      summary: 'Second login step: TOTP or a recovery code (ADR-0006 §9, AC-10).'
+      description: |-
+        Reads the `__Host-pr_mfa` pre-session cookie; on success sets
+        `__Host-pr_session` and clears the pre-session cookie.
+      operationId: mfaVerifikasi
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/KodeMfaRequest'
+        required: true
+      responses:
+        '204':
+          description: Kode diterima; cookie sesi diterbitkan
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+              description: Selalu no-store (R-16)
+            Set-Cookie:
+              schema:
+                type: string
+              description: __Host-pr_session=...; HttpOnly; Secure; SameSite=Strict; Path=/
+        '401':
+          $ref: '#/components/responses/Problem401Admin'
+        '422':
+          $ref: '#/components/responses/Problem422Admin'
+        '429':
+          $ref: '#/components/responses/Problem429Admin'
+      security:
+      - {}
+  /admin/v1/auth/mfa/daftar:
+    post:
+      tags:
+      - admin
+      summary: 'Start MFA enrollment: returns the `otpauth://` URI once (AC-12).'
+      operationId: mfaDaftar
+      responses:
+        '200':
+          description: URI otpauth dan secret base32; ditampilkan sekali
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+              description: Selalu no-store (R-16)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MfaDaftar'
+        '401':
+          $ref: '#/components/responses/Problem401Admin'
+        '403':
+          $ref: '#/components/responses/Problem403Admin'
+      security:
+      - {}
+  /admin/v1/auth/mfa/daftar/konfirmasi:
+    post:
+      tags:
+      - admin
+      summary: Confirm enrollment with one TOTP code; returns the 10 recovery codes (AC-13).
+      operationId: mfaKonfirmasi
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/KonfirmasiMfaRequest'
+        required: true
+      responses:
+        '200':
+          description: MFA aktif; kode pemulihan dan cookie sesi diterbitkan
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+              description: Selalu no-store (R-16)
+            Set-Cookie:
+              schema:
+                type: string
+              description: __Host-pr_session=...; HttpOnly; Secure; SameSite=Strict; Path=/
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MfaKonfirmasi'
+        '401':
+          $ref: '#/components/responses/Problem401Admin'
+        '403':
+          $ref: '#/components/responses/Problem403Admin'
+        '422':
+          $ref: '#/components/responses/Problem422Admin'
+      security:
+      - {}
   /admin/v1/auth/sesi:
     get:
       tags:
@@ -2806,6 +2901,30 @@ components:
       - respons_tidak_valid
       - tls
       - provider_sementara
+    KodeMfaRequest:
+      type: object
+      description: 'Body of `POST /auth/mfa` (AC-10): exactly one of the two code kinds.'
+      properties:
+        kode:
+          type:
+          - string
+          - 'null'
+          description: Six-digit TOTP code.
+          example: '123456'
+        kode_pemulihan:
+          type:
+          - string
+          - 'null'
+          description: One of the 10 recovery codes issued at enrollment.
+    KonfirmasiMfaRequest:
+      type: object
+      description: Body of `POST /auth/mfa/daftar/konfirmasi` (AC-13).
+      required:
+      - kode_totp
+      properties:
+        kode_totp:
+          type: string
+          example: '123456'
     KuotaTracker:
       type: object
       description: 'One quota tracker row (US-12; KP-07: numbers from the DB, not Redis).'
@@ -3006,6 +3125,7 @@ components:
       - pengguna_id
       - username
       - peran
+      - mfa
       properties:
         bahasa_ui:
           oneOf:
@@ -3017,6 +3137,9 @@ components:
           - 'null'
           format: uuid
           description: Set only for `client_owner` sessions.
+        mfa:
+          $ref: '#/components/schemas/MeMfa'
+          description: MFA state for this account (AC-14, MF3).
         pengguna_id:
           type: string
           format: uuid
@@ -3028,6 +3151,29 @@ components:
         username:
           type: string
           example: auditor_01
+    MeMfa:
+      type: object
+      description: |-
+        `Me.mfa` (AC-14): whether the step is required, whether it is enrolled, and
+        how many recovery codes remain.
+      required:
+      - wajib
+      - aktif
+      - sisa_kode_pemulihan
+      properties:
+        aktif:
+          type: boolean
+          description: '`true` once a TOTP secret is confirmed (`pengguna_mfa.status = ''aktif''`).'
+        sisa_kode_pemulihan:
+          type: integer
+          format: int64
+          description: 'Unused recovery codes: 10 right after enrollment, 9 after one login.'
+        wajib:
+          type: boolean
+          description: |-
+            `true` when `POOLROUTER_MFA_WAJIB` is on and the caller's role is one
+            the policy covers.
+      additionalProperties: false
     MetadataFieldDef:
       type: object
       description: |-
@@ -3069,6 +3215,31 @@ components:
           example: string
         wajib:
           type: boolean
+    MfaDaftar:
+      type: object
+      description: '`POST /auth/mfa/daftar` response: shown once, never logged (AC-12).'
+      required:
+      - otpauth_uri
+      - rahasia_base32
+      properties:
+        otpauth_uri:
+          type: string
+          description: '`otpauth://totp/...` for the authenticator app (issuer `PoolRouter`).'
+          example: otpauth://totp/PoolRouter:auditor_01?secret=JBSWY3DPEHPK3PXP&issuer=PoolRouter
+        rahasia_base32:
+          type: string
+          description: The same secret in base32, for manual entry.
+    MfaKonfirmasi:
+      type: object
+      description: '`POST /auth/mfa/daftar/konfirmasi` response: the recovery codes, once (AC-13).'
+      required:
+      - kode_pemulihan
+      properties:
+        kode_pemulihan:
+          type: array
+          items:
+            type: string
+          description: 10 codes; each works once.
     NikCariRequest:
       type: object
       description: |-
