@@ -28,7 +28,7 @@ pub mod sesi;
 pub mod sesi_store;
 pub mod token;
 
-pub use aman::{Nik, NilaiAman, tersamar as tersamar_nik};
+pub use aman::{Nik, NilaiAman, mengandung_potongan_nik, tersamar as tersamar_nik, tersamar_audit};
 pub use origin::{AsalUi, OriginDitolak};
 pub use password::{KebijakanPassword, ParameterArgon2};
 pub use secret::{PANJANG_SECRET, SecretSekali};

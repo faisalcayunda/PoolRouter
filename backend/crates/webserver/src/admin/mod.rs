@@ -6,6 +6,7 @@ pub mod gerbang;
 pub mod klien;
 pub mod kredensial;
 pub mod listener;
+pub mod log;
 pub mod login;
 pub mod me;
 pub mod pembatas;

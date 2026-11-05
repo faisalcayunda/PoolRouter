@@ -151,11 +151,73 @@ pub fn tersamar(nik: &str) -> String {
         .unwrap_or_else(|_| "*".repeat(Nik::PANJANG))
 }
 
+/// Mask a NIK in the **audit** form: twelve `*` then the last four digits
+/// (`************1234`).
+///
+/// `audit_akses.nik_tersamar` is constrained to exactly this shape
+/// (`^\*{12}[0-9]{4}$`), and the SQL functions that write audit rows use it. It
+/// differs on purpose from [`Nik::tersamar`], which keeps the first four digits
+/// so an operator can recognise a row in the log list; the audit trail is read
+/// by an auditor searching for a NIK they already know, so keeping the tail
+/// alone is enough and reveals less in a dump.
+pub fn tersamar_audit(nik: &str) -> String {
+    if nik.len() != Nik::PANJANG || !nik.bytes().all(|b| b.is_ascii_digit()) {
+        return "*".repeat(Nik::PANJANG);
+    }
+    format!("{}{}", "*".repeat(Nik::PANJANG - 4), &nik[nik.len() - 4..])
+}
+
+/// The shortest run of consecutive digits that counts as a NIK fragment
+/// (AC-32). Six is the PRD's bar: shorter runs collide with dates, ports,
+/// counters, and cursor values, longer runs would let a caller narrow a NIK
+/// down to five digits for free.
+pub const PANJANG_POTONGAN_NIK: usize = 6;
+
+/// Whether `nilai` contains a NIK or a NIK fragment — six or more consecutive
+/// ASCII digits anywhere in the string (AC-32).
+///
+/// `searchLog` runs this over every parameter before the query executes, and a
+/// `true` is answered with 403 `pencarian_nik_dilarang` plus one `akses_ditolak`
+/// row. Only a run of *consecutive* digits counts: `12345-6789` and `12 345 67`
+/// are not NIKs, so a caller cannot smuggle one past by formatting it.
+pub fn mengandung_potongan_nik(nilai: &str) -> bool {
+    let mut deret = 0usize;
+    for b in nilai.bytes() {
+        if b.is_ascii_digit() {
+            deret += 1;
+            if deret >= PANJANG_POTONGAN_NIK {
+                return true;
+            }
+        } else {
+            deret = 0;
+        }
+    }
+    false
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     const CONTOH: &str = "3201234567890001";
+
+    #[test]
+    fn tersamar_audit_memakai_bentuk_kolom_audit() {
+        // `audit_akses.nik_tersamar` is constrained to `^\*{12}[0-9]{4}$`.
+        assert_eq!(tersamar_audit(CONTOH), "************0001");
+        assert_eq!(tersamar_audit(CONTOH).len(), Nik::PANJANG);
+        // Twelve leading stars, then exactly four digits.
+        let t = tersamar_audit(CONTOH);
+        assert!(t.starts_with("************"));
+        assert!(t[12..].bytes().all(|b| b.is_ascii_digit()));
+        // Not a NIK: mask everything rather than guess.
+        assert_eq!(tersamar_audit("bukan-nik"), "*".repeat(Nik::PANJANG));
+        // Deliberately different from the list form, which keeps the head.
+        assert_ne!(
+            tersamar_audit(CONTOH),
+            Nik::parse(CONTOH).unwrap().tersamar()
+        );
+    }
 
     #[test]
     fn nilai_aman_hides_itself_from_both_format_traits() {
@@ -262,5 +324,39 @@ mod tests {
     fn masking_a_nik_of_all_zeros_still_masks() {
         let n = Nik::parse("0000000000000000").unwrap();
         assert_eq!(n.tersamar(), "0000********0000");
+    }
+
+    // AC-32: every `searchLog` parameter is checked for a NIK or a NIK
+    // fragment before the query runs. A fragment is six or more consecutive
+    // digits, the shortest run that is no longer plausibly a date, a version,
+    // or a page cursor but is still enough of a NIK to narrow a person down.
+
+    #[test]
+    fn potongan_enam_digit_ke_atas_ditolak() {
+        assert!(mengandung_potongan_nik("3201234567890001"));
+        // Exactly the threshold.
+        assert!(mengandung_potongan_nik("123456"));
+        // Five digits is under the bar: a date fragment, a port, a counter.
+        assert!(!mengandung_potongan_nik("12345"));
+        assert!(!mengandung_potongan_nik(""));
+    }
+
+    #[test]
+    fn potongan_dicari_di_seluruh_nilai_bukan_hanya_awal() {
+        // A NIK buried in free text is still a NIK search.
+        assert!(mengandung_potongan_nik("klien 3201234567890001 uji"));
+        assert!(mengandung_potongan_nik("cari=000123"));
+        // Digits separated by non-digits are not consecutive and do not count.
+        assert!(!mengandung_potongan_nik("12345-6789"));
+        assert!(!mengandung_potongan_nik("12 345 67"));
+    }
+
+    #[test]
+    fn pemisah_apa_pun_memutus_deretan() {
+        assert!(!mengandung_potongan_nik("12345.6"));
+        assert!(!mengandung_potongan_nik("12345_6"));
+        assert!(!mengandung_potongan_nik("12345\n6"));
+        // But a run of six that ends at a separator is a run.
+        assert!(mengandung_potongan_nik("123456-7"));
     }
 }
