@@ -82,4 +82,4 @@ Semua uji F0 tetap hijau; empat penyesuaian karena kontraknya memang berubah: `2
 
 - `pr_admin_api` hanya mendapat SELECT kolom `manifest_id`, `tabel_sumber`, `provider_id`, `tanggal_wib`, `kunci_hmac_versi`, `status`: cukup untuk menentukan `kunci_hmac_versi` objek dalam rentang restore (`nik_hmac_per_versi`). Tanpa `dek_terbungkus` (Rahasia), `objek_kunci`, `sha256`, dan kolom lain. Hanya `pr_restore` membaca manifest penuh (AR-02c).
 - `request.webhook_not_before`: SELECT dan UPDATE hanya `pr_webhook` (WR-07); `pr_api`, `pr_worker`, `pr_controller` tidak punya hak apa pun atas kolom itu (WR-08).
-- Dicatat untuk PR: temuan `ALTER DEFAULT PRIVILEGES` F0 (SHAA-193) berarti grant `EXECUTE` fungsi F0 tidak pernah efektif sebelum F1; perlu diketahui Ridley dan Platform & SRE.
+- Dicatat untuk PR: temuan `ALTER DEFAULT PRIVILEGES` F0 (ARC-193) berarti grant `EXECUTE` fungsi F0 tidak pernah efektif sebelum F1; perlu diketahui Ridley dan Platform & SRE.

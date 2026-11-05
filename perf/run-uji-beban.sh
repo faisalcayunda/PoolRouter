@@ -1,5 +1,5 @@
 #!/bin/sh
-# Satu run uji beban SHAA-205 (lokal, Podman, data sintetis).
+# Satu run uji beban ARC-205 (lokal, Podman, data sintetis).
 #
 # Pemakaian (contoh, dari akar repo):
 #   RUN_NAME=sync-lat2s-r1 MODE=sync LAT_MS=2000 RATE=11.6 DURATION=10m \

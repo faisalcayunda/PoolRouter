@@ -2,7 +2,7 @@
 
 Kerangka SPA M3 untuk F0: React + React Aria Components (RAC) di atas Vite, TypeScript, i18next,
 Tailwind, dan Vitest/Playwright. Kontrak acuan: ADR-0003 rev 4. Token M3 di repo ini **sementara**
-(DV-2) dan diganti di SHAA-187 dengan keluaran `material-color-utilities`.
+(DV-2) dan diganti di ARC-187 dengan keluaran `material-color-utilities`.
 
 ## Gate
 
@@ -20,7 +20,7 @@ keluar dengan exit 2. Untuk mesin atau job CI yang Node-nya sudah sesuai `.nvmrc
 ## Kunci build berat (K-41)
 
 VM Podman hanya boleh menjalankan satu build berat dalam satu waktu. Kunci bersama ada di
-`scripts/build-lock.sh` dan `scripts/build-lock.mk` (SHAA-194); `frontend/Makefile` memakai include
+`scripts/build-lock.sh` dan `scripts/build-lock.mk` (ARC-194); `frontend/Makefile` memakai include
 yang sama dengan `backend/Makefile`, tanpa implementasi kedua.
 
 | Target                      | Dikunci | Alasan                                                        |
@@ -93,7 +93,7 @@ berbagi satu baris katalog di §7.1, dan `DateRangePicker` satu berkas dengan `D
 
 Token M3 ada di `src/styles/m3/`. Hex/rgb literal hanya boleh muncul di berkas token
 (`color.css`, `theme.json`); komponen memakai nama token, dan `src/styles/m3/*.test.ts` menjaga
-aturan itu. Header "sementara, DV-2, diganti di SHAA-187" wajib tetap ada sampai SHAA-187 mendarat.
+aturan itu. Header "sementara, DV-2, diganti di ARC-187" wajib tetap ada sampai ARC-187 mendarat.
 
 ## Uji
 

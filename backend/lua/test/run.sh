@@ -1,5 +1,5 @@
 #!/bin/sh
-# Harness skrip Lua kuota (SHAA-195) di Redis sungguhan, dalam container sekali pakai.
+# Harness skrip Lua kuota (ARC-195) di Redis sungguhan, dalam container sekali pakai.
 #
 #   sh backend/lua/test/run.sh
 #   CONTAINER_ENGINE=docker sh backend/lua/test/run.sh

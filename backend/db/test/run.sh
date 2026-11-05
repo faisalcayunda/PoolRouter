@@ -1,5 +1,5 @@
 #!/bin/sh
-# Database tests for the F0 schema (SHAA-193): roles bootstrap, migrations from empty, role-grant matrix, constraints.
+# Database tests for the F0 schema (ARC-193): roles bootstrap, migrations from empty, role-grant matrix, constraints.
 # Everything runs inside a throwaway PostgreSQL 17 container labelled arctiva.issue=<ARC_ISSUE>; only that container is removed.
 #
 #   sh backend/db/test/run.sh                       # podman

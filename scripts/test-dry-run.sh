@@ -1,5 +1,5 @@
 #!/bin/sh
-# Uji regresi SHAA-398: `make -n` pada gate resmi tidak boleh memanggil docker atau podman.
+# Uji regresi ARC-398: `make -n` pada gate resmi tidak boleh memanggil docker atau podman.
 # Stub pencatat di PATH menulis setiap panggilan ke log; log harus kosong dan exit harus 0.
 # Tidak butuh Docker sungguhan. Jalankan: make test-dry-run (dari akar repo).
 set -eu
