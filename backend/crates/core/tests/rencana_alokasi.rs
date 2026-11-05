@@ -257,7 +257,7 @@ proptest! {
         let peminjam: Vec<PoolPeminjam> = donors
             .iter()
             .filter(|(id, _)| *id != 1)
-            .map(|(id, ruang)| PoolPeminjam { upstream_pool_id: *id, ruang: *ruang })
+            .map(|(id, ruang)| PoolPeminjam { downstream_pool_id: *id, ruang: *ruang })
             .collect();
 
         let urutan = urutan_sumber(&rencana, boleh_pinjam, &peminjam);
@@ -265,10 +265,10 @@ proptest! {
         // Every borrowed source is a pool that was offered, and never the pool
         // asking: its own part is `sendiri` and `sisa`.
         for s in &urutan {
-            if let Sumber::Pinjam { upstream_pool_id } = s.sumber {
+            if let Sumber::Pinjam { downstream_pool_id } = s.sumber {
                 prop_assert!(boleh_pinjam, "pinjaman muncul padahal boleh_pinjam = false");
-                prop_assert_ne!(upstream_pool_id, 1, "pool sendiri tidak boleh menjadi donor");
-                prop_assert!(peminjam.iter().any(|p| p.upstream_pool_id == upstream_pool_id));
+                prop_assert_ne!(downstream_pool_id, 1, "pool sendiri tidak boleh menjadi donor");
+                prop_assert!(peminjam.iter().any(|p| p.downstream_pool_id == downstream_pool_id));
             }
             prop_assert!(s.ruang >= 0, "ruang negatif: {:?}", s);
         }
@@ -278,7 +278,7 @@ proptest! {
             let pinjam: Vec<(i64, i64)> = urutan
                 .iter()
                 .filter_map(|s| match s.sumber {
-                    Sumber::Pinjam { upstream_pool_id } => Some((upstream_pool_id, s.ruang)),
+                    Sumber::Pinjam { downstream_pool_id } => Some((downstream_pool_id, s.ruang)),
                     _ => None,
                 })
                 .collect();
@@ -296,12 +296,12 @@ proptest! {
             prop_assert_eq!(urutan.len(), 2);
         }
 
-        // `ruang_intake` is never negative and never smaller than the pool's own room.
+        // Intake never exceeds remaining global capacity.
         let terpakai = 0i64..q.saturating_add(10);
         for t in [terpakai.start, terpakai.end] {
-            let ruang = ruang_intake(&rencana, t, boleh_pinjam, &peminjam);
+            let ruang = ruang_intake(&rencana, 1, t, boleh_pinjam, &peminjam);
             prop_assert!(ruang >= 0, "ruang negatif: {}", ruang);
-            prop_assert!(ruang >= rencana.anggaran().sisa(t));
+            prop_assert!(ruang <= rencana.anggaran().sisa(t));
         }
     }
 }

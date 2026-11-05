@@ -119,6 +119,15 @@ impl RencanaAnggaran {
     }
 }
 
+/// Public constructor for a pool's route allocation plan (spec AC-1).
+pub fn rencana_anggaran(
+    kuota_harian: i64,
+    margin: f64,
+    rute: &[Rute],
+) -> Result<RencanaAnggaran, GalatAlokasi> {
+    RencanaAnggaran::baru(kuota_harian, margin, rute)
+}
+
 /// One source of tokens on a route's list (AC-2).
 ///
 /// The tag is what the dispatcher and the metric label read: `sendiri` is the
@@ -131,7 +140,7 @@ pub enum Sumber {
     /// `a_sisa` of the pool.
     Sisa,
     /// The shareable part of another pool, by its id.
-    Pinjam { upstream_pool_id: i64 },
+    Pinjam { downstream_pool_id: i64 },
 }
 
 /// One entry of [`urutan_sumber`]: where to take from and how much is there.
@@ -158,7 +167,7 @@ impl SumberDana {
 /// A pool that may lend from its shareable part (AC-2, AC-3).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PoolPeminjam {
-    pub upstream_pool_id: i64,
+    pub downstream_pool_id: i64,
     /// What this pool may still lend: its shareable part minus what it lent.
     pub ruang: i64,
 }
@@ -168,7 +177,7 @@ pub struct PoolPeminjam {
 /// With `boleh_pinjam_d = false` the list is just `[anggaran d]`. With `true` it
 /// is `[anggaran d, sisa, lalu shareable pool lain]`, the borrowed pools ordered
 /// by the largest room first and ties broken by the smallest
-/// `upstream_pool_id`, so the order is total and does not depend on how the
+/// `downstream_pool_id`, so the order is total and does not depend on how the
 /// pools happened to arrive.
 ///
 /// The result never contains another pool's *reservation*: a borrowed source is
@@ -197,12 +206,12 @@ pub fn urutan_sumber(
         b.ruang
             .max(0)
             .cmp(&a.ruang.max(0))
-            .then(a.upstream_pool_id.cmp(&b.upstream_pool_id))
+            .then(a.downstream_pool_id.cmp(&b.downstream_pool_id))
     });
     for p in lain {
         hasil.push(SumberDana::baru(
             Sumber::Pinjam {
-                upstream_pool_id: p.upstream_pool_id,
+                downstream_pool_id: p.downstream_pool_id,
             },
             p.ruang,
         ));
@@ -212,18 +221,18 @@ pub fn urutan_sumber(
 
 /// How many attempts pool `d` may accept right now (AC-3).
 ///
-/// The pool's own room — `Q − terpakai`, never negative — plus, only when it may
-/// borrow, the pool's `sisa` and the shareable parts of the other pools
-/// (ADR-0006 §4 butir 7). Accepting more than this would promise attempts the
+/// The route's remaining reservation, plus unallocated and donor capacity,
+/// capped at the global quota room (ADR-0006 §4 butir 7). Accepting more than this would promise attempts the
 /// pool has no budget for, and the intake gate would then reject them later
 /// with a code that looks like a quota problem rather than a capacity one.
 pub fn ruang_intake(
     rencana: &RencanaAnggaran,
+    downstream_pool_id: i64,
     terpakai: i64,
     boleh_pinjam_d: bool,
     peminjam: &[PoolPeminjam],
 ) -> i64 {
-    let sendiri = rencana.anggaran().sisa(terpakai);
+    let sendiri = (rencana.anggaran_rute(downstream_pool_id) - terpakai.max(0)).max(0);
     if !boleh_pinjam_d {
         return sendiri;
     }
@@ -231,7 +240,7 @@ pub fn ruang_intake(
     for p in peminjam {
         total = total.saturating_add(p.ruang.max(0));
     }
-    total
+    total.min(rencana.anggaran().sisa(terpakai))
 }
 
 #[cfg(test)]
@@ -311,7 +320,7 @@ mod tests {
             &r,
             false,
             &[PoolPeminjam {
-                upstream_pool_id: 9,
+                downstream_pool_id: 9,
                 ruang: 100,
             }],
         );
@@ -329,15 +338,15 @@ mod tests {
             true,
             &[
                 PoolPeminjam {
-                    upstream_pool_id: 7,
+                    downstream_pool_id: 7,
                     ruang: 50,
                 },
                 PoolPeminjam {
-                    upstream_pool_id: 3,
+                    downstream_pool_id: 3,
                     ruang: 50,
                 },
                 PoolPeminjam {
-                    upstream_pool_id: 5,
+                    downstream_pool_id: 5,
                     ruang: 80,
                 },
             ],
@@ -349,13 +358,13 @@ mod tests {
                 Sumber::Sendiri,
                 Sumber::Sisa,
                 Sumber::Pinjam {
-                    upstream_pool_id: 5
+                    downstream_pool_id: 5
                 },
                 Sumber::Pinjam {
-                    upstream_pool_id: 3
+                    downstream_pool_id: 3
                 },
                 Sumber::Pinjam {
-                    upstream_pool_id: 7
+                    downstream_pool_id: 7
                 },
             ]
         );
@@ -371,13 +380,13 @@ mod tests {
             &r,
             true,
             &[PoolPeminjam {
-                upstream_pool_id: 2,
+                downstream_pool_id: 2,
                 ruang: 10,
             }],
         );
         for s in &u {
-            if let Sumber::Pinjam { upstream_pool_id } = s.sumber {
-                assert_ne!(upstream_pool_id, 1, "pool sendiri tidak boleh jadi donor");
+            if let Sumber::Pinjam { downstream_pool_id } = s.sumber {
+                assert_ne!(downstream_pool_id, 1, "pool sendiri tidak boleh jadi donor");
             }
         }
     }
@@ -388,17 +397,18 @@ mod tests {
         assert_eq!(
             ruang_intake(
                 &r,
+                1,
                 100,
                 false,
                 &[PoolPeminjam {
-                    upstream_pool_id: 2,
+                    downstream_pool_id: 2,
                     ruang: 50
                 }]
             ),
             197
         );
         // Terpakai melebihi Q: nol, bukan negatif.
-        assert_eq!(ruang_intake(&r, 400, false, &[]), 0);
+        assert_eq!(ruang_intake(&r, 1, 400, false, &[]), 0);
     }
 
     #[test]
@@ -406,21 +416,23 @@ mod tests {
         let r = RencanaAnggaran::baru(300, 0.01, &[Rute::beralokasi(1, exact(30))]).unwrap();
         let ruang = ruang_intake(
             &r,
+            1,
             100,
             true,
             &[
                 PoolPeminjam {
-                    upstream_pool_id: 2,
+                    downstream_pool_id: 2,
                     ruang: 50,
                 },
                 PoolPeminjam {
-                    upstream_pool_id: 3,
+                    downstream_pool_id: 3,
                     ruang: 25,
                 },
             ],
         );
-        // sendiri 197 + sisa 267 + 50 + 25
-        assert_eq!(ruang, 197 + r.sisa() + 75);
+        // 197 global room caps the sum of own reservation, unallocated quota,
+        // and donor capacity; the unallocated quota is not counted twice.
+        assert_eq!(ruang, 197);
     }
 
     #[test]
@@ -429,10 +441,11 @@ mod tests {
         assert_eq!(
             ruang_intake(
                 &r,
+                1,
                 10_000,
                 true,
                 &[PoolPeminjam {
-                    upstream_pool_id: 2,
+                    downstream_pool_id: 2,
                     ruang: -5
                 }]
             ),

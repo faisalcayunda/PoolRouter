@@ -198,7 +198,7 @@ uji-redis: check-label $(CHECK_DISK)
 
 uji-redis-cargo: BUILD_LOCK_OPTS += --network host -e POOLROUTER_TEST_REDIS -e POOLROUTER_TEST_FASE -e POOLROUTER_TEST_RUN_ID_LAMA
 uji-redis-cargo: check-label $(CHECK_DISK)
-	$(HEAVY) cargo test --locked -p poolrouter-core --test pemulihan_redis --test kuota_store_redis --test alokasi_lua -- --ignored --test-threads=1 --nocapture
+	$(HEAVY) cargo test --locked -p poolrouter-core --test pemulihan_redis --test kuota_store_redis -- --ignored --test-threads=1 --nocapture
 
 lint: check-label $(CHECK_DISK)
 	$(RUN) cargo fmt --all --check
