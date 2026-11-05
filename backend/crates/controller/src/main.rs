@@ -29,8 +29,10 @@ use poolrouter_controller::leader::KotakFutur;
 use poolrouter_controller::leader::{Leader, PemegangLeader};
 use poolrouter_controller::rebuild::Rebuild;
 use poolrouter_controller::snapshot::{Snapshot, SumberSnapshotPg};
+use poolrouter_controller::webhook::Webhook;
 use poolrouter_core::config::{Component, Config, DbRole};
 use poolrouter_core::kuota::sumber_pg::SumberPostgres;
+use poolrouter_core::secret::Brankas;
 
 /// How long one acquire may wait before `/readyz` sees the database as down.
 const TIMEOUT_AKUISISI: Duration = Duration::from_secs(5);
@@ -77,9 +79,17 @@ async fn jalankan(cfg: &Config) -> Result<(), String> {
     tracing::info!("controller menjadi leader");
 
     let sumber_rebuild = SumberPostgres::baru(pool.clone());
+    // The webhook job has its own role (ADR-0001 §7.2) and opens the secret
+    // envelope only when it is about to sign (AC-30).
+    let kek = cfg
+        .secrets
+        .get("POOLROUTER_KEK")
+        .ok_or("POOLROUTER_KEK_FILE missing")?;
+    let brankas = Brankas::dari_isi_kek(kek.expose_secret()).map_err(|e| e.to_string())?;
     let pekerjaan: Vec<Box<dyn Pekerjaan>> = vec![
         Box::new(Rebuild::baru(redis.clone(), sumber_rebuild)),
         Box::new(Snapshot::baru(SumberSnapshotPg::baru(pool.clone()))),
+        Box::new(Webhook::baru(pg_pool_webhook(cfg)?, brankas)),
     ];
 
     // The first leader was acquired above; the source hands it over once and
@@ -116,8 +126,15 @@ impl SumberLeader for SumberLeaderPg {
     }
 }
 
+fn pg_pool_webhook(cfg: &Config) -> Result<sqlx::PgPool, String> {
+    pg_pool_role(cfg, DbRole::Webhook)
+}
+
 fn pg_pool(cfg: &Config) -> Result<sqlx::PgPool, String> {
-    let role = DbRole::Controller;
+    pg_pool_role(cfg, DbRole::Controller)
+}
+
+fn pg_pool_role(cfg: &Config, role: DbRole) -> Result<sqlx::PgPool, String> {
     let password = cfg
         .postgres
         .password(role)
