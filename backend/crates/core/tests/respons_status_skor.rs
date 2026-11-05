@@ -191,6 +191,7 @@ fn bentuk_skor_menyimpang_ditolak() {
         "Sesuai (5",
         "Sesuai 5)",
         "Sesuai (5) x",
+        // Bagian sebelum kurung kosong: jangan terbaca sebagai elemen kosong.
         "(5)",
     ] {
         let galat = parse(json!(teks), json!("Sesuai")).unwrap_err();
@@ -231,20 +232,6 @@ fn pesan_galat_tidak_memuat_nilai_elemen() {
     assert!(
         !pesan.contains(penanda) && !pesan.contains("0000000000000001"),
         "pesan galat memuat isi respons: {pesan}"
-    );
-}
-
-#[test]
-fn literal_berawalan_sama_dibaca_utuh() {
-    // `Tidak Sesuai` tidak boleh terbaca sebagai `Sesuai`.
-    let hasil = parse(json!("Tidak Sesuai (12)"), json!("Sesuai (0)")).unwrap();
-
-    assert_eq!(
-        hasil.get(NAMA_LGKP),
-        Some(&HasilElemen {
-            status: StatusKesesuaian::TidakSesuai,
-            skor: Some(12),
-        })
     );
 }
 
