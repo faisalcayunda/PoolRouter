@@ -662,7 +662,7 @@ async fn baris_log(s: &AdminState, body: &LogCariRequest) -> Result<Vec<LogBaris
             AND ($5::uuid IS NULL OR v.request_id = $5)
             AND ($6::text IS NULL OR v.status_akses = $6)
           ORDER BY v.requested_at DESC, v.kode_transaksi DESC
-          LIMIT $6",
+           LIMIT $7",
     )
     .bind(body.dari)
     .bind(body.sampai)
