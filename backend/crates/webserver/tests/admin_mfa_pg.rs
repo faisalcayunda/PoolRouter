@@ -176,6 +176,19 @@ impl Uji {
             })
     }
 
+    /// Issue a registration code the enrollment flow will accept (AC-8).
+    async fn kode_pendaftaran(&self) -> String {
+        let store = poolrouter_core::admin::mfa::MfaStore::baru(
+            self.pool.clone(),
+            Brankas::dari_isi_kek(&"5a".repeat(32)).unwrap(),
+        );
+        let (_, kode) = store
+            .terbit_kode_daftar(self.penerbit_id, self.pengguna_id, t0())
+            .await
+            .unwrap();
+        kode.expose().to_owned()
+    }
+
     /// Seed an active MFA enrollment directly and return its base32 secret, so
     /// the verification path can be tested without going through enrollment.
     async fn pasang_mfa_aktif(&self) -> String {
@@ -450,7 +463,13 @@ async fn setiap_respons_auth_tanpa_tembolok() {
         )
         .await;
     assert_eq!(headers.get(header::CACHE_CONTROL).unwrap(), "no-store");
-    let (_, headers, _) = u.kirim("/admin/v1/auth/mfa/daftar", None, None).await;
+    let (_, headers, _) = u
+        .kirim(
+            "/admin/v1/auth/mfa/daftar",
+            None,
+            Some(serde_json::json!({ "kode_pendaftaran": "AAAA" })),
+        )
+        .await;
     assert_eq!(headers.get(header::CACHE_CONTROL).unwrap(), "no-store");
 }
 
@@ -462,11 +481,12 @@ async fn daftar_mengembalikan_uri_otpauth_sekali() {
     let u = siapkan(&["auditor"], true).await;
     let (_, headers, _) = u.login(PASSWORD).await;
     let token = Uji::cookie(&headers, COOKIE_PRA_SESI).unwrap();
+    let kode_daftar = u.kode_pendaftaran().await;
     let (status, _, body) = u
         .kirim(
             "/admin/v1/auth/mfa/daftar",
             Some(&format!("{COOKIE_PRA_SESI}={token}")),
-            None,
+            Some(serde_json::json!({ "kode_pendaftaran": kode_daftar })),
         )
         .await;
     assert_eq!(status, StatusCode::OK);
@@ -478,6 +498,63 @@ async fn daftar_mengembalikan_uri_otpauth_sekali() {
     assert!(!body["rahasia_base32"].as_str().unwrap().is_empty());
 }
 
+#[tokio::test]
+#[ignore = "butuh PostgreSQL dan Redis; jalankan lewat make -C backend uji-pg"]
+async fn daftar_tanpa_kode_atau_kode_salah_ditolak() {
+    let u = siapkan(&["auditor"], true).await;
+    let (_, headers, _) = u.login(PASSWORD).await;
+    let token = Uji::cookie(&headers, COOKIE_PRA_SESI).unwrap();
+    let cookie = format!("{COOKIE_PRA_SESI}={token}");
+
+    // A wrong code: refused, and the refusal is on record (AC-12).
+    let (status, _, _) = u
+        .kirim(
+            "/admin/v1/auth/mfa/daftar",
+            Some(&cookie),
+            Some(serde_json::json!({ "kode_pendaftaran": "ZZZZZZZZZZZZZZZZ" })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+    let ditolak: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM audit_akses WHERE aksi = 'daftar_mfa' AND hasil = 'ditolak'",
+    )
+    .fetch_one(&u.pool)
+    .await
+    .unwrap();
+    assert!(ditolak >= 1, "penolakan daftar_mfa harus tercatat");
+
+    // A missing body is 422, not a silent success.
+    let (_, headers, _) = u.login(PASSWORD).await;
+    let token2 = Uji::cookie(&headers, COOKIE_PRA_SESI).unwrap();
+    let (status, _, _) = u
+        .kirim(
+            "/admin/v1/auth/mfa/daftar",
+            Some(&format!("{COOKIE_PRA_SESI}={token2}")),
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+}
+
+#[tokio::test]
+#[ignore = "butuh PostgreSQL dan Redis; jalankan lewat make -C backend uji-pg"]
+async fn kode_pendaftaran_milik_orang_lain_ditolak() {
+    let lain = siapkan(&["auditor"], true).await;
+    let u = siapkan(&["auditor"], true).await;
+    // A code issued to another user must not start this user's enrollment.
+    let kode_asing = lain.kode_pendaftaran().await;
+    let (_, headers, _) = u.login(PASSWORD).await;
+    let token = Uji::cookie(&headers, COOKIE_PRA_SESI).unwrap();
+    let (status, _, _) = u
+        .kirim(
+            "/admin/v1/auth/mfa/daftar",
+            Some(&format!("{COOKIE_PRA_SESI}={token}")),
+            Some(serde_json::json!({ "kode_pendaftaran": kode_asing })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+}
+
 // --- AC-13: confirmation activates, returns 10 codes, issues a session ------
 
 #[tokio::test]
@@ -487,8 +564,13 @@ async fn konfirmasi_mengaktifkan_dan_mengembalikan_sepuluh_kode() {
     let (_, headers, _) = u.login(PASSWORD).await;
     let token = Uji::cookie(&headers, COOKIE_PRA_SESI).unwrap();
     let cookie = format!("{COOKIE_PRA_SESI}={token}");
+    let kode_daftar = u.kode_pendaftaran().await;
     let (status, _, body) = u
-        .kirim("/admin/v1/auth/mfa/daftar", Some(&cookie), None)
+        .kirim(
+            "/admin/v1/auth/mfa/daftar",
+            Some(&cookie),
+            Some(serde_json::json!({ "kode_pendaftaran": kode_daftar })),
+        )
         .await;
     assert_eq!(status, StatusCode::OK);
     let rahasia = body["rahasia_base32"].as_str().unwrap().to_owned();
