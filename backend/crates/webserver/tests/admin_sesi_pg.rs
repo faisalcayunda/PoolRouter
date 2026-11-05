@@ -14,6 +14,7 @@ use chrono::{DateTime, Duration, TimeZone, Utc};
 use poolrouter_core::admin::sesi::ABSOLUT_DETIK;
 use poolrouter_core::admin::sesi_store::SesiStore;
 use poolrouter_core::admin::{AsalUi, TokenSesi};
+use poolrouter_core::secret::Brankas;
 use poolrouter_webserver::admin::pembatas::PembatasLogin;
 use poolrouter_webserver::admin::sesi::{AdminState, COOKIE_SESI, router};
 use serde_json::Value;
@@ -42,6 +43,8 @@ fn app_baru(pool: &PgPool, redis_url: &str, jam: Arc<Mutex<DateTime<Utc>>>) -> R
         pool.clone(),
         AsalUi::baru(ASAL).unwrap(),
         pembatas(redis_url),
+        // Synthetic KEK; these endpoints never touch a secret.
+        Brankas::dari_isi_kek(&"5a".repeat(32)).unwrap(),
     )
     .dengan_jam(Arc::new(move || *jam.lock().unwrap()));
     router(state).layer(MockConnectInfo(SocketAddr::from(([203, 0, 113, 9], 4000))))
