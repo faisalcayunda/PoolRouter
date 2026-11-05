@@ -278,25 +278,33 @@ pub struct UpstreamPoolConfig {
     pub alasan: Option<String>,
 }
 
-/// One rejected field of [`UpstreamPoolConfig`], as the pure validator reports
-/// it (SHAA-280 AC 3). The handler layer (SHAA-175) maps a list of these onto a
-/// 422 problem document; until then the function is exercised by unit tests only,
-/// so the promised 422 has a tested single source of truth.
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// One rejected field of a pure validator, in the shape the admin 422 body needs
+/// (Addendum A §6.1, AC-7): the field, the validation code, and the numeric
+/// rule parameter when the rule has one. Never the input value.
+#[derive(Debug, Clone, PartialEq)]
 pub struct FieldError {
     /// Field name exactly as it appears in the JSON body and the OpenAPI schema,
     /// so a client can point at the offending member.
     pub field: &'static str,
-    /// Human-readable reason, English like the rest of the code.
-    pub message: String,
+    /// Validation code, e.g. `rentang`, `wajib`, `format`.
+    pub kode: &'static str,
+    /// Numeric parameter of the violated rule, if any (always a number, never
+    /// the rejected input).
+    pub batas: Option<f64>,
 }
 
 impl FieldError {
-    fn new(field: &'static str, message: impl Into<String>) -> Self {
+    fn new(field: &'static str, kode: &'static str) -> Self {
         Self {
             field,
-            message: message.into(),
+            kode,
+            batas: None,
         }
+    }
+
+    fn dengan_batas(mut self, batas: f64) -> Self {
+        self.batas = Some(batas);
+        self
     }
 }
 
@@ -372,45 +380,25 @@ impl UpstreamPoolConfig {
 
         // Cross-field: the retry cap never undershoots the base.
         if self.retry_backoff_cap_detik < self.retry_backoff_base_detik {
-            errors.push(FieldError::new(
-                "retry_backoff_cap_detik",
-                format!(
-                    "must be >= retry_backoff_base_detik ({}), got {}",
-                    self.retry_backoff_base_detik, self.retry_backoff_cap_detik
-                ),
-            ));
+            errors.push(
+                FieldError::new("retry_backoff_cap_detik", "rentang")
+                    .dengan_batas(self.retry_backoff_base_detik as f64),
+            );
         }
 
         // Cross-field: the maximum delay never undershoots the minimum delay.
         if self.jeda_maks < self.jeda_min {
-            errors.push(FieldError::new(
-                "jeda_maks",
-                format!(
-                    "must be >= jeda_min ({}), got {}",
-                    self.jeda_min, self.jeda_maks
-                ),
-            ));
+            errors.push(FieldError::new("jeda_maks", "rentang").dengan_batas(self.jeda_min as f64));
         }
 
         // Cross-field: both delays respect the interval the hourly rate limit
         // leaves between requests.
         if let Some(batas) = self.batas_jeda_dari_rate_limit() {
-            let penjelasan = format!(
-                "must be <= floor(3600000 / rate_limit_per_jam) = {batas} ms \
-                 for rate_limit_per_jam = {}",
-                self.rate_limit_per_jam
-            );
             if self.jeda_min > batas {
-                errors.push(FieldError::new(
-                    "jeda_min",
-                    format!("{penjelasan}, got {}", self.jeda_min),
-                ));
+                errors.push(FieldError::new("jeda_min", "rentang").dengan_batas(batas as f64));
             }
             if self.jeda_maks > batas {
-                errors.push(FieldError::new(
-                    "jeda_maks",
-                    format!("{penjelasan}, got {}", self.jeda_maks),
-                ));
+                errors.push(FieldError::new("jeda_maks", "rentang").dengan_batas(batas as f64));
             }
         }
 
@@ -435,21 +423,19 @@ impl UpstreamPoolConfig {
     }
 }
 
+/// `batas` carries the bound the value broke, so the 422 says which rule
+/// parameter failed without repeating the rejected value (AC-7).
 fn rentang(errors: &mut Vec<FieldError>, field: &'static str, nilai: i64, min: i64, max: i64) {
-    if nilai < min || nilai > max {
-        errors.push(FieldError::new(
-            field,
-            format!("must be between {min} and {max}, got {nilai}"),
-        ));
+    if nilai < min {
+        errors.push(FieldError::new(field, "rentang").dengan_batas(min as f64));
+    } else if nilai > max {
+        errors.push(FieldError::new(field, "rentang").dengan_batas(max as f64));
     }
 }
 
 fn rentang_min(errors: &mut Vec<FieldError>, field: &'static str, nilai: i64, min: i64) {
     if nilai < min {
-        errors.push(FieldError::new(
-            field,
-            format!("must be at least {min}, got {nilai}"),
-        ));
+        errors.push(FieldError::new(field, "rentang").dengan_batas(min as f64));
     }
 }
 
@@ -462,11 +448,10 @@ fn rentang_pecahan(
 ) {
     // NaN is not expressible in JSON, but it is in Rust: reject it rather than
     // letting a comparison that is always false slip through.
-    if !nilai.is_finite() || nilai < min || nilai > max {
-        errors.push(FieldError::new(
-            field,
-            format!("must be between {min} and {max}, got {nilai}"),
-        ));
+    if !nilai.is_finite() || nilai < min {
+        errors.push(FieldError::new(field, "rentang").dengan_batas(min));
+    } else if nilai > max {
+        errors.push(FieldError::new(field, "rentang").dengan_batas(max));
     }
 }
 

@@ -12,3 +12,4 @@ pub mod kuota;
 pub mod queue;
 pub mod respons;
 pub mod runtime;
+pub mod secret;
