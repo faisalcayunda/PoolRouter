@@ -1249,3 +1249,113 @@ fn upstream_pool_tanpa_default() {
         "UpstreamPool tidak boleh punya default: {dengan_default:?}"
     );
 }
+
+/// AC-8 (R1 T1, GW4): setiap contoh `RequestStatus` di `downstream-api.yaml`
+/// memakai nilai `cancel_reason` dan `failure_reason` dari enum-nya. Contoh
+/// dengan nilai di luar enum membuat client menyalin kontrak yang tidak ada
+/// (`cancel_reason: client`) atau yang tidak pernah dikirim server.
+///
+/// Test membaca dokumen hasil generate (`openapi/*.yaml`), bukan string YAML
+/// yang disunting tangan, supaya drift antara kode dan kontrak ikut tertangkap.
+#[test]
+fn contoh_request_status_memakai_nilai_enum() {
+    let doc = downstream_doc();
+    let cancel_reason = [
+        "dibatalkan_client",
+        "client_nonaktif",
+        "kredensial_nonaktif",
+        "endpoint_nonaktif",
+        "pool_nonaktif",
+        "provider_nonaktif",
+    ];
+    let failure_reason = [
+        "retry_habis",
+        "provider_error_permanen",
+        "timeout_sync",
+        "objek_nonaktif",
+    ];
+    let mut diperiksa = 0usize;
+    for (lokasi, isi) in contoh_request_status(&doc) {
+        for (field, sah) in [
+            ("cancel_reason", &cancel_reason[..]),
+            ("failure_reason", &failure_reason[..]),
+        ] {
+            let Some(nilai) = isi.get(field) else {
+                continue;
+            };
+            let nilai = nilai
+                .as_str()
+                .unwrap_or_else(|| panic!("{lokasi}: {field} bukan string: {nilai:?}"));
+            assert!(
+                sah.contains(&nilai),
+                "{lokasi}: {field} `{nilai}` di luar enum; pilihan: {sah:?}"
+            );
+            diperiksa += 1;
+        }
+        // Field hanya muncul pada status yang tepat (ADR-0001 §4.1).
+        let status = isi["status"].as_str().unwrap_or_default();
+        if let Some(r) = isi.get("cancel_reason") {
+            assert_eq!(status, "cancelled", "{lokasi}: cancel_reason pada {status}");
+            assert!(r.is_string(), "{lokasi}: cancel_reason bukan string");
+        }
+        if isi.get("failure_reason").is_some() {
+            assert_eq!(status, "failed", "{lokasi}: failure_reason pada {status}");
+        }
+    }
+    // Jaga test ini dari lolos kosong bila bentuk dokumen berubah.
+    assert!(diperiksa >= 2, "hanya {diperiksa} contoh yang diperiksa");
+}
+
+/// Semua contoh `RequestStatus` di seluruh dokumen: respons operasi,
+/// komponen respons, dan body webhook. Mengembalikan (lokasi, objek contoh).
+fn contoh_request_status(doc: &Value) -> Vec<(String, serde_json::Map<String, Value>)> {
+    let mut hasil = Vec::new();
+    let Some(paths) = doc["paths"].as_object() else {
+        return hasil;
+    };
+    for (path, item) in paths {
+        let Some(ops) = item.as_object() else {
+            continue;
+        };
+        for (metode, op) in ops {
+            let Some(respons) = op["responses"].as_object() else {
+                continue;
+            };
+            for (kode, r) in respons {
+                let mut media: Vec<&Value> = Vec::new();
+                if let Some(m) = r["content"].as_object() {
+                    media.extend(m.values());
+                }
+                if let Some(m) = resolve(doc, r)["content"].as_object() {
+                    media.extend(m.values());
+                }
+                for content in media {
+                    let rujukan = content["schema"]["$ref"].as_str().unwrap_or_default();
+                    if !rujukan.ends_with("/RequestStatus") {
+                        continue;
+                    }
+                    let Some(contohs) = content["examples"].as_object() else {
+                        continue;
+                    };
+                    for (nama, contoh) in contohs {
+                        if let Some(isi) = contoh["value"].as_object() {
+                            hasil.push((format!("{path} {metode} {kode} #{nama}"), isi.clone()));
+                        }
+                    }
+                }
+            }
+        }
+        // Body webhook `requestTerminal`, dikirim ke URL client.
+        let Some(contohs) =
+            item["post"]["requestBody"]["content"]["application/json"]["examples"].as_object()
+        else {
+            continue;
+        };
+        for (nama, contoh) in contohs {
+            if let Some(isi) = contoh["value"].as_object() {
+                hasil.push((format!("{path} webhook #{nama}"), isi.clone()));
+            }
+        }
+    }
+    hasil
+}
