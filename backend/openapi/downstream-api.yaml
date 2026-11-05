@@ -655,7 +655,7 @@ paths:
                 cancelled:
                   summary: Dibatalkan client; memuat cancel_reason
                   value:
-                    cancel_reason: client
+                    cancel_reason: dibatalkan_client
                     queue_id: 0b19c3b4-7c5f-4e2f-9b3a-1a2b3c4d5e6f
                     status: cancelled
                 done:
@@ -675,7 +675,7 @@ paths:
                 failed:
                   summary: Gagal setelah provider menjawab; memuat failure_reason
                   value:
-                    failure_reason: respons_tidak_valid
+                    failure_reason: provider_error_permanen
                     queue_id: 0b19c3b4-7c5f-4e2f-9b3a-1a2b3c4d5e6f
                     status: failed
                 processing:
@@ -812,7 +812,7 @@ webhooks:
               cancelled:
                 summary: Dibatalkan client; memuat cancel_reason
                 value:
-                  cancel_reason: client
+                  cancel_reason: dibatalkan_client
                   queue_id: 0b19c3b4-7c5f-4e2f-9b3a-1a2b3c4d5e6f
                   status: cancelled
               done:

@@ -14,7 +14,7 @@ NODE_IMAGE ?= docker.io/library/node:24.22.2-bookworm-slim@sha256:c86ecead9e55a5
 # digest pins the multi-arch image index (ADR-0003 section 6). Never a bare tag.
 PLAYWRIGHT_IMAGE ?= mcr.microsoft.com/playwright:v1.64.1-noble@sha256:2f05f8a734509a7b3f26a912639488ee08f58a7b292d14d62271bcff9038768f
 # Podman label, required when FRONTEND_RUNNER=podman: CONTAINER_LABEL=arctiva.issue=ARC-<n>
-# (playbook section 6, same contract as backend/Makefile after ARC-222; checked by check-label).
+# (playbook section 6, same contract as backend/Makefile after SHAA-222; checked by check-label).
 CONTAINER_LABEL ?=
 # Memory cap for every frontend container, same variable name as backend/Makefile.
 CONTAINER_MEMORY ?= 2g
@@ -25,7 +25,7 @@ CACHE_ENV := -e npm_config_store_dir=/work/frontend/.cache/pnpm-store -e npm_con
 PNPM_INSTALL_FLAGS ?= --network-concurrency 2
 NODE_CMD = $(NODE_IMAGE) sh -c 'corepack enable && exec "$$@"' sh
 
-# Shared "one heavy build per host" lock (ARC-194, K-41). Same include and HEAVY
+# Shared "one heavy build per host" lock (SHAA-194, K-41). Same include and HEAVY
 # shape as backend/Makefile; there is no second lock implementation in this repo.
 include ../scripts/build-lock.mk
 
@@ -106,7 +106,7 @@ i18n-types: check-label $(CHECK_DISK)
 fmt: check-label
 	$(PNPM) exec prettier --write .
 
-# clean (ARC-391): node_modules dan .cache dibuat container sebagai root, jadi rm dari host gagal
+# clean (SHAA-391): node_modules dan .cache dibuat container sebagai root, jadi rm dari host gagal
 # Permission denied. Container berlabel menghapusnya; yang di-mount hanya direktori frontend checkout ini.
 # Nama yang dihapus ditulis literal. Penjaga: cwd harus /work dan berisi package.json. Tidak memakai kunci build.
 # FRONTEND_RUNNER=local (CI): rm host dengan penjaga yang sama terhadap direktori ini.

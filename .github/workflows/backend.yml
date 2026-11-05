@@ -1,6 +1,13 @@
-# Gate backend (ADR-0003 section 5, SHAA-194). Menjalankan gate repo `make setup test lint` untuk backend.
-# Tidak ada secret yang dipakai. Tidak menyentuh stack Compose (milik SHAA-207).
-# Action dan image di-pin dengan tag dan digest.
+# Gate backend (ADR-0003 section 5, SHAA-194). Menjalankan gate backend lengkap
+# (`setup`, `test`, `lint`) sesuai docs/runbook/docker-lane.md. Tidak ada secret yang dipakai.
+# Tidak menyentuh stack Compose (milik SHAA-207). Action dan image di-pin dengan tag dan digest.
+#
+# Job sengaja TIDAK memakai `container:`: uji container (`db-test`, `uji-pg`, `uji-lua`,
+# `uji-redis`) butuh docker di host, dan image Rust tidak membawa docker. Runner host
+# menjalankan lane Docker (ARC-373): cargo tetap di dalam image Rust yang di-pin
+# (`RUNNER=docker` di backend/Makefile), uji container memakai docker runner.
+# Gate dipanggil langsung di `backend/`, bukan dari akar, supaya frontend tidak ikut
+# (frontend sudah dicakup frontend.yml, ARC-27).
 name: backend
 
 on:
@@ -25,11 +32,12 @@ jobs:
     # dan `cargo deny check` masing-masing gagal pada temuan apa pun.
     runs-on: ubuntu-latest
     timeout-minutes: 45
-    # Toolchain di dalam image yang di-pin (ADR-0004 section 2). Sama dengan rust-toolchain.toml.
-    container:
-      image: docker.io/library/rust:1.99.1-bookworm@sha256:9181b56c2a21ab1d5e73cffe04fc762426d30aa7fac3c91141dd033f49a7fc8b
     env:
-      RUNNER: native
+      # Toolchain tetap image yang di-pin (ADR-0004 section 2), dipakai lewat lane Docker backend/Makefile.
+      RUNNER: docker
+      # Label wajib setiap container gate (ARC-222); juga sumber ARC_ISSUE untuk uji container.
+      CONTAINER_LABEL: arctiva.issue=ARC-29
+      ARC_ISSUE: ARC-29
       JOBS: "2"
     steps:
       - name: Checkout
@@ -37,15 +45,13 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Cache cargo registry dan target
-        uses: actions/cache@d4323d4df104b026a6aa633fdb11d772146be0bf # v4.2.2
-        with:
-          path: |
-            backend/.cache/cargo
-            backend/target
-          key: backend-${{ runner.os }}-rust-1.99.1-${{ hashFiles('backend/Cargo.lock') }}
-          restore-keys: |
-            backend-${{ runner.os }}-rust-1.99.1-
+      - name: Siapkan direktori cache lane Docker
+        # backend/Makefile (RUNNER=docker) memakai cache bersama di /data dan target di /var/tmp.
+        run: sudo install -d -o "$USER" -g "$(id -g)" /data/workspace/poolrouter-build /var/tmp/poolrouter-build
 
-      - name: Gate (setup, test, lint)
-        run: make setup test lint
+      - name: Gate backend (setup, test, lint)
+        run: make -C backend setup test lint
+
+      - name: Bersihkan container berlabel issue (selalu)
+        if: always()
+        run: bash scripts/docker-lane.sh cleanup ARC-29

@@ -20,20 +20,21 @@ use axum::Router;
 use axum::extract::State;
 use axum::http::{HeaderMap, HeaderValue, Method, StatusCode, header};
 use axum::response::{IntoResponse, Response};
-use axum::routing::{get, post};
+use axum::routing::{get, post, put};
 use chrono::{DateTime, Utc};
 use poolrouter_core::admin::origin;
 use poolrouter_core::admin::sesi_store::{SesiDitolak, SesiStore};
 use poolrouter_core::admin::token::HashToken;
 use poolrouter_core::admin::{AsalUi, TokenSesi};
+use poolrouter_core::secret::Brankas;
 use sqlx::PgPool;
 use tower_http::limit::RequestBodyLimitLayer;
 use tower_http::set_header::SetResponseHeaderLayer;
 
 use super::pembatas::PembatasLogin;
-use super::{login, me};
+use super::{login, me, secret};
 
-use crate::api::problem::ProblemKodeAdmin;
+use crate::api::problem::{ProblemKodeAdmin, ValidasiErrorAdmin};
 use crate::api::problem_admin::ProblemAdmin;
 
 /// Cookie name (`__Host-` prefix: Secure, Path=/, no Domain).
@@ -51,16 +52,19 @@ pub struct AdminState {
     pub asal: AsalUi,
     pub jam: Jam,
     pub pembatas: Arc<PembatasLogin>,
+    /// The KEK-backed envelope for `provider_secret` (AC-8, AC-11).
+    pub brankas: Arc<Brankas>,
 }
 
 impl AdminState {
-    pub fn baru(pool: PgPool, asal: AsalUi, pembatas: PembatasLogin) -> Self {
+    pub fn baru(pool: PgPool, asal: AsalUi, pembatas: PembatasLogin, brankas: Brankas) -> Self {
         Self {
             sesi: SesiStore::baru(pool.clone()),
             pool,
             asal,
             jam: Arc::new(Utc::now),
             pembatas: Arc::new(pembatas),
+            brankas: Arc::new(brankas),
         }
     }
 
@@ -81,6 +85,17 @@ pub fn router(state: AdminState) -> Router {
             "/admin/v1/auth/me/preferensi",
             axum::routing::patch(me::update_preferensi),
         )
+        .route("/admin/v1/secrets", get(secret::list_secrets))
+        .route(
+            "/admin/v1/secrets/{nama}",
+            put(secret::put_secret).delete(secret::delete_secret),
+        )
+        // An empty name arrives as a path with no segment. It is a validation
+        // failure (AC-7), not an unrouted path, so it reaches the same handlers.
+        .route(
+            "/admin/v1/secrets/",
+            put(secret::put_secret_kosong).delete(secret::delete_secret_kosong),
+        )
         .with_state(state)
         .layer(RequestBodyLimitLayer::new(16 * 1024))
         .layer(SetResponseHeaderLayer::overriding(
@@ -98,11 +113,31 @@ impl Galat {
         Self(Box::new(ProblemAdmin::new(kode, status.as_u16())), None)
     }
 
-    fn tidak_terautentikasi() -> Self {
+    pub(super) fn tidak_terautentikasi() -> Self {
         Self::baru(
             StatusCode::UNAUTHORIZED,
             ProblemKodeAdmin::TidakTerautentikasi,
         )
+    }
+
+    /// 422 `validasi_gagal` per failing field (AC-7).
+    pub(super) fn validasi(errors: Vec<ValidasiErrorAdmin>) -> Self {
+        let mut problem = ProblemAdmin::new(ProblemKodeAdmin::ValidasiGagal, 422);
+        problem.errors = Some(errors);
+        Self(Box::new(problem), None)
+    }
+
+    /// 409 with a `detail` that describes the conflict without echoing a value
+    /// (the provider names that still use a secret, the credential that is still
+    /// in use).
+    pub(super) fn konflik(kode: ProblemKodeAdmin, detail: impl Into<String>) -> Self {
+        let mut problem = ProblemAdmin::new(kode, 409);
+        problem.detail = Some(detail.into());
+        Self(Box::new(problem), None)
+    }
+
+    pub(super) fn tidak_ditemukan() -> Self {
+        Self::baru(StatusCode::NOT_FOUND, ProblemKodeAdmin::TidakDitemukan)
     }
 
     fn origin() -> Self {

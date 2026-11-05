@@ -50,10 +50,11 @@ fn hash_palsu() -> &'static str {
     })
 }
 
-/// The address recorded in `audit_login`. Behind the reverse proxy the peer is
-/// the proxy, so `X-Real-IP` wins when it is a well-formed address; the admin
-/// listener is internal-only, so only the proxy can set it.
-fn sumber_ip(headers: &HeaderMap, peer: SocketAddr) -> String {
+/// The address recorded in `audit_login` and in the denial row
+/// (`gerbang::masuk`). Behind the reverse proxy the peer is the proxy, so
+/// `X-Real-IP` wins when it is a well-formed address; the admin listener is
+/// internal-only, so only the proxy can set it.
+pub(super) fn sumber_ip(headers: &HeaderMap, peer: SocketAddr) -> String {
     headers
         .get("x-real-ip")
         .and_then(|v| v.to_str().ok())

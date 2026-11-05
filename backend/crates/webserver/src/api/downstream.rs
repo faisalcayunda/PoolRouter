@@ -365,8 +365,8 @@ async fn enqueue_async(
                 ("queued" = (summary = "Masih menunggu di antrean", value = json!({"queue_id": "0b19c3b4-7c5f-4e2f-9b3a-1a2b3c4d5e6f", "status": "queued"}))),
                 ("processing" = (summary = "Sedang dikirim ke provider", value = json!({"queue_id": "0b19c3b4-7c5f-4e2f-9b3a-1a2b3c4d5e6f", "status": "processing"}))),
                 ("done" = (summary = "Request selesai; memuat hasil", value = json!({"queue_id": "0b19c3b4-7c5f-4e2f-9b3a-1a2b3c4d5e6f", "status": "done", "hasil": {"NAMA_LGKP": {"status": "tidak_sesuai", "skor": 40}}}))),
-                ("failed" = (summary = "Gagal setelah provider menjawab; memuat failure_reason", value = json!({"queue_id": "0b19c3b4-7c5f-4e2f-9b3a-1a2b3c4d5e6f", "status": "failed", "failure_reason": "respons_tidak_valid"}))),
-                ("cancelled" = (summary = "Dibatalkan client; memuat cancel_reason", value = json!({"queue_id": "0b19c3b4-7c5f-4e2f-9b3a-1a2b3c4d5e6f", "status": "cancelled", "cancel_reason": "client"}))),
+                ("failed" = (summary = "Gagal setelah provider menjawab; memuat failure_reason", value = json!({"queue_id": "0b19c3b4-7c5f-4e2f-9b3a-1a2b3c4d5e6f", "status": "failed", "failure_reason": "provider_error_permanen"}))),
+                ("cancelled" = (summary = "Dibatalkan client; memuat cancel_reason", value = json!({"queue_id": "0b19c3b4-7c5f-4e2f-9b3a-1a2b3c4d5e6f", "status": "cancelled", "cancel_reason": "dibatalkan_client"}))),
                 ("expired" = (summary = "Kedaluwarsa sebelum diproses", value = json!({"queue_id": "0b19c3b4-7c5f-4e2f-9b3a-1a2b3c4d5e6f", "status": "expired"})))
             )
         ),
@@ -430,7 +430,7 @@ async fn cancel_request(
     ),
     request_body(content = RequestStatus, content_type = "application/json", description = "Status terminal. Untuk `done` memuat `hasil` (bentuk sama dengan polling); tanpa data input dan tanpa NIK", examples(
         ("done" = (summary = "Request selesai; memuat hasil", value = json!({"queue_id": "0b19c3b4-7c5f-4e2f-9b3a-1a2b3c4d5e6f", "status": "done", "hasil": {"NAMA_LGKP": {"status": "sesuai", "skor": 90}}}))),
-        ("cancelled" = (summary = "Dibatalkan client; memuat cancel_reason", value = json!({"queue_id": "0b19c3b4-7c5f-4e2f-9b3a-1a2b3c4d5e6f", "status": "cancelled", "cancel_reason": "client"})))
+        ("cancelled" = (summary = "Dibatalkan client; memuat cancel_reason", value = json!({"queue_id": "0b19c3b4-7c5f-4e2f-9b3a-1a2b3c4d5e6f", "status": "cancelled", "cancel_reason": "dibatalkan_client"})))
     )),
     responses(
         (status = 200, description = "2xx apa pun dari client berarti terkirim; selain itu gagal dan tidak diulang", headers(

@@ -58,31 +58,31 @@ make -C backend test CONTAINER_MEMORY=4g
 
 Pada VM 2 CPU / 3814 MiB, batas `3g` per container berarti hanya satu build Rust yang muat, ditambah `arctiva-hindsight`. Menaikkan `CONTAINER_MEMORY` di VM ini tidak disarankan dan butuh keputusan owner.
 
-## Kunci build berat (ARC-194, K-41)
+## Kunci build berat (SHAA-194, K-41)
 
 Aturan "satu build berat di VM" dikunci secara teknis, tidak hanya lewat prosedur. Kunci bersama ada di `scripts/build-lock.sh` (logika) dan `scripts/build-lock.mk` (include). Backend memakainya; frontend memakai include yang sama, tanpa implementasi kedua.
 
-- **Cara kerja.** Setiap container build berat (`test-rust`, `openapi`, dan `clippy` di `lint`) dijalankan dengan nama tetap `arctiva-build-heavy`, `--rm`, label `arctiva.issue=<ISSUE>`, dan label `arctiva.build=heavy`. Podman menolak nama ganda secara atomik, jadi run kedua langsung gagal. Tidak ada file kunci. Kunci lepas sendiri saat container selesai dan dihapus (`--rm`).
+- **Cara kerja.** Setiap container build berat (`test-rust`, `openapi`, dan `clippy` di `lint`) dijalankan dengan nama tetap `poolrouter-build-heavy`, `--rm`, label `arctiva.issue=<ISSUE>`, dan label `poolrouter.build=heavy`. Podman menolak nama ganda secara atomik, jadi run kedua langsung gagal. Tidak ada file kunci. Kunci lepas sendiri saat container selesai dan dihapus (`--rm`).
 - **Yang dikunci (backend).** Hanya target compile dan hanya saat `RUNNER=podman`: `test-rust`, `openapi`, dan `clippy` di `lint`. `setup`, `fmt`, `clean`, `db-test`, dan `cargo deny` tidak dikunci. `RUNNER=native` (CI) tidak memakai kunci.
 - **Yang dikunci (frontend).** Dengan `FRONTEND_RUNNER=podman`: `setup` (`pnpm install`), `test`, `build`, dan `e2e` dikunci. `lint`, `fmt`, `i18n-check`, dan `clean` tidak. `FRONTEND_RUNNER=local` (CI) tidak memakai kunci.
-- **Kontrak teks podman.** Deteksi bentrok bergantung pada teks `container name "arctiva-build-heavy" is already in use` dari podman. Versi yang diuji: podman 6.1.2. Bila versi podman mengubah teks ini, bentrok jatuh ke exit 125 (gagal aman, bukan 75). Setelah upgrade podman, uji ulang dengan dua run berurutan dan pastikan run kedua exit 75.
-- **Exit 75 (`EX_TEMPFAIL`).** Bila kunci dipegang, target antre (FIFO) dan menunggu; exit 75 hanya keluar setelah `BUILD_LOCK_WAIT_SECS` habis (default 1800 detik), dengan pesan yang memuat `arctiva.issue=` pemegang kunci (lihat `docker-lane.md`). Exit 75 hanya keluar saat podman melaporkan bentrok nama `arctiva-build-heavy`. Kegagalan lain, misalnya image tidak ada atau VM mati, memakai exit code aslinya (contoh terukur: 125).
-- **Kunci basi.** Bila container kunci sudah berhenti (`exited`, `stopped`, atau `dead`) tetapi belum terhapus, skrip menghapusnya sendiri (hanya bila berlabel `arctiva.build=heavy`) lalu mencoba sekali lagi. Container yang masih jalan tidak pernah dihapus tanpa `-f`.
-- **Yang tertahan saat `make` di-kill.** Bila `make` atau `podman` client di-kill dengan SIGKILL, container build tetap jalan sampai selesai. Kunci tertahan selama build itu, lalu lepas sendiri. Hasil uji (alpine, sleep 20 detik): client di-kill sekitar detik ke-3, kunci masih dipegang, dan lepas sekitar 16 detik kemudian saat container selesai dan dihapus. Untuk build Rust, kunci tertahan selama build berjalan. Bila perlu segera melepas, hentikan container `arctiva-build-heavy` secara sengaja, bukan prosesnya di host.
+- **Kontrak teks podman.** Deteksi bentrok bergantung pada teks `container name "poolrouter-build-heavy" is already in use` dari podman. Versi yang diuji: podman 6.1.2. Bila versi podman mengubah teks ini, bentrok jatuh ke exit 125 (gagal aman, bukan 75). Setelah upgrade podman, uji ulang dengan dua run berurutan dan pastikan run kedua exit 75.
+- **Exit 75 (`EX_TEMPFAIL`).** Bila kunci dipegang, target antre (FIFO) dan menunggu; exit 75 hanya keluar setelah `BUILD_LOCK_WAIT_SECS` habis (default 1800 detik), dengan pesan yang memuat `arctiva.issue=` pemegang kunci (lihat `docker-lane.md`). Exit 75 hanya keluar saat podman melaporkan bentrok nama `poolrouter-build-heavy`. Kegagalan lain, misalnya image tidak ada atau VM mati, memakai exit code aslinya (contoh terukur: 125).
+- **Kunci basi.** Bila container kunci sudah berhenti (`exited`, `stopped`, atau `dead`) tetapi belum terhapus, skrip menghapusnya sendiri (hanya bila berlabel `poolrouter.build=heavy`) lalu mencoba sekali lagi. Container yang masih jalan tidak pernah dihapus tanpa `-f`.
+- **Yang tertahan saat `make` di-kill.** Bila `make` atau `podman` client di-kill dengan SIGKILL, container build tetap jalan sampai selesai. Kunci tertahan selama build itu, lalu lepas sendiri. Hasil uji (alpine, sleep 20 detik): client di-kill sekitar detik ke-3, kunci masih dipegang, dan lepas sekitar 16 detik kemudian saat container selesai dan dihapus. Untuk build Rust, kunci tertahan selama build berjalan. Bila perlu segera melepas, hentikan container `poolrouter-build-heavy` secara sengaja, bukan prosesnya di host.
 - **Perintah.**
 
 ```sh
 make -C backend build-lock-status                  # bebas atau dipegang (issue dan status)
 make -C backend build-lock-clean                   # hapus kunci basi saja; kunci yang jalan tidak disentuh
-podman ps -a --filter label=arctiva.build=heavy --format '{{.Names}} {{.Status}} {{.Labels}}'
+podman ps -a --filter label=poolrouter.build=heavy --format '{{.Names}} {{.Status}} {{.Labels}}'
 ```
 
-Jangan menghentikan container `arctiva-build-heavy` milik issue lain tanpa koordinasi dengan pemilik `arctiva.issue`-nya.
+Jangan menghentikan container `poolrouter-build-heavy` milik issue lain tanpa koordinasi dengan pemilik `arctiva.issue`-nya.
 
 Bukti uji (2026-11-03, VM 2 CPU / 3814 MiB, alpine:3.20 untuk kontensi dan rust:1.99.1 untuk build):
 
 - Run kedua saat kunci dipegang: exit 75 dalam ≈0,4 detik, pesan menyebut `arctiva.issue=ARC-194`.
-- **Dua worktree (2026-11-03, blocking K-41 dari Huan).** Worktree A (`PoolRouter`) menjalankan `make -C backend test-rust JOBS=1` dari bersih (`make clean` dahulu). Selagi A jalan dan kontainer `arctiva-build-heavy` berstatus running, worktree B (`git worktree` detached di commit yang sama, setup sendiri) menjalankan `make -C backend test-rust`. Hasil: A exit 0 (34 test lulus, 0 gagal). B ditolak: pesan `kunci dipegang container arctiva-build-heavy (arctiva.issue=ARC-194, status=running)` dan `make: *** [test-rust] Error 75`.
+- **Dua worktree (2026-11-03, blocking K-41 dari Huan).** Worktree A (`PoolRouter`) menjalankan `make -C backend test-rust JOBS=1` dari bersih (`make clean` dahulu). Selagi A jalan dan kontainer `poolrouter-build-heavy` berstatus running, worktree B (`git worktree` detached di commit yang sama, setup sendiri) menjalankan `make -C backend test-rust`. Hasil: A exit 0 (34 test lulus, 0 gagal). B ditolak: pesan `kunci dipegang container poolrouter-build-heavy (arctiva.issue=ARC-194, status=running)` dan `make: *** [test-rust] Error 75`.
 - **Catatan exit code make.** GNU make selalu keluar dengan status 2 bila resep gagal; exit code resep (75) hanya muncul di baris `Error 75`. Untuk skrip yang perlu exit 75 mentah, panggil `sh scripts/build-lock.sh run -- <perintah podman run ...>` langsung, bukan lewat `make`.
 - Setelah run pertama selesai: kunci lepas tanpa langkah manual. Run berikutnya lulus dengan exit code aslinya (exit 3 diuji).
 - Exit 125 karena registry tidak ada: tetap 125, bukan 75.
@@ -109,7 +109,7 @@ Container toolchain harus berlabel `arctiva.issue=<ISSUE>`. Container tanpa labe
 ## Membersihkan
 
 - Container sementara dihapus otomatis (`podman run --rm`). Jika ada sisa, cek dengan `podman ps -a --filter label=arctiva.issue=<ISSUE>` dan hapus hanya container dengan label issue sendiri.
-- Membersihkan workdir yang sudah selesai: jalankan `make clean CONTAINER_LABEL=arctiva.issue=<ISSUE>` dari akar checkout. Target ini menghapus `backend/target`, `backend/.cache`, `frontend/node_modules`, dan `frontend/.cache` serta direktori build frontend (`dist`, `coverage`, `test-results`, `playwright-report`) di dalam container berlabel yang hanya me-mount direktori `backend` atau `frontend` checkout itu. Artefak itu dibuat container sebagai root, jadi `rm` dari host gagal `Permission denied`; jangan menghapusnya dengan `rm` host atau `sudo`. Container-nya `--rm`, tidak ada image atau volume yang disentuh, dan target ini tidak memakai kunci build (boleh jalan saat `arctiva-build-heavy` aktif). Setelah itu cek `podman ps -a --filter label=arctiva.issue=<ISSUE>` kosong. `setup` berikutnya memasang ulang `cargo-deny`, crate, dan `node_modules`.
+- Membersihkan workdir yang sudah selesai: jalankan `make clean CONTAINER_LABEL=arctiva.issue=<ISSUE>` dari akar checkout. Target ini menghapus `backend/target`, `backend/.cache`, `frontend/node_modules`, dan `frontend/.cache` serta direktori build frontend (`dist`, `coverage`, `test-results`, `playwright-report`) di dalam container berlabel yang hanya me-mount direktori `backend` atau `frontend` checkout itu. Artefak itu dibuat container sebagai root, jadi `rm` dari host gagal `Permission denied`; jangan menghapusnya dengan `rm` host atau `sudo`. Container-nya `--rm`, tidak ada image atau volume yang disentuh, dan target ini tidak memakai kunci build (boleh jalan saat `poolrouter-build-heavy` aktif). Setelah itu cek `podman ps -a --filter label=arctiva.issue=<ISSUE>` kosong. `setup` berikutnya memasang ulang `cargo-deny`, crate, dan `node_modules`.
 - Jangan menghentikan `podman machine` atau container yang tidak berlabel issue sendiri tanpa koordinasi dengan pemiliknya.
 
 ## Mengganti versi cargo-deny
@@ -120,5 +120,5 @@ Container toolchain harus berlabel `arctiva.issue=<ISSUE>`. Container tanpa labe
 
 ## Batasan
 
-- VM Podman dipakai pada 2 CPU / 3814 MiB, bukan 4 CPU / 6144 MiB yang direkomendasikan. Keputusan owner (ARC-222, 2026-11-03): resize tidak dilanjutkan, gate dijalankan dengan `JOBS=1`. Risiko OOM tetap ada; jika gate gagal dengan SIGKILL atau exit 137, jangan diulang dengan `CONTAINER_MEMORY` lebih besar tanpa keputusan owner.
+- VM Podman dipakai pada 2 CPU / 3814 MiB, bukan 4 CPU / 6144 MiB yang direkomendasikan. Keputusan owner (SHAA-222, 2026-11-03): resize tidak dilanjutkan, gate dijalankan dengan `JOBS=1`. Risiko OOM tetap ada; jika gate gagal dengan SIGKILL atau exit 137, jangan diulang dengan `CONTAINER_MEMORY` lebih besar tanpa keputusan owner.
 - Gate penuh `make setup test lint` dengan `CONTAINER_LABEL=arctiva.issue=ARC-222 JOBS=1` di `main` `065aba7` lolos (exit 0, sekitar 371 detik) di kondisi VM di atas.

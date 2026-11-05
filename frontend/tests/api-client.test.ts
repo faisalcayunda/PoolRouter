@@ -12,11 +12,26 @@ function client(fetchImpl: ReturnType<typeof vi.fn>) {
   return createApiClient({ fetch: fetchImpl as never });
 }
 
-/** Destructure a recorded fetch call; the assertion helpers treat a missing call as a failure. */
+/** Read the recorded request (openapi-fetch passes a `Request`) as URL path + init-like view. */
 function firstCall(fetchImpl: ReturnType<typeof vi.fn>): [string, RequestInit] {
-  const call = fetchImpl.mock.calls[0] as [string, RequestInit] | undefined;
-  if (!call) throw new Error('fetch was not called');
-  return call;
+  const request = fetchImpl.mock.calls[0]?.[0] as Request | undefined;
+  if (!request) throw new Error('fetch was not called');
+  return [
+    new URL(request.url).pathname,
+    {
+      method: request.method,
+      headers: request.headers,
+      cache: request.cache,
+      credentials: request.credentials,
+    },
+  ];
+}
+
+/** JSON body of the recorded request; openapi-fetch serialises it into the Request stream. */
+async function requestJson(fetchImpl: ReturnType<typeof vi.fn>): Promise<unknown> {
+  const request = fetchImpl.mock.calls[0]?.[0] as Request | undefined;
+  if (!request) throw new Error('fetch was not called');
+  return request.clone().json();
 }
 
 describe('admin API client', () => {
@@ -31,7 +46,7 @@ describe('admin API client', () => {
     expect(url).toBe('/admin/v1/log/cari');
     expect(url).not.toContain('?');
     expect(init.method).toBe('POST');
-    const body = JSON.parse(String(init.body));
+    const body = (await requestJson(fetchImpl)) as { dari: string; sampai: string };
     expect(body.dari).toBe('2026-11-02T00:00:00+07:00');
   });
 

@@ -12,10 +12,14 @@ pull request yang sudah lulus gate. Konfirmasi owner per aksi git tidak diperluk
 force-push ke `main` dan secret di repo tetap dilarang.
 
 ## Branch dan PR
-- Satu branch per pekerjaan: `agent/<nama-agent>/<issue>`, contoh `agent/<nama-agent>/arc-123`.
+- Satu branch per pekerjaan, format `agent/<ID>-<slug>`: `<ID>` adalah id tiket Arctiva (`ARC-<n>`)
+  dan `<slug>` ringkas dengan tanda hubung. Contoh: `agent/ARC-2-aturan-repo-arctiva`.
 - Nama branch, judul PR, dan pesan commit memakai id issue Arctiva (`ARC-<n>`), bukan id Shaal.
-- `main` hanya menerima merge commit dari PR yang sudah lulus gate. Push langsung ke `main`,
+- **PR wajib ke `main`** untuk setiap perubahan; tidak ada pengecualian untuk perubahan kecil.
+  `main` hanya menerima merge commit dari PR yang sudah lulus gate. Push langsung ke `main`,
   termasuk `git push origin HEAD:main`, ditolak oleh reviewer dan harus di-revert.
+- Merge hanya oleh Operator (G2). Agent tidak merge PR-nya sendiri dan tidak memindahkan tiket ke
+  `done`; `done` terjadi saat Operator merge. PR siap review hanya setelah gate penuh hijau.
 - Force-push hanya boleh di branch kerja milik sendiri, tidak pernah di `main`.
 - Sebelum PR: rebase atau merge `main` terbaru ke branch kerja.
 
@@ -32,7 +36,7 @@ force-push ke `main` dan secret di repo tetap dilarang.
   `shaal.issue=SHAA-<n>`; label lama tidak dipakai lagi.
 - `make -C backend ...` dan `make -C frontend ...` dengan runner kontainer gagal di target
   `check-label` kalau `CONTAINER_LABEL` kosong atau tidak berbentuk `arctiva.issue=ARC-<n>`.
-- Kunci build bersama memakai label `arctiva.build=heavy` di container `arctiva-build-heavy`;
+- Kunci build bersama memakai label `poolrouter.build=heavy` di container `poolrouter-build-heavy`;
   jalankan satu build berat per waktu.
 - Pembersihan hanya boleh menyasar resource dengan label milik issue ini
   (`--filter label=arctiva.issue=ARC-<n>`). Prune global (`docker system prune`,
@@ -41,9 +45,11 @@ force-push ke `main` dan secret di repo tetap dilarang.
   `dokploy-traefik`) tidak boleh disentuh.
 
 ## Hal yang tidak boleh dilakukan
-- Push langsung ke `main` (jalur `make push-main` sudah dihapus).
+- Push langsung ke `main`. `make push-main` sengaja dipertahankan sebagai penjaga: ia menolak
+  dengan exit 2 dan mencetak alur PR; jangan menghidupkan lagi jalur push-nya.
 - Force-push ke `main`, menulis secret ke repo atau ke log CI.
 - Menghapus atau merename branch milik agent lain tanpa kesepakatan dengan pemiliknya.
+- Memakai data pribadi asli di fixture, test, atau log. Data NIK hanya sintetis.
 
 ## Bahasa dan gaya
 - Komentar kode, pesan commit, dan dokumen repo memakai bahasa Indonesia untuk teks penjelas;

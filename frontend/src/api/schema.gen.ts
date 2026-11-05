@@ -1092,8 +1092,10 @@ export interface components {
             /** Format: date-time */
             kedaluwarsa_at?: string | null;
             /**
-             * @description 256-bit base64url secret; never returned again (contract 3.1b).
-             * @example 2fJ8N0qk0e6h7h0F1D2J3k4L5m6N7o8P9Q0r1S2t3U4v
+             * @description Client secret: 256-bit base64url. API key: the full string
+             *     `pr_<credential_id 32 hex>_<secret 256-bit base64url>` (ADR-0001 5a.5,
+             *     SHAA-198 U-13). Never returned again (contract 3.1b).
+             * @example pr_0193b8a27c4e7d108a3f5e6b7c8d9e0f_2fJ8N0qk0e6h7h0F1D2J3k4L5m6N7o8P9Q0r1S2t3U4
              */
             secret: string;
         };

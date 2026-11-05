@@ -128,6 +128,9 @@ SELECT t.gagal('SELECT * FROM transaction_log', '42501', 'pr_admin_api: transact
 SELECT t.gagal('SELECT secret_ciphertext FROM client_webhook', '42501', 'pr_admin_api: webhook secret write-only (W-03)');
 SELECT t.gagal('SELECT secret_dek_terbungkus FROM client_webhook', '42501', 'pr_admin_api: webhook DEK write-only');
 SELECT t.gagal('SELECT secret_ciphertext FROM provider_secret', '42501', 'pr_admin_api: provider secret write-only');
+SELECT t.gagal('SELECT secret_dek_terbungkus FROM provider_secret', '42501', 'AD1: pr_admin_api cannot read the wrapped DEK');
+SELECT t.gagal('SELECT secret_nonce FROM provider_secret', '42501', 'AD1: pr_admin_api cannot read the nonce');
+SELECT t.jalan('SELECT nama_secret, secret_versi FROM provider_secret', 'AD1: pr_admin_api reads names and versions for listSecrets');
 SELECT t.gagal('SELECT kunci_hash FROM client_kredensial', '42501', 'pr_admin_api: credential hash write-only');
 SELECT t.jalan('SELECT webhook_url, secret_versi, kek_id FROM client_webhook', 'pr_admin_api: non-secret webhook columns readable');
 SELECT t.jalan($$UPDATE client_webhook SET secret_ciphertext = '\x99', secret_versi = secret_versi WHERE false$$, 'pr_admin_api: webhook secret writable');
@@ -188,12 +191,26 @@ SELECT t.ok(t.hitung($q$
   SELECT count(*) FROM information_schema.role_table_grants
    WHERE grantee IN ('pr_api','pr_admin_api','pr_controller','pr_worker','pr_webhook') AND privilege_type = 'DELETE'
      AND table_name NOT IN ('downstream_pool_rute', 'client_endpoint', 'endpoint_metadata_field', 'admin_session',
-                          'pengguna_mfa', 'kode_pemulihan_mfa', 'kode_daftar_mfa')$q$) = 0,   -- the last three: MF-09 (F1), pinned in 60_f1_roles.sql
+                          'pengguna_mfa', 'kode_pemulihan_mfa', 'kode_daftar_mfa', 'provider_secret')$q$) = 0,   -- the last three: MF-09 (F1), pinned in 60_f1_roles.sql; provider_secret: AD1/ARC-48, deleteSecret is a real delete
   'no application role can DELETE outside the allowed configuration tables');
 SELECT t.ok(t.hitung($q$
   SELECT count(*) FROM information_schema.role_table_grants
    WHERE grantee = 'pr_controller' AND table_name = 'transaction_log' AND privilege_type IN ('SELECT','UPDATE') $q$) = 0,
   'pr_controller has no whole-table grant on transaction_log (column grants only)');
+-- ARC-48/AD1: the secret store is written and deleted by pr_admin_api, read as an envelope by pr_api/pr_worker.
+SELECT t.ok(t.hitung($q$
+  SELECT count(*) FROM information_schema.role_table_grants
+   WHERE grantee = 'pr_admin_api' AND table_name = 'provider_secret' AND privilege_type IN ('INSERT', 'DELETE')$q$) = 2,
+  'AD1: pr_admin_api may insert and delete provider secrets (putSecret/deleteSecret)');
+SELECT t.ok(t.hitung($q$
+  SELECT count(*) FROM information_schema.column_privileges
+   WHERE grantee = 'pr_admin_api' AND table_name = 'provider_secret'
+     AND column_name IN ('secret_ciphertext', 'secret_dek_terbungkus', 'secret_nonce') AND privilege_type = 'SELECT'$q$) = 0,
+  'AD1: pr_admin_api cannot select any envelope column of provider_secret');
+SELECT t.ok(t.hitung($q$
+  SELECT count(*) FROM information_schema.column_privileges
+   WHERE grantee = 'pr_admin_api' AND table_name = 'provider_secret' AND column_name = 'nama_secret' AND privilege_type = 'SELECT'$q$) = 1,
+  'AD1: pr_admin_api reads the secret names for listSecrets');
 
 -- DQ-37 (f) on the test data
 SELECT t.ok(t.hitung($q$ SELECT count(*) FROM client_kredensial WHERE (status = 'aktif' AND dicabut_at IS NOT NULL) OR (status = 'dicabut' AND (dicabut_at IS NULL OR dicabut_oleh IS NULL))$q$) = 0,

@@ -1,5 +1,5 @@
 #!/bin/sh
-# Database tests for the F0 schema (ARC-193): roles bootstrap, migrations from empty, role-grant matrix, constraints.
+# Database tests for the F0 schema (SHAA-193): roles bootstrap, migrations from empty, role-grant matrix, constraints.
 # Everything runs inside a throwaway PostgreSQL 17 container labelled arctiva.issue=<ARC_ISSUE>; only that container is removed.
 #
 #   sh backend/db/test/run.sh                       # podman
@@ -7,7 +7,10 @@
 set -eu
 
 ENGINE=${CONTAINER_ENGINE:-podman}
-ISSUE=${ARC_ISSUE:-ARC-193}
+ISSUE=$ARC_ISSUE
+: "${ARC_ISSUE:?isi ARC_ISSUE, mis. ARC-123}"
+# Gagal di awal dengan pesan jelas, bukan nanti saat `podman`/`docker` dipanggil.
+command -v "$ENGINE" >/dev/null 2>&1 || { echo "run.sh: '$ENGINE' tidak ada di PATH; set CONTAINER_ENGINE=docker atau pasang engine-nya" >&2; exit 127; }
 # Same pinned image as deploy/compose/compose.yaml (never `latest`).
 IMAGE=${PG_IMAGE:-docker.io/library/postgres:17-alpine@sha256:266d3c257594e195b309ae9d1805e54c788f1d7b375f56bf6c367aac6c917e7b}
 NAME="poolrouter-dbtest-$$"
@@ -95,9 +98,9 @@ $ENGINE exec -e POOLROUTER_SECRETS_DIR=/tmp/sec -e PGUSER=postgres -e PGHOST=127
   "$NAME" sh /tmp/db/bootstrap.sh poolrouter_rb
 dump_schema() { $ENGINE exec -e PGPASSWORD="$SU_PW" "$NAME" pg_dump -U postgres -h 127.0.0.1 -s --no-comments -d poolrouter_rb | grep -v -E '^.(un)?restrict '; }
 rollback_all() {
-  # F3 first (it sits on top of F1); skipped when an earlier, refused attempt already removed it
+  # F4/F3 first (they sit on top of F1); skipped when an earlier, refused attempt already removed them
   if [ "$(psql_su -d poolrouter_rb -t -A -c "SELECT to_regclass('blend') IS NOT NULL")" = "t" ]; then
-    for f in 2 1; do
+    for f in 3 2 1; do
       { echo "SET ROLE poolrouter_owner;"; cat "$rb_dir"/2026110500000${f}_*.down.sql; } | psql_su -d poolrouter_rb -1 || return 1
     done
   fi
@@ -150,4 +153,17 @@ apply_migrations poolrouter_rb '20261104*'
 echo "F1 applies again after rollback: ok"
 apply_migrations poolrouter_rb '20261105*'
 echo "F3 applies again after rollback: ok"
+# F4 data: while the global secret store holds a row its rollback must refuse too (ARC-48:
+# the down migration would drop the table and the only copy of a ciphertext with it).
+psql_su -d poolrouter_rb -c "INSERT INTO admin_user (pengguna_id, username, password_hash)
+    VALUES ('00000000-0000-7000-8000-0000000000d0', 'rb-secret-actor', '\$argon2id\$synthetic');
+  INSERT INTO provider (provider_id, nama) VALUES ('00000000-0000-7000-8000-0000000000d1', 'rb-provider');
+  INSERT INTO provider_secret (nama_secret, secret_ciphertext, secret_dek_terbungkus, secret_nonce, kek_id, diubah_oleh)
+  VALUES ('RB_PW', '\\xaa', decode(repeat('bb', 60), 'hex'), decode(repeat('cc', 12), 'hex'), 'kek-1',
+          '00000000-0000-7000-8000-0000000000d0')"
+if { echo "SET ROLE poolrouter_owner;"; cat "$rb_dir"/20261105000003_*.down.sql; } | psql_su -d poolrouter_rb -1 2>/dev/null; then
+  echo "FAIL: F4 rollback ran although the secret store holds a row" >&2; exit 1; fi
+echo "F4 rollback refuses while the secret store holds a row: ok"
+psql_su -d poolrouter_rb -c "DELETE FROM provider_secret; DELETE FROM provider WHERE nama = 'rb-provider';
+  DELETE FROM admin_user WHERE username = 'rb-secret-actor'"
 echo "DB TESTS PASSED"
