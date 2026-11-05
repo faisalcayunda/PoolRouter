@@ -727,24 +727,48 @@ async fn konfirmasi_mengaktifkan_dan_mengembalikan_sepuluh_kode() {
 
 #[tokio::test]
 #[ignore = "butuh PostgreSQL dan Redis; jalankan lewat make -C backend uji-pg"]
-async fn me_memuat_mfa_wajib_aktif_dan_sisa_kode() {
+async fn me_setelah_login_kode_pemulihan_melaporkan_sisa_sembilan() {
     let u = siapkan(&["auditor"], true).await;
-    u.pasang_mfa_aktif().await;
-    let rahasia = totp::encode(&[0x41u8; 20]);
+
+    // Enroll through the real endpoints so the recovery codes are genuine.
     let (_, headers, _) = u.login(PASSWORD).await;
     let pra = Uji::cookie(&headers, COOKIE_PRA_SESI).unwrap();
-    // Complete the second step to get a stamped session.
-    sqlx::query("UPDATE pengguna_mfa SET status = 'aktif' WHERE pengguna_id = $1")
-        .bind(u.pengguna_id)
-        .execute(&u.pool)
-        .await
-        .unwrap();
+    let cookie = format!("{COOKIE_PRA_SESI}={pra}");
+    let kode_daftar = u.kode_pendaftaran().await;
+    let (status, _, body) = u
+        .kirim(
+            "/admin/v1/auth/mfa/daftar",
+            Some(&cookie),
+            Some(serde_json::json!({ "kode_pendaftaran": kode_daftar })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    let rahasia = body["rahasia_base32"].as_str().unwrap().to_owned();
+
     let kode = totp::hitung(&rahasia, (t0().timestamp() / 30) as u64);
+    let (status, _, body) = u
+        .kirim(
+            "/admin/v1/auth/mfa/daftar/konfirmasi",
+            Some(&cookie),
+            Some(serde_json::json!({ "kode_totp": kode })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    let kode_pemulihan = body["kode_pemulihan"].as_array().unwrap()[0]
+        .as_str()
+        .unwrap()
+        .to_owned();
+
+    // Log in again using that recovery code instead of a TOTP code.
+    let (status, headers, body) = u.login(PASSWORD).await;
+    assert_eq!(status, StatusCode::OK, "langkah mfa");
+    assert_eq!(body["langkah"], "mfa");
+    let pra2 = Uji::cookie(&headers, COOKIE_PRA_SESI).unwrap();
     let (status, headers, _) = u
         .kirim(
             "/admin/v1/auth/mfa",
-            Some(&format!("{COOKIE_PRA_SESI}={pra}")),
-            Some(serde_json::json!({ "kode": kode })),
+            Some(&format!("{COOKIE_PRA_SESI}={pra2}")),
+            Some(serde_json::json!({ "kode_pemulihan": kode_pemulihan })),
         )
         .await;
     assert_eq!(status, StatusCode::NO_CONTENT);
@@ -762,7 +786,8 @@ async fn me_memuat_mfa_wajib_aktif_dan_sisa_kode() {
     let body: Value = serde_json::from_slice(&bytes).unwrap();
     assert_eq!(body["mfa"]["wajib"], true);
     assert_eq!(body["mfa"]["aktif"], true);
-    assert!(body["mfa"]["sisa_kode_pemulihan"].is_i64());
+    // AC-14: one of the ten has been spent.
+    assert_eq!(body["mfa"]["sisa_kode_pemulihan"], 9);
 }
 
 #[tokio::test]
