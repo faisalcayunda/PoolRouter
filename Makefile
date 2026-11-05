@@ -89,18 +89,36 @@ image-frontend:
 SUBMAKE = $(MAKE)
 STACKS := backend $(if $(wildcard frontend/Makefile),frontend)
 
-.PHONY: help setup test lint fmt clean test-dry-run
+.PHONY: help setup test lint fmt clean push-main test-dry-run test-label test-atribut
 
 help:
 	@echo "gate resmi: make setup test lint RUNNER=docker FRONTEND_RUNNER=docker CONTAINER_LABEL=arctiva.issue=ARC-<n>"
 	@echo "targets: setup test lint fmt clean (gate repo, delegasi ke stack); test-dry-run (uji regresi make -n, tanpa Docker); compose-up compose-down compose-ps compose-logs compose-config compose-migrate compose-lint compose-test-dind image image-frontend"
-	@echo "Push: tidak ada jalur push dari Makefile. Semua perubahan masuk lewat PR ke main (CLAUDE.md)."
+	@echo "Push: tidak ada push langsung ke main. Branch agent/<ID>-<slug> -> PR ke main -> merge Operator (CLAUDE.md)."
 
-# push-main dihapus: Arctiva tidak mengizinkan push langsung ke main (CLAUDE.md). Semua perubahan lewat PR.
+# push-main: sengaja menolak. Arctiva tidak mengizinkan push langsung ke main, dan jalur push
+# otomatis ke main tidak boleh dikembalikan. Pesan ini menjelaskan alur yang benar, bukan
+# "No rule to make target" (AC-3, ARC-2).
+push-main:
+	@echo "make push-main tidak dipakai lagi: Arctiva melarang push langsung ke main (CLAUDE.md)." >&2
+	@echo "Alur yang benar:" >&2
+	@echo "  1. git checkout -b agent/<ID>-<slug> main" >&2
+	@echo "  2. make setup test lint RUNNER=docker FRONTEND_RUNNER=docker CONTAINER_LABEL=arctiva.issue=ARC-<n>" >&2
+	@echo "  3. git push -u origin agent/<ID>-<slug> lalu buka PR ke main (gh pr create --base main)" >&2
+	@echo "  4. merge hanya oleh Operator setelah gate hijau; agen tidak merge dan tidak push ke main." >&2
+	@exit 2
 
 # test-dry-run: bukti `make -n` tidak menyentuh engine kontainer (stub docker/podman di PATH, ARC-398).
 test-dry-run:
 	@sh scripts/test-dry-run.sh
+
+# test-label: uji regresi kontrak label gate arctiva.issue=ARC-<n> (AC-2, ARC-2).
+test-label:
+	@sh scripts/test-label.sh
+
+# test-atribut: uji regresi aturan repo Arctiva (push-main hanya penjaga, CLAUDE.md, tanpa label Shaal).
+test-atribut:
+	@sh scripts/test-atribut.sh
 
 setup test lint fmt clean:
 	@set -e; for s in $(STACKS); do \

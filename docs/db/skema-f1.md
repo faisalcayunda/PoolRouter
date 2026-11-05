@@ -4,7 +4,7 @@ Dokumen ini untuk review desain data (Klaus) dan review SQL (Ridley). Acuan: dat
 
 ## 1. Cara menjalankan dan menguji
 
-- `make -C backend db-test CONTAINER_LABEL=shaal.issue=SHAA-333`: container PostgreSQL 17 sementara (Podman), bootstrap role dua kali, semua migrasi dari database kosong, lalu uji. Container dihapus di akhir.
+- `make -C backend db-test CONTAINER_LABEL=arctiva.issue=ARC-333`: container PostgreSQL 17 sementara (Podman), bootstrap role dua kali, semua migrasi dari database kosong, lalu uji. Container dihapus di akhir.
 - Setelah uji skema: database kedua, F0 saja → F1 → rollback F1 → bandingkan `pg_dump -s` dengan keadaan F0 (harus identik) → F1 naik lagi. Rollback yang ditolak karena ada data F1 juga diuji.
 - Urutan migrasi: `20261104000001` (D1–D3 dan pengaturan platform), `…02` (audit_akses, D4, D6), `…03` (D7), `…04` (hak). Semuanya sesudah `20261103000004` (migrasi F0 terakhir di `main`).
 - **Role baru lebih dulu.** `backend/db/bootstrap.sh` kini membuat `pr_job_balikan`, `pr_job_arsip`, `pr_restore` dan membaca tiga file secret baru (`$POOLROUTER_SECRETS_DIR/<role>`). Jalankan ulang bootstrap (idempoten) sebelum migrasi F1; tanpa itu migrasi `…04` gagal karena role belum ada. Wiring secret di compose dan runbook adalah hand-off ke Platform & SRE.

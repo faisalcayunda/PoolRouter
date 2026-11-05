@@ -43,10 +43,10 @@ export CARGO_TERM_COLOR ?= never
 include ../scripts/build-lock.mk
 
 # Docker lane (ARC-390): satu CARGO_TARGET_DIR bersama di / dan satu CARGO_HOME/RUSTUP_HOME bersama di /data,
-# dipakai bergantian oleh semua workdir di bawah kunci arctiva-build-heavy. Semua path lewat variabel ini (override
+# dipakai bergantian oleh semua workdir di bawah kunci poolrouter-build-heavy. Semua path lewat variabel ini (override
 # lewat env atau argumen make). Container berjalan dengan uid:gid host, jadi user biasa bisa menghapus isinya tanpa sudo.
-SHARED_TARGET_DIR ?= /var/tmp/arctiva-build/poolrouter-target
-SHARED_CARGO_HOME ?= /data/workspace/arctiva-build/cargo-home
+SHARED_TARGET_DIR ?= /var/tmp/poolrouter-build/poolrouter-target
+SHARED_CARGO_HOME ?= /data/workspace/poolrouter-build/cargo-home
 # Batas ukuran target bersama (MB): di atasnya check-disk menjalankan clean-shared di bawah kunci.
 SHARED_TARGET_LIMIT_MB ?= 2560
 # Batas ukuran cargo-home + rustup bersama di /data (MB, ARC-394). Dilewati => check-disk gagal (exit non-nol),
@@ -118,7 +118,7 @@ help:
 	@echo "gate resmi (dari akar): make setup test lint RUNNER=docker FRONTEND_RUNNER=docker CONTAINER_LABEL=arctiva.issue=ARC-<n>"
 
 # Fetch the locked dependency set and install the pinned cargo-deny. Toolchain copy, fetch dan install cargo-deny
-# menulis ke cache bersama, jadi jalan di bawah kunci arctiva-build-heavy (ARC-394); checkout kedua hanya
+# menulis ke cache bersama, jadi jalan di bawah kunci poolrouter-build-heavy (ARC-394); checkout kedua hanya
 # menemukan toolchain dan registry sudah ada dan tidak mengunduh ulang.
 setup: check-label $(CHECK_DISK)
 	$(if $(filter docker,$(RUNNER)),,mkdir -p .cache/cargo .cache/rustup)

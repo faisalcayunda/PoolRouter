@@ -4,7 +4,7 @@ Dokumen ini untuk review desain data (Klaus) dan review kode (Ridley). Acuan: da
 
 ## 1. Cara menjalankan
 
-- `make -C backend db-test` (juga dipanggil oleh `make test`): memulai container PostgreSQL 17 berlabel `shaal.issue=SHAA-193`, menjalankan `backend/db/bootstrap.sh` dua kali (idempoten), menerapkan semua migrasi dari database kosong sebagai `poolrouter_owner`, lalu menjalankan uji SQL. Container dihapus di akhir.
+- `make -C backend db-test` (juga dipanggil oleh `make test`): memulai container PostgreSQL 17 berlabel `arctiva.issue=ARC-193`, menjalankan `backend/db/bootstrap.sh` dua kali (idempoten), menerapkan semua migrasi dari database kosong sebagai `poolrouter_owner`, lalu menjalankan uji SQL. Container dihapus di akhir.
 - Role dibuat oleh `backend/db/bootstrap.sh` (superuser, sekali per cluster), bukan oleh migrasi. Password dibaca dari file secret (`$POOLROUTER_SECRETS_DIR/<nama role>`) lewat psql, tidak lewat argumen. Migrasi hanya memuat skema, fungsi, dan grant, dan berjalan sebagai `poolrouter_owner`.
 - `.sqlx/`: belum ada kueri `query!` di issue ini, jadi belum ada isi untuk di-commit (ADR-0004 §8). Isi `.sqlx/` mulai saat kode akses data ditulis.
 - Subcommand `migrate` (`compose.yaml` service `migrate`) belum menjalankan migrasi ini. Itu pekerjaan kode runtime, bukan skema. Kebutuhan wiring compose (role bootstrap sebelum `migrate`) adalah hand-off ke Platform & SRE.
