@@ -3113,6 +3113,7 @@ dependencies = [
  "metrics-exporter-prometheus",
  "poolrouter-core",
  "redis",
+ "regex",
  "secrecy",
  "serde",
  "serde_json",
