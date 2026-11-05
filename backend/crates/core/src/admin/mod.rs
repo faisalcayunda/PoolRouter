@@ -19,6 +19,7 @@
 //! - the user/role CLI (§3.6c): slice 4.
 
 pub mod aman;
+pub mod mfa;
 pub mod origin;
 pub mod password;
 pub mod pengguna;
