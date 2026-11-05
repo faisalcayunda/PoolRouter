@@ -172,6 +172,7 @@ pub(super) async fn mfa(
         )
     })?;
     let ip = sumber_ip(&headers, peer);
+    let ua = super::login::user_agent(&headers);
     let sekarang: DateTime<Utc> = (s.jam)();
     let (token, pra) = pra_sesi_dari(&s, &headers, JenisPraSesi::Mfa).await?;
     let pengguna_id = pra.pengguna_id;
@@ -187,6 +188,16 @@ pub(super) async fn mfa(
     match s.pembatas.periksa(&username).await {
         Err(_) => return Err(Galat::layanan()),
         Ok(HasilBatas::Terkunci { coba_lagi_detik }) => {
+            // AC-11: a refused attempt is an `audit_login` row too.
+            super::login::audit(
+                &s,
+                Some(pengguna_id),
+                poolrouter_core::audit::HasilLogin::Terkunci,
+                None,
+                &ip,
+                &ua,
+            )
+            .await;
             return Err(Galat::dibatasi(coba_lagi_detik));
         }
         Ok(HasilBatas::Bebas) => {}
@@ -234,6 +245,15 @@ pub(super) async fn mfa(
         }
         Err(()) => {
             // One generic failure for both code kinds (AC-11).
+            super::login::audit(
+                &s,
+                Some(pengguna_id),
+                poolrouter_core::audit::HasilLogin::Gagal,
+                None,
+                &ip,
+                &ua,
+            )
+            .await;
             let _ = s.pembatas.catat_gagal(&username).await;
             let hangus = s.pra_sesi.catat_gagal(&token).await.unwrap_or(true);
             if hangus {
@@ -371,6 +391,7 @@ pub(super) async fn konfirmasi(
         )
     })?;
     let ip = sumber_ip(&headers, peer);
+    let ua = super::login::user_agent(&headers);
     let sekarang = (s.jam)();
     let (token, pra) = pra_sesi_dari(&s, &headers, JenisPraSesi::DaftarMfa).await?;
     let pengguna_id = pra.pengguna_id;
@@ -384,6 +405,16 @@ pub(super) async fn konfirmasi(
     match s.pembatas.periksa(&username).await {
         Err(_) => return Err(Galat::layanan()),
         Ok(HasilBatas::Terkunci { coba_lagi_detik }) => {
+            // AC-11: a refused attempt is an `audit_login` row too.
+            super::login::audit(
+                &s,
+                Some(pengguna_id),
+                poolrouter_core::audit::HasilLogin::Terkunci,
+                None,
+                &ip,
+                &ua,
+            )
+            .await;
             return Err(Galat::dibatasi(coba_lagi_detik));
         }
         Ok(HasilBatas::Bebas) => {}
@@ -401,6 +432,15 @@ pub(super) async fn konfirmasi(
     let daftar_kode: KodePemulihan = match konfirmasi {
         Ok(k) => k,
         Err(_) => {
+            super::login::audit(
+                &s,
+                Some(pengguna_id),
+                poolrouter_core::audit::HasilLogin::Gagal,
+                None,
+                &ip,
+                &ua,
+            )
+            .await;
             let _ = s.pembatas.catat_gagal(&username).await;
             s.pra_sesi.catat_gagal(&token).await.ok();
             catat_daftar_mfa(&s, pengguna_id, false, &ip).await;

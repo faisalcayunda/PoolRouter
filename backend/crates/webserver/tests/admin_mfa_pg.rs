@@ -448,6 +448,32 @@ async fn token_daftar_mfa_ditolak_di_auth_mfa() {
     assert_eq!(status, StatusCode::UNAUTHORIZED);
 }
 
+#[tokio::test]
+#[ignore = "butuh PostgreSQL dan Redis; jalankan lewat make -C backend uji-pg"]
+async fn percobaan_kode_tercatat_di_audit_login() {
+    let u = siapkan(&["auditor"], true).await;
+    u.pasang_mfa_aktif().await;
+    let (_, headers, _) = u.login(PASSWORD).await;
+    let token = Uji::cookie(&headers, COOKIE_PRA_SESI).unwrap();
+    let (status, _, _) = u
+        .kirim(
+            "/admin/v1/auth/mfa",
+            Some(&format!("{COOKIE_PRA_SESI}={token}")),
+            Some(serde_json::json!({ "kode": "000000" })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+    // AC-11: every code attempt is an `audit_login` row.
+    let gagal: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM audit_login WHERE pengguna_id = $1 AND hasil = 'gagal'",
+    )
+    .bind(u.pengguna_id)
+    .fetch_one(&u.pool)
+    .await
+    .unwrap();
+    assert!(gagal >= 1, "percobaan kode harus tercatat di audit_login");
+}
+
 // --- AC-2: no-store on every auth response, including 4xx -------------------
 
 #[tokio::test]
@@ -471,6 +497,84 @@ async fn setiap_respons_auth_tanpa_tembolok() {
         )
         .await;
     assert_eq!(headers.get(header::CACHE_CONTROL).unwrap(), "no-store");
+}
+
+// --- AC-3: no code, secret, URI or recovery code in the log ------------------
+
+#[tokio::test]
+#[ignore = "butuh PostgreSQL dan Redis; jalankan lewat make -C backend uji-pg"]
+async fn kode_dan_secret_tidak_muncul_di_log() {
+    use tracing_subscriber::fmt::MakeWriter;
+
+    #[derive(Clone, Default)]
+    struct Penyangga(Arc<Mutex<Vec<u8>>>);
+    struct Penulis(Arc<Mutex<Vec<u8>>>);
+    impl std::io::Write for Penulis {
+        fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+            self.0.lock().unwrap().extend_from_slice(buf);
+            Ok(buf.len())
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+    impl<'a> MakeWriter<'a> for Penyangga {
+        type Writer = Penulis;
+        fn make_writer(&'a self) -> Self::Writer {
+            let _ = self.0.lock().map(|mut b| b.clear());
+            Penulis(Arc::clone(&self.0))
+        }
+    }
+
+    let penyangga = Penyangga::default();
+    let subscriber = tracing_subscriber::fmt()
+        .with_max_level(tracing::Level::TRACE)
+        .with_ansi(false)
+        .with_writer(penyangga.clone())
+        .finish();
+    let _penjaga = tracing::subscriber::set_default(subscriber);
+
+    let u = siapkan(&["auditor"], true).await;
+    let (_, headers, _) = u.login(PASSWORD).await;
+    let token = Uji::cookie(&headers, COOKIE_PRA_SESI).unwrap();
+    let cookie = format!("{COOKIE_PRA_SESI}={token}");
+
+    let kode_daftar = u.kode_pendaftaran().await;
+    let (status, _, body) = u
+        .kirim(
+            "/admin/v1/auth/mfa/daftar",
+            Some(&cookie),
+            Some(serde_json::json!({ "kode_pendaftaran": kode_daftar })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    let uri = body["otpauth_uri"].as_str().unwrap().to_owned();
+    let rahasia = body["rahasia_base32"].as_str().unwrap().to_owned();
+
+    // A wrong code forces the failure log paths too.
+    let (status, _, _) = u
+        .kirim(
+            "/admin/v1/auth/mfa",
+            Some(&cookie),
+            Some(serde_json::json!({ "kode": "000000" })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+
+    let log = String::from_utf8(penyangga.0.lock().unwrap().clone()).unwrap();
+    assert!(!log.is_empty(), "penangkap log bekerja");
+    // AC-3: none of the sensitive values reached the log.
+    assert!(!log.contains(&rahasia), "secret tidak boleh muncul di log");
+    assert!(!log.contains(&uri), "URI otpauth tidak boleh muncul di log");
+    assert!(!log.contains("otpauth://"), "URI tidak boleh muncul di log");
+    assert!(
+        !log.contains(&kode_daftar),
+        "kode pendaftaran tidak boleh di log"
+    );
+    assert!(
+        !log.contains(PASSWORD),
+        "kata sandi tidak boleh muncul di log"
+    );
 }
 
 // --- AC-12: enrollment needs a registration code ---------------------------
