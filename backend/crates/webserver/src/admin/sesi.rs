@@ -86,6 +86,22 @@ pub fn router(state: AdminState) -> Router {
             axum::routing::patch(me::update_preferensi),
         )
         .route("/admin/v1/secrets", get(secret::list_secrets))
+        // T7: request log, auditor search, payload opening, export, audit read.
+        .route("/admin/v1/log/cari", post(log::search_log))
+        .route("/admin/v1/log/{kode_transaksi}", get(log::get_log_entry))
+        .route(
+            "/admin/v1/auditor/log/cari-nik",
+            post(log::search_log_by_nik),
+        )
+        .route("/admin/v1/auditor/payload", post(log::open_payload))
+        .route(
+            "/admin/v1/auditor/log/ekspor",
+            post(log::export_log_auditor),
+        )
+        .route(
+            "/admin/v1/auditor/audit-akses/cari",
+            post(log::search_audit_akses),
+        )
         .route(
             "/admin/v1/secrets/{nama}",
             put(secret::put_secret).delete(secret::delete_secret),
