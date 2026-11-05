@@ -1,4 +1,5 @@
-# Gate backend (ADR-0003 section 5, SHAA-194). Menjalankan gate repo `make setup test lint` untuk backend.
+# Gate backend (ADR-0003 section 5, SHAA-194). Menjalankan gate backend
+# `make -C backend setup test lint`.
 # Tidak ada secret yang dipakai. Tidak menyentuh stack Compose (milik SHAA-207).
 # Action dan image di-pin dengan tag dan digest.
 name: backend
@@ -30,9 +31,6 @@ jobs:
       image: docker.io/library/rust:1.99.1-bookworm@sha256:9181b56c2a21ab1d5e73cffe04fc762426d30aa7fac3c91141dd033f49a7fc8b
     env:
       RUNNER: native
-      # make setup test lint juga masuk ke frontend; tanpa ini check-label gagal
-      # karena runner CI tidak punya container berlabel arctiva.issue (lihat frontend.yml).
-      FRONTEND_RUNNER: local
       JOBS: "2"
     steps:
       - name: Checkout
@@ -50,5 +48,7 @@ jobs:
           restore-keys: |
             backend-${{ runner.os }}-rust-1.99.1-
 
+      # Sengaja `-C backend`: gate akar `make setup test lint` juga masuk ke frontend,
+      # yang butuh corepack/pnpm dan container terpisah (lihat frontend.yml).
       - name: Gate (setup, test, lint)
-        run: make setup test lint
+        run: make -C backend setup test lint
