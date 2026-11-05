@@ -175,22 +175,19 @@ pub struct PoolPeminjam {
 /// a shareable part only. That is the invariant the property test pins.
 pub fn urutan_sumber(
     rencana: &RencanaAnggaran,
+    downstream_pool_id: i64,
     boleh_pinjam_d: bool,
     peminjam: &[PoolPeminjam],
 ) -> Vec<SumberDana> {
     let mut hasil = Vec::with_capacity(2 + peminjam.len());
-    // `sendiri` is the route's own reservation. A plan is per pool, so the
-    // dispatcher passes the route's `a_i` through the caller-visible
-    // `anggaran_rute()`; here the whole pool's reservation is what the route
-    // may spend, which is why the entry is the budget rather than one route.
     hasil.push(SumberDana::baru(
         Sumber::Sendiri,
-        rencana.anggaran().reserved(),
+        rencana.anggaran_rute(downstream_pool_id),
     ));
-    hasil.push(SumberDana::baru(Sumber::Sisa, rencana.sisa()));
     if !boleh_pinjam_d {
         return hasil;
     }
+    hasil.push(SumberDana::baru(Sumber::Sisa, rencana.sisa()));
     let mut lain: Vec<&PoolPeminjam> = peminjam.iter().collect();
     // Largest room first; the id only breaks ties, so the order is stable.
     lain.sort_by(|a, b| {
@@ -309,6 +306,7 @@ mod tests {
         let r = RencanaAnggaran::baru(300, 0.01, &[Rute::beralokasi(1, exact(30))]).unwrap();
         let u = urutan_sumber(
             &r,
+            1,
             false,
             &[PoolPeminjam {
                 upstream_pool_id: 9,
@@ -317,7 +315,7 @@ mod tests {
         );
         assert_eq!(
             u.iter().map(|s| s.sumber).collect::<Vec<_>>(),
-            vec![Sumber::Sendiri, Sumber::Sisa]
+            vec![Sumber::Sendiri]
         );
     }
 
@@ -326,6 +324,7 @@ mod tests {
         let r = RencanaAnggaran::baru(300, 0.01, &[Rute::beralokasi(1, exact(30))]).unwrap();
         let u = urutan_sumber(
             &r,
+            1,
             true,
             &[
                 PoolPeminjam {
@@ -369,6 +368,7 @@ mod tests {
         let r = RencanaAnggaran::baru(300, 0.01, &[Rute::beralokasi(1, exact(30))]).unwrap();
         let u = urutan_sumber(
             &r,
+            1,
             true,
             &[PoolPeminjam {
                 upstream_pool_id: 2,
@@ -380,6 +380,25 @@ mod tests {
                 assert_ne!(upstream_pool_id, 1, "pool sendiri tidak boleh jadi donor");
             }
         }
+    }
+
+    #[test]
+    fn urutan_memakai_reserved_rute_downstream_saja() {
+        let r = RencanaAnggaran::baru(
+            300,
+            0.01,
+            &[
+                Rute::beralokasi(1, exact(30)),
+                Rute::beralokasi(2, exact(60)),
+            ],
+        )
+        .unwrap();
+
+        let u = urutan_sumber(&r, 1, true, &[]);
+
+        assert_eq!(u[0].sumber, Sumber::Sendiri);
+        assert_eq!(u[0].ruang, r.anggaran_rute(1));
+        assert_eq!(u[0].ruang, 30);
     }
 
     #[test]
