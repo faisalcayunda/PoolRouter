@@ -233,14 +233,16 @@ pub fn ruang_intake(
     peminjam: &[PoolPeminjam],
 ) -> i64 {
     let sendiri = (rencana.anggaran_rute(downstream_pool_id) - terpakai.max(0)).max(0);
+    let ruang_global = rencana.anggaran().sisa(terpakai);
     if !boleh_pinjam_d {
-        return sendiri;
+        return sendiri.min(ruang_global);
     }
-    let mut total = sendiri.saturating_add(rencana.sisa());
+    let ruang_sisa = rencana.sisa().min(ruang_global.saturating_sub(sendiri));
+    let mut total = sendiri.saturating_add(ruang_sisa);
     for p in peminjam {
-        total = total.saturating_add(p.ruang.max(0));
+        total = total.saturating_add(p.ruang.max(0)).min(ruang_global);
     }
-    total.min(rencana.anggaran().sisa(terpakai))
+    total
 }
 
 #[cfg(test)]
@@ -392,7 +394,30 @@ mod tests {
     }
 
     #[test]
+<<<<<<< HEAD
     fn ruang_intake_tanpa_pinjam_hanya_sisa_sendiri() {
+=======
+    fn urutan_memakai_reserved_rute_downstream_saja() {
+        let r = RencanaAnggaran::baru(
+            300,
+            0.01,
+            &[
+                Rute::beralokasi(1, exact(30)),
+                Rute::beralokasi(2, exact(60)),
+            ],
+        )
+        .unwrap();
+
+        let u = urutan_sumber(&r, 1, true, &[]);
+
+        assert_eq!(u[0].sumber, Sumber::Sendiri);
+        assert_eq!(u[0].ruang, r.anggaran_rute(1));
+        assert_eq!(u[0].ruang, 30);
+    }
+
+    #[test]
+    fn ruang_intake_tanpa_pinjam_hanya_alokasi_rute_sendiri() {
+>>>>>>> 6e0273b (fix(core): cap intake by route and global quota)
         let r = RencanaAnggaran::baru(300, 0.01, &[]).unwrap();
         assert_eq!(
             ruang_intake(
@@ -405,14 +430,14 @@ mod tests {
                     ruang: 50
                 }]
             ),
-            197
+            0
         );
         // Terpakai melebihi Q: nol, bukan negatif.
         assert_eq!(ruang_intake(&r, 1, 400, false, &[]), 0);
     }
 
     #[test]
-    fn ruang_intake_dengan_pinjam_menambah_sisa_dan_shareable_lain() {
+    fn ruang_intake_dengan_pinjam_dibatasi_ruang_global() {
         let r = RencanaAnggaran::baru(300, 0.01, &[Rute::beralokasi(1, exact(30))]).unwrap();
         let ruang = ruang_intake(
             &r,
@@ -433,6 +458,13 @@ mod tests {
         // 197 global room caps the sum of own reservation, unallocated quota,
         // and donor capacity; the unallocated quota is not counted twice.
         assert_eq!(ruang, 197);
+    }
+
+    #[test]
+    fn ruang_intake_pakai_reservasi_rute_bukan_kuota_global() {
+        let r = RencanaAnggaran::baru(300, 0.01, &[Rute::beralokasi(1, exact(30))]).unwrap();
+        assert_eq!(ruang_intake(&r, 1, 20, false, &[]), 10);
+        assert_eq!(ruang_intake(&r, 1, 20, true, &[]), 277);
     }
 
     #[test]
