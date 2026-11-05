@@ -74,30 +74,35 @@ jobs:
 
   image-scan:
     # Ambang: gagal pada CVE HIGH atau CRITICAL yang punya perbaikan (--ignore-unfixed --exit-code 1).
-    # Hanya berjalan jika backend/Containerfile sudah ada (milik SHAA-207). Build dan push tetap di SHAA-207.
+    # Mencakup tiga image F0: backend, frontend, dan mock Dukcapil (ARC-76).
+    # Build dan push image-nya ada di workflow backend-image.yml dan app-images.yml.
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: localhost/poolrouter-backend:ci
+            file: backend/Containerfile
+            context: backend
+          - image: localhost/poolrouter-frontend:ci
+            file: frontend/Containerfile
+            context: frontend
+          - image: localhost/poolrouter-mock-dukcapil:ci
+            file: perf/mock-dukcapil/Containerfile
+            context: perf/mock-dukcapil
+    name: image-scan (${{ matrix.image }})
     steps:
       - name: Checkout
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           persist-credentials: false
 
-      - name: Lewati jika backend/Containerfile belum ada
-        id: guard
-        run: |
-          if [ ! -f backend/Containerfile ]; then
-            echo "backend/Containerfile belum ada: job di-skip."
-            echo "skip=true" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Build image backend (lokal, tidak di-push)
-        if: steps.guard.outputs.skip != 'true'
-        run: docker build -f backend/Containerfile -t localhost/poolrouter-backend:ci backend
+      - name: Build image (lokal, tidak di-push)
+        run: docker build -f "${{ matrix.file }}" -t "${{ matrix.image }}" "${{ matrix.context }}"
 
       - name: "Trivy 0.58.2 (ambang: HIGH, CRITICAL)"
-        if: steps.guard.outputs.skip != 'true'
         run: |
           docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
             docker.io/aquasec/trivy:0.58.2@sha256:665030f4d33a82c1e8d9d5e0453365842236723c1ee5cc3becca698268e66a56 \
-            image --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1 localhost/poolrouter-backend:ci
+            image --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1 "${{ matrix.image }}"

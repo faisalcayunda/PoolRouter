@@ -14,6 +14,14 @@ RUN corepack enable && pnpm build
 
 # Runtime: nginx-unprivileged 1.28 (alpine), tag dan digest index multi-arch di-pin.
 FROM docker.io/nginxinc/nginx-unprivileged:1.28-alpine@sha256:7377697a821c131a924a7105fafbe7414db4e9fcc77a6f08f776f33f141ec3f8
+# Alpine 3.23 di image dasar membekukan nginx=1.28.2-r1 di /etc/apk/world dan masih membawa
+# openssl, curl, dan paket lain dengan CVE HIGH/CRITICAL yang perbaikannya sudah ada di repo.
+# ARC-76: lepas pin itu, upgrade ke patch terbaru, lalu bersihkan cache (pola sama dengan backend).
+# Image dasar sudah USER 101, jadi naikkan ke root hanya untuk upgrade; USER 10001 di bawah tetap.
+USER root
+RUN sed -i 's/^\(nginx[^=]*\)=.*/\1/' /etc/apk/world \
+ && apk del --no-cache nginx-module-geoip nginx-module-image-filter nginx-module-xslt nginx-module-njs \
+ && apk upgrade --no-cache
 ARG VERSION=0.1.0
 ARG REVISION=unknown
 ARG CREATED=unknown
