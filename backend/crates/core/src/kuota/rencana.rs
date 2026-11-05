@@ -219,12 +219,10 @@ pub fn urutan_sumber(
     hasil
 }
 
-/// How many attempts pool `d` may accept right now (AC-3).
+/// How many attempts downstream route `d` may accept right now (AC-3).
 ///
-/// The route's remaining reservation, plus unallocated and donor capacity,
-/// capped at the global quota room (ADR-0006 §4 butir 7). Accepting more than this would promise attempts the
-/// pool has no budget for, and the intake gate would then reject them later
-/// with a code that looks like a quota problem rather than a capacity one.
+/// Its own reservation, unallocated quota and donor capacity are capped at
+/// remaining global quota room (ADR-0006 §4 butir 7).
 pub fn ruang_intake(
     rencana: &RencanaAnggaran,
     downstream_pool_id: i64,
