@@ -188,7 +188,7 @@ Jika DinD tidak bisa berjalan di Podman rootless, catat kegagalannya di komentar
 
 ## Gerbang deploy
 
-- **Staging dan prod:** `make compose-up` hanya dijalankan setelah ada issue yang menyebut host target dan approval Huan, serta host itu disetujui owner. Tanpa keduanya, jangan jalankan perintah apa pun di host staging atau prod.
+- **Lingkungan PoC BGN (`ENV=prod`):** `make compose-up` hanya dijalankan setelah ada issue yang menyebut host PoC BGN dan approval Huan, serta host itu disetujui. Tanpa keduanya, jangan jalankan perintah apa pun di host PoC. Lane `staging-smoke` tidak lewat gerbang ini: ia berjalan di runner CI dan stack-nya dihapus di akhir job. Deploy produksi F1 tetap G3 (CEO).
 - Dev di mesin owner tidak butuh gerbang ini.
 
 ## Lingkungan: staging F0, PoC BGN, dan produksi F1
