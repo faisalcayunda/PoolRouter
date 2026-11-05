@@ -228,9 +228,11 @@ describe('S11 log transaksi', () => {
     renderWithI18n(<LogPageScreen client={client} />);
     await waitFor(() => expect(client.cariLog).toHaveBeenCalledTimes(1));
 
+    // The end of the range stays at the default "last 24 hours", so the start below must stay in
+    // the future: a literal close to today inverted the pair only until that day arrived.
     const start = screen.getByRole('textbox', { name: 'Dari' });
     await userEvent.clear(start);
-    await userEvent.type(start, '05/11/2026');
+    await userEvent.type(start, '01/01/2099');
     await userEvent.click(screen.getByRole('button', { name: 'Cari' }));
 
     expect(
