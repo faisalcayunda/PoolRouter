@@ -380,6 +380,8 @@ async fn put_nama_tidak_sah_422_tanpa_menyimpan() {
             .await;
         assert_eq!(st, StatusCode::UNPROCESSABLE_ENTITY);
         assert_eq!(j["kode"], "validasi_gagal");
+        assert_eq!(j["errors"][0]["field"], "nilai");
+        assert_eq!(j["errors"][0]["kode"], "format");
     }
 
     let jumlah: i64 = sqlx::query_scalar("SELECT count(*) FROM provider_secret")

@@ -81,10 +81,11 @@ pub(super) async fn put_secret(
     // A body that is not `{"nilai": "..."}` is a validation failure, not a
     // parse error: the contract lists 422 for this operation, not 400.
     let axum::Json(req) = body.map_err(|_| {
-        Galat::baru(
-            StatusCode::UNPROCESSABLE_ENTITY,
-            ProblemKodeAdmin::ValidasiGagal,
-        )
+        galat_validasi(vec![FieldError {
+            field: "nilai",
+            kode: "format",
+            batas: None,
+        }])
     })?;
     periksa_nama(&nama)?;
 
