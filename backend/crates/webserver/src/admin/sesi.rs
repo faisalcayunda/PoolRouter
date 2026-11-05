@@ -32,7 +32,7 @@ use tower_http::limit::RequestBodyLimitLayer;
 use tower_http::set_header::SetResponseHeaderLayer;
 
 use super::pembatas::PembatasLogin;
-use super::{login, me, secret};
+use super::{allowlist, klien, kredensial, login, me, secret, webhook};
 
 use crate::api::problem::{ProblemKodeAdmin, ValidasiErrorAdmin};
 use crate::api::problem_admin::ProblemAdmin;
@@ -95,6 +95,38 @@ pub fn router(state: AdminState) -> Router {
         .route(
             "/admin/v1/secrets/",
             put(secret::put_secret_kosong).delete(secret::delete_secret_kosong),
+        )
+        .route(
+            "/admin/v1/clients",
+            get(klien::list_clients).post(klien::create_client),
+        )
+        .route(
+            "/admin/v1/clients/{id}",
+            get(klien::get_client).put(klien::update_client),
+        )
+        .route(
+            "/admin/v1/clients/{id}/credentials",
+            get(kredensial::list_credentials).post(kredensial::create_credential),
+        )
+        .route(
+            "/admin/v1/clients/{id}/webhook",
+            get(webhook::get_webhook_config).put(webhook::put_webhook_config),
+        )
+        .route(
+            "/admin/v1/clients/{id}/webhook/rotasi-secret",
+            post(webhook::rotate_webhook_secret),
+        )
+        .route(
+            "/admin/v1/clients/{id}/webhook/log",
+            get(webhook::list_webhook_log),
+        )
+        .route(
+            "/admin/v1/webhook-allowlist",
+            get(allowlist::list_allowlist),
+        )
+        .route(
+            "/admin/v1/webhook-allowlist/{domain}",
+            put(allowlist::put_allowlist_entry).delete(allowlist::delete_allowlist_entry),
         )
         .with_state(state)
         .layer(RequestBodyLimitLayer::new(16 * 1024))

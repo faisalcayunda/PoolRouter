@@ -98,9 +98,16 @@ $ENGINE exec -e POOLROUTER_SECRETS_DIR=/tmp/sec -e PGUSER=postgres -e PGHOST=127
   "$NAME" sh /tmp/db/bootstrap.sh poolrouter_rb
 dump_schema() { $ENGINE exec -e PGPASSWORD="$SU_PW" "$NAME" pg_dump -U postgres -h 127.0.0.1 -s --no-comments -d poolrouter_rb | grep -v -E '^.(un)?restrict '; }
 rollback_all() {
-  # F4/F3 first (they sit on top of F1); skipped when an earlier, refused attempt already removed them
+  # F4/T4 tips first (they sit on top of F1 and F3); skipped when an earlier, refused attempt already removed them
+  # F4 global secret store first, then T4: T4 revokes a role from the provider_secret table
+  # that the F4 rollback recreates, so it must run after F4, not before it.
+  if [ "$(psql_su -d poolrouter_rb -t -A -c "SELECT to_regclass('admin_secret') IS NOT NULL")" = "t" ]; then
+    for f in 3 4; do
+      { echo "SET ROLE poolrouter_owner;"; cat "$rb_dir"/2026110500000${f}_*.down.sql; } | psql_su -d poolrouter_rb -1 || return 1
+    done
+  fi
   if [ "$(psql_su -d poolrouter_rb -t -A -c "SELECT to_regclass('blend') IS NOT NULL")" = "t" ]; then
-    for f in 3 2 1; do
+    for f in 2 1; do
       { echo "SET ROLE poolrouter_owner;"; cat "$rb_dir"/2026110500000${f}_*.down.sql; } | psql_su -d poolrouter_rb -1 || return 1
     done
   fi
@@ -125,6 +132,11 @@ psql_su -d poolrouter_rb -c "DELETE FROM admin_session; DELETE FROM admin_user_p
 psql_su -d poolrouter_rb -c "INSERT INTO provider (provider_id, nama, data_balikan_aktif, wajib_log_nik) VALUES
   ('20000000-0000-7000-8000-0000000000e1', 'rb-wajib', true, true), ('20000000-0000-7000-8000-0000000000e2', 'rb-mock', false, false)"
 apply_migrations poolrouter_rb '20261105*'
+# The F4 rollback drops provider_secret and recreates the F3 shape (so F3 keeps working);
+# the T4 rollback then restores the client_webhook/allowlist columns. T4 goes last because it
+# revokes UPDATE on provider_secret, a table only the F4 rollback rebuilds.
+{ echo "SET ROLE poolrouter_owner;"; cat "$rb_dir"/20261105000003_*.down.sql; } | psql_su -d poolrouter_rb -1
+{ echo "SET ROLE poolrouter_owner;"; cat "$rb_dir"/20261105000004_*.down.sql; } | psql_su -d poolrouter_rb -1
 [ "$(psql_su -d poolrouter_rb -t -A -c "SELECT count(*) FROM provider WHERE wajib_log_nik AND NOT butuh_dasar_hukum_blend")" = "0" ] \
   || { echo "FAIL: a provider with wajib_log_nik must start with the marker true" >&2; exit 1; }
 [ "$(psql_su -d poolrouter_rb -t -A -c "SELECT butuh_dasar_hukum_blend FROM provider WHERE nama = 'rb-mock'")" = "f" ] \
