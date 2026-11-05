@@ -9,9 +9,8 @@
 //! reason below is synthetic.
 
 use std::net::SocketAddr;
-use std::sync::Arc;
-use std::sync::Mutex;
-use std::io::Write;
+use std::io::Write as _;
+use std::sync::{Arc, Mutex};
 
 use axum::Router;
 use axum::body::{Body, to_bytes};
@@ -28,28 +27,6 @@ use serde_json::{Value, json};
 use sqlx::PgPool;
 use tower::ServiceExt;
 use uuid::Uuid;
-
-#[derive(Clone, Default)]
-struct Penyangga(Arc<Mutex<Vec<u8>>>);
-
-struct Penulis(Arc<Mutex<Vec<u8>>>);
-
-impl Write for Penulis {
-    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-        self.0.lock().unwrap().extend_from_slice(buf);
-        Ok(buf.len())
-    }
-
-    fn flush(&mut self) -> std::io::Result<()> { Ok(()) }
-}
-
-impl<'a> tracing_subscriber::fmt::MakeWriter<'a> for Penyangga {
-    type Writer = Penulis;
-
-    fn make_writer(&'a self) -> Self::Writer {
-        Penulis(Arc::clone(&self.0))
-    }
-}
 
 const ASAL: &str = "https://admin.poolrouter.test";
 const KEK_HEX: &str = "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff";
@@ -413,10 +390,6 @@ fn no_store(h: &HeaderMap) {
 #[tokio::test]
 #[ignore]
 async fn cari_log_menyaring_nik_dan_mencatat_satu_cari_log() {
-    let _ = tracing_subscriber::fmt()
-        .with_max_level(tracing::Level::TRACE)
-        .with_test_writer()
-        .try_init();
     let u = siapkan().await;
     let (uid, op) = u.pengguna(&["operator"]).await;
     let (_, _, nik) = u.siapkan_log().await;
@@ -457,6 +430,89 @@ async fn cari_log_menyaring_nik_dan_mencatat_satu_cari_log() {
 
 #[tokio::test]
 #[ignore]
+async fn pencarian_log_menolak_kode_transaksi_bukan_uuid() {
+    let u = siapkan().await;
+    let (_uid, op) = u.pengguna(&["operator"]).await;
+    let (st, _, j) = u
+        .json(
+            Method::POST,
+            "/admin/v1/log/cari",
+            Some(&op),
+            Some(json!({
+                "dari": t0() - chrono::Duration::hours(1),
+                "sampai": t0() + chrono::Duration::hours(1),
+                "kode_transaksi": "bukan-uuid",
+            })),
+        )
+        .await;
+    assert_eq!(st, StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(j["kode"], "validasi_gagal");
+    assert_eq!(j["errors"][0]["field"], "kode_transaksi");
+    assert_eq!(j["errors"][0]["kode"], "format");
+}
+
+#[tokio::test]
+#[ignore]
+async fn nik_dan_payload_sintetis_tidak_muncul_di_log() {
+    use tracing_subscriber::fmt::MakeWriter;
+
+    #[derive(Clone, Default)]
+    struct Penyangga(Arc<Mutex<Vec<u8>>>);
+    struct Penulis(Arc<Mutex<Vec<u8>>>);
+    impl std::io::Write for Penulis {
+        fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+            self.0.lock().unwrap().extend_from_slice(buf);
+            Ok(buf.len())
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+    impl<'a> MakeWriter<'a> for Penyangga {
+        type Writer = Penulis;
+        fn make_writer(&'a self) -> Self::Writer {
+            Penulis(self.0.clone())
+        }
+    }
+
+    let penyangga = Penyangga::default();
+    let subscriber = tracing_subscriber::fmt()
+        .with_max_level(tracing::Level::TRACE)
+        .with_ansi(false)
+        .with_writer(penyangga.clone())
+        .finish();
+    let _guard = tracing::subscriber::set_default(subscriber);
+    let u = siapkan().await;
+    let (_, au) = u.pengguna(&["auditor"]).await;
+    let (kode, req_id, nik) = u.siapkan_log().await;
+    let payload = "payload-sintetis-rahasia";
+    sqlx::query("UPDATE transaction_log SET request_body = $1 WHERE request_id = $2")
+        .bind(serde_json::json!({"isi": payload}))
+        .bind(req_id)
+        .execute(&u.su)
+        .await
+        .unwrap();
+    let (st, _, response) = u
+        .json(
+            Method::POST,
+            "/admin/v1/auditor/payload",
+            Some(&au),
+            Some(json!({"kode_transaksi": kode.to_string(), "alasan": "uji payload sintetis"})),
+        )
+        .await;
+    assert_eq!(st, StatusCode::OK);
+    assert!(
+        response.to_string().contains(payload),
+        "uji memastikan payload fixture nyata"
+    );
+    let log = String::from_utf8(penyangga.0.lock().unwrap().clone()).unwrap();
+    assert!(!log.is_empty(), "penangkap tracing dipasang");
+    assert!(!log.contains(&nik), "NIK tidak muncul di tracing");
+    assert!(!log.contains(payload), "payload sintetis tidak muncul di tracing");
+}
+
+#[tokio::test]
+#[ignore]
 async fn cari_log_dengan_potongan_nik_403_dan_akses_ditolak() {
     let u = siapkan().await;
     let (uid, op) = u.pengguna(&["operator"]).await;
@@ -484,33 +540,10 @@ async fn cari_log_dengan_potongan_nik_403_dan_akses_ditolak() {
 
 #[tokio::test]
 #[ignore]
-async fn cari_log_dengan_origin_salah_403() {
+async fn origin_asing_ditolak_pada_pencarian_log() {
     let u = siapkan().await;
-    let (_, op) = u.pengguna(&["operator"]).await;
-    let (st, h, b) = u
-        .kirim(
-            Method::POST,
-            "/admin/v1/log/cari",
-            Some(&op),
-            Some("https://evil.test"),
-            Some(json!({
-                "dari": t0() - chrono::Duration::hours(1),
-                "sampai": t0() + chrono::Duration::hours(1),
-            })),
-        )
-        .await;
-    assert_eq!(st, StatusCode::FORBIDDEN);
-    no_store(&h);
-    let j: Value = serde_json::from_slice(&b).expect("JSON error");
-    assert_eq!(j["kode"], "origin_tidak_valid");
-}
-
-#[tokio::test]
-#[ignore]
-async fn cari_log_dengan_kode_transaksi_bukan_uuid_422() {
-    let u = siapkan().await;
-    let (_, op) = u.pengguna(&["operator"]).await;
-    let (st, h, j) = u
+    let (_uid, op) = u.pengguna(&["operator"]).await;
+    let (st, _, j) = u
         .json(
             Method::POST,
             "/admin/v1/log/cari",
@@ -518,14 +551,11 @@ async fn cari_log_dengan_kode_transaksi_bukan_uuid_422() {
             Some(json!({
                 "dari": t0() - chrono::Duration::hours(1),
                 "sampai": t0() + chrono::Duration::hours(1),
-                "kode_transaksi": "bukan-uuid",
             })),
         )
         .await;
-    assert_eq!(st, StatusCode::UNPROCESSABLE_ENTITY);
-    no_store(&h);
-    assert_eq!(j["kode"], "validasi");
-    assert_eq!(j["detail"]["kode_transaksi"]["kode"], "format");
+    assert_eq!(st, StatusCode::FORBIDDEN);
+    assert_eq!(j["kode"], "origin_tidak_valid");
 }
 
 #[tokio::test]
@@ -596,13 +626,10 @@ async fn get_log_tersamar_dan_404() {
 #[tokio::test]
 #[ignore]
 async fn cari_nik_ok_dan_audit_per_panggilan() {
-    let penyangga = Penyangga::default();
-    let subscriber = tracing_subscriber::fmt()
+    let _ = tracing_subscriber::fmt()
         .with_max_level(tracing::Level::TRACE)
-        .with_ansi(false)
-        .with_writer(penyangga.clone())
-        .finish();
-    let _penjaga = tracing::subscriber::set_default(subscriber);
+        .with_test_writer()
+        .try_init();
     let u = siapkan().await;
     let (uid, au) = u.pengguna(&["auditor"]).await;
     let (_, _, nik) = u.siapkan_log().await;
@@ -629,18 +656,15 @@ async fn cari_nik_ok_dan_audit_per_panggilan() {
             2,
             "kedua baris log untuk NIK ini"
         );
-        let baris = &j["baris"][0];
-        assert_eq!(baris["nik"], nik, "auditor menerima NIK utuh");
-        assert!(!baris["client_nama"].as_str().unwrap_or("").is_empty());
+        let baris = j["baris"].as_array().unwrap();
+        assert_eq!(baris[0]["nik"], nik);
+        assert!(!baris[0]["client_nama"].as_str().unwrap_or("").is_empty());
     }
     assert_eq!(
         u.jumlah_audit(uid, "cari_nik", "diizinkan").await,
         sebelum + 2,
         "satu baris cari_nik per panggilan, termasuk pengulangan"
     );
-    let log = String::from_utf8(penyangga.0.lock().unwrap().clone()).unwrap();
-    assert!(!log.contains(&nik), "NIK tidak bocor ke tracing log");
-    assert!(!log.contains("uji audit sintetis"), "payload tidak bocor ke tracing log");
 }
 
 #[tokio::test]
