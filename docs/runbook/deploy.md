@@ -1,16 +1,16 @@
 ## Ringkasan
 
-Runbook ini menjelaskan cara menyalakan, memeriksa, mengupgrade, dan membersihkan stack PoolRouter untuk lingkungan `dev`, `staging`, dan `prod` memakai Docker Compose v2. Dev berjalan sebagai container Podman di mesin owner lewat provider P3 (`deploy/compose/bin/compose-provider`). Staging dan produksi berjalan di Docker Engine di host target yang belum diputuskan (K-38). Dasar keputusan ada di ADR-0001 Addendum A dan kontrak env backend v1.
+Runbook ini menjelaskan cara menyalakan, memeriksa, mengupgrade, dan membersihkan stack PoolRouter untuk lingkungan `dev`, `staging`, dan `prod` memakai Docker Compose v2. Dev berjalan sebagai container Podman di mesin owner lewat provider P3 (`deploy/compose/bin/compose-provider`). Staging F0 adalah lane CI efemeral `staging-smoke` di runner `ubuntu-latest` (Docker Engine), bukan host persisten. `ENV=prod` dan `compose.prod.yaml` dipakai untuk lingkungan PoC BGN, dan produksi F1 berjalan di Kubernetes. Dasar keputusan ada di ADR-0001 §8.3 dan ADR-0009 (KB `products/poolrouter/adr/0009-definisi-f0-beres-dan-platform-staging.md`) serta kontrak env backend v1.
 
 - **Pemilik:** Tetsu (Platform & SRE), reviewer Huan
 - **Tanggal:** 2026-11-03
-- **Status:** Bagian 1 disetujui Huan @ `6ee9bb7`; staging dan prod belum final dan bergantung pada target host.
+- **Status:** Bagian 1 disetujui Huan @ `6ee9bb7`; staging F0 dan platform produksi mengikuti ADR-0009.
 
 ## Prasyarat
 
 - Podman 5.0 atau lebih baru dengan `podman machine` yang sudah berjalan (di mesin owner: Podman 6.1.2). Podman dan machine disediakan owner; jangan dipasang, di-upgrade, atau diubah dari runbook ini.
 - Tidak ada instalasi native. Jangan memasang `docker-compose`, `podman-compose`, atau Docker Engine di mesin owner. Provider Compose berjalan dari image `docker.io/library/docker:27-cli` yang di-pin dengan digest.
-- Di staging dan prod: Docker Engine 27 atau lebih baru dan Docker Compose 2.30 atau lebih baru di host target, serta akses pull ke GHCR privat dengan token read-only yang disimpan di credential store engine (`docker login`), bukan di repo.
+- Di staging F0 (`staging-smoke`) dan lingkungan PoC BGN (`ENV=prod`): Docker Engine 27 atau lebih baru dan Docker Compose 2.30 atau lebih baru. Lane staging memakai Docker Engine bawaan runner `ubuntu-latest`; tidak ada host persisten. Host PoC BGN ditetapkan di Gerbang PoC (ADR-0009 §2.4 P-1). Akses pull ke GHCR privat memakai token read-only yang disimpan di credential store engine (`docker login`), bukan di repo.
 - Direktori secret di luar repo, mode `0700`, berisi file mode `0444`. Nama file = nama secret: `db_password`, `redis_password`, `rabbitmq_password`, `poolrouter_owner`, `pr_api`, `pr_admin_api`, `pr_controller`, `pr_webhook`, `pr_worker`, `poolrouter_kek`, `poolrouter_jwt_signing_key`, `poolrouter_nik_hmac_key`, `poolrouter_idempotency_hmac_key`, dan `poolrouter_seed_password` (dev saja). Isi file tidak pernah ditulis di issue, komentar, atau repo.
 - Verifikasi mode sebelum `compose-up` (Linux: `stat -c '%a %n'`; macOS: `stat -f '%Lp %N'`):
 
@@ -188,18 +188,24 @@ Jika DinD tidak bisa berjalan di Podman rootless, catat kegagalannya di komentar
 
 ## Gerbang deploy
 
-- **Staging dan prod:** `make compose-up` hanya dijalankan setelah ada issue yang menyebut host target dan approval Huan, serta host itu disetujui owner. Tanpa keduanya, jangan jalankan perintah apa pun di host staging atau prod.
+- **Lingkungan PoC BGN (`ENV=prod`):** `make compose-up` hanya dijalankan setelah ada issue yang menyebut host PoC BGN dan approval Huan, serta host itu disetujui. Tanpa keduanya, jangan jalankan perintah apa pun di host PoC. Lane `staging-smoke` tidak lewat gerbang ini: ia berjalan di runner CI dan stack-nya dihapus di akhir job. Deploy produksi F1 tetap G3 (CEO).
 - Dev di mesin owner tidak butuh gerbang ini.
 
-## Staging dan prod: bergantung target host
+## Lingkungan: staging F0, PoC BGN, dan produksi F1
 
-Bagian ini belum final. Keputusan berikut menunggu owner dan ADR infrastruktur terpisah (ADR-0001 Addendum §9):
+Staging F0 adalah lane CI efemeral `staging-smoke` (ADR-0009 §2.2). Runner `ubuntu-latest` menyediakan Docker Engine dan Compose yang memenuhi prasyarat di atas; image ditarik dari GHCR berdasarkan digest, profile `mock` aktif, dan tidak ada `build:`. Secret dibuat acak per run, stack dihapus di akhir job, tidak ada port publik, dan tidak ada data asli. Nilai yang dicetak lane ini (latensi, throughput) berlabel relatif, bukan angka absolut.
 
-- Host target dan arsitektur CPU (asumsi `linux/amd64`, Q-A2).
+`prod` di repo ini berarti lingkungan PoC BGN, bukan produksi (ADR-0009 §2.3). `ENV=prod` dan `compose.prod.yaml` menyalakan Compose di Docker Engine host PoC dengan image berdigest dan tanpa mock. Nama `prod` dipertahankan supaya Makefile, `compose-lint`, fixture, dan workflow tidak berubah.
+
+Produksi F1 berjalan di Kubernetes (PRD §10, ADR-0001 §8.3). Manifest, lane staging F1, dan ADR infrastruktur produksi masuk F1, sebelum G3.
+
+Bagian ini belum final. Keputusan berikut menunggu owner dan ADR infrastruktur lingkungan PoC BGN:
+
+- Host PoC BGN dan arsitektur CPU (asumsi `linux/amd64`, Q-A2).
 - Bundled atau managed PostgreSQL, Redis, dan RabbitMQ (`POOLROUTER_DB_HOST`, `POOLROUTER_REDIS_HOST`, `POOLROUTER_RABBITMQ_HOST` kosong di template prod). Nilai `POOLROUTER_DB_SSLMODE` ditetapkan bersama ADR hosting PostgreSQL (ARC-211). Template memakai `require` sebagai placeholder.
 - Reverse proxy atau load balancer di depan port 8080, serta TLS.
-- Registry mirror BGN untuk produksi (digest disalin dengan `skopeo copy --preserve-digests`).
-- Restart setelah reboot host dan rotasi log di Docker rootful (sudah diatur di compose; verifikasi di host target).
+- Registry mirror BGN untuk lingkungan PoC BGN (digest disalin dengan `skopeo copy --preserve-digests`).
+- Restart setelah reboot host dan rotasi log di Docker rootful (sudah diatur di compose; verifikasi di host PoC).
 
 ## Batasan saat ini
 
