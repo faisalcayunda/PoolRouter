@@ -15,6 +15,7 @@ use std::time::Duration;
 
 use poolrouter_core::admin::AsalUi;
 use poolrouter_core::config::{Config, DbRole};
+use poolrouter_core::secret::Brankas;
 use sqlx::PgPool;
 use sqlx::postgres::{PgConnectOptions, PgPoolOptions, PgSslMode};
 
@@ -105,7 +106,14 @@ pub fn state_admin(cfg: &Config, pool: PgPool, redis: redis::Client) -> Result<A
         .get("POOLROUTER_IDEMPOTENCY_HMAC_KEY")
         .ok_or("POOLROUTER_IDEMPOTENCY_HMAC_KEY_FILE missing")?;
     let pembatas = PembatasLogin::baru(redis, kunci.expose_secret().as_bytes());
-    Ok(AdminState::baru(pool, asal, pembatas))
+    // The KEK seals provider secrets (AC-8). It is a startup failure, not a
+    // request failure: without it `putSecret` could not keep its promise.
+    let kek = cfg
+        .secrets
+        .get("POOLROUTER_KEK")
+        .ok_or("POOLROUTER_KEK_FILE missing")?;
+    let brankas = Brankas::dari_isi_kek(kek.expose_secret()).map_err(|e| e.to_string())?;
+    Ok(AdminState::baru(pool, asal, pembatas, brankas))
 }
 
 #[cfg(test)]

@@ -45,3 +45,8 @@ sqlx = { workspace = true }
 redis = { workspace = true }
 secrecy = { workspace = true }
 serde_urlencoded = { workspace = true }
+
+[dev-dependencies]
+# Integration tests capture the log stream to prove a secret value never reaches
+# it (ARC-48 AC-6).
+tracing-subscriber = { workspace = true }
