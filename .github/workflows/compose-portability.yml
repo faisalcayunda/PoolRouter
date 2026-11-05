@@ -29,7 +29,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
-      ARC_ISSUE: SHAA-207
+      # Label container wajib arctiva.issue=ARC-<n>; dind.sh menolak format lain.
+      ARC_ISSUE: ARC-2
     steps:
       - name: Checkout
         uses: actions/checkout@v4
