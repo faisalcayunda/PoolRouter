@@ -10,6 +10,8 @@
 
 use std::net::SocketAddr;
 use std::sync::Arc;
+use std::sync::Mutex;
+use std::io::Write;
 
 use axum::Router;
 use axum::body::{Body, to_bytes};
@@ -26,6 +28,28 @@ use serde_json::{Value, json};
 use sqlx::PgPool;
 use tower::ServiceExt;
 use uuid::Uuid;
+
+#[derive(Clone, Default)]
+struct Penyangga(Arc<Mutex<Vec<u8>>>);
+
+struct Penulis(Arc<Mutex<Vec<u8>>>);
+
+impl Write for Penulis {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        self.0.lock().unwrap().extend_from_slice(buf);
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> { Ok(()) }
+}
+
+impl<'a> tracing_subscriber::fmt::MakeWriter<'a> for Penyangga {
+    type Writer = Penulis;
+
+    fn make_writer(&'a self) -> Self::Writer {
+        Penulis(Arc::clone(&self.0))
+    }
+}
 
 const ASAL: &str = "https://admin.poolrouter.test";
 const KEK_HEX: &str = "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff";
@@ -526,10 +550,13 @@ async fn get_log_tersamar_dan_404() {
 #[tokio::test]
 #[ignore]
 async fn cari_nik_ok_dan_audit_per_panggilan() {
-    let _ = tracing_subscriber::fmt()
+    let penyangga = Penyangga::default();
+    let subscriber = tracing_subscriber::fmt()
         .with_max_level(tracing::Level::TRACE)
-        .with_test_writer()
-        .try_init();
+        .with_ansi(false)
+        .with_writer(penyangga.clone())
+        .finish();
+    let _penjaga = tracing::subscriber::set_default(subscriber);
     let u = siapkan().await;
     let (uid, au) = u.pengguna(&["auditor"]).await;
     let (_, _, nik) = u.siapkan_log().await;
@@ -556,12 +583,18 @@ async fn cari_nik_ok_dan_audit_per_panggilan() {
             2,
             "kedua baris log untuk NIK ini"
         );
+        let baris = &j["baris"][0];
+        assert_eq!(baris["nik"], nik, "auditor menerima NIK utuh");
+        assert!(!baris["client_nama"].as_str().unwrap_or("").is_empty());
     }
     assert_eq!(
         u.jumlah_audit(uid, "cari_nik", "diizinkan").await,
         sebelum + 2,
         "satu baris cari_nik per panggilan, termasuk pengulangan"
     );
+    let log = String::from_utf8(penyangga.0.lock().unwrap().clone()).unwrap();
+    assert!(!log.contains(&nik), "NIK tidak bocor ke tracing log");
+    assert!(!log.contains("uji audit sintetis"), "payload tidak bocor ke tracing log");
 }
 
 #[tokio::test]
