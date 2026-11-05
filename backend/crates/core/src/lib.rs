@@ -10,4 +10,5 @@ pub mod config;
 pub mod kredensial;
 pub mod kuota;
 pub mod queue;
+pub mod retry;
 pub mod runtime;
