@@ -67,7 +67,7 @@ pub(super) fn sumber_ip(headers: &HeaderMap, peer: SocketAddr) -> String {
         .to_string()
 }
 
-fn user_agent(headers: &HeaderMap) -> Option<String> {
+pub(super) fn user_agent(headers: &HeaderMap) -> Option<String> {
     headers
         .get(header::USER_AGENT)
         .and_then(|v| v.to_str().ok())
@@ -324,7 +324,7 @@ pub(super) async fn login(
 }
 
 /// Write one `audit_login` row. Returns whether it was written.
-async fn audit(
+pub(super) async fn audit(
     s: &AdminState,
     pengguna_id: Option<Uuid>,
     hasil: HasilLogin,
