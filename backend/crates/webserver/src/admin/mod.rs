@@ -6,5 +6,6 @@ pub mod listener;
 pub mod login;
 pub mod me;
 pub mod pembatas;
+pub mod provider;
 pub mod secret;
 pub mod sesi;

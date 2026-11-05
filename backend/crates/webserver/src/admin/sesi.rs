@@ -32,7 +32,7 @@ use tower_http::limit::RequestBodyLimitLayer;
 use tower_http::set_header::SetResponseHeaderLayer;
 
 use super::pembatas::PembatasLogin;
-use super::{login, me, secret};
+use super::{login, me, provider, secret};
 
 use crate::api::problem::{ProblemKodeAdmin, ValidasiErrorAdmin};
 use crate::api::problem_admin::ProblemAdmin;
@@ -95,6 +95,14 @@ pub fn router(state: AdminState) -> Router {
         .route(
             "/admin/v1/secrets/",
             put(secret::put_secret_kosong).delete(secret::delete_secret_kosong),
+        )
+        .route(
+            "/admin/v1/providers",
+            get(provider::list_providers).post(provider::create_provider),
+        )
+        .route(
+            "/admin/v1/providers/{id}",
+            get(provider::get_provider).put(provider::update_provider),
         )
         .with_state(state)
         .layer(RequestBodyLimitLayer::new(16 * 1024))

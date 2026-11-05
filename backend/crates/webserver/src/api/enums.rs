@@ -90,6 +90,52 @@ pub enum RuleJenis {
     FormatTanggal,
 }
 
+/// HTTP method for the provider call (ADR-0002 D1). Only these two appear in
+/// the contract; `GET` may still carry a JSON body.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "UPPERCASE")]
+pub enum MetodeProvider {
+    Get,
+    Post,
+}
+
+/// TLS trust for the provider host (ADR-0002 D5). The three modes are the ones
+/// the configuration allows; disabling verification is deliberately not among
+/// them, not even in dev.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum TlsTrust {
+    /// System trust store.
+    System,
+    /// Operator-supplied CA for this provider; chain and name are still verified
+    /// in full (including IP SAN).
+    CaKustom,
+    /// SPKI pin for this provider, for a self-signed certificate without IP SAN.
+    PinSpki,
+}
+
+/// What the transaction log keeps for a provider call. Closed set, the same
+/// values as the database `CHECK (log_mode IN ('metadata_only','full_payload'))`.
+/// A free string here let the contract advertise values the database rejects
+/// (AD5).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum LogMode {
+    MetadataOnly,
+    FullPayload,
+}
+
+impl LogMode {
+    /// Column spelling for `provider_config_versi.log_mode`, which is what the
+    /// database `CHECK` compares against.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::MetadataOnly => "metadata_only",
+            Self::FullPayload => "full_payload",
+        }
+    }
+}
+
 /// Jenis kredensial downstream. Hanya dua nilai ini yang ada.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
