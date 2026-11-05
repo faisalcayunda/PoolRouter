@@ -12,6 +12,7 @@ END $$;
 DROP TABLE provider_secret;
 
 -- Back to the F0 shape: one row per provider and name (migrations/20261103000001_config.sql).
+DROP TABLE IF EXISTS provider_secret CASCADE;
 CREATE TABLE provider_secret (
   provider_id uuid NOT NULL REFERENCES provider (provider_id),
   nama_secret text NOT NULL CHECK (nama_secret ~ '^[A-Za-z][A-Za-z0-9_]{0,63}$'),

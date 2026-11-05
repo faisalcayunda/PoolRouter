@@ -16,7 +16,7 @@ $$;
 GRANT SELECT ON downstream_endpoint, downstream_pool, downstream_pool_rute, upstream_pool, provider, provider_config_versi,
   endpoint_config_versi, endpoint_metadata_field, client_endpoint, provider_secret, upstream_attempt_daily TO pr_api;
 GRANT SELECT (client_id, nama, aktif, limiter_penolakan_burst, limiter_penolakan_isi_ulang_per_detik) ON client TO pr_api;
-GRANT SELECT (credential_id, client_id, jenis, kunci_hash, status, kedaluwarsa_at) ON client_kredensial TO pr_api;   -- authentication
+GRANT SELECT (credential_id, client_id, jenis, kunci_hash, status, kedaluwarsa_at, dibuat_at) ON client_kredensial TO pr_api;   -- authentication; dibuat_at is the store's ORDER BY
 GRANT SELECT (client_id, aktif) ON client_webhook TO pr_api;
 DO $$ BEGIN
   EXECUTE format('GRANT SELECT (%s) ON request TO pr_api', pg_temp.kolom('request', ARRAY['input_payload', 'metadata']));

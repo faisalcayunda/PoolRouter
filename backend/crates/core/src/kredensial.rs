@@ -20,6 +20,7 @@ use argon2::password_hash::phc::PasswordHash;
 use argon2::password_hash::{PasswordHasher, PasswordVerifier};
 use argon2::{Algorithm, Params, Version};
 use aws_lc_rs::{constant_time, digest, rand};
+use base64::{Engine, engine::general_purpose::STANDARD};
 use uuid::Uuid;
 use zeroize::Zeroizing;
 
@@ -27,6 +28,8 @@ use crate::admin::ParameterArgon2;
 
 /// Fixed prefix of every API key.
 pub const API_KEY_PREFIX: &str = "pr_";
+/// Fixed prefix of every webhook signing secret (Standard Webhooks).
+pub const WEBHOOK_SECRET_PREFIX: &str = "whsec_";
 /// Random bytes in a secret (256 bits, ADR-0001 section 5a.5).
 pub const SECRET_BYTES: usize = 32;
 /// Length of the base64url (no padding) form of [`SECRET_BYTES`].
@@ -86,6 +89,15 @@ pub fn buat_api_key(credential_id: Uuid) -> Result<ApiKeyBaru, KredensialError> 
     let kunci_hash = hash_secret(&secret);
     let kunci = format!("{API_KEY_PREFIX}{}_{secret}", credential_id.simple());
     Ok(ApiKeyBaru { kunci, kunci_hash })
+}
+
+/// Webhook signing secret: `whsec_` + standard base64 of 32 random bytes
+/// (Standard Webhooks; f0-admin-api AC-22). The prefix travels with the string,
+/// the HMAC key is the decoded bytes.
+pub fn buat_secret_webhook() -> Result<String, KredensialError> {
+    let mut buf = [0u8; SECRET_BYTES];
+    rand::fill(&mut buf).map_err(|_| KredensialError::Random)?;
+    Ok(format!("{WEBHOOK_SECRET_PREFIX}{}", STANDARD.encode(buf)))
 }
 
 /// Split an API key. `None` for anything that is not exactly the canonical
@@ -329,6 +341,17 @@ mod tests {
         let p = urai_api_key(&k.kunci).unwrap();
         let shown = format!("{k:?} {p:?}");
         assert!(!shown.contains(p.secret));
+    }
+
+    #[test]
+    fn webhook_secret_is_whsec_prefixed_standard_base64_of_32_bytes() {
+        let s = buat_secret_webhook().unwrap();
+        let s2 = buat_secret_webhook().unwrap();
+        assert_ne!(s, s2);
+        let body = s.strip_prefix(WEBHOOK_SECRET_PREFIX).unwrap();
+        assert_eq!(STANDARD.decode(body).unwrap().len(), SECRET_BYTES);
+        // Standard Webhooks uses the standard alphabet, so padding is expected.
+        assert!(body.ends_with('='));
     }
 
     #[test]
