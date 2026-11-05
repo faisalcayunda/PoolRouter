@@ -1,5 +1,5 @@
 #!/bin/sh
-# Kunci build berat per host untuk toolchain Podman (ARC-194, K-41).
+# Kunci build berat per host untuk toolchain Podman (SHAA-194, K-41).
 #
 # Kunci = nama container tetap (BUILD_LOCK_NAME, default poolrouter-build-heavy). Podman menolak nama
 # container ganda secara atomik, jadi hanya satu build berat yang jalan di VM. Container dibuat
@@ -49,7 +49,7 @@ remove_stale() {
 }
 
 # is_name_conflict: bentrok nama container. Podman: container name "X" is already in use;
-# Docker: Conflict. The container name "/X" is already in use (ARC-390: tanpa ini Docker keluar 125, bukan 75).
+# Docker: Conflict. The container name "/X" is already in use (SHAA-390: tanpa ini Docker keluar 125, bukan 75).
 is_name_conflict() {
 	grep -Eq "container name \"/?$NAME\" is already in use" "$WD/log"
 }
@@ -60,13 +60,13 @@ attempt() {
 	rc=$(cat "$WD/rc")
 }
 
-# --- Antrean FIFO (ARC-395) ---
+# --- Antrean FIFO (SHAA-395) ---
 # Run yang menemui kunci terpegang tidak gagal seketika: ia mengambil tiket di antrean bersama host
 # (BUILD_LOCK_QUEUE_DIR), lalu menunggu sampai tiketnya paling depan dan kunci container bebas.
 # Nama tiket = <nanodetik>-<pid>, jadi urutan nama = urutan datang. Tiket milik proses yang sudah mati
 # dibuang otomatis, jadi run yang di-kill tidak menyumbat antrean. Kunci container tetap dipegang
 # hanya oleh container build (--rm), seperti sebelumnya; antrean hanya mengatur siapa yang boleh
-# mencoba berikutnya. Kunci basi tetap dibersihkan oleh remove_stale (tidak diubah, lihat ARC-366).
+# mencoba berikutnya. Kunci basi tetap dibersihkan oleh remove_stale (tidak diubah, lihat SHAA-366).
 QUEUE="${BUILD_LOCK_QUEUE_DIR:-${TMPDIR:-/tmp}/poolrouter-build-lock-queue}"
 WAIT_SECS="${BUILD_LOCK_WAIT_SECS:-1800}"
 POLL_SECS="${BUILD_LOCK_POLL_SECS:-2}"

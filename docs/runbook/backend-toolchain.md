@@ -58,7 +58,7 @@ make -C backend test CONTAINER_MEMORY=4g
 
 Pada VM 2 CPU / 3814 MiB, batas `3g` per container berarti hanya satu build Rust yang muat, ditambah `arctiva-hindsight`. Menaikkan `CONTAINER_MEMORY` di VM ini tidak disarankan dan butuh keputusan owner.
 
-## Kunci build berat (ARC-194, K-41)
+## Kunci build berat (SHAA-194, K-41)
 
 Aturan "satu build berat di VM" dikunci secara teknis, tidak hanya lewat prosedur. Kunci bersama ada di `scripts/build-lock.sh` (logika) dan `scripts/build-lock.mk` (include). Backend memakainya; frontend memakai include yang sama, tanpa implementasi kedua.
 
@@ -120,5 +120,5 @@ Container toolchain harus berlabel `arctiva.issue=<ISSUE>`. Container tanpa labe
 
 ## Batasan
 
-- VM Podman dipakai pada 2 CPU / 3814 MiB, bukan 4 CPU / 6144 MiB yang direkomendasikan. Keputusan owner (ARC-222, 2026-11-03): resize tidak dilanjutkan, gate dijalankan dengan `JOBS=1`. Risiko OOM tetap ada; jika gate gagal dengan SIGKILL atau exit 137, jangan diulang dengan `CONTAINER_MEMORY` lebih besar tanpa keputusan owner.
+- VM Podman dipakai pada 2 CPU / 3814 MiB, bukan 4 CPU / 6144 MiB yang direkomendasikan. Keputusan owner (SHAA-222, 2026-11-03): resize tidak dilanjutkan, gate dijalankan dengan `JOBS=1`. Risiko OOM tetap ada; jika gate gagal dengan SIGKILL atau exit 137, jangan diulang dengan `CONTAINER_MEMORY` lebih besar tanpa keputusan owner.
 - Gate penuh `make setup test lint` dengan `CONTAINER_LABEL=arctiva.issue=ARC-222 JOBS=1` di `main` `065aba7` lolos (exit 0, sekitar 371 detik) di kondisi VM di atas.

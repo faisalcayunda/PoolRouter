@@ -1,5 +1,5 @@
 #!/bin/sh
-# Harness skrip Lua kuota (ARC-195) di Redis sungguhan, dalam container sekali pakai.
+# Harness skrip Lua kuota (SHAA-195) di Redis sungguhan, dalam container sekali pakai.
 #
 #   sh backend/lua/test/run.sh
 #   CONTAINER_ENGINE=docker sh backend/lua/test/run.sh
@@ -12,7 +12,8 @@
 set -eu
 
 ENGINE=${CONTAINER_ENGINE:-podman}
-ISSUE=${ARC_ISSUE:-ARC-195}
+ISSUE=$ARC_ISSUE
+: "${ARC_ISSUE:?isi ARC_ISSUE, mis. ARC-123}"
 PYTHON=${PYTHON:-python3}
 # Sama dengan deploy/compose/compose.yaml (baris redis).
 IMAGE=${REDIS_IMAGE:-docker.io/library/redis:7-alpine@sha256:8da19c7399dca900c6822a1cf30f9d2285585e2c4b457ff4095b0f4500054d3f}

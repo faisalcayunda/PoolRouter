@@ -1,15 +1,16 @@
 #!/bin/sh
 # LOCAL AND CI ONLY: this script and its fixture must never run against PoC or production BGN environments.
-# Rebuild the synthetic K-20 test dataset in a throwaway PostgreSQL 17 container (ARC-204).
+# Rebuild the synthetic K-20 test dataset in a throwaway PostgreSQL 17 container (SHAA-204).
 #
-#   sh backend/db/test/fixtures/k20-load.sh
+#   ARC_ISSUE=ARC-123 sh backend/db/test/fixtures/k20-load.sh
 #
 # Steps: start container -> bootstrap roles -> migrations -> 05_fixtures.sql -> k20.sql -> verify.
-# The container is labelled arctiva.issue=ARC-204 and removed on exit. Nothing is installed on the host.
+# The container is labelled arctiva.issue=<ARC_ISSUE> and removed on exit. Nothing is installed on the host.
 set -eu
 
 ENGINE=${CONTAINER_ENGINE:-podman}
-ISSUE=ARC-204
+: "${ARC_ISSUE:?isi ARC_ISSUE, mis. ARC-123}"
+ISSUE=$ARC_ISSUE
 IMAGE=${PG_IMAGE:-docker.io/library/postgres:17-alpine@sha256:266d3c257594e195b309ae9d1805e54c788f1d7b375f56bf6c367aac6c917e7b}
 NAME="poolrouter-k20-$$"
 here=$(cd "$(dirname "$0")" && pwd)

@@ -1,4 +1,4 @@
-# Kunci build berat bersama (ARC-194, K-41). Dipakai backend/Makefile dan frontend/Makefile
+# Kunci build berat bersama (SHAA-194, K-41). Dipakai backend/Makefile dan frontend/Makefile
 # lewat `include ../scripts/build-lock.mk`. Jangan menulis ulang logika kunci di stack mana pun.
 #
 # Pemakaian di stack:
