@@ -484,6 +484,52 @@ async fn cari_log_dengan_potongan_nik_403_dan_akses_ditolak() {
 
 #[tokio::test]
 #[ignore]
+async fn cari_log_dengan_origin_salah_403() {
+    let u = siapkan().await;
+    let (_, op) = u.pengguna(&["operator"]).await;
+    let (st, h, b) = u
+        .kirim(
+            Method::POST,
+            "/admin/v1/log/cari",
+            Some(&op),
+            Some("https://evil.test"),
+            Some(json!({
+                "dari": t0() - chrono::Duration::hours(1),
+                "sampai": t0() + chrono::Duration::hours(1),
+            })),
+        )
+        .await;
+    assert_eq!(st, StatusCode::FORBIDDEN);
+    no_store(&h);
+    let j: Value = serde_json::from_slice(&b).expect("JSON error");
+    assert_eq!(j["kode"], "origin_tidak_valid");
+}
+
+#[tokio::test]
+#[ignore]
+async fn cari_log_dengan_kode_transaksi_bukan_uuid_422() {
+    let u = siapkan().await;
+    let (_, op) = u.pengguna(&["operator"]).await;
+    let (st, h, j) = u
+        .json(
+            Method::POST,
+            "/admin/v1/log/cari",
+            Some(&op),
+            Some(json!({
+                "dari": t0() - chrono::Duration::hours(1),
+                "sampai": t0() + chrono::Duration::hours(1),
+                "kode_transaksi": "bukan-uuid",
+            })),
+        )
+        .await;
+    assert_eq!(st, StatusCode::UNPROCESSABLE_ENTITY);
+    no_store(&h);
+    assert_eq!(j["kode"], "validasi");
+    assert_eq!(j["detail"]["kode_transaksi"]["kode"], "format");
+}
+
+#[tokio::test]
+#[ignore]
 async fn cari_log_tanpa_rentang_422() {
     let u = siapkan().await;
     let (_uid, op) = u.pengguna(&["operator"]).await;

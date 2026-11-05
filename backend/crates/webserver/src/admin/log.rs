@@ -92,6 +92,18 @@ pub(super) async fn search_log(
         ));
     }
 
+    if body
+        .kode_transaksi
+        .as_deref()
+        .is_some_and(|k| Uuid::parse_str(k).is_err())
+    {
+        return Err(galat_validasi(vec![FieldError {
+            field: "kode_transaksi",
+            kode: "format",
+            batas: None,
+        }]));
+    }
+
     periksa_rentang(body.dari, body.sampai)?;
 
     let baris = baris_log(&s, &body).await?;
