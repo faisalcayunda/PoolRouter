@@ -77,6 +77,11 @@ PW=$($ENGINE exec "$NAME" cat /tmp/sec/pr_admin_api)
 export POOLROUTER_TEST_DATABASE_URL="postgres://pr_admin_api:$PW@127.0.0.1:$PORT/poolrouter_test"
 export POOLROUTER_TEST_REDIS="redis://127.0.0.1:$RPORT"
 export POOLROUTER_TEST_DATABASE_URL_SU="postgres://postgres:$SU_PW@127.0.0.1:$PORT/poolrouter_test"
+# The controller tests run as the role the controller itself uses (ARC-69): the
+# snapshot and rebuild must work under pr_controller's column grants, not the
+# stricter pr_admin_api ones, and not as superuser.
+PW_C=$($ENGINE exec "$NAME" cat /tmp/sec/pr_controller)
+export POOLROUTER_TEST_DATABASE_URL_CONTROLLER="postgres://pr_controller:$PW_C@127.0.0.1:$PORT/poolrouter_test"
 echo "uji-pg: PostgreSQL 127.0.0.1:$PORT sebagai pr_admin_api"
 $MAKE_CMD
 echo "uji-pg: lulus"
