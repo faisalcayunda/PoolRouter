@@ -1,6 +1,6 @@
 #!/bin/sh
 # LOCAL AND CI ONLY: this script and its fixture must never run against PoC or production BGN environments.
-# Rebuild the synthetic K-20 test dataset in a throwaway PostgreSQL 17 container (ARC-204).
+# Rebuild the synthetic K-20 test dataset in a throwaway PostgreSQL 17 container (SHAA-204).
 #
 #   ARC_ISSUE=ARC-123 sh backend/db/test/fixtures/k20-load.sh
 #

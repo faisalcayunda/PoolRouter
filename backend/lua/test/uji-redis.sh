@@ -1,6 +1,6 @@
 #!/bin/sh
 # Uji fail-closed, deteksi failover, dan rebuild terhadap Redis sungguhan
-# (ARC-195, ADR-0001 rev 15 §5 dan §5a.2). Dipanggil oleh `make uji-redis`.
+# (SHAA-195, ADR-0001 rev 15 §5 dan §5a.2). Dipanggil oleh `make uji-redis`.
 #
 # Redis jalan sebagai container sekali pakai berlabel arctiva.issue=<ARC_ISSUE>
 # dengan jaringan host dan port tetap, supaya container toolchain cargo bisa

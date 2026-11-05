@@ -1,5 +1,5 @@
 #!/bin/sh
-# Uji integrasi Rust terhadap PostgreSQL sungguhan (ARC-196). Dipanggil oleh `make uji-pg`.
+# Uji integrasi Rust terhadap PostgreSQL sungguhan (SHAA-196). Dipanggil oleh `make uji-pg`.
 #
 # PostgreSQL jalan sebagai container sekali pakai berlabel arctiva.issue=<ARC_ISSUE>, skema dari
 # migrasi, peran dari bootstrap. Port dipublikasikan ke 127.0.0.1 supaya container toolchain cargo
@@ -32,7 +32,7 @@ bersihkan() {
 }
 trap bersihkan EXIT INT TERM
 
-# Redis for the login limiter (ARC-196): throwaway, labelled, no persistence.
+# Redis for the login limiter (SHAA-196): throwaway, labelled, no persistence.
 $ENGINE run -d --name "$RNAME" --label "arctiva.issue=$ISSUE" -p "127.0.0.1:$RPORT:6379" "$RIMAGE" \
   redis-server --save '' --appendonly no >/dev/null
 

@@ -84,7 +84,7 @@ Healthcheck bawaan:
 - `postgres`: `pg_isready` terhadap `POSTGRES_USER` dan `POSTGRES_DB`
 - `redis`: `redis-cli ping` dengan `REDISCLI_AUTH` dari secret (tidak lewat argumen)
 - `rabbitmq`: `rabbitmq-diagnostics -q ping`
-- `backend-webserver`: `webserver healthcheck` (probe lokal lewat subcommand binary, ADR-0001 §11.2). Subcommand ini ada di lingkup ARC-175 (Flik). Sampai ada di image, service ini tidak akan `healthy`. Probe TCP tidak dipakai: image runtime tidak punya shell atau `nc`, dan probe TCP akan memasukkan alat yang harus dicabut lagi. `backend-controller` dan `backend-worker` belum punya healthcheck; ditambahkan di Bagian 2.
+- `backend-webserver`: `webserver healthcheck` (probe lokal lewat subcommand binary, ADR-0001 §11.2). Subcommand ini ada di lingkup SHAA-175 (Flik). Sampai ada di image, service ini tidak akan `healthy`. Probe TCP tidak dipakai: image runtime tidak punya shell atau `nc`, dan probe TCP akan memasukkan alat yang harus dicabut lagi. `backend-controller` dan `backend-worker` belum punya healthcheck; ditambahkan di Bagian 2.
 - `frontend`: `wget` ke port 8080 di dalam container. Verifikasi pada Bagian 2 bahwa image nginx-unprivileged memiliki `wget`.
 
 ### Upgrade (staging dan prod)
@@ -203,10 +203,10 @@ Bagian ini belum final. Keputusan berikut menunggu owner dan ADR infrastruktur t
 
 ## Batasan saat ini
 
-- Service backend, frontend, dan mock Dukcapil sudah didefinisikan, tetapi image-nya dibangun di Bagian 2 (ARC-207 Containerfile). Sampai itu, profile `app` dan `mock` tidak bisa dinyalakan.
+- Service backend, frontend, dan mock Dukcapil sudah didefinisikan, tetapi image-nya dibangun di Bagian 2 (SHAA-207 Containerfile). Sampai itu, profile `app` dan `mock` tidak bisa dinyalakan.
 - **Profile `app` (sementara, Bagian 1 saja):** diterima Shu (D-1) karena image backend dan frontend belum ada. Wajib dicabut di Bagian 2 pada commit yang memasang digest image backend dan frontend di env. Setelah itu `compose-up` biasa menaikkan stack penuh (Addendum §8 V2). Dependensi app ke service infra harus tetap valid saat `bundled-infra` mati (managed).
-- Subcommand `webserver healthcheck` dan konvensi `*_FILE` ada di lingkup backend ARC-175 (Flik). Sampai ada, healthcheck backend tidak akan `healthy`.
-- Role database `pr_*` dan `poolrouter_owner` belum dibuat oleh stack bundled. Stack hanya membuat `POSTGRES_USER`. Pembuatan role dan password dari file secret ada di ARC-193.
+- Subcommand `webserver healthcheck` dan konvensi `*_FILE` ada di lingkup backend SHAA-175 (Flik). Sampai ada, healthcheck backend tidak akan `healthy`.
+- Role database `pr_*` dan `poolrouter_owner` belum dibuat oleh stack bundled. Stack hanya membuat `POSTGRES_USER`. Pembuatan role dan password dari file secret ada di SHAA-193.
 - Service `backend-cli` (ADR-0003 §3.6c, role `ADMIN_API`) belum didefinisikan. Menunggu image di Bagian 2.
 - Nama variabel `POOLROUTER_DB_*`, `POOLROUTER_REDIS_*`, dan `POOLROUTER_RABBITMQ_*` mengikuti kontrak env backend v1 (final, Shu). Perubahannya hanya lewat revisi kontrak.
 - Job CI V4 (`compose-portability`) diserahkan ke Tessai.
@@ -214,6 +214,6 @@ Bagian ini belum final. Keputusan berikut menunggu owner dan ADR infrastruktur t
 ## Rujukan
 
 - ADR-0001 Addendum A (`docs/adr/0001-addendum-a-deploy-engine-agnostic.md` setelah masuk main; sampai saat itu lampiran di ARC-190)
-- Kontrak env backend PoolRouter v1 (lampiran ARC-207; final, Shu)
-- ARC-207 (sub-issue K2), ARC-190 (induk K-38)
+- Kontrak env backend PoolRouter v1 (lampiran SHAA-207; final, Shu)
+- SHAA-207 (sub-issue K2), ARC-190 (induk K-38)
 - `arctiva-playbook` bagian 6, `shaal-eng-standards` bagian 8

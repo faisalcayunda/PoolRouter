@@ -36,7 +36,7 @@ force-push ke `main` dan secret di repo tetap dilarang.
   `shaal.issue=SHAA-<n>`; label lama tidak dipakai lagi.
 - `make -C backend ...` dan `make -C frontend ...` dengan runner kontainer gagal di target
   `check-label` kalau `CONTAINER_LABEL` kosong atau tidak berbentuk `arctiva.issue=ARC-<n>`.
-- Kunci build bersama memakai label `arctiva.build=heavy` di container `arctiva-build-heavy`;
+- Kunci build bersama memakai label `poolrouter.build=heavy` di container `poolrouter-build-heavy`;
   jalankan satu build berat per waktu.
 - Pembersihan hanya boleh menyasar resource dengan label milik issue ini
   (`--filter label=arctiva.issue=ARC-<n>`). Prune global (`docker system prune`,

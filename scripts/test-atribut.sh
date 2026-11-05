@@ -8,6 +8,8 @@
 #      tanpa force-push, tanpa secret, NIK sintetis, label gate arctiva.issue.
 #   3. Tidak ada lagi rujukan label Shaal (`shaal.issue`, `shaal.build`) di Makefile,
 #      skrip, atau workflow.
+#   4. Nama lane build bersama tetap `poolrouter-build`/`poolrouter.build` (AC-5):
+#      nama `arctiva` tidak boleh kembali di Makefile, skrip, runbook, atau workflow.
 #
 # Tidak butuh Docker. Jalankan: make test-atribut (dari akar repo).
 set -eu
@@ -77,6 +79,16 @@ if [ -n "$sisa" ]; then
 	bad "label Shaal masih dipakai:"; printf '%s\n' "$sisa"
 else
 	ok "tidak ada label shaal.issue/shaal.build di Makefile, skrip, docs, deploy, workflow"
+fi
+
+# --- 4. nama lane build bersama (AC-5) -------------------------------------
+sisa=$(grep -rnE "arctiva[-.]build" \
+	"$root"/backend/Makefile "$root"/scripts "$root"/.github/workflows/backend.yml \
+	"$root"/docs/runbook 2>/dev/null || true)
+if [ -n "$sisa" ]; then
+	bad "nama lane arctiva[-.]build muncul lagi (AC-5 memakai poolrouter-build):"; printf '%s\n' "$sisa"
+else
+	ok "lane build bersama memakai poolrouter-build/poolrouter.build (AC-5)"
 fi
 
 exit "$fail"

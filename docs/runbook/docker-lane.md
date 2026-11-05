@@ -1,4 +1,4 @@
-# Runbook: lane build/test PoolRouter di Docker (ARC-373)
+# Runbook: lane build/test PoolRouter di Docker (SHAA-373)
 
 Runbook ini menjelaskan cara menjalankan gate backend di Docker, menjaga ruang kosong, dan membersihkan resource. Dasar keputusan: arahan owner 2026-11-04, persetujuan Luca U-20261108-1 (`arctiva-playbook` §6, pengecualian sementara).
 
@@ -27,15 +27,15 @@ RUNNER=docker CONTAINER_LABEL=arctiva.issue=ARC-<n> make -C backend test
 
 Setiap target `HEAVY` (`test-rust`, `lint` clippy, `test`, dan `pnpm install` frontend) lewat kunci `scripts/build-lock.sh` dengan `BUILD_LOCK_ENGINE=docker`.
 
-### Kunci build: antre FIFO (ARC-395)
+### Kunci build: antre FIFO (SHAA-395)
 
-Jika kunci `arctiva-build-heavy` dipegang, target **menunggu**, tidak gagal seketika:
+Jika kunci `poolrouter-build-heavy` dipegang, target **menunggu**, tidak gagal seketika:
 
-- Run mengambil tiket di antrean host (`BUILD_LOCK_QUEUE_DIR`, default `${TMPDIR:-/tmp}/arctiva-build-lock-queue`; nama tiket = nanodetik datang + PID). Hanya run dengan tiket paling depan yang boleh mencoba memulai container, jadi urutannya FIFO dan tidak ada yang direbut run yang datang belakangan.
+- Run mengambil tiket di antrean host (`BUILD_LOCK_QUEUE_DIR`, default `${TMPDIR:-/tmp}/poolrouter-build-lock-queue`; nama tiket = nanodetik datang + PID). Hanya run dengan tiket paling depan yang boleh mencoba memulai container, jadi urutannya FIFO dan tidak ada yang direbut run yang datang belakangan.
 - Pesan `build-lock: menunggu giliran (kunci dipegang ... arctiva.issue=ARC-<n> ...)` muncul saat mulai menunggu dan tiap 60 detik.
 - Batas tunggu: `BUILD_LOCK_WAIT_SECS`, default **1800** (30 menit). Contoh: `BUILD_LOCK_WAIT_SECS=3600 make -C backend test ...`. Interval cek: `BUILD_LOCK_POLL_SECS` (default 2).
 - Batas habis: exit **75** (`EX_TEMPFAIL`), pesan menyebut label `arctiva.issue` pemegang kunci dan panjang antrean. Tidak ada build yang jalan; target yang meminta kunci berhenti tanpa mengerjakan build.
-- Tiket milik proses yang mati (kill, VM restart) dibuang otomatis oleh run berikutnya, jadi antrean tidak tersumbat. Kunci container yang tertinggal (basi) tetap ditangani seperti sebelumnya (`build-lock-clean`; perbaikan lanjutan di ARC-366).
+- Tiket milik proses yang mati (kill, VM restart) dibuang otomatis oleh run berikutnya, jadi antrean tidak tersumbat. Kunci container yang tertinggal (basi) tetap ditangani seperti sebelumnya (`build-lock-clean`; perbaikan lanjutan di SHAA-366).
 - Kunci tetap hanya milik container build (`--rm`); antrean hanya mengatur giliran mencoba. Run di luar skrip (memakai nama container yang sama langsung) tidak antre, tetapi run yang antre menunggunya selesai.
 - Batasan: tiket dianggap mati lewat `kill -0 <pid>`, jadi semua run harus satu host dan satu PID namespace (lane saat ini). Run dari container/PID namespace atau pengguna lain bisa dianggap mati dan tiketnya dibuang.
 - Pastikan `timeout` job/agent Anda lebih besar dari `BUILD_LOCK_WAIT_SECS` plus lama build.
@@ -44,7 +44,7 @@ Uji manual (engine Docker, image apa saja yang punya `sleep`):
 
 ```sh
 export BUILD_LOCK_ENGINE=docker
-run() { sh scripts/build-lock.sh run -- docker run --rm --name arctiva-build-heavy --label arctiva.build=heavy --label arctiva.issue=$1 --entrypoint sleep <image> $2; }
+run() { sh scripts/build-lock.sh run -- docker run --rm --name poolrouter-build-heavy --label poolrouter.build=heavy --label arctiva.issue=$1 --entrypoint sleep <image> $2; }
 run ARC-A 6 & sleep 1; run ARC-B 3 & sleep 1; run ARC-C 3 & wait      # selesai berurutan A, B, C
 run ARC-A 12 & sleep 2; (export BUILD_LOCK_WAIT_SECS=4; run ARC-B 1; echo $?)    # 75
 ```
@@ -79,14 +79,14 @@ scripts/docker-lane.sh builder-prune
 
 Yang dilarang di lane ini: `docker system prune` dalam bentuk apa pun, `docker volume prune`, `docker image prune -a`, dan `docker rm` tanpa filter label. Container milik layanan lain di host (`arctiva-9router-*`, `arctiva-hermes-*`, `dokploy-traefik`, container tanpa label `arctiva.issue`) tidak boleh disentuh.
 
-### Target dan cargo-home bersama (ARC-390)
+### Target dan cargo-home bersama (SHAA-390)
 
-Dengan `RUNNER=docker`, semua workdir memakai satu salinan cache, bergantian di bawah kunci `arctiva-build-heavy`:
+Dengan `RUNNER=docker`, semua workdir memakai satu salinan cache, bergantian di bawah kunci `poolrouter-build-heavy`:
 
 | Isi | Default (di host) | Variabel override | Disk |
 | --- | --- | --- | --- |
-| `CARGO_TARGET_DIR` (hasil build saja, boleh hilang saat mesin di-stop) | `/var/tmp/arctiva-build/poolrouter-target` | `SHARED_TARGET_DIR` | `/` |
-| `CARGO_HOME` dan `RUSTUP_HOME` (registry, toolchain, cargo-deny; persisten) | `/data/workspace/arctiva-build/cargo-home/{cargo,rustup}` | `SHARED_CARGO_HOME` | `/data` |
+| `CARGO_TARGET_DIR` (hasil build saja, boleh hilang saat mesin di-stop) | `/var/tmp/poolrouter-build/poolrouter-target` | `SHARED_TARGET_DIR` | `/` |
+| `CARGO_HOME` dan `RUSTUP_HOME` (registry, toolchain, cargo-deny; persisten) | `/data/workspace/poolrouter-build/cargo-home/{cargo,rustup}` | `SHARED_CARGO_HOME` | `/data` |
 
 Semua path diatur di `backend/Makefile` (blok `SHARED_*`), tidak ada yang di-hardcode di tempat lain. Direktori di-bind ke container di `/cache/{target,cargo,rustup}`, dan container berjalan dengan `--user <uid>:<gid>` host, jadi semua file dimiliki user host dan bisa dihapus tanpa sudo. Pergantian branch antar-lane membangun ulang crate workspace, tetapi dependensi dipakai ulang.
 
@@ -108,20 +108,20 @@ Semua path diatur di `backend/Makefile` (blok `SHARED_*`), tidak ada yang di-har
 
 Sebelum migrasi, `backend/target` dan `backend/.cache` lama ada di `/data` dan berlipat per workdir; sesudahnya hanya ada satu cargo-home di `/data` dan satu target di `/`.
 
-### Cache bersama antar-checkout dan batas ukuran (ARC-394)
+### Cache bersama antar-checkout dan batas ukuran (SHAA-394)
 
 Satu salinan per host, dipakai semua checkout. Tidak ada lagi toolchain atau registry di `backend/.cache` (`RUNNER=docker`).
 
 | Isi | Lokasi (host) | Batas | Penjaga |
 | --- | --- | --- | --- |
-| rustup, registry/git Cargo, cargo-deny | `/data/workspace/arctiva-build/cargo-home/{cargo,rustup}` | `SHARED_CARGO_HOME_LIMIT_MB` = 2560 MB (terukur 2026-11-04: 1315 MB) | `check-disk` berhenti, tidak menghapus apa pun |
+| rustup, registry/git Cargo, cargo-deny | `/data/workspace/poolrouter-build/cargo-home/{cargo,rustup}` | `SHARED_CARGO_HOME_LIMIT_MB` = 2560 MB (terukur 2026-11-04: 1315 MB) | `check-disk` berhenti, tidak menghapus apa pun |
 | store pnpm frontend | tidak dibagi: tetap per checkout di `frontend/.cache/pnpm-store` | lihat keputusan di bawah | `make -C frontend clean` per checkout |
-| `backend/target` | `/var/tmp/arctiva-build/poolrouter-target` | lihat bagian ARC-390 | `check-disk` |
+| `backend/target` | `/var/tmp/poolrouter-build/poolrouter-target` | lihat bagian SHAA-390 | `check-disk` |
 
 Konkurensi:
 
 - Penulisan registry Cargo memakai lock bawaan Cargo (`.package-cache`) pada cargo-home bersama. Dua container yang hanya membaca tidak saling merusak.
-- Salinan toolchain rustup, `cargo fetch`, pemasangan cargo-deny, dan `pnpm install` jalan lewat `HEAVY`, yaitu di bawah kunci `arctiva-build-heavy` (antre FIFO, ARC-395). Pembaruan toolchain tidak bisa terjadi di luar kunci.
+- Salinan toolchain rustup, `cargo fetch`, pemasangan cargo-deny, dan `pnpm install` jalan lewat `HEAVY`, yaitu di bawah kunci `poolrouter-build-heavy` (antre FIFO, SHAA-395). Pembaruan toolchain tidak bisa terjadi di luar kunci.
 - Checkout kedua: `setup` menemukan `rustup/toolchains` dan `cargo-deny` sudah ada, `cargo fetch` tidak mengunduh apa pun. `du backend/.cache` hanya berisi sisa lokal (kunci/oasdiff).
 
 Membersihkan (target eksplisit, terpisah dari `clean`):
@@ -141,7 +141,7 @@ Migrasi dari `backend/.cache` lama: cukup `make -C backend clean` per checkout (
 
 ### Kepemilikan file
 
-Container gate (cargo, rustup, cargo-deny) berjalan dengan uid:gid host, jadi isi target dan cargo-home bersama dimiliki user host dan bisa dihapus tanpa sudo. Sisa lama yang dimiliki root (dari sebelum ARC-390) dihapus lewat `make -C backend clean` di workdir pemiliknya.
+Container gate (cargo, rustup, cargo-deny) berjalan dengan uid:gid host, jadi isi target dan cargo-home bersama dimiliki user host dan bisa dihapus tanpa sudo. Sisa lama yang dimiliki root (dari sebelum SHAA-390) dihapus lewat `make -C backend clean` di workdir pemiliknya.
 
 ## Pengukuran (2026-11-04, sandbox instabox, /data 20G)
 
@@ -161,9 +161,9 @@ Puncak pemakaian: 5G (image 2.2G, target dan cache sekitar 2.5G). Angka ini peng
 - Dengan 20G, lane dapat menjalankan gate backend dan frontend secara berurutan; rincian pemakaian disk tercatat pada tabel Pengukuran di atas dan Pengukuran disk frontend di bawah.
 - Resize `/data` ke 40G masih rekomendasi untuk jangka panjang.
 
-## Root Docker gate (ARC-379)
+## Root Docker gate (SHAA-379)
 
-Gate resmi (keputusan ARC-380), dari akar repo:
+Gate resmi (keputusan SHAA-380), dari akar repo:
 
 ```sh
 make setup test lint RUNNER=docker FRONTEND_RUNNER=docker CONTAINER_LABEL=arctiva.issue=ARC-<n>
@@ -184,7 +184,7 @@ Gate penuh `setup`/`test`/`lint` backend dan frontend tetap wajib hijau sebelum 
 
 ### `make -n` aman sebagai bukti
 
-Sejak ARC-398, `make -n` pada gate di atas tidak memanggil `docker` atau `podman`.
+Sejak SHAA-398, `make -n` pada gate di atas tidak memanggil `docker` atau `podman`.
 GNU make tetap mengeksekusi baris resep yang memuat teks `$(MAKE)` walau dengan `-n`;
 karena itu resep dengan efek samping container memakai `SUBMAKE = $(MAKE)` dan menulis
 `$(SUBMAKE)`. Jangan menulis `$(MAKE)` langsung di resep seperti itu. Resep delegasi
@@ -204,7 +204,7 @@ make test-dry-run
 | Ruang kosong `/data` | 8,3G (58%) | 3,6G (82%) | Terukur via `df -h /data`; penurunan mencakup kompilasi target backend serta aktivitas konkuren lane lain di host |
 | Ruang kosong Docker root (`/var/lib/docker`) | 8,3G (58%) | 3,6G (82%) | Satu partisi (`/dev/vdb`) dengan `/data`; tetap di atas ambang minimum 3G |
 | `frontend/node_modules` | 0 | 396M | 479 paket terinstal |
-| Store pnpm (`frontend/.cache/pnpm-store`) | 0 | 22M | Store lokal per checkout (keputusan ARC-394) |
+| Store pnpm (`frontend/.cache/pnpm-store`) | 0 | 22M | Store lokal per checkout (keputusan SHAA-394) |
 | Cache frontend total (`frontend/.cache`) | 0 | 23M | Termasuk pnpm-store dan corepack |
 | Image Node pinned (`node:24.22.2-bookworm-slim`) | 333M | 333M | Dipakai runner Docker frontend |
 | Image Playwright pinned (`mcr.microsoft.com/playwright`) | Belum di-pull | Belum di-pull | Hanya ditarik saat target `e2e` dipanggil (ukuran manifest layer ~990MB terkompresi, estimasi uncompressed ~2,4GB) |

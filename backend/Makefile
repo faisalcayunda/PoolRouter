@@ -7,26 +7,26 @@ SHELL := /bin/sh
 .NOTPARALLEL:
 
 RUNNER ?= podman
-# Sub-make lewat variabel perantara: GNU make menjalankan baris resep yang memuat teks `$(MAKE)` walau dengan -n (ARC-398).
+# Sub-make lewat variabel perantara: GNU make menjalankan baris resep yang memuat teks `$(MAKE)` walau dengan -n (SHAA-398).
 # Jangan tulis `$(MAKE)` langsung di resep yang punya efek samping container; uji: `make test-dry-run` di akar.
 SUBMAKE = $(MAKE)
-# Engine kontainer untuk RUNNER=podman atau RUNNER=docker. Docker dipakai lane Docker (ARC-373, keputusan Luca).
+# Engine kontainer untuk RUNNER=podman atau RUNNER=docker. Docker dipakai lane Docker (SHAA-373, keputusan Luca).
 # CONTAINER_ENGINE dari environment dihormati (dipakai CI dengan RUNNER=native).
 CONTAINER_ENGINE := $(if $(filter docker,$(RUNNER)),docker,$(if $(CONTAINER_ENGINE),$(CONTAINER_ENGINE),podman))
 export BUILD_LOCK_ENGINE := $(CONTAINER_ENGINE)
 # Must match rust-toolchain.toml and [workspace.package] rust-version (ADR-0004 section 2). Never `latest`.
 # Pinned by tag and digest, same literal as backend/Containerfile line 17, .github/workflows/backend.yml line 30,
-# and .github/workflows/contract.yml line 29. Changing one means changing all four (ARC-207).
+# and .github/workflows/contract.yml line 29. Changing one means changing all four (SHAA-207).
 RUST_IMAGE ?= docker.io/library/rust:1.99.1-bookworm@sha256:9181b56c2a21ab1d5e73cffe04fc762426d30aa7fac3c91141dd033f49a7fc8b
 CARGO_DENY_VERSION ?= 0.19.0
 # SHA-256 of the official release tarballs (EmbarkStudios/cargo-deny $(CARGO_DENY_VERSION)), pinned here.
-# cargo-deny is installed as this prebuilt binary, never compiled from source (ARC-222).
+# cargo-deny is installed as this prebuilt binary, never compiled from source (SHAA-222).
 CARGO_DENY_SHA256_aarch64 := 2b3567a60b7491c159d1cef8b7d8479d1ad2a31e29ef49462634ad4552fcc77d
 CARGO_DENY_SHA256_x86_64 := 0e8c2aa59128612c90d9e09c02204e912f29a5b8d9a64671b94608cbe09e064f
-# oasdiff breaking-change gate (ARC-192). Pinned release of oasdiff/oasdiff; the
+# oasdiff breaking-change gate (SHAA-192). Pinned release of oasdiff/oasdiff; the
 # upstream 1.9.x line NIA referenced no longer exists in releases (current line
 # 1.2x-1.3x), so we pin the latest stable at adoption time. Installed as a prebuilt
-# binary with a pinned SHA-256, never compiled from source (pattern of ARC-222).
+# binary with a pinned SHA-256, never compiled from source (pattern of SHAA-222).
 OASDIFF_VERSION ?= 1.35.0
 OASDIFF_SHA256_arm64 := 1f8b5aa033cd0240ae6c53460268bcd6e578526666a4487a781ece8cef39fbdd
 OASDIFF_SHA256_amd64 := a8023002fcb2eaa7f5758148a9303cb63d33b939886df312268bc0fc7b939140
@@ -34,7 +34,7 @@ OASDIFF_SHA256_amd64 := a8023002fcb2eaa7f5758148a9303cb63d33b939886df312268bc0fc
 # RUNNER=native is only for Linux/CI jobs that already have Rust 1.99.1; never use it on the owner's Mac.
 CONTAINER_LABEL ?=
 # Memory cap per podman toolchain container. On the current 2 CPU / 3814 MiB VM only one Rust build fits:
-# run one build at a time with JOBS=1 (see docs/runbook/backend-toolchain.md, ARC-222).
+# run one build at a time with JOBS=1 (see docs/runbook/backend-toolchain.md, SHAA-222).
 CONTAINER_MEMORY ?= 3g
 JOBS ?= 2
 
@@ -43,14 +43,14 @@ export CARGO_TERM_COLOR ?= never
 
 include ../scripts/build-lock.mk
 
-# Docker lane (ARC-390): satu CARGO_TARGET_DIR bersama di / dan satu CARGO_HOME/RUSTUP_HOME bersama di /data,
-# dipakai bergantian oleh semua workdir di bawah kunci arctiva-build-heavy. Semua path lewat variabel ini (override
+# Docker lane (SHAA-390): satu CARGO_TARGET_DIR bersama di / dan satu CARGO_HOME/RUSTUP_HOME bersama di /data,
+# dipakai bergantian oleh semua workdir di bawah kunci poolrouter-build-heavy. Semua path lewat variabel ini (override
 # lewat env atau argumen make). Container berjalan dengan uid:gid host, jadi user biasa bisa menghapus isinya tanpa sudo.
-SHARED_TARGET_DIR ?= /var/tmp/arctiva-build/poolrouter-target
-SHARED_CARGO_HOME ?= /data/workspace/arctiva-build/cargo-home
+SHARED_TARGET_DIR ?= /var/tmp/poolrouter-build/poolrouter-target
+SHARED_CARGO_HOME ?= /data/workspace/poolrouter-build/cargo-home
 # Batas ukuran target bersama (MB): di atasnya check-disk menjalankan clean-shared di bawah kunci.
 SHARED_TARGET_LIMIT_MB ?= 2560
-# Batas ukuran cargo-home + rustup bersama di /data (MB, ARC-394). Dilewati => check-disk gagal (exit non-nol),
+# Batas ukuran cargo-home + rustup bersama di /data (MB, SHAA-394). Dilewati => check-disk gagal (exit non-nol),
 # tidak menghapus apa pun; bersihkan dengan `make clean-cache-shared` (eksplisit, di bawah kunci).
 SHARED_CARGO_HOME_LIMIT_MB ?= 2560
 # Sisa bebas minimum di / untuk sistem (MB), di luar ruang tumbuh target sampai batasnya.
@@ -94,8 +94,8 @@ REPO_DIR := $(if $(filter podman docker,$(RUNNER)),/repo,$(CURDIR)/..)
 
 .PHONY: help check-label check-disk clean-shared clean-cache-shared setup test test-rust db-test uji-pg uji-pg-cargo uji-lua uji-redis uji-redis-cargo lua-rakit lua-rakit-check lint fmt clean openapi openapi-check
 
-# Podman toolchain containers must carry the owning issue label, so untracked containers cannot appear (ARC-222).
-# Docker lane: cek ruang kosong sebelum target apa pun yang memakai container (ARC-373).
+# Podman toolchain containers must carry the owning issue label, so untracked containers cannot appear (SHAA-222).
+# Docker lane: cek ruang kosong sebelum target apa pun yang memakai container (SHAA-373).
 CHECK_DISK := $(if $(filter docker,$(RUNNER)),check-disk,)
 check-disk:
 ifeq ($(RUNNER),docker)
@@ -119,7 +119,7 @@ help:
 	@echo "gate resmi (dari akar): make setup test lint RUNNER=docker FRONTEND_RUNNER=docker CONTAINER_LABEL=arctiva.issue=ARC-<n>"
 
 # Fetch the locked dependency set and install the pinned cargo-deny. Toolchain copy, fetch dan install cargo-deny
-# menulis ke cache bersama, jadi jalan di bawah kunci arctiva-build-heavy (ARC-394); checkout kedua hanya
+# menulis ke cache bersama, jadi jalan di bawah kunci poolrouter-build-heavy (SHAA-394); checkout kedua hanya
 # menemukan toolchain dan registry sudah ada dan tidak mengunduh ulang.
 setup: check-label $(CHECK_DISK)
 	$(if $(filter docker,$(RUNNER)),,mkdir -p .cache/cargo .cache/rustup)
@@ -150,14 +150,14 @@ test: test-rust $(UJI_KONTAINER)
 test-rust: check-label $(CHECK_DISK)
 	$(HEAVY) cargo test --workspace --all-targets --locked
 
-# Schema tests (ARC-193): roles bootstrap, migrations from empty, grant matrix, constraints, functions.
+# Schema tests (SHAA-193): roles bootstrap, migrations from empty, grant matrix, constraints, functions.
 # Starts a throwaway PostgreSQL 17 container labelled arctiva.issue=<n> (from CONTAINER_LABEL) and removes it afterwards.
 # It needs a container engine on the host, so it is independent of RUNNER.
 DB_ENGINE ?= $(CONTAINER_ENGINE)
 db-test: check-label $(CHECK_DISK)
 	CONTAINER_ENGINE=$(DB_ENGINE) ARC_ISSUE=$(patsubst arctiva.issue=%,%,$(CONTAINER_LABEL)) sh db/test/run.sh
 
-# Uji integrasi Rust terhadap PostgreSQL sungguhan (ARC-196): skema dari migrasi, koneksi sebagai pr_admin_api.
+# Uji integrasi Rust terhadap PostgreSQL sungguhan (SHAA-196): skema dari migrasi, koneksi sebagai pr_admin_api.
 # Container Postgres independen dari RUNNER (seperti db-test); `uji-pg-cargo` menjalankan uji `#[ignore]` lewat kunci build.
 uji-pg: check-label $(CHECK_DISK)
 	CONTAINER_ENGINE=$(DB_ENGINE) ARC_ISSUE=$(patsubst arctiva.issue=%,%,$(CONTAINER_LABEL)) \
@@ -167,7 +167,7 @@ uji-pg-cargo: BUILD_LOCK_OPTS += --network host -e POOLROUTER_TEST_DATABASE_URL 
 uji-pg-cargo: check-label $(CHECK_DISK)
 	$(HEAVY) cargo test --locked -p poolrouter-core --test sesi_store_pg -p poolrouter-webserver --test admin_sesi_pg -- --ignored --test-threads=1 --nocapture
 
-# Lua quota scripts (ARC-195). `lua/` holds sources with `-- sisip:` markers;
+# Lua quota scripts (SHAA-195). `lua/` holds sources with `-- sisip:` markers;
 # `scripts/rakit-lua.sh` inlines `potongan/*.lua` into `rakitan/*.lua`, and that
 # assembled form is what Redis loads (the sandbox has no `dofile`). Sources are
 # not valid on their own, so the artifact is committed and gated: rakitan/ must
@@ -188,7 +188,7 @@ LUA_ENGINE ?= $(CONTAINER_ENGINE)
 uji-lua: check-label $(CHECK_DISK) lua-rakit-check
 	CONTAINER_ENGINE=$(LUA_ENGINE) ARC_ISSUE=$(patsubst arctiva.issue=%,%,$(CONTAINER_LABEL)) sh lua/test/run.sh
 
-# Fail-closed, failover (`run_id` berubah) dan rebuild terhadap Redis sungguhan (ARC-195).
+# Fail-closed, failover (`run_id` berubah) dan rebuild terhadap Redis sungguhan (SHAA-195).
 # Redis jalan di jaringan host (port acak per proses, atau UJI_REDIS_PORT) supaya container cargo
 # menjangkaunya; `uji-redis-cargo` menjalankan uji `#[ignore]` di crate core lewat kunci build.
 uji-redis: check-label $(CHECK_DISK)
@@ -221,7 +221,7 @@ clean-shared: check-label
 	@mkdir -p "$(SHARED_TARGET_DIR)" "$(SHARED_CARGO_HOME)/cargo" "$(SHARED_CARGO_HOME)/rustup"
 	$(HEAVY) cargo clean
 
-# Pembersihan cache bersama (registry, git, dan opsional toolchain), eksplisit dan di bawah kunci heavy (ARC-394).
+# Pembersihan cache bersama (registry, git, dan opsional toolchain), eksplisit dan di bawah kunci heavy (SHAA-394).
 # Tanpa argumen: hanya cache registry/git yang bisa diunduh ulang (setup berikutnya mengisi lagi). Toolchain rustup
 # dan cargo-deny hanya dihapus dengan CLEAN_TOOLCHAIN=1. Path tetap di dalam mount bersama, tanpa glob ke luar.
 clean-cache-shared: check-label
@@ -245,12 +245,12 @@ openapi: check-label $(CHECK_DISK)
 	$(HEAVY) cargo run --locked -q -p poolrouter-webserver --bin openapi-gen -- openapi
 
 # Fails when the committed YAML differs from what the code generates, and when
-# the working-tree contracts break the baseline OASDIFF_BASE (oasdiff, ARC-192, ARC-278).
+# the working-tree contracts break the baseline OASDIFF_BASE (oasdiff, SHAA-192, SHAA-278).
 openapi-check: check-label $(CHECK_DISK) openapi oasdiff-breaking
 	@test -z "$$(git status --porcelain -- openapi)" || { echo "openapi: generated files are uncommitted or modified" >&2; git status --short -- openapi; exit 1; }
 	git diff --exit-code -- openapi
 
-# oasdiff `breaking` against an explicit baseline (ARC-278 D1-D6, ARC-279).
+# oasdiff `breaking` against an explicit baseline (SHAA-278 D1-D6, SHAA-279).
 # OASDIFF_BASE is a git rev. Locally it defaults to origin/main; in CI (CI=true) it must be
 # set explicitly by the workflow (a shallow detached checkout has no `main`), otherwise exit 1.
 # OASDIFF_BASE_SOURCE only labels the log line (push.before | dispatch | default).

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Lane build/test PoolRouter di Docker dengan penjaga storage (ARC-373). Lihat docs/runbook/docker-lane.md.
+# Lane build/test PoolRouter di Docker dengan penjaga storage (SHAA-373). Lihat docs/runbook/docker-lane.md.
 # Pemakaian:
-#   lane.sh check               cek ruang kosong dan ambang; juga penjaga / dan target bersama (ARC-390)
+#   lane.sh check               cek ruang kosong dan ambang; juga penjaga / dan target bersama (SHAA-390)
 #   lane.sh cleanup <ARC-n>    hapus container, volume, dan network berlabel arctiva.issue=<ARC-n> saja
 #   lane.sh builder-prune       batasi cache build Docker (builder prune --keep-storage)
 # Dilarang di skrip ini: system prune, volume prune, image prune -a, rm tanpa filter.
@@ -10,8 +10,8 @@ set -euo pipefail
 MIN_FREE_ROOT_GB="${MIN_FREE_ROOT_GB:-3}"      # filesystem /var/lib/docker
 MIN_FREE_DATA_GB="${MIN_FREE_DATA_GB:-1}"      # /data
 BUILD_CACHE_KEEP="${BUILD_CACHE_KEEP:-3GB}"    # batas cache build
-# Penjaga / (ARC-390). Nilai dikirim backend/Makefile; default sama dengan Makefile.
-SHARED_TARGET_DIR="${SHARED_TARGET_DIR:-/var/tmp/arctiva-build/poolrouter-target}"
+# Penjaga / (SHAA-390). Nilai dikirim backend/Makefile; default sama dengan Makefile.
+SHARED_TARGET_DIR="${SHARED_TARGET_DIR:-/var/tmp/poolrouter-build/poolrouter-target}"
 SHARED_TARGET_LIMIT_MB="${SHARED_TARGET_LIMIT_MB:-2560}"   # target bersama > ini => clean-shared
 ROOT_MIN_FREE_MB="${ROOT_MIN_FREE_MB:-2048}"               # sisa bebas / untuk sistem
 CLEAN_SHARED_CMD="${CLEAN_SHARED_CMD:-}"                   # perintah clean-shared (di bawah kunci heavy)
@@ -36,10 +36,10 @@ free_gb() { df -BG --output=avail "$1" | tail -1 | tr -dc '0-9'; }
 free_mb() { df -BM --output=avail "$1" | tail -1 | tr -dc '0-9'; }
 size_mb() { [[ -d "$1" ]] && du -sm "$1" | cut -f1 || echo 0; }
 
-SHARED_CARGO_HOME="${SHARED_CARGO_HOME:-/data/workspace/arctiva-build/cargo-home}"
-SHARED_CARGO_HOME_LIMIT_MB="${SHARED_CARGO_HOME_LIMIT_MB:-2560}"   # cargo-home + rustup bersama (ARC-394)
+SHARED_CARGO_HOME="${SHARED_CARGO_HOME:-/data/workspace/poolrouter-build/cargo-home}"
+SHARED_CARGO_HOME_LIMIT_MB="${SHARED_CARGO_HOME_LIMIT_MB:-2560}"   # cargo-home + rustup bersama (SHAA-394)
 
-# Penjaga cargo-home bersama (ARC-394): melapor ukuran; di atas batas => berhenti, TIDAK menghapus apa pun.
+# Penjaga cargo-home bersama (SHAA-394): melapor ukuran; di atas batas => berhenti, TIDAK menghapus apa pun.
 check_cargo_home() {
   local csize
   csize="$(size_mb "$SHARED_CARGO_HOME")"

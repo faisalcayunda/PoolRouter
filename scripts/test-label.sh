@@ -33,7 +33,7 @@ for stack in backend frontend; do
 	check 2 "$stack" "$rvar" "$runner" "shaal.issue=SHAA-123"
 	check 2 "$stack" "$rvar" "$runner" "arctiva.issue=SHAA-123"
 	check 2 "$stack" "$rvar" "$runner" "arctiva.issue=123"
-	check 2 "$stack" "$rvar" "$runner" "shaal.issue=SHAA-123"
+	check 2 "$stack" "$rvar" "$runner" "shaal.issue=ARC-123"
 	check 2 "$stack" "$rvar" "$runner" ""
 done
 
