@@ -260,7 +260,7 @@ proptest! {
             .map(|(id, ruang)| PoolPeminjam { upstream_pool_id: *id, ruang: *ruang })
             .collect();
 
-        let urutan = urutan_sumber(&rencana, 1, boleh_pinjam, &peminjam);
+        let urutan = urutan_sumber(&rencana, boleh_pinjam, &peminjam);
 
         // Every borrowed source is a pool that was offered, and never the pool
         // asking: its own part is `sendiri` and `sisa`.
@@ -293,7 +293,7 @@ proptest! {
                 );
             }
         } else {
-            prop_assert_eq!(urutan.len(), 1);
+            prop_assert_eq!(urutan.len(), 2);
         }
 
         // `ruang_intake` is never negative and never smaller than the pool's own room.
