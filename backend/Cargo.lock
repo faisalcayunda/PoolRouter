@@ -2505,10 +2505,16 @@ name = "poolrouter-controller"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "chrono",
  "poolrouter-core",
+ "redis",
+ "secrecy",
+ "serde_json",
+ "sqlx",
  "tokio",
  "tokio-util",
  "tracing",
+ "uuid",
 ]
 
 [[package]]

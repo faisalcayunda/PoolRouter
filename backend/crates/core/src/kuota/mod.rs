@@ -23,6 +23,7 @@ pub mod metrik;
 pub mod pemulihan;
 pub mod periode;
 pub mod store;
+pub mod sumber_pg;
 
 pub use periode::{
     AturanReset, GalatKuota, JUMLAH_EMBER_HARIAN, KalenderZona, MENIT_EMBER, Periode, ZonaTetap,
