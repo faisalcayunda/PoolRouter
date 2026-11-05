@@ -428,6 +428,85 @@ impl From<sqlx::Error> for GalatAudit {
     }
 }
 
+/// Which kind of object a configuration change touched. Mirrors the
+/// `entitas_jenis` CHECK of `audit_konfigurasi`; a new variant needs a migration,
+/// not a string at the call site.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum EntitasKonfigurasi {
+    Client,
+    Kredensial,
+    DownstreamEndpoint,
+    DownstreamPool,
+    UpstreamPool,
+    Provider,
+    ClientWebhook,
+    WebhookDomainAllowlist,
+    ProviderConfig,
+    EndpointConfig,
+    EndpointMetadataField,
+    KonfigurasiPlatform,
+    AdminUser,
+    /// One entry of the global provider secret store (ARC-48, AD1).
+    ProviderSecret,
+}
+
+impl EntitasKonfigurasi {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Client => "client",
+            Self::Kredensial => "kredensial",
+            Self::DownstreamEndpoint => "downstream_endpoint",
+            Self::DownstreamPool => "downstream_pool",
+            Self::UpstreamPool => "upstream_pool",
+            Self::Provider => "provider",
+            Self::ClientWebhook => "client_webhook",
+            Self::WebhookDomainAllowlist => "webhook_domain_allowlist",
+            Self::ProviderConfig => "provider_config",
+            Self::EndpointConfig => "endpoint_config",
+            Self::EndpointMetadataField => "endpoint_metadata_field",
+            Self::KonfigurasiPlatform => "konfigurasi_platform",
+            Self::AdminUser => "admin_user",
+            Self::ProviderSecret => "provider_secret",
+        }
+    }
+}
+
+/// What happened to the object. `Cabut` is the closest the contract has to a
+/// delete, so removing a secret value is a revocation, not a new verb.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum AksiKonfigurasi {
+    Buat,
+    Ubah,
+    Nonaktifkan,
+    Aktifkan,
+    Cabut,
+}
+
+impl AksiKonfigurasi {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Buat => "buat",
+            Self::Ubah => "ubah",
+            Self::Nonaktifkan => "nonaktifkan",
+            Self::Aktifkan => "aktifkan",
+            Self::Cabut => "cabut",
+        }
+    }
+}
+
+/// One `audit_konfigurasi` row, before it is written. `nilai_lama`/`nilai_baru`
+/// are JSON descriptions of the change, never secret material.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct KonfigurasiBaru {
+    pub pelaku: Uuid,
+    pub entitas: EntitasKonfigurasi,
+    pub entitas_id: Option<Uuid>,
+    pub aksi: AksiKonfigurasi,
+    pub nilai_lama: Option<serde_json::Value>,
+    pub nilai_baru: Option<serde_json::Value>,
+    pub alasan: Alasan,
+}
+
 /// Writes audit rows inside the caller's transaction.
 ///
 /// The `&mut Transaction` is the whole point: it makes "audit and effect commit
@@ -469,11 +548,39 @@ impl<'tx> Penulis<'tx> {
         .bind(baris.filter_kueri)
         .bind(baris.nik_hmac.as_ref().map(NikHmac::as_str))
         .bind(baris.nik_tersamar)
-        .bind(baris.jumlah_record)
+        .bind(baris.jumlah_record.unwrap_or(0))
         .bind(baris.alasan.as_ref().map(Alasan::as_str))
         .bind(baris.hasil.as_str())
         .bind(baris.sumber_ip)
         .bind(baris.sesi_id)
+        .execute(&mut **self.tx)
+        .await?;
+
+        Ok(audit_id)
+    }
+
+    /// Write one `audit_konfigurasi` row and return its id (EN-07/EN-08, AC-5).
+    ///
+    /// `nilai_lama` and `nilai_baru` never carry a secret value, a credential, a
+    /// webhook secret, or a NIK: they describe the change (name, version,
+    /// status), not the material. The caller builds them, and the tests of the
+    /// calling module assert it.
+    pub async fn catat_konfigurasi(&mut self, baris: &KonfigurasiBaru) -> Result<Uuid, GalatAudit> {
+        let audit_id = Uuid::now_v7();
+        sqlx::query(
+            "INSERT INTO audit_konfigurasi \
+             (audit_konfigurasi_id, pengguna_id, entitas_jenis, entitas_id, aksi, nilai_lama, \
+              nilai_baru, alasan) \
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
+        )
+        .bind(audit_id)
+        .bind(baris.pelaku)
+        .bind(baris.entitas.as_str())
+        .bind(baris.entitas_id)
+        .bind(baris.aksi.as_str())
+        .bind(baris.nilai_lama.as_ref())
+        .bind(baris.nilai_baru.as_ref())
+        .bind(baris.alasan.as_str())
         .execute(&mut **self.tx)
         .await?;
 
