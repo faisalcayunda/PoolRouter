@@ -43,6 +43,11 @@ jobs:
             echo "skip=true" >> "$GITHUB_OUTPUT"
           fi
 
+      # Image slim tidak memuat make (ARC-27). Image dan digest tetap sama dengan frontend/Makefile.
+      - name: Pasang make
+        if: steps.guard.outputs.skip != 'true'
+        run: apt-get update && apt-get install -y --no-install-recommends make
+
       - name: Gate frontend
         if: steps.guard.outputs.skip != 'true'
         run: make -C frontend setup test lint
