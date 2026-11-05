@@ -34,6 +34,44 @@ pub struct LoginRequest {
     pub password: String,
 }
 
+/// Body of `POST /auth/mfa` (AC-10): exactly one of the two code kinds.
+#[derive(Debug, Clone, Deserialize, ToSchema)]
+pub struct KodeMfaRequest {
+    /// Six-digit TOTP code.
+    #[schema(example = "123456")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kode: Option<String>,
+    /// One of the 10 recovery codes issued at enrollment.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kode_pemulihan: Option<String>,
+}
+
+/// Body of `POST /auth/mfa/daftar/konfirmasi` (AC-13).
+#[derive(Debug, Clone, Deserialize, ToSchema)]
+pub struct KonfirmasiMfaRequest {
+    #[schema(example = "123456")]
+    pub kode_totp: String,
+}
+
+/// `POST /auth/mfa/daftar` response: shown once, never logged (AC-12).
+#[derive(Debug, Clone, Serialize, ToSchema)]
+pub struct MfaDaftar {
+    /// `otpauth://totp/...` for the authenticator app (issuer `PoolRouter`).
+    #[schema(
+        example = "otpauth://totp/PoolRouter:auditor_01?secret=JBSWY3DPEHPK3PXP&issuer=PoolRouter"
+    )]
+    pub otpauth_uri: String,
+    /// The same secret in base32, for manual entry.
+    pub rahasia_base32: String,
+}
+
+/// `POST /auth/mfa/daftar/konfirmasi` response: the recovery codes, once (AC-13).
+#[derive(Debug, Clone, Serialize, ToSchema)]
+pub struct MfaKonfirmasi {
+    /// 10 codes; each works once.
+    pub kode_pemulihan: Vec<String>,
+}
+
 /// Current identity (U-1: "identitas, peran, client_id").
 #[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct Me {
@@ -47,6 +85,22 @@ pub struct Me {
     pub client_id: Option<Uuid>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub bahasa_ui: Option<BahasaUi>,
+    /// MFA state for this account (AC-14, MF3).
+    pub mfa: MeMfa,
+}
+
+/// `Me.mfa` (AC-14): whether the step is required, whether it is enrolled, and
+/// how many recovery codes remain.
+#[derive(Debug, Clone, Serialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct MeMfa {
+    /// `true` when `POOLROUTER_MFA_WAJIB` is on and the caller's role is one
+    /// the policy covers.
+    pub wajib: bool,
+    /// `true` once a TOTP secret is confirmed (`pengguna_mfa.status = 'aktif'`).
+    pub aktif: bool,
+    /// Unused recovery codes: 10 right after enrollment, 9 after one login.
+    pub sisa_kode_pemulihan: i64,
 }
 
 /// Preference update (Addendum A section 7.2). No user id is accepted.
@@ -1084,6 +1138,79 @@ fn stub() -> (StatusCode, Json<Problem>) {
     security(())
 )]
 async fn login(axum::Json(_body): axum::Json<LoginRequest>) -> (StatusCode, Json<Problem>) {
+    stub()
+}
+
+/// Second login step: TOTP or a recovery code (ADR-0006 §9, AC-10).
+///
+/// Reads the `__Host-pr_mfa` pre-session cookie; on success sets
+/// `__Host-pr_session` and clears the pre-session cookie.
+#[utoipa::path(
+    post,
+    path = "/admin/v1/auth/mfa",
+    operation_id = "mfaVerifikasi",
+    tag = "admin",
+    request_body(content = KodeMfaRequest, content_type = "application/json"),
+    responses(
+        (status = 204, description = "Kode diterima; cookie sesi diterbitkan", headers(
+            ("Set-Cookie" = String, description = "__Host-pr_session=...; HttpOnly; Secure; SameSite=Strict; Path=/"),
+            ("Cache-Control" = String, description = "Selalu no-store (R-16)")
+        )
+        ),
+        (status = 401, response = Problem401Admin),
+        (status = 429, response = Problem429Admin),
+        (status = 422, response = Problem422Admin)
+    ),
+    security(())
+)]
+async fn mfa_verifikasi(
+    axum::Json(_body): axum::Json<KodeMfaRequest>,
+) -> (StatusCode, Json<Problem>) {
+    stub()
+}
+
+/// Start MFA enrollment: returns the `otpauth://` URI once (AC-12).
+#[utoipa::path(
+    post,
+    path = "/admin/v1/auth/mfa/daftar",
+    operation_id = "mfaDaftar",
+    tag = "admin",
+    responses(
+        (status = 200, description = "URI otpauth dan secret base32; ditampilkan sekali", body = MfaDaftar, headers(
+            ("Cache-Control" = String, description = "Selalu no-store (R-16)")
+        )
+        ),
+        (status = 401, response = Problem401Admin),
+        (status = 403, response = Problem403Admin)
+    ),
+    security(())
+)]
+async fn mfa_daftar() -> (StatusCode, Json<Problem>) {
+    stub()
+}
+
+/// Confirm enrollment with one TOTP code; returns the 10 recovery codes (AC-13).
+#[utoipa::path(
+    post,
+    path = "/admin/v1/auth/mfa/daftar/konfirmasi",
+    operation_id = "mfaKonfirmasi",
+    tag = "admin",
+    request_body(content = KonfirmasiMfaRequest, content_type = "application/json"),
+    responses(
+        (status = 200, description = "MFA aktif; kode pemulihan dan cookie sesi diterbitkan", body = MfaKonfirmasi, headers(
+            ("Set-Cookie" = String, description = "__Host-pr_session=...; HttpOnly; Secure; SameSite=Strict; Path=/"),
+            ("Cache-Control" = String, description = "Selalu no-store (R-16)")
+        )
+        ),
+        (status = 401, response = Problem401Admin),
+        (status = 403, response = Problem403Admin),
+        (status = 422, response = Problem422Admin)
+    ),
+    security(())
+)]
+async fn mfa_konfirmasi(
+    axum::Json(_body): axum::Json<KonfirmasiMfaRequest>,
+) -> (StatusCode, Json<Problem>) {
     stub()
 }
 
@@ -2682,6 +2809,7 @@ impl utoipa::Modify for SecurityAddon {
     info(title = "PoolRouter Admin API", description = "Kontrak admin PoolRouter F0 (SHAA-175): sesi cookie, konfigurasi, K-20, kuota, log/audit. Error memakai RFC 9457 problem+json dengan kode tertutup (Addendum A); rincian tiap kode ada di docs/masalah.md. Tulis hanya dari Origin yang sah; setiap tulis tercatat di audit konfigurasi."),
     paths(
         login, logout, get_me, update_preferensi, get_sesi, perpanjang_sesi,
+        mfa_verifikasi, mfa_daftar, mfa_konfirmasi,
         list_providers, get_provider, create_provider, update_provider,
         list_secrets, put_secret, delete_secret,
         list_upstream_pools, get_upstream_pool, create_upstream_pool, update_upstream_pool,
@@ -2702,6 +2830,7 @@ impl utoipa::Modify for SecurityAddon {
     ),
     components(schemas(
         LoginRequest, Me, PreferensiUpdate, SesiStatus,
+        KodeMfaRequest, KonfirmasiMfaRequest, MfaDaftar, MfaKonfirmasi, MeMfa,
         ProviderConfig, ParameterRule, RuleValidasi, Provider,
         SecretRingkas, SecretNilai,
         UpstreamPoolConfig, UpstreamPool,
@@ -2741,6 +2870,9 @@ pub fn yaml() -> Result<String, Box<dyn std::error::Error>> {
 pub fn router() -> OpenApiRouter {
     OpenApiRouter::new()
         .routes(routes!(login))
+        .routes(routes!(mfa_verifikasi))
+        .routes(routes!(mfa_daftar))
+        .routes(routes!(mfa_konfirmasi))
         .routes(routes!(logout))
         .routes(routes!(get_me))
         .routes(routes!(update_preferensi))

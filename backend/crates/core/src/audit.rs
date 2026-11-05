@@ -46,6 +46,13 @@ impl Peran {
         }
     }
 
+    /// Whether holding this role makes the TOTP step compulsory
+    /// (ADR-0006 §9, AC-9): `auditor` and `platform_admin`.
+    #[must_use]
+    pub const fn wajib_mfa(self) -> bool {
+        matches!(self, Self::PlatformAdmin | Self::Auditor)
+    }
+
     /// Every role, in contract order. Used by the CLI to validate `--peran`
     /// and by tests to prove the list matches the database check constraint.
     pub const SEMUA: [Self; 4] = [

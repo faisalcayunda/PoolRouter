@@ -17,9 +17,35 @@ use poolrouter_core::admin::sesi_store::SesiDitolak;
 use uuid::Uuid;
 
 use super::sesi::{AdminState, Galat, hash_dari_cookie, periksa_origin};
-use crate::api::admin::{Me, PreferensiUpdate};
+use crate::api::admin::{Me, MeMfa, PreferensiUpdate};
 use crate::api::enums::{BahasaUi, Peran};
 use crate::api::problem::ProblemKodeAdmin;
+
+/// The `Me.mfa` object for `getMe` (AC-14).
+///
+/// `wajib` is the policy answer, `aktif` the enrollment answer, and
+/// `sisa_kode_pemulihan` the count of unused recovery codes. Read-only: it
+/// writes no `audit_akses` row and does not touch the session.
+async fn mfa_untuk(s: &AdminState, pengguna_id: Uuid, peran: &[Peran]) -> Result<MeMfa, Galat> {
+    // Same rule as the login step: `mfa_wajib` plus a role ADR-0006 §9 covers.
+    let wajib = s.mfa_wajib
+        && peran
+            .iter()
+            .any(|p| matches!(p, Peran::Auditor | Peran::PlatformAdmin));
+    let aktif = s.mfa.aktif(pengguna_id).await.map_err(|e| {
+        tracing::error!(error = %e, "admin: pembacaan status MFA gagal");
+        Galat::layanan()
+    })?;
+    let sisa = s.mfa.sisa_kode_pemulihan(pengguna_id).await.map_err(|e| {
+        tracing::error!(error = %e, "admin: penghitungan kode pemulihan gagal");
+        Galat::layanan()
+    })?;
+    Ok(MeMfa {
+        wajib,
+        aktif,
+        sisa_kode_pemulihan: sisa,
+    })
+}
 
 fn peran_dari_teks(t: &str) -> Option<Peran> {
     match t {
@@ -96,12 +122,15 @@ pub(super) async fn get_me(
     .fetch_one(&s.pool)
     .await
     .map_err(|e| galat_db(&e))?;
+    let peran = peran_aktif(&s, sesi.pengguna_id, sekarang).await?;
+    let mfa = mfa_untuk(&s, sesi.pengguna_id, &peran).await?;
     let me = Me {
         pengguna_id: sesi.pengguna_id,
         username: baris.0,
-        peran: peran_aktif(&s, sesi.pengguna_id, sekarang).await?,
+        peran,
         client_id: baris.1,
         bahasa_ui: baris.2.as_deref().and_then(bahasa_dari_teks),
+        mfa,
     };
     Ok((StatusCode::OK, axum::Json(me)).into_response())
 }
