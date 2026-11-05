@@ -1,0 +1,307 @@
+//! The plan of a pool's budget, checked against the database and against
+//! itself (spec `f1-prioritas-alokasi`, AC-1 and AC-2).
+//!
+//! AC-1 requires the Rust plan to agree with `fn_alokasi_kelebihan`, the SQL
+//! function that guards the same rule (AL-01) inside PostgreSQL. Two
+//! implementations of one rule drift in exactly the places that matter —
+//! rounding of `persen`, the `margin_kuota` subtraction, the treatment of a
+//! route without allocation — so the comparison is made on 100 random
+//! configurations rather than on a handful of hand-picked ones.
+//!
+//! AC-2 is a property about absence: a route may borrow, but never another
+//! pool's *reservation*. That is checked over random plans, because the failure
+//! mode is a list that happens to look right for the pools someone typed in.
+
+use poolrouter_core::kuota::alokasi::{GalatAlokasi, NilaiAlokasi};
+use poolrouter_core::kuota::rencana::{
+    PoolPeminjam, RencanaAnggaran, Rute, Sumber, ruang_intake, urutan_sumber,
+};
+use proptest::prelude::*;
+use sqlx::{PgPool, Row};
+
+/// `POOLROUTER_TEST_DATABASE_URL` is what `make uji-pg` exports; the test is
+/// `#[ignore]`d so a plain `cargo test` never needs a database.
+async fn pool() -> Option<PgPool> {
+    let url = std::env::var("POOLROUTER_TEST_DATABASE_URL").ok()?;
+    PgPool::connect(&url).await.ok()
+}
+
+/// One configuration of a pool: its quota and the allocations of its routes.
+struct Konfigurasi {
+    kuota_harian: i64,
+    margin: f64,
+    alokasi: Vec<NilaiAlokasi>,
+}
+
+impl Konfigurasi {
+    fn rute(&self) -> Vec<Rute> {
+        self.alokasi
+            .iter()
+            .enumerate()
+            .map(|(i, a)| Rute::beralokasi(i as i64 + 1, *a))
+            .collect()
+    }
+
+    fn rencana(&self) -> Result<RencanaAnggaran, GalatAlokasi> {
+        RencanaAnggaran::baru(self.kuota_harian, self.margin, &self.rute())
+    }
+
+    fn jumlah_alokasi(&self) -> i64 {
+        self.rencana()
+            .map(|r| r.anggaran().reserved())
+            .unwrap_or_else(|_| {
+                // A plan over Q is still a sum the SQL side sees; compute it
+                // the same way the model does so the comparison stays fair.
+                let q = (self.kuota_harian as f64 * (1.0 - self.margin)).floor() as i64;
+                self.alokasi.iter().map(|a| a.reserved(q)).sum()
+            })
+    }
+}
+
+/// 100 configurations, deterministic so a failure reproduces.
+fn seratus_konfigurasi() -> Vec<Konfigurasi> {
+    let mut keluaran = Vec::with_capacity(100);
+    let mut keadaan = 0x5eed_1234_9abc_def0u64;
+    let mut acak = || {
+        // xorshift64*: small, deterministic, no dependency.
+        keadaan ^= keadaan >> 12;
+        keadaan ^= keadaan << 25;
+        keadaan ^= keadaan >> 27;
+        keadaan.wrapping_mul(0x2545_f491_4f6c_dd1d)
+    };
+    for _ in 0..100 {
+        let kuota_harian = 1 + (acak() % 5_000) as i64;
+        // The column is `numeric(4,3)` and CHECK 0.001..=0.200: three decimals,
+        // never zero. Generating anything else would test a row PostgreSQL
+        // refuses to store.
+        let margin = (1 + (acak() % 200)) as f64 / 1000.0;
+        let q = (kuota_harian as f64 * (1.0 - margin)).floor() as i64;
+        let jumlah_rute = 1 + (acak() % 5) as usize;
+        let mut alokasi = Vec::with_capacity(jumlah_rute);
+        for _ in 0..jumlah_rute {
+            let pilihan = acak() % 3;
+            let a = if pilihan == 0 {
+                let n = 1 + (acak() % (q.max(1) as u64)) as i64;
+                NilaiAlokasi::exact(n.min(q))
+            } else if pilihan == 1 {
+                let p = 1 + (acak() % 10_000) as i64;
+                NilaiAlokasi::persen(p as f64 / 100.0)
+            } else {
+                // A share small enough that the sum usually still fits.
+                let p = 1 + (acak() % 2_000) as i64;
+                NilaiAlokasi::persen(p as f64 / 100.0)
+            };
+            if let Ok(a) = a {
+                alokasi.push(a);
+            }
+        }
+        keluaran.push(Konfigurasi {
+            kuota_harian,
+            margin,
+            alokasi,
+        });
+    }
+    keluaran
+}
+
+/// AC-1, the database half: `fn_alokasi_kelebihan` and the plan must agree on
+/// the excess for the same configuration.
+///
+/// The function reads the tables, so each configuration is inserted into a
+/// throwaway pool with its routes, checked, then rolled back. `fn_...` is
+/// `STABLE SECURITY DEFINER`, so it sees the rows of the transaction that calls
+/// it.
+#[tokio::test]
+#[ignore = "butuh PostgreSQL sungguhan; jalankan lewat make -C backend uji-pg"]
+async fn rencana_sepakat_dengan_fn_alokasi_kelebihan() {
+    let Some(pool) = pool().await else {
+        eprintln!("lewat: POOLROUTER_TEST_DATABASE_URL tidak diset");
+        return;
+    };
+
+    for (i, k) in seratus_konfigurasi().iter().enumerate() {
+        let mut tx = pool.begin().await.expect("mulai transaksi");
+        // Ids are generated by the application, not the schema, so the test
+        // names them. `xid` keeps them unique across runs.
+        let akar: uuid::Uuid = sqlx::query_scalar("SELECT gen_random_uuid()")
+            .fetch_one(&mut *tx)
+            .await
+            .expect("uuid");
+        let provider = uuid::Uuid::from_u128(akar.as_u128() ^ 1);
+        let upstream = uuid::Uuid::from_u128(akar.as_u128() ^ 2);
+        sqlx::query("INSERT INTO provider (provider_id, nama) VALUES ($1, $2)")
+            .bind(provider)
+            .bind(format!("arc108-p-{i}"))
+            .execute(&mut *tx)
+            .await
+            .expect("sisip provider");
+        sqlx::query(
+            "INSERT INTO upstream_pool (upstream_pool_id, provider_id, nama, kuota_harian, margin_kuota) \
+             VALUES ($1, $2, $3, $4, $5)",
+        )
+        .bind(upstream)
+        .bind(provider)
+        .bind(format!("arc108-{i}"))
+        .bind(k.kuota_harian)
+        .bind(k.margin)
+        .execute(&mut *tx)
+        .await
+        .expect("sisip upstream_pool");
+
+        for (j, a) in k.alokasi.iter().enumerate() {
+            let downstream = uuid::Uuid::from_u128(akar.as_u128() ^ (0x100 + j as u128));
+            sqlx::query(
+                "INSERT INTO downstream_pool (downstream_pool_id, nama, aktif, prioritas) \
+                 VALUES ($1, $2, true, 1)",
+            )
+            .bind(downstream)
+            .bind(format!("arc108-{i}-{j}"))
+            .execute(&mut *tx)
+            .await
+            .expect("sisip downstream_pool");
+            sqlx::query(
+                "INSERT INTO downstream_pool_rute \
+                 (downstream_pool_id, upstream_pool_id, alokasi_jenis, alokasi_nilai, sifat, boleh_pinjam) \
+                 VALUES ($1, $2, $3, $4, 'reserved', true)",
+            )
+            .bind(downstream)
+            .bind(upstream)
+            .bind(a.jenis().sebagai_teks())
+            .bind(a.nilai_desimal())
+            .execute(&mut *tx)
+            .await
+            .expect("sisip rute");
+        }
+
+        let baris = sqlx::query(
+            "SELECT fn_alokasi_kelebihan($1) AS lebih, \
+                                        (SELECT floor(kuota_harian * (1 - margin_kuota))::bigint \
+                                           FROM upstream_pool WHERE upstream_pool_id = $1) AS q",
+        )
+        .bind(upstream)
+        .fetch_one(&mut *tx)
+        .await
+        .expect("hitung kelebihan");
+        let lebih_sql: i64 = baris.get("lebih");
+        let q_sql: i64 = baris.get("q");
+
+        let rencana = k.rencana();
+        let (jumlah_rust, lebih_rust) = match &rencana {
+            Ok(r) => {
+                assert_eq!(
+                    r.anggaran().kuota_efektif(),
+                    q_sql,
+                    "kuota efektif berbeda pada konfigurasi {i}: {:?}",
+                    k.alokasi
+                );
+                (r.anggaran().reserved(), 0)
+            }
+            Err(GalatAlokasi::MelebihiAnggaran { lebih, .. }) => (k.jumlah_alokasi(), *lebih),
+            Err(e) => panic!("galat tak terduga pada konfigurasi {i}: {e:?}"),
+        };
+        assert_eq!(
+            lebih_rust, lebih_sql,
+            "kelebihan berbeda pada konfigurasi {i} ({:?}, q={q_sql}): Rust {jumlah_rust} vs SQL",
+            k.alokasi
+        );
+        // `a_sisa` is what the plan leaves, and it must match Q - Σ as SQL counts it.
+        if rencana.is_ok() {
+            assert_eq!(
+                rencana.unwrap().sisa(),
+                (q_sql - jumlah_rust).max(0),
+                "sisa berbeda pada konfigurasi {i}"
+            );
+        }
+
+        tx.rollback().await.expect("rollback");
+    }
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig { cases: 200, ..ProptestConfig::default() })]
+
+    /// AC-2, the property: whatever the plan and the donors look like, the
+    /// order never offers another pool's reservation.
+    ///
+    /// The invariant is expressed through what the caller can supply: a donor's
+    /// `ruang` is its shareable part, and a pool may not donate to itself. The
+    /// list must also stay a permutation of what came in plus the two own
+    /// sources — nothing invented, nothing dropped.
+    #[test]
+    fn urutan_tidak_pernah_memakai_reserved_pool_lain(
+        kuota in 1i64..5_000,
+        // The column is `numeric(5,4)` with 0.001..=0.200, plus the model's own
+        // zero; anything between is not a configuration the system can hold.
+        margin_raw in 0i64..200_001,
+        own_alloc in 0i64..2_000,
+        donors in prop::collection::vec((1i64..50, 0i64..1_000), 0..8),
+        boleh_pinjam in any::<bool>(),
+    ) {
+        let margin = if margin_raw % 10 == 0 { 0.0 } else { (margin_raw as f64) / 1_000_000.0 };
+        let margin = (margin * 10_000.0).round() / 10_000.0;
+        prop_assume!(margin == 0.0 || (0.001..=0.200).contains(&margin));
+        let q = (kuota as f64 * (1.0 - margin)).floor() as i64;
+        let alokasi = if own_alloc > 0 && own_alloc <= q {
+            NilaiAlokasi::exact(own_alloc).ok()
+        } else {
+            None
+        };
+        prop_assume!(q >= 1);
+        let rute: Vec<Rute> = match alokasi {
+            Some(a) => vec![Rute::beralokasi(1, a)],
+            None => vec![Rute::tanpa_alokasi(1)],
+        };
+        let rencana = RencanaAnggaran::baru(kuota, margin, &rute).unwrap();
+        // A pool cannot lend to itself; the caller hands in other pools only,
+        // so the generator drops the pool's own id like the dispatcher does.
+        let peminjam: Vec<PoolPeminjam> = donors
+            .iter()
+            .filter(|(id, _)| *id != 1)
+            .map(|(id, ruang)| PoolPeminjam { upstream_pool_id: *id, ruang: *ruang })
+            .collect();
+
+        let urutan = urutan_sumber(&rencana, boleh_pinjam, &peminjam);
+
+        // Every borrowed source is a pool that was offered, and never the pool
+        // asking: its own part is `sendiri` and `sisa`.
+        for s in &urutan {
+            if let Sumber::Pinjam { upstream_pool_id } = s.sumber {
+                prop_assert!(boleh_pinjam, "pinjaman muncul padahal boleh_pinjam = false");
+                prop_assert_ne!(upstream_pool_id, 1, "pool sendiri tidak boleh menjadi donor");
+                prop_assert!(peminjam.iter().any(|p| p.upstream_pool_id == upstream_pool_id));
+            }
+            prop_assert!(s.ruang >= 0, "ruang negatif: {:?}", s);
+        }
+
+        // No donor is dropped, and the borrowed part is ordered by room then id.
+        if boleh_pinjam {
+            let pinjam: Vec<(i64, i64)> = urutan
+                .iter()
+                .filter_map(|s| match s.sumber {
+                    Sumber::Pinjam { upstream_pool_id } => Some((upstream_pool_id, s.ruang)),
+                    _ => None,
+                })
+                .collect();
+            prop_assert_eq!(pinjam.len(), peminjam.len());
+            for w in pinjam.windows(2) {
+                let (id_a, ruang_a) = w[0];
+                let (id_b, ruang_b) = w[1];
+                prop_assert!(
+                    ruang_a > ruang_b || (ruang_a == ruang_b && id_a < id_b),
+                    "urutan pinjaman tidak stabil: {:?}",
+                    pinjam
+                );
+            }
+        } else {
+            prop_assert_eq!(urutan.len(), 2);
+        }
+
+        // `ruang_intake` is never negative and never smaller than the pool's own room.
+        let terpakai = 0i64..q.saturating_add(10);
+        for t in [terpakai.start, terpakai.end] {
+            let ruang = ruang_intake(&rencana, t, boleh_pinjam, &peminjam);
+            prop_assert!(ruang >= 0, "ruang negatif: {}", ruang);
+            prop_assert!(ruang >= rencana.anggaran().sisa(t));
+        }
+    }
+}

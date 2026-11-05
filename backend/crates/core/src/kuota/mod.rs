@@ -19,13 +19,19 @@
 //!   an error or as `belum_siap`; the mapping to a problem code stays in one
 //!   place outside this module.
 
+pub mod alokasi;
 pub mod metrik;
 pub mod pemulihan;
 pub mod periode;
+pub mod rencana;
 pub mod store;
 pub mod sumber_pg;
 
+pub use alokasi::{Anggaran, GalatAlokasi, JenisAlokasi, NilaiAlokasi};
 pub use periode::{
     AturanReset, GalatKuota, JUMLAH_EMBER_HARIAN, KalenderZona, MENIT_EMBER, Periode, ZonaTetap,
     ember_mulai, indeks_ember, nomor_ember, periode_untuk,
+};
+pub use rencana::{
+    PoolPeminjam, RencanaAnggaran, Rute, Sumber, SumberDana, ruang_intake, urutan_sumber,
 };
