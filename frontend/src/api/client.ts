@@ -1,4 +1,5 @@
-import type { components } from './schema.gen';
+import createClient from 'openapi-fetch';
+import type { components, paths } from './schema.gen';
 
 export type Schemas = components['schemas'];
 export type LogCariRequest = Schemas['LogCariRequest'];
@@ -14,6 +15,11 @@ export type AuditAksesPage = Schemas['AuditAksesPage'];
 export type AuditAksesBaris = Schemas['AuditAksesBaris'];
 export type UpstreamPool = Schemas['UpstreamPool'];
 export type ValidasiErrorAdmin = Schemas['ValidasiErrorAdmin'];
+export type LoginRequest = Schemas['LoginRequest'];
+export type Me = Schemas['Me'];
+export type SesiStatus = Schemas['SesiStatus'];
+export type Provider = Schemas['Provider'];
+export type ProviderConfig = Schemas['ProviderConfig'];
 
 const ADMIN_PREFIX = '/admin/v1';
 
@@ -21,31 +27,16 @@ const ADMIN_PREFIX = '/admin/v1';
 export interface Problem {
   type?: string;
   title?: string;
-  status: number;
-  /** Stable machine code, e.g. `pencarian_nik_dilarang`, `ekspor_terlalu_besar`. */
+  status?: number;
   kode?: string;
-  /** Field-level errors for 422 `validasi_gagal`. */
+  detail?: string | null;
   errors?: ValidasiErrorAdmin[];
 }
 
-/**
- * Custom headers the admin API requires beyond the session cookie. `X-Alasan` carries the auditor
- * reason that lands in the access audit (ADR-0003 rev 3 3.6a–c); it never goes into the URL or the
- * query string (section 9: no NIK in the URL).
- */
-export interface RequestOptions {
-  /** Wire body for POST search endpoints; kept out of the URL on purpose. */
-  body?: unknown;
-  /** Auditor reason; sent as `X-Alasan` on every logged read. */
-  alasan?: string;
-  signal?: AbortSignal;
-}
-
-/** A CSV export with the digest the API returns for the downloaded file (R-18). */
 export interface EksporBerkas {
   blob: Blob;
   filename: string;
-  /** Base64 SHA-256 from `Repr-Digest: sha-256=...`, when the server sent it. */
+  /** `Repr-Digest` sha-256, when the server sent one. */
   digest: string | null;
 }
 
@@ -67,18 +58,34 @@ export class ApiError extends Error {
 }
 
 /**
- * The API client is a plain function so tests can pass a stub and the app can swap the base URL
- * via `VITE_ADMIN_API_BASE` without touching call sites.
+ * The API client is a typed `openapi-fetch` client over `schema.gen.ts` (ADR-0003 4). Tests pass a
+ * fetch stub and the app can swap the API origin via `VITE_ADMIN_API_B`.
  */
-export type Fetch = (input: string, init?: RequestInit) => Promise<Response>;
+export type Fetch = (input: Request) => Promise<Response>;
 
 export interface ApiClientOptions {
-  /** Same-origin by default; the admin API is served under `/admin/v1`. */
-  baseUrl?: string;
+  /** Origin only (`https://host`); the `/admin/v1` prefix lives in the operation paths. */
+  origin?: string;
   fetch?: Fetch;
 }
 
+export interface RequestOptions {
+  signal?: AbortSignal;
+  /** Auditor reason (ADR-0004): travels in `X-Alasan`, never in the URL. */
+  alasan?: string;
+}
+
 export interface ApiClient {
+  /** POST /auth/login — success sets the `__Host-pr_session` cookie. */
+  login(body: LoginRequest, options?: RequestOptions): Promise<void>;
+  /** POST /auth/logout — clears the session cookie. */
+  logout(options?: RequestOptions): Promise<void>;
+  /** GET /auth/me — current identity (role drives the shell). */
+  me(options?: RequestOptions): Promise<Me>;
+  /** GET /auth/sesi — idle and absolute deadlines for the shell warnings. */
+  getSesi(options?: RequestOptions): Promise<SesiStatus>;
+  /** POST /auth/sesi/perpanjang — resets the idle timer only. */
+  perpanjangSesi(options?: RequestOptions): Promise<SesiStatus>;
   /** POST /log/cari — POST so filters never reach the access log (section 18.3). */
   cariLog(body: LogCariRequest, options?: RequestOptions): Promise<LogPage>;
   /** POST /auditor/log/cari-nik — auditor only, exact 16-digit NIK. */
@@ -93,6 +100,14 @@ export interface ApiClient {
   kuota(upstreamPoolId?: string, options?: RequestOptions): Promise<KuotaTracker[]>;
   /** GET /upstream-pools — read-only lookup for the quota tracker filter. */
   upstreamPools(options?: RequestOptions): Promise<UpstreamPool[]>;
+  /** GET /providers — platform admin only. */
+  listProviders(options?: RequestOptions): Promise<Provider[]>;
+  /** GET /providers/{id} — provider detail for the edit form. */
+  getProvider(id: string, options?: RequestOptions): Promise<Provider>;
+  /** POST /providers — create; old versions stay intact on update. */
+  createProvider(body: ProviderConfig, options?: RequestOptions): Promise<Provider>;
+  /** PUT /providers/{id} — update; old versions stay intact (V-03). */
+  updateProvider(id: string, body: ProviderConfig, options?: RequestOptions): Promise<Provider>;
 }
 
 function problemFrom(status: number, body: unknown): Problem | null {
@@ -124,102 +139,196 @@ function digestFrom(header: string | null): string | null {
 }
 
 export function createApiClient(options: ApiClientOptions = {}): ApiClient {
-  const baseUrl = options.baseUrl ?? ADMIN_PREFIX;
-  const doFetch: Fetch = options.fetch ?? ((input, init) => globalThis.fetch(input, init));
+  const origin =
+    options.origin ??
+    import.meta.env.VITE_ADMIN_API_BASE ??
+    globalThis.location?.origin ??
+    'http://localhost';
+  const client = createClient<paths>({
+    baseUrl: origin,
+    fetch: options.fetch,
+    // The session cookie is `HttpOnly` + `SameSite=Strict` (ADR-0003 rev 5 3.6 option A), so
+    // same-origin `include` keeps it flowing without exposing the token to JavaScript.
+    credentials: 'include',
+    cache: 'no-store',
+    headers: {
+      Accept: 'application/json',
+      // R-16: every admin read is `no-store`; ask intermediaries not to reuse it either.
+      'Cache-Control': 'no-store',
+    },
+  });
+  const headers = (opts: RequestOptions): Record<string, string> =>
+    opts.alasan === undefined ? {} : { 'X-Alasan': opts.alasan };
 
-  function buildInit(init: RequestInit, opts: RequestOptions): RequestInit {
-    const headers = new Headers(init.headers);
-    headers.set('Accept', 'application/json');
-    // R-16: every admin read is `no-store`; ask intermediaries not to reuse it either.
-    headers.set('Cache-Control', 'no-store');
-    if (opts.body !== undefined) headers.set('Content-Type', 'application/json');
-    if (opts.alasan !== undefined) headers.set('X-Alasan', opts.alasan);
-
-    return {
-      ...init,
-      headers,
-      // The session cookie is `HttpOnly` + `SameSite=Strict` (ADR-0003 rev 5 3.6 option A), so
-      // same-origin `include` keeps it flowing without exposing the token to JavaScript.
-      credentials: 'include',
-      cache: 'no-store',
-      signal: opts.signal,
-      ...(opts.body !== undefined ? { body: JSON.stringify(opts.body) } : {}),
-    };
-  }
-
-  async function request<T>(
-    path: string,
-    init: RequestInit,
-    opts: RequestOptions = {},
-  ): Promise<T> {
-    const response = await doFetch(`${baseUrl}${path}`, buildInit(init, opts));
-    const text = await response.text();
-    const parsed: unknown = text ? safeJson(text) : undefined;
-    if (!response.ok) throw new ApiError(response.status, problemFrom(response.status, parsed));
-    return parsed as T;
-  }
+  const ok = <T>(result: { data?: T; error?: unknown; response: Response }): T => {
+    if (!result.response.ok)
+      throw new ApiError(result.response.status, problemFrom(result.response.status, result.error));
+    return result.data as T;
+  };
 
   return {
-    cariLog: (body, opts) => request<LogPage>('/log/cari', { method: 'POST' }, { ...opts, body }),
-
-    cariLogNik: (body, opts) =>
-      request<LogPage>('/auditor/log/cari-nik', { method: 'POST' }, { ...opts, body }),
-
-    bukaPayload: async (body, opts) => {
-      const response = await doFetch(
-        `${baseUrl}/auditor/payload`,
-        buildInit({ method: 'POST' }, { ...opts, body }),
+    async login(body, opts = {}) {
+      ok(
+        await client.POST(`${ADMIN_PREFIX}/auth/login`, {
+          body,
+          headers: headers(opts),
+          signal: opts.signal,
+        }),
       );
-      const text = await response.text();
-      const parsed: unknown = text ? safeJson(text) : undefined;
-      if (!response.ok) throw new ApiError(response.status, problemFrom(response.status, parsed));
-      // R-16 / section 18.3: the payload is only safe to render if the *answer* is uncacheable.
-      // The request header alone does not bind an intermediary, so a payload without it is a
-      // contract breach and must not reach the screen.
-      const cacheControl = response.headers.get('Cache-Control') ?? '';
-      if (!/\bno-store\b/i.test(cacheControl)) {
-        throw new ApiError(502, { status: 502, kode: 'payload_bukan_no_store' });
-      }
-      return parsed as PayloadView;
     },
 
-    async eksporLog(body, opts = {}) {
-      const response = await doFetch(
-        `${baseUrl}/auditor/log/ekspor`,
-        buildInit({ method: 'POST' }, { ...opts, body }),
+    async logout(opts = {}) {
+      ok(
+        await client.POST(`${ADMIN_PREFIX}/auth/logout`, {
+          headers: headers(opts),
+          signal: opts.signal,
+        }),
       );
-      if (!response.ok) {
-        const text = await response.text();
+    },
+
+    me: async (opts = {}) =>
+      ok(
+        await client.GET(`${ADMIN_PREFIX}/auth/me`, {
+          headers: headers(opts),
+          signal: opts.signal,
+        }),
+      ),
+
+    getSesi: async (opts = {}) =>
+      ok(
+        await client.GET(`${ADMIN_PREFIX}/auth/sesi`, {
+          headers: headers(opts),
+          signal: opts.signal,
+        }),
+      ),
+
+    perpanjangSesi: async (opts = {}) =>
+      ok(
+        await client.POST(`${ADMIN_PREFIX}/auth/sesi/perpanjang`, {
+          headers: headers(opts),
+          signal: opts.signal,
+        }),
+      ),
+
+    cariLog: async (body, opts = {}) =>
+      ok(
+        await client.POST(`${ADMIN_PREFIX}/log/cari`, {
+          body,
+          headers: headers(opts),
+          signal: opts.signal,
+        }),
+      ),
+
+    cariLogNik: async (body, opts = {}) =>
+      ok(
+        await client.POST(`${ADMIN_PREFIX}/auditor/log/cari-nik`, {
+          body,
+          headers: headers(opts),
+          signal: opts.signal,
+        }),
+      ),
+
+    bukaPayload: async (body, opts = {}) => {
+      const result = await client.POST(`${ADMIN_PREFIX}/auditor/payload`, {
+        body,
+        headers: headers(opts),
+        signal: opts.signal,
+      });
+      const view = ok(result);
+      // The payload is only safe to render if the *answer* is uncacheable (R-16).
+      const cacheControl = result.response.headers.get('Cache-Control') ?? '';
+      if (!/\bno-store\b/i.test(cacheControl)) {
+        throw new ApiError(502, {
+          status: 502,
+          kode: 'payload_bukan_no_store',
+          title: 'Payload response is cacheable',
+        });
+      }
+      return view;
+    },
+
+    eksporLog: async (body, opts = {}) => {
+      const result = await client.POST(`${ADMIN_PREFIX}/auditor/log/ekspor`, {
+        body,
+        headers: headers(opts),
+        signal: opts.signal,
+        parseAs: 'blob',
+      });
+      if (!result.response.ok) {
         throw new ApiError(
-          response.status,
-          problemFrom(response.status, text ? safeJson(text) : undefined),
+          result.response.status,
+          problemFrom(result.response.status, result.error),
         );
       }
       return {
-        blob: await response.blob(),
-        filename: filenameFrom(response.headers.get('Content-Disposition')),
-        digest: digestFrom(response.headers.get('Repr-Digest')),
+        blob: result.data as Blob,
+        filename: filenameFrom(result.response.headers.get('Content-Disposition')),
+        digest: digestFrom(result.response.headers.get('Repr-Digest')),
       };
     },
 
-    cariAuditAkses: (body, opts) =>
-      request<AuditAksesPage>('/auditor/audit-akses/cari', { method: 'POST' }, { ...opts, body }),
+    cariAuditAkses: async (body, opts = {}) =>
+      ok(
+        await client.POST(`${ADMIN_PREFIX}/auditor/audit-akses/cari`, {
+          body,
+          headers: headers(opts),
+          signal: opts.signal,
+        }),
+      ),
 
-    kuota: (upstreamPoolId, opts) => {
-      const query = upstreamPoolId ? `?upstream_pool_id=${encodeURIComponent(upstreamPoolId)}` : '';
-      return request<KuotaTracker[]>(`/kuota${query}`, { method: 'GET' }, opts);
-    },
+    kuota: async (upstreamPoolId, opts = {}) =>
+      ok(
+        await client.GET(`${ADMIN_PREFIX}/kuota`, {
+          params: { query: upstreamPoolId ? { upstream_pool_id: upstreamPoolId } : {} },
+          headers: headers(opts),
+          signal: opts.signal,
+        }),
+      ),
 
-    upstreamPools: (opts) => request<UpstreamPool[]>('/upstream-pools', { method: 'GET' }, opts),
+    upstreamPools: async (opts = {}) =>
+      ok(
+        await client.GET(`${ADMIN_PREFIX}/upstream-pools`, {
+          headers: headers(opts),
+          signal: opts.signal,
+        }),
+      ),
+
+    listProviders: async (opts = {}) =>
+      ok(
+        await client.GET(`${ADMIN_PREFIX}/providers`, {
+          headers: headers(opts),
+          signal: opts.signal,
+        }),
+      ),
+
+    getProvider: async (id, opts = {}) =>
+      ok(
+        await client.GET(`${ADMIN_PREFIX}/providers/{id}`, {
+          params: { path: { id } },
+          headers: headers(opts),
+          signal: opts.signal,
+        }),
+      ),
+
+    createProvider: async (body, opts = {}) =>
+      ok(
+        await client.POST(`${ADMIN_PREFIX}/providers`, {
+          body,
+          headers: headers(opts),
+          signal: opts.signal,
+        }),
+      ),
+
+    updateProvider: async (id, body, opts = {}) =>
+      ok(
+        await client.PUT(`${ADMIN_PREFIX}/providers/{id}`, {
+          params: { path: { id } },
+          body,
+          headers: headers(opts),
+          signal: opts.signal,
+        }),
+      ),
   };
-}
-
-function safeJson(text: string): unknown {
-  try {
-    return JSON.parse(text);
-  } catch {
-    return undefined;
-  }
 }
 
 /** App-wide client (same-origin). Screens accept an override in props for tests. */
