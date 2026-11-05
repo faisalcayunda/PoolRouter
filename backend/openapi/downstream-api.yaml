@@ -1231,6 +1231,10 @@ components:
         validasi per field; `batas` hanya membawa parameter angka dari aturan yang
         dilanggar (tidak pernah nilai yang ditolak). Tidak ada `posisi`: error
         template hanya ada di API admin.
+
+        `PartialEq` tanpa `Eq` dan itu disengaja: `batas` bertipe `f64`, sehingga
+        perbandingan hanya untuk uji dan tipe ini tidak boleh dipakai sebagai kunci
+        map.
       required:
       - field
       - kode
