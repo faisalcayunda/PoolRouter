@@ -426,7 +426,7 @@ pub(super) async fn export_log_auditor(
     let audit_id = Uuid::now_v7();
     let baris: Option<BarisEkspor> = sqlx::query_as(
         "SELECT audit_id, berkas, ekspor_checksum, jumlah_record, hasil
-           FROM fn_ekspor_log_auditor($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)",
+           FROM fn_ekspor_log_auditor($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)",
     )
     .bind(peminta.pengguna_id)
     .bind(audit_id)
@@ -438,6 +438,7 @@ pub(super) async fn export_log_auditor(
     .bind(Option::<Uuid>::None)
     .bind(&peminta.sumber_ip)
     .bind(peminta.sesi_id.to_string())
+    .bind(&nik_bersih)
     .fetch_optional(&s.pool)
     .await
     .map_err(|e| galat_kueri(&e))?;
