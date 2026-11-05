@@ -87,7 +87,7 @@ export function AppShell({ pathname = '/', user, children }: AppShellProps) {
   return (
     <div className="min-h-dvh bg-surface text-on-surface">
       <a
-        href="#konten"
+        href="#main-content"
         className="typescale-label-large sr-only rounded-full bg-primary px-4 py-2 text-on-primary focus:not-sr-only focus:absolute focus:top-2 focus:left-2 focus:z-50"
       >
         {t('nav.skip_link')}
@@ -122,7 +122,7 @@ export function AppShell({ pathname = '/', user, children }: AppShellProps) {
           <DrawerNav pathname={pathname} onNavigate={isExpanded ? undefined : closeDrawer} />
         </NavigationDrawer>
 
-        <main id="konten" tabIndex={-1} className="min-w-0 flex-1 p-4">
+        <main id="main-content" tabIndex={-1} className="min-w-0 flex-1 p-4">
           {/* Section 4: content is capped at 1200 px so long tables stay readable on a wide screen. */}
           <div className="mx-auto w-full max-w-[1200px]">
             <Suspense

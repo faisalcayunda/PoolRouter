@@ -292,7 +292,8 @@ export default interface Resources {
         "invalid": "Nama pengguna atau kata sandi tidak cocok.",
         "network": "Belum bisa terhubung. Periksa jaringan, lalu coba lagi.",
         "throttled": "Terlalu banyak percobaan. Coba lagi dalam 15 menit.",
-        "throttled_retry": "Terlalu banyak percobaan. Coba lagi dalam {{detik}} detik."
+        "throttled_menit": "Terlalu banyak percobaan. Coba lagi dalam <b>{{menit}} menit</b>.",
+        "throttled_retry": "Terlalu banyak percobaan. Coba lagi dalam <b>{{detik}} detik</b>."
       },
       "page": {
         "password": "Kata sandi",

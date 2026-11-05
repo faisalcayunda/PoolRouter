@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react';
-import { useTranslation } from 'react-i18next';
+import { Trans, useTranslation } from 'react-i18next';
 import { api, ApiError, type ApiClient } from '../../api/client';
 import { TextField } from '../../components/m3/TextField';
 import { Button } from '../../components/m3/Button';
@@ -53,7 +53,7 @@ export function LoginScreen({ client = api, search = '', onBerhasil }: Props) {
 
   return (
     <main
-      id="konten"
+      id="main-content"
       tabIndex={-1}
       className="flex min-h-screen flex-col items-center justify-center gap-6 bg-surface px-4 py-12"
     >
@@ -71,11 +71,26 @@ export function LoginScreen({ client = api, search = '', onBerhasil }: Props) {
       {galat ? (
         <div className="w-full max-w-[360px]">
           <InlineAlert tone="error" live="assertive">
-            {galat === 'network'
-              ? t('login.error.network')
-              : galat === 'throttled' && tungguDetik !== null
-                ? t('login.error.throttled_retry', { detik: tungguDetik })
-                : t(`login.error.${galat}`)}
+            {galat === 'network' ? (
+              t('login.error.network')
+            ) : galat === 'throttled' && tungguDetik !== null ? (
+              // A wait of a minute or more reads as minutes; listing "251 detik" is unhelpful.
+              tungguDetik >= 60 ? (
+                <Trans
+                  i18nKey="login.error.throttled_menit"
+                  values={{ menit: Math.ceil(tungguDetik / 60) }}
+                  components={{ b: <span className="font-semibold tabular-nums" /> }}
+                />
+              ) : (
+                <Trans
+                  i18nKey="login.error.throttled_retry"
+                  values={{ detik: tungguDetik }}
+                  components={{ b: <span className="font-semibold tabular-nums" /> }}
+                />
+              )
+            ) : (
+              t(`login.error.${galat}`)
+            )}
           </InlineAlert>
         </div>
       ) : null}

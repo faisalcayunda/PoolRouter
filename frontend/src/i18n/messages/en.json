@@ -162,8 +162,9 @@
     "error": {
       "invalid": "The username or password doesn't match.",
       "throttled": "Too many attempts. Try again in 15 minutes.",
-      "throttled_retry": "Too many attempts. Try again in {{detik}} seconds.",
-      "network": "Couldn't connect. Check your network, then try again."
+      "throttled_retry": "Too many attempts. Try again in <b>{{detik}} seconds</b>.",
+      "network": "Couldn't connect. Check your network, then try again.",
+      "throttled_menit": "Too many attempts. Try again in <b>{{menit}} minutes</b>."
     }
   },
   "provider": {

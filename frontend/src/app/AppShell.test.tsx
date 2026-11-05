@@ -92,8 +92,8 @@ describe('AppShell — structure and a11y', () => {
   it('renders a skip link that targets the main landmark', () => {
     renderShell();
     const skip = screen.getByRole('link', { name: 'Lompat ke konten' });
-    expect(skip).toHaveAttribute('href', '#konten');
-    expect(screen.getByRole('main')).toHaveAttribute('id', 'konten');
+    expect(skip).toHaveAttribute('href', '#main-content');
+    expect(screen.getByRole('main')).toHaveAttribute('id', 'main-content');
   });
 
   it('renders children inside main', () => {

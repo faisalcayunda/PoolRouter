@@ -24,7 +24,11 @@ function SignedIn({ pathname, search }: { pathname: string; search: string }) {
 
   if (sesi.memuat) {
     return (
-      <main id="konten" tabIndex={-1} className="flex min-h-screen items-center justify-center">
+      <main
+        id="main-content"
+        tabIndex={-1}
+        className="flex min-h-screen items-center justify-center"
+      >
         <p className="typescale-body-large">{t('common.state.loading')}</p>
       </main>
     );

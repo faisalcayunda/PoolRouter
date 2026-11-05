@@ -56,9 +56,11 @@ describe('S01 masuk', () => {
     await userEvent.type(screen.getByLabelText('Kata sandi'), 'rahasia-panjang');
     await userEvent.click(screen.getByRole('button', { name: 'Masuk' }));
 
-    expect(
-      await screen.findByText('Terlalu banyak percobaan. Coba lagi dalam 37 detik.'),
-    ).toBeInTheDocument();
+    const pesan = await screen.findByRole('alert');
+    expect(pesan).toHaveTextContent('Terlalu banyak percobaan. Coba lagi dalam 37 detik.');
+    expect(pesan).toContainElement(
+      screen.getByText('37 detik', { selector: '.font-semibold' }) as HTMLElement,
+    );
   });
 
   it('falls back to the static throttle copy when the 429 carries no Retry-After', async () => {
