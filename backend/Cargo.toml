@@ -33,6 +33,9 @@ tower = { version = "0.5.3", features = ["timeout", "limit"] }
 tower-http = { version = "0.7.1", features = ["trace", "timeout", "request-id", "limit", "sensitive-headers", "set-header"] }
 utoipa = { version = "6.0", features = ["axum_extras", "uuid", "chrono", "yaml"] }
 utoipa-axum = "0.3"
+# Dev-only: membaca `openapi/*.yaml` hasil generate di test. Sudah masuk lock
+# lewat utoipa, jadi tidak menambah crate baru.
+yaml_serde = "0.10"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
 # `application/x-www-form-urlencoded` in the token endpoint (SHAA-198).
@@ -55,7 +58,9 @@ rustls-pki-types = "1.15"
 # application, so the column layout does not depend on the Parquet modular
 # encryption version the pinned `parquet` supports.
 parquet = { version = "60.1.0", default-features = false, features = ["arrow", "async", "zstd", "snap", "brotli", "lz4", "flate2-zlib-rs", "simdutf8"] }
-arrow = { version = "60.1.0", default-features = false, features = ["prettyprint"] }
+# No `prettyprint`: the archive module reads and writes columns only and never
+# prints a table, so the feature would only widen the graph.
+arrow = { version = "60.1.0", default-features = false }
 object_store = { version = "0.14.2", features = ["aws"] }
 bytes = "1.12"
 futures = "0.3"
