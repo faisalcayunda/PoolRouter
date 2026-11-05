@@ -110,6 +110,13 @@ export interface ApiClient {
   updateProvider(id: string, body: ProviderConfig, options?: RequestOptions): Promise<Provider>;
 }
 
+/** A 401 from any endpoint ends the shell session; screens do not each need their own wiring. */
+function announce401(response: Response): void {
+  if (response.status === 401 && typeof window !== 'undefined') {
+    window.dispatchEvent(new Event(SESI_BERAKHIR_EVENT));
+  }
+}
+
 function problemFrom(status: number, body: unknown): Problem | null {
   if (body && typeof body === 'object') {
     const obj = body as Record<string, unknown>;
@@ -138,6 +145,9 @@ function digestFrom(header: string | null): string | null {
   return match?.[1] ?? null;
 }
 
+/** Any screen's 401 means the shell's session is gone; the client announces it once, here. */
+export const SESI_BERAKHIR_EVENT = 'pr:sesi-berakhir';
+
 export function createApiClient(options: ApiClientOptions = {}): ApiClient {
   const origin =
     options.origin ??
@@ -161,8 +171,10 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
     opts.alasan === undefined ? {} : { 'X-Alasan': opts.alasan };
 
   const ok = <T>(result: { data?: T; error?: unknown; response: Response }): T => {
-    if (!result.response.ok)
+    if (!result.response.ok) {
+      announce401(result.response);
       throw new ApiError(result.response.status, problemFrom(result.response.status, result.error));
+    }
     return result.data as T;
   };
 
@@ -255,6 +267,7 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
         parseAs: 'blob',
       });
       if (!result.response.ok) {
+        announce401(result.response);
         throw new ApiError(
           result.response.status,
           problemFrom(result.response.status, result.error),

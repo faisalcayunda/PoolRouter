@@ -615,6 +615,23 @@ export default interface Resources {
         "shown_once": "ditampilkan sekali"
       }
     },
+    "sesi": {
+      "absolute_dialog": {
+        "body": "Anda sudah tidak bisa memperpanjang waktu sesi lagi. Sesi Anda telah berakhir sejak {{waktu}} WIB dan tidak boleh simpan isian Anda sekarang.",
+        "btn_ok": "Mengerti",
+        "title": "Sesi telah berakhir"
+      },
+      "banner_absolute": {
+        "message": "Sesi Anda telah berakhir sejak {{waktu}} WIB"
+      },
+      "idle_dialog": {
+        "body": "Anda sedang tidak aktif selama {{jam}} jam. Sesi Anda akan berakhir dalam {{detik}} detik dan dapat diperpanjang dengan menekan tombol Perpanjang sesi di bawah ini.",
+        "btn_exit": "Keluar",
+        "btn_extend": "Perpanjang sesi",
+        "extend_success": "Sesi diperpanjang",
+        "title": "Sesi akan berakhir"
+      }
+    },
     "settings": {
       "language": {
         "apply_note": "Tampilan langsung berganti begitu Anda memilih.",
