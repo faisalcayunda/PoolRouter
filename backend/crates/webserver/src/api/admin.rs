@@ -46,6 +46,13 @@ pub struct KodeMfaRequest {
     pub kode_pemulihan: Option<String>,
 }
 
+/// Body of `POST /auth/mfa/daftar` (AC-12): the registration code.
+#[derive(Debug, Clone, Deserialize, ToSchema)]
+pub struct DaftarMfaRequest {
+    /// The one-time code issued to this user; required, never reusable.
+    pub kode_pendaftaran: String,
+}
+
 /// Body of `POST /auth/mfa/daftar/konfirmasi` (AC-13).
 #[derive(Debug, Clone, Deserialize, ToSchema)]
 pub struct KonfirmasiMfaRequest {
@@ -1175,6 +1182,7 @@ async fn mfa_verifikasi(
     path = "/admin/v1/auth/mfa/daftar",
     operation_id = "mfaDaftar",
     tag = "admin",
+    request_body(content = DaftarMfaRequest, content_type = "application/json"),
     responses(
         (status = 200, description = "URI otpauth dan secret base32; ditampilkan sekali", body = MfaDaftar, headers(
             ("Cache-Control" = String, description = "Selalu no-store (R-16)")
@@ -1185,7 +1193,9 @@ async fn mfa_verifikasi(
     ),
     security(())
 )]
-async fn mfa_daftar() -> (StatusCode, Json<Problem>) {
+async fn mfa_daftar(
+    axum::Json(_body): axum::Json<DaftarMfaRequest>,
+) -> (StatusCode, Json<Problem>) {
     stub()
 }
 
@@ -2830,7 +2840,7 @@ impl utoipa::Modify for SecurityAddon {
     ),
     components(schemas(
         LoginRequest, Me, PreferensiUpdate, SesiStatus,
-        KodeMfaRequest, KonfirmasiMfaRequest, MfaDaftar, MfaKonfirmasi, MeMfa,
+        KodeMfaRequest, DaftarMfaRequest, KonfirmasiMfaRequest, MfaDaftar, MfaKonfirmasi, MeMfa,
         ProviderConfig, ParameterRule, RuleValidasi, Provider,
         SecretRingkas, SecretNilai,
         UpstreamPoolConfig, UpstreamPool,

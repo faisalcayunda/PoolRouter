@@ -24,7 +24,7 @@ use axum::extract::rejection::JsonRejection;
 use axum::http::{HeaderMap, HeaderValue, Method, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use chrono::{DateTime, Utc};
-use poolrouter_core::admin::mfa::{HasilPemulihan, HasilVerifikasi, KodePemulihan};
+use poolrouter_core::admin::mfa::{HasilPemulihan, HasilPeriksa, HasilVerifikasi, KodePemulihan};
 use poolrouter_core::admin::pra_sesi::{JenisPraSesi, PraSesi};
 use serde::Deserialize;
 use uuid::Uuid;
@@ -42,6 +42,14 @@ pub(super) struct KodeMfaRequest {
     pub kode: Option<String>,
     #[serde(default)]
     pub kode_pemulihan: Option<String>,
+}
+
+/// `POST /auth/mfa/daftar` body: the registration code issued to this user
+/// (AC-12). Enrollment cannot start without one.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(super) struct DaftarRequest {
+    pub kode_pendaftaran: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -240,9 +248,21 @@ pub(super) async fn daftar(
     State(s): State<AdminState>,
     method: Method,
     headers: HeaderMap,
+    ConnectInfo(peer): ConnectInfo<std::net::SocketAddr>,
+    body: Result<axum::Json<DaftarRequest>, JsonRejection>,
 ) -> Result<Response, Galat> {
     periksa_origin(&method, &headers, &s.asal)?;
-    let (_token, pra) = pra_sesi_dari(&s, &headers, JenisPraSesi::DaftarMfa).await?;
+    // AC-12: no code, someone else's code, an expired code or a dropped one is
+    // refused. The body is required, so a missing code is 422, not "allowed".
+    let axum::Json(req) = body.map_err(|_| {
+        Galat::baru(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            ProblemKodeAdmin::ValidasiGagal,
+        )
+    })?;
+    let ip = sumber_ip(&headers, peer);
+    let sekarang = (s.jam)();
+    let (token, pra) = pra_sesi_dari(&s, &headers, JenisPraSesi::DaftarMfa).await?;
 
     let pengguna_id = pra.pengguna_id;
     let username = super::login::username_dari(&s.pool, pengguna_id)
@@ -251,6 +271,22 @@ pub(super) async fn daftar(
             tracing::error!(error = %e, "admin: pencarian username gagal");
             Galat::layanan()
         })?;
+
+    // AC-8: the code is checked without being consumed here; consumption
+    // happens at confirmation (AC-13), so a failed enrollment start leaves it
+    // usable, while a wrong value still counts toward its 5-failure cap.
+    let sah = matches!(
+        s.mfa
+            .periksa_kode_daftar(pengguna_id, req.kode_pendaftaran.trim(), sekarang)
+            .await,
+        HasilPeriksa::Berlaku
+    );
+    catat_daftar_mfa(&s, pengguna_id, sah, &ip).await;
+    if !sah {
+        s.pra_sesi.catat_gagal(&token).await.ok();
+        return Err(salah());
+    }
+
     let pendaftaran = s.mfa.daftar(pengguna_id).await.map_err(|e| {
         tracing::error!(error = %e, "admin: pendaftaran MFA gagal");
         Galat::layanan()
@@ -270,6 +306,54 @@ pub(super) async fn daftar(
         }),
     )
         .into_response())
+}
+
+/// One `audit_akses` row with action `daftar_mfa`, success or failure (AC-12,
+/// AC-13). Written before the response so a refused start is always on record.
+async fn catat_daftar_mfa(s: &AdminState, pengguna_id: Uuid, berhasil: bool, ip: &str) {
+    use poolrouter_core::audit::{AksesBaru, Aksi, Hasil, Pelaku, Penulis, Peran, TampilanNik};
+
+    // The audit row must not outlive a failed request, so it travels in its own
+    // tiny transaction; a broken audit trail is logged, never silently dropped.
+    let tx = match s.pool.begin().await {
+        Ok(tx) => tx,
+        Err(e) => {
+            tracing::error!(error = %e, "admin: audit daftar_mfa tidak bisa dimulai");
+            return;
+        }
+    };
+    let mut tx = tx;
+    let baris = AksesBaru {
+        // The role is only used to label the actor; enrollment is self-service,
+        // so the caller's own roles are what `me` reports. Auditor is the
+        // narrowest label that never grants more than they hold at this step.
+        pelaku: Pelaku::baru(pengguna_id, Peran::Auditor),
+        aksi: Aksi::DaftarMfa,
+        tampilan_nik: TampilanNik::TidakAda,
+        hasil: if berhasil {
+            Hasil::Berhasil
+        } else {
+            Hasil::Ditolak
+        },
+        filter_kueri: None,
+        nik_hmac: None,
+        nik_tersamar: None,
+        jumlah_record: None,
+        alasan: None,
+        sumber_ip: Some(ip.to_owned()),
+        sesi_id: Some(pengguna_id.to_string()),
+    };
+    let hasil = Penulis::baru(&mut tx).catat_akses(baris).await;
+    match hasil {
+        Ok(_) => {
+            if let Err(e) = tx.commit().await {
+                tracing::error!(error = %e, "admin: audit daftar_mfa gagal di-commit");
+            }
+        }
+        Err(e) => {
+            tracing::error!(error = %e, "admin: audit daftar_mfa gagal ditulis");
+        }
+    }
 }
 
 pub(super) async fn konfirmasi(
@@ -319,12 +403,15 @@ pub(super) async fn konfirmasi(
         Err(_) => {
             let _ = s.pembatas.catat_gagal(&username).await;
             s.pra_sesi.catat_gagal(&token).await.ok();
+            catat_daftar_mfa(&s, pengguna_id, false, &ip).await;
             return Err(salah());
         }
     };
     if s.pembatas.berhasil(&username).await.is_err() {
         tracing::warn!("admin: hitungan gagal tidak terhapus setelah konfirmasi berhasil");
     }
+    // AC-13: the successful enrollment is on record before the session exists.
+    catat_daftar_mfa(&s, pengguna_id, true, &ip).await;
     // AC-13: the session is issued with `mfa_terverifikasi_at`, and the codes
     // travel in this one body only.
     let res = terbitkan_sesi_mfa(&s, pengguna_id, &headers, &ip).await?;
