@@ -39,6 +39,11 @@ LABEL org.opencontainers.image.source="https://github.com/faisalcayunda/PoolRout
       org.opencontainers.image.created="${CREATED}" \
       org.opencontainers.image.title="poolrouter-backend" \
       org.opencontainers.image.licenses="UNLICENSED"
+# bookworm-slim 12.15 masih membawa apt/libapt-pkg6.0 2.6.1 yang terkena CVE-2026-109518;
+# belum ada digest bookworm-slim yang memuat 2.6.2, jadi upgrade di sini lalu bersihkan daftar apt.
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends --only-upgrade apt \
+ && rm -rf /var/lib/apt/lists/*
 COPY --from=build /out/webserver /out/controller /out/worker /usr/local/bin/
 # User numerik tetap (ADR-0001 Addendum A §6, D5). Tidak bergantung pada entri /etc/passwd.
 USER 10001:10001
