@@ -235,8 +235,61 @@ async fn endpoint_asing_dan_tidak_ada_sama_sama_404() {
     assert_eq!(status, StatusCode::NOT_FOUND, "tidak ditugaskan = 404");
 }
 
+#[tokio::test]
+#[ignore]
+async fn deaktivasi_entitas_tidak_mencabut_kontrak() {
+    let u = Uji::baru().await;
+    // GW3 + AC-9: every entity of the chain may be deactivated; the assigned
+    // endpoint keeps its contract. The client learns about it on submit
+    // (`403 objek_nonaktif`), never by the contract vanishing here.
+    for (jenis, id) in [
+        ("provider", u.provider_id),
+        ("upstream_pool", u.upstream_id),
+        ("downstream_pool", u.pool_id),
+    ] {
+        u.nonaktifkan(jenis, id).await;
+        let (status, headers, body) = u.get(u.endpoint_id, Some(&u.api_key)).await;
+        assert_eq!(status, StatusCode::OK, "{jenis} nonaktif: {body}");
+        assert_eq!(headers[header::CACHE_CONTROL], "no-store");
+    }
+}
+
 /// AC-6: the cached row is used before 30 s and re-read from PostgreSQL after,
 /// for all six entities.
+#[tokio::test]
+#[ignore]
+async fn status_enam_entitas_mengikuti_aktif_dan_kredensial_aktif() {
+    let u = Uji::baru().await;
+    let t0 = *u.jam.lock().unwrap();
+    // AC-6: each of the six entities flips its own flag, and the contract
+    // stays readable throughout (GW3) — only the status half changes.
+    for (jenis, id) in [
+        ("provider", u.provider_id),
+        ("upstream_pool", u.upstream_id),
+        ("downstream_pool", u.pool_id),
+        ("downstream_endpoint", u.endpoint_id),
+        ("kredensial", u.kredensial),
+        ("client", u.client_id),
+    ] {
+        u.nonaktifkan(jenis, id).await;
+        let e = u.konfig.muat(u.client_id, u.endpoint_id, t0).await.unwrap();
+        let s = e.status.expect("endpoint ada");
+        let semua = [
+            s.client,
+            s.kredensial,
+            s.endpoint,
+            s.downstream_pool,
+            s.upstream_pool,
+            s.provider,
+        ];
+        assert!(
+            semua.iter().any(|a| !a),
+            "{jenis} nonaktif tidak tercermin di status"
+        );
+        assert!(e.kontrak.is_some(), "GW3: kontrak tetap ada ({jenis})");
+    }
+}
+
 #[tokio::test]
 #[ignore]
 async fn cache_enam_entitas_dipakai_sebelum_30_detik_dan_dibaca_ulang() {

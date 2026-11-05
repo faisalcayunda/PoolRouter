@@ -67,6 +67,15 @@ impl PgKonfigurasiStore {
 impl KonfigurasiStore for PgKonfigurasiStore {
     fn muat(&self, client_id: Uuid, endpoint_id: Uuid, _sekarang: Instant) -> Fut<'_, EntriKonfig> {
         Box::pin(async move {
+            // Both halves come from one REPEATABLE READ snapshot: a write that
+            // lands between them must not pair an old status with a new
+            // contract (or the reverse), which would hand out a contract whose
+            // chain the status says is broken.
+            let mut tx = self.pool.begin().await.map_err(|_| StoreError)?;
+            sqlx::query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ")
+                .execute(&mut *tx)
+                .await
+                .map_err(|_| StoreError)?;
             let status = sqlx::query_as::<_, BarisStatus>(
                 "SELECT \
                    (SELECT c.aktif FROM client c WHERE c.client_id = $1) AS client_aktif, \
@@ -88,7 +97,7 @@ impl KonfigurasiStore for PgKonfigurasiStore {
             )
             .bind(client_id)
             .bind(endpoint_id)
-            .fetch_optional(&self.pool)
+            .fetch_optional(&mut *tx)
             .await
             .map_err(|_| StoreError)?
             .map(|b| StatusEntitas {
@@ -100,11 +109,17 @@ impl KonfigurasiStore for PgKonfigurasiStore {
                 provider: b.provider_aktif,
             });
             if status.is_none() {
+                tx.commit().await.map_err(|_| StoreError)?;
                 return Ok(EntriKonfig {
                     kontrak: None,
                     status: None,
                 });
             }
+            // GW3: the contract is served for an assigned endpoint in whatever
+            // `aktif` state its chain is in. AC-6's six entities live on the
+            // status half of the entry (the rejection gate of `POST /async`);
+            // gating the contract on them would answer 404 for a deactivated
+            // endpoint, which GW3 and AC-9 forbid.
             let rows = sqlx::query_as::<_, BarisKontrak>(
                 "SELECT e.downstream_endpoint_id, c.versi, m.nama_field, m.tipe, m.wajib, \
                  m.nilai_diizinkan, m.deskripsi, m.versi AS versi_field \
@@ -121,9 +136,12 @@ impl KonfigurasiStore for PgKonfigurasiStore {
             )
             .bind(client_id)
             .bind(endpoint_id)
-            .fetch_all(&self.pool)
+            .fetch_all(&mut *tx)
             .await
             .map_err(|_| StoreError)?;
+            // Read-only snapshot: commit closes it (and would fail on a
+            // serialization error, which is a store error like any other).
+            tx.commit().await.map_err(|_| StoreError)?;
             Ok(EntriKonfig {
                 kontrak: susun_kontrak(rows)?,
                 status,
