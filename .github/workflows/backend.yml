@@ -30,6 +30,9 @@ jobs:
       image: docker.io/library/rust:1.99.1-bookworm@sha256:9181b56c2a21ab1d5e73cffe04fc762426d30aa7fac3c91141dd033f49a7fc8b
     env:
       RUNNER: native
+      # make setup test lint juga masuk ke frontend; tanpa ini check-label gagal
+      # karena runner CI tidak punya container berlabel arctiva.issue (lihat frontend.yml).
+      FRONTEND_RUNNER: local
       JOBS: "2"
     steps:
       - name: Checkout
