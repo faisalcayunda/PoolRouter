@@ -92,6 +92,16 @@ Versi di bawah diperiksa di crates.io pada 2026-11-03. Rust stable terbaru per 2
 
 Kalau API ini dihapus, penggantinya adalah `hyper-util` + `hyper-rustls` di fungsi yang sama, lewat aturan §3.3. Tidak ada alternatif yang mematikan verifikasi.
 
+**Catatan arsip (tambahan ARC-146, ADR-0006 §8 butir 3).** Tiga crate arsip masuk di sini lewat aturan §3.3:
+
+| Kategori | Crate | Versi minimum | Fitur | Alasan |
+|---|---|---|---|---|
+| Format arsip | `parquet` | 60.1.0 | `default-features = false`; `arrow`, `zstd`, `snap`, `brotli`, `lz4`, `flate2-zlib-rs`, `simdutf8` | Format objek arsip (ADR-0006 §8 butir 2): zstd, row group 128.000 baris, bloom filter pada `nik_hmac`, dan rentang baca per row group lewat `get_range`. Fitur `encryption` sengaja mati: DA10 membungkus `nik` dan kolom payload di aplikasi dengan AES-256-GCM, jadi tata letak kolom tidak bergantung pada versi Parquet modular encryption yang didukung crate ini. Fitur kompresi selain zstd dipertahankan karena berkas arsip lama harus tetap terbaca; `flate2-zlib-rs` dipilih supaya tidak ada `libz` sistem di image. Lisensi Apache-2.0 (sudah di allow list `deny.toml`). |
+| Kolom dalam memori | `arrow` | 60.1.0 | `default-features = false`; `prettyprint` | Tipe kolom yang dipakai `parquet` versi yang sama; versi harus sejalan dengan `parquet` supaya `ArrowWriter`/`ArrowReader` tidak menarik dua versi `arrow-*`. Lisensi Apache-2.0. |
+| Object storage | `object_store` | 0.14.2 | `aws` | S3-compatible untuk lane arsip, termasuk OBS Huawei lewat API S3 (ADR-0006 §8 butir 3). Dipakai hanya di implementasi `PenyimpanArsip`; port tidak membocorkan tipe crate ini. Lisensi MIT/Apache-2.0. |
+
+Risiko versi `rustls` (§3.4) sudah diperiksa: `object_store` 0.14.2 menarik `reqwest` 0.13.5 yang sudah ada di workspace, sehingga `rustls` tetap satu versi, **0.23.46**. Karena itu tidak ada penghentian kerja ke Shu untuk butir ini.
+
 ### 4.3 Antrean (final, spike SHAA-177: Lulus bersyarat)
 
 | Kategori | Crate | Versi | Fitur | Alasan |

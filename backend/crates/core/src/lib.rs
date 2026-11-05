@@ -5,6 +5,7 @@
 //! (ADR-0001 section 2).
 
 pub mod admin;
+pub mod arsip;
 pub mod audit;
 pub mod config;
 pub mod kredensial;
