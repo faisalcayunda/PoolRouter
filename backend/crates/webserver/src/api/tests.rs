@@ -1250,65 +1250,99 @@ fn upstream_pool_tanpa_default() {
     );
 }
 
+/// Lokasi `openapi/` hasil `make openapi`, sama seperti `masalah_path` mencari
+/// `docs/`. Test ini sengaja membaca berkas hasil generate, bukan dokumen di
+/// memori, karena AC-8 mengikat kontrak yang di-commit.
+fn openapi_dir() -> std::path::PathBuf {
+    if let Ok(root) = std::env::var("POOLROUTER_REPO_ROOT") {
+        let kandidat = std::path::Path::new(&root).join("backend/openapi");
+        if kandidat.is_dir() {
+            return kandidat;
+        }
+    }
+    let mut dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    loop {
+        let kandidat = dir.join("openapi");
+        if kandidat.is_dir() {
+            return kandidat;
+        }
+        assert!(
+            dir.pop(),
+            "openapi/ tidak ditemukan dari {}",
+            env!("CARGO_MANIFEST_DIR")
+        );
+    }
+}
+
 /// AC-8 (R1 T1, GW4): setiap contoh `RequestStatus` di `downstream-api.yaml`
-/// memakai nilai `cancel_reason` dan `failure_reason` dari enum-nya. Contoh
-/// dengan nilai di luar enum membuat client menyalin kontrak yang tidak ada
-/// (`cancel_reason: client`) atau yang tidak pernah dikirim server.
+/// hasil generate memakai nilai `cancel_reason` dan `failure_reason` dari
+/// enum-nya, dan hanya muncul pada status yang tepat.
 ///
-/// Test membaca dokumen hasil generate (`openapi/*.yaml`), bukan string YAML
-/// yang disunting tangan, supaya drift antara kode dan kontrak ikut tertangkap.
+/// Berkas yang dibaca adalah hasil `make openapi`, bukan dokumen di memori:
+/// kontrak yang di-commit itulah yang disalin client. Contoh dengan nilai di
+/// luar enum mengajari client mengirim nilai yang tidak pernah dibaca server
+/// (`cancel_reason: client`, enum-nya `dibatalkan_client`).
 #[test]
 fn contoh_request_status_memakai_nilai_enum() {
-    let doc = downstream_doc();
-    let cancel_reason = [
-        "dibatalkan_client",
-        "client_nonaktif",
-        "kredensial_nonaktif",
-        "endpoint_nonaktif",
-        "pool_nonaktif",
-        "provider_nonaktif",
-    ];
-    let failure_reason = [
-        "retry_habis",
-        "provider_error_permanen",
-        "timeout_sync",
-        "objek_nonaktif",
-    ];
+    let path = openapi_dir().join("downstream-api.yaml");
+    let isi =
+        std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("baca {}: {e}", path.display()));
+    let doc: Value =
+        yaml_serde::from_str(&isi).unwrap_or_else(|e| panic!("parse {}: {e}", path.display()));
+
+    // Daftar nilai sah diambil dari dokumen itu sendiri, bukan disalin ke test,
+    // supaya menambah nilai enum tidak memaksa menyunting dua tempat.
+    let enum_dari = |nama: &str| -> Vec<String> {
+        doc["components"]["schemas"][nama]["enum"]
+            .as_array()
+            .unwrap_or_else(|| panic!("enum {nama} tidak ada di dokumen"))
+            .iter()
+            .map(|v| v.as_str().expect("nilai enum berupa string").to_owned())
+            .collect()
+    };
+    let cancel_reason = enum_dari("CancelReason");
+    let failure_reason = enum_dari("FailureReason");
+    assert!(!cancel_reason.is_empty() && !failure_reason.is_empty());
+
     let mut diperiksa = 0usize;
-    for (lokasi, isi) in contoh_request_status(&doc) {
+    for (lokasi, status, contoh) in contoh_request_status(&doc) {
         for (field, sah) in [
-            ("cancel_reason", &cancel_reason[..]),
-            ("failure_reason", &failure_reason[..]),
+            ("cancel_reason", &cancel_reason),
+            ("failure_reason", &failure_reason),
         ] {
-            let Some(nilai) = isi.get(field) else {
+            let Some(nilai) = contoh.get(field) else {
                 continue;
             };
             let nilai = nilai
                 .as_str()
                 .unwrap_or_else(|| panic!("{lokasi}: {field} bukan string: {nilai:?}"));
             assert!(
-                sah.contains(&nilai),
+                sah.iter().any(|v| v == nilai),
                 "{lokasi}: {field} `{nilai}` di luar enum; pilihan: {sah:?}"
+            );
+            let ingin = if field == "cancel_reason" {
+                "cancelled"
+            } else {
+                "failed"
+            };
+            assert_eq!(
+                status, ingin,
+                "{lokasi}: {field} hanya untuk status {ingin}"
             );
             diperiksa += 1;
         }
-        // Field hanya muncul pada status yang tepat (ADR-0001 §4.1).
-        let status = isi["status"].as_str().unwrap_or_default();
-        if let Some(r) = isi.get("cancel_reason") {
-            assert_eq!(status, "cancelled", "{lokasi}: cancel_reason pada {status}");
-            assert!(r.is_string(), "{lokasi}: cancel_reason bukan string");
-        }
-        if isi.get("failure_reason").is_some() {
-            assert_eq!(status, "failed", "{lokasi}: failure_reason pada {status}");
-        }
     }
     // Jaga test ini dari lolos kosong bila bentuk dokumen berubah.
-    assert!(diperiksa >= 2, "hanya {diperiksa} contoh yang diperiksa");
+    assert!(
+        diperiksa >= 2,
+        "hanya {diperiksa} contoh diperiksa di {}",
+        path.display()
+    );
 }
 
-/// Semua contoh `RequestStatus` di seluruh dokumen: respons operasi,
-/// komponen respons, dan body webhook. Mengembalikan (lokasi, objek contoh).
-fn contoh_request_status(doc: &Value) -> Vec<(String, serde_json::Map<String, Value>)> {
+/// Setiap contoh `RequestStatus` di dokumen (respons operasi maupun body
+/// webhook), lengkap dengan status API-nya.
+fn contoh_request_status(doc: &Value) -> Vec<(String, String, serde_json::Map<String, Value>)> {
     let mut hasil = Vec::new();
     let Some(paths) = doc["paths"].as_object() else {
         return hasil;
@@ -1318,44 +1352,52 @@ fn contoh_request_status(doc: &Value) -> Vec<(String, serde_json::Map<String, Va
             continue;
         };
         for (metode, op) in ops {
-            let Some(respons) = op["responses"].as_object() else {
-                continue;
-            };
-            for (kode, r) in respons {
-                let mut media: Vec<&Value> = Vec::new();
-                if let Some(m) = r["content"].as_object() {
-                    media.extend(m.values());
-                }
-                if let Some(m) = resolve(doc, r)["content"].as_object() {
-                    media.extend(m.values());
-                }
-                for content in media {
-                    let rujukan = content["schema"]["$ref"].as_str().unwrap_or_default();
-                    if !rujukan.ends_with("/RequestStatus") {
-                        continue;
+            if let Some(respons) = op["responses"].as_object() {
+                for (kode, r) in respons {
+                    let mut media: Vec<&Value> = Vec::new();
+                    if let Some(m) = r["content"].as_object() {
+                        media.extend(m.values());
                     }
-                    let Some(contohs) = content["examples"].as_object() else {
-                        continue;
-                    };
-                    for (nama, contoh) in contohs {
-                        if let Some(isi) = contoh["value"].as_object() {
-                            hasil.push((format!("{path} {metode} {kode} #{nama}"), isi.clone()));
+                    if let Some(m) = resolve(doc, r)["content"].as_object() {
+                        media.extend(m.values());
+                    }
+                    for content in media {
+                        if content["schema"]["$ref"].as_str()
+                            != Some("#/components/schemas/RequestStatus")
+                        {
+                            continue;
+                        }
+                        for (nama, contoh) in content["examples"]
+                            .as_object()
+                            .unwrap_or(&serde_json::Map::new())
+                        {
+                            push_contoh(
+                                &mut hasil,
+                                format!("{path} {metode} {kode} #{nama}"),
+                                contoh,
+                            );
                         }
                     }
                 }
             }
         }
         // Body webhook `requestTerminal`, dikirim ke URL client.
-        let Some(contohs) =
-            item["post"]["requestBody"]["content"]["application/json"]["examples"].as_object()
-        else {
-            continue;
-        };
-        for (nama, contoh) in contohs {
-            if let Some(isi) = contoh["value"].as_object() {
-                hasil.push((format!("{path} webhook #{nama}"), isi.clone()));
-            }
+        let body = &item["post"]["requestBody"]["content"]["application/json"]["examples"];
+        for (nama, contoh) in body.as_object().unwrap_or(&serde_json::Map::new()) {
+            push_contoh(&mut hasil, format!("{path} webhook #{nama}"), contoh);
         }
     }
     hasil
+}
+
+fn push_contoh(
+    hasil: &mut Vec<(String, String, serde_json::Map<String, Value>)>,
+    lokasi: String,
+    contoh: &Value,
+) {
+    let Some(isi) = contoh["value"].as_object() else {
+        return;
+    };
+    let status = isi["status"].as_str().unwrap_or_default().to_owned();
+    hasil.push((lokasi, status, isi.clone()));
 }

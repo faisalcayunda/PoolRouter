@@ -2590,6 +2590,7 @@ dependencies = [
  "utoipa",
  "utoipa-axum",
  "uuid",
+ "yaml_serde",
 ]
 
 [[package]]

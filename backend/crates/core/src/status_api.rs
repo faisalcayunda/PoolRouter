@@ -90,15 +90,6 @@ impl StatusApi {
             StatusApi::Cancelled => "cancelled",
         }
     }
-
-    /// Status terminal tidak pernah berubah lagi, jadi jawaban pembatalan
-    /// selalu 409 `tidak_bisa_dibatalkan`.
-    pub fn terminal(self) -> bool {
-        matches!(
-            self,
-            StatusApi::Done | StatusApi::Failed | StatusApi::Expired | StatusApi::Cancelled
-        )
-    }
 }
 
 /// Hasil pemetaan. `rejected` bukan status API: request itu tidak pernah punya
@@ -222,24 +213,6 @@ mod tests {
                 "baris `{}`",
                 b.catatan
             );
-        }
-    }
-
-    /// `queued` adalah satu-satunya status API yang masih bisa dibatalkan client
-    /// (S-01); `processing` dan semua status terminal ditolak 409.
-    #[test]
-    fn hanya_queued_yang_bisa_dibatalkan() {
-        assert!(!StatusApi::Queued.terminal());
-        for s in [
-            StatusApi::Processing,
-            StatusApi::Done,
-            StatusApi::Failed,
-            StatusApi::Expired,
-            StatusApi::Cancelled,
-        ] {
-            if s != StatusApi::Processing {
-                assert!(s.terminal(), "{s:?} seharusnya terminal");
-            }
         }
     }
 
