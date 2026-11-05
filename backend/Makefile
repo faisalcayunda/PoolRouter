@@ -11,7 +11,8 @@ RUNNER ?= podman
 # Jangan tulis `$(MAKE)` langsung di resep yang punya efek samping container; uji: `make test-dry-run` di akar.
 SUBMAKE = $(MAKE)
 # Engine kontainer untuk RUNNER=podman atau RUNNER=docker. Docker dipakai lane Docker (SHAA-373, keputusan Luca).
-CONTAINER_ENGINE := $(if $(filter docker,$(RUNNER)),docker,podman)
+# CONTAINER_ENGINE dari environment dihormati (dipakai CI dengan RUNNER=native).
+CONTAINER_ENGINE := $(if $(filter docker,$(RUNNER)),docker,$(if $(CONTAINER_ENGINE),$(CONTAINER_ENGINE),podman))
 export BUILD_LOCK_ENGINE := $(CONTAINER_ENGINE)
 # Must match rust-toolchain.toml and [workspace.package] rust-version (ADR-0004 section 2). Never `latest`.
 # Pinned by tag and digest, same literal as backend/Containerfile line 17, .github/workflows/backend.yml line 30,
@@ -140,7 +141,11 @@ setup: check-label $(CHECK_DISK)
 	install -m 0755 "$$t/cargo-deny-$(CARGO_DENY_VERSION)-$$arch-unknown-linux-musl/cargo-deny" "$$CARGO_HOME/bin/cargo-deny"; \
 	cargo deny --version'
 
-test: test-rust db-test uji-pg uji-lua uji-redis
+# Uji yang butuh engine container di host. Dipisah agar gate tanpa engine
+# (mis. CI dalam container image rust) tetap bisa jalan lewat `make test-rust lint`.
+UJI_KONTAINER := db-test uji-pg uji-lua uji-redis
+
+test: test-rust $(UJI_KONTAINER)
 
 test-rust: check-label $(CHECK_DISK)
 	$(HEAVY) cargo test --workspace --all-targets --locked
@@ -148,7 +153,7 @@ test-rust: check-label $(CHECK_DISK)
 # Schema tests (SHAA-193): roles bootstrap, migrations from empty, grant matrix, constraints, functions.
 # Starts a throwaway PostgreSQL 17 container labelled arctiva.issue=<n> (from CONTAINER_LABEL) and removes it afterwards.
 # It needs a container engine on the host, so it is independent of RUNNER.
-DB_ENGINE ?= $(if $(filter docker,$(RUNNER)),docker,podman)
+DB_ENGINE ?= $(CONTAINER_ENGINE)
 db-test: check-label $(CHECK_DISK)
 	CONTAINER_ENGINE=$(DB_ENGINE) ARC_ISSUE=$(patsubst arctiva.issue=%,%,$(CONTAINER_LABEL)) sh db/test/run.sh
 
@@ -179,7 +184,7 @@ lua-rakit-check:
 
 # Harness runs the scripts against a real Redis (throwaway container, pinned image).
 # Like db-test it needs a container engine on the host, so it is independent of RUNNER.
-LUA_ENGINE ?= $(if $(filter docker,$(RUNNER)),docker,podman)
+LUA_ENGINE ?= $(CONTAINER_ENGINE)
 uji-lua: check-label $(CHECK_DISK) lua-rakit-check
 	CONTAINER_ENGINE=$(LUA_ENGINE) ARC_ISSUE=$(patsubst arctiva.issue=%,%,$(CONTAINER_LABEL)) sh lua/test/run.sh
 

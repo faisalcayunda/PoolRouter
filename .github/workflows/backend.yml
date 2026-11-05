@@ -31,10 +31,6 @@ jobs:
       image: docker.io/library/rust:1.99.1-bookworm@sha256:9181b56c2a21ab1d5e73cffe04fc762426d30aa7fac3c91141dd033f49a7fc8b
     env:
       RUNNER: native
-      # db-test, uji-pg, uji-lua, uji-redis menjalankan container sekali pakai yang
-      # wajib berlabel arctiva.issue=ARC-<n> (Makefile check-label).
-      CONTAINER_ENGINE: docker
-      CONTAINER_LABEL: arctiva.issue=ARC-2
       JOBS: "2"
     steps:
       - name: Checkout
@@ -52,7 +48,9 @@ jobs:
           restore-keys: |
             backend-${{ runner.os }}-rust-1.99.1-
 
-      # Sengaja `-C backend`: gate akar `make setup test lint` juga masuk ke frontend,
-      # yang butuh corepack/pnpm dan container terpisah (lihat frontend.yml).
-      - name: Gate (setup, test, lint)
-        run: make -C backend setup test lint
+      # Hanya test-rust: db-test, uji-pg, uji-lua, dan uji-redis membuat container
+      # berlabel arctiva.issue=ARC-<n>, dan job ini berjalan di dalam container image
+      # rust yang tidak punya docker/podman. Gate akar juga masuk ke frontend
+      # (butuh corepack/pnpm), makanya `-C backend` dan target tanpa container.
+      - name: Gate (setup, test-rust, lint)
+        run: make -C backend setup test-rust lint
