@@ -875,6 +875,44 @@ mod tests {
         assert_eq!(json(res).await["kode"], "layanan_tidak_tersedia");
     }
 
+    /// AC-9: an unknown endpoint is a 404 the client can cache past — the
+    /// empty body of the problem response is still `no-store` (R-16).
+    #[tokio::test]
+    async fn kontrak_tidak_ditemukan_404_dengan_no_store() {
+        let h = harness();
+        let res = h
+            .app
+            .clone()
+            .oneshot(kontrak_req(
+                Uuid::now_v7(),
+                Some(("x-api-key", "tidak-dikenal".to_owned())),
+            ))
+            .await
+            .unwrap();
+        // An unusable credential is filtered before the store: 401, no lookup.
+        assert_eq!(res.status(), 401);
+        assert_eq!(res.headers()[header::CACHE_CONTROL], "no-store");
+
+        let body = format!(
+            "grant_type=client_credentials&client_id={}&client_secret=s3cret",
+            h.client
+        );
+        let bearer = json(h.app.clone().oneshot(form(&body)).await.unwrap()).await;
+        let token = bearer["access_token"].as_str().unwrap().to_owned();
+        let res = h
+            .app
+            .clone()
+            .oneshot(kontrak_req(
+                Uuid::now_v7(),
+                Some(("authorization", format!("Bearer {token}"))),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), 404);
+        assert_eq!(res.headers()[header::CACHE_CONTROL], "no-store");
+        assert_eq!(json(res).await["kode"], "tidak_ditemukan");
+    }
+
     #[tokio::test]
     async fn readiness_errors_never_carry_connection_details() {
         // Port 1 on loopback: nothing listens, both dependencies fail.
