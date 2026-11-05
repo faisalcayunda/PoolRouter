@@ -6,7 +6,7 @@
 # Semua resource diberi label arctiva.issue dan dibersihkan di akhir run, termasuk saat gagal.
 #
 # Pemakaian (dari akar repo):
-#   ARC_ISSUE=ARC-207 ENV_FILE=/path/env.env [PROFILES=bundled-infra] sh deploy/compose/test/dind.sh
+#   ARC_ISSUE=ARC-2 ENV_FILE=/path/env.env [PROFILES=bundled-infra] sh deploy/compose/test/dind.sh
 #
 # Exit code: 0 hanya jika stack sehat dan smoke test lolos dan pembersihan selesai.
 set -eu
@@ -16,7 +16,7 @@ REPO=$(cd "$HERE/../../.." && pwd -P)
 # shellcheck disable=SC1091
 . "$HERE/images.env"
 
-: "${ARC_ISSUE:?isi ARC_ISSUE, mis. ARC-207}"
+: "${ARC_ISSUE:?isi ARC_ISSUE, mis. ARC-2}"
 : "${ENV_FILE:?isi ENV_FILE ke file env di luar repo}"
 PROFILES=${PROFILES:-bundled-infra}
 case "$ARC_ISSUE" in ARC-[0-9]*) ;; *) echo "ARC_ISSUE tidak valid: $ARC_ISSUE" >&2; exit 2 ;; esac

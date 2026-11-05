@@ -47,7 +47,7 @@ jobs:
 
       - name: Siapkan direktori cache lane Docker
         # backend/Makefile (RUNNER=docker) memakai cache bersama di /data dan target di /var/tmp.
-        run: sudo install -d -o "$USER" -g "$(id -g)" /data/workspace/arctiva-build /var/tmp/arctiva-build
+        run: sudo install -d -o "$USER" -g "$(id -g)" /data/workspace/poolrouter-build /var/tmp/poolrouter-build
 
       - name: Gate backend (setup, test, lint)
         run: make -C backend setup test lint
