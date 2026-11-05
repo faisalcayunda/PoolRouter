@@ -392,30 +392,20 @@ mod tests {
     }
 
     #[test]
-<<<<<<< HEAD
-    fn ruang_intake_tanpa_pinjam_hanya_sisa_sendiri() {
-=======
     fn urutan_memakai_reserved_rute_downstream_saja() {
         let r = RencanaAnggaran::baru(
             300,
             0.01,
-            &[
-                Rute::beralokasi(1, exact(30)),
-                Rute::beralokasi(2, exact(60)),
-            ],
+            &[Rute::beralokasi(1, exact(30)), Rute::beralokasi(2, exact(60))],
         )
         .unwrap();
-
         let u = urutan_sumber(&r, 1, true, &[]);
-
         assert_eq!(u[0].sumber, Sumber::Sendiri);
-        assert_eq!(u[0].ruang, r.anggaran_rute(1));
         assert_eq!(u[0].ruang, 30);
     }
 
     #[test]
     fn ruang_intake_tanpa_pinjam_hanya_alokasi_rute_sendiri() {
->>>>>>> 6e0273b (fix(core): cap intake by route and global quota)
         let r = RencanaAnggaran::baru(300, 0.01, &[]).unwrap();
         assert_eq!(
             ruang_intake(
