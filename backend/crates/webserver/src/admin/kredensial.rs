@@ -15,7 +15,7 @@ use chrono::{DateTime, Duration, Utc};
 use poolrouter_core::audit::{
     AksiKonfigurasi, EntitasKonfigurasi, KonfigurasiBaru, Penulis, Peran,
 };
-use poolrouter_core::kredensial::{PARAMETER_SECRET, buat_api_key, hash_secret_klien, secret_acak};
+use poolrouter_core::kredensial::{buat_api_key, hash_secret_klien, secret_acak, PARAMETER_SECRET};
 use serde_json::json;
 use uuid::Uuid;
 
