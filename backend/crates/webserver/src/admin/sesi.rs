@@ -32,11 +32,7 @@ use tower_http::limit::RequestBodyLimitLayer;
 use tower_http::set_header::SetResponseHeaderLayer;
 
 use super::pembatas::PembatasLogin;
-<<<<<<< HEAD
 use super::{allowlist, klien, kredensial, log, login, me, provider, secret, webhook};
-=======
-use super::{allowlist, klien, kredensial, login, me, provider, secret, webhook};
->>>>>>> 1173337 (fix(admin): register provider routes and send valid log test origin)
 
 use crate::api::problem::{ProblemKodeAdmin, ValidasiErrorAdmin};
 use crate::api::problem_admin::ProblemAdmin;
