@@ -20,7 +20,8 @@ use tokio::sync::Semaphore;
 use uuid::Uuid;
 
 use super::credential::{CredentialStore, Jenis, StoreError};
-use super::jwt::{JwtKeys, TokenError};
+pub use super::jwt::JwtKeys;
+use super::jwt::TokenError;
 use super::layers::ApiError;
 use super::server::AppState;
 
@@ -217,6 +218,59 @@ impl Authenticator {
             return Err(AuthFail::KredensialKedaluwarsa.into());
         }
         Ok(client_id)
+    }
+
+    /// Same check as [`Self::bearer`], but keeps the credential id: the
+    /// downstream store records which credential queued a request (ARC-158).
+    pub async fn bearer_detail(&self, token: &str) -> Result<(Uuid, Uuid), AuthError> {
+        let claims = self.keys.verify(token).map_err(AuthFail::from)?;
+        let client_id = claims.sub;
+        match self.store.client_aktif(client_id).await? {
+            Some(true) => {}
+            Some(false) => return Err(AuthFail::KredensialNonaktif.into()),
+            None => return Err(AuthFail::TokenTidakValid.into()),
+        }
+        let k = self
+            .store
+            .kredensial(claims.cid)
+            .await?
+            .filter(|k| k.client_id == client_id)
+            .ok_or(AuthFail::TokenTidakValid)?;
+        if k.jenis != Jenis::ClientSecret {
+            return Err(AuthFail::TokenTidakValid.into());
+        }
+        if !k.aktif {
+            return Err(AuthFail::KredensialNonaktif.into());
+        }
+        if !k.belum_kedaluwarsa(Utc::now()) {
+            return Err(AuthFail::KredensialKedaluwarsa.into());
+        }
+        Ok((client_id, claims.cid))
+    }
+
+    /// Same check as [`Self::api_key`], but keeps the credential id: the
+    /// downstream store records which credential queued a request (ARC-158).
+    pub async fn api_key_detail(&self, key: &str) -> Result<(Uuid, Uuid), AuthError> {
+        let parsed = urai_api_key(key).ok_or(AuthFail::ApiKeyTidakValid)?;
+        let k = self
+            .store
+            .kredensial(parsed.credential_id)
+            .await?
+            .filter(|k| k.jenis == Jenis::ApiKey)
+            .ok_or(AuthFail::ApiKeyTidakValid)?;
+        if !cocok_secret(parsed.secret, &k.kunci_hash) {
+            return Err(AuthFail::ApiKeyTidakValid.into());
+        }
+        if !k.aktif {
+            return Err(AuthFail::KredensialNonaktif.into());
+        }
+        if !k.belum_kedaluwarsa(Utc::now()) {
+            return Err(AuthFail::KredensialKedaluwarsa.into());
+        }
+        match self.store.client_aktif(k.client_id).await? {
+            Some(true) => Ok((k.client_id, k.credential_id)),
+            _ => Err(AuthFail::KredensialNonaktif.into()),
+        }
     }
 
     /// API key `pr_<credential_id>_<secret>`.
