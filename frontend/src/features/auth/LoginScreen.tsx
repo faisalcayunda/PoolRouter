@@ -70,6 +70,13 @@ export function LoginScreen({ client = api, search = '', onBerhasil }: Props) {
       await client.mfa(
         modePemulihan ? { kode_pemulihan: kode.replace(/\s+/g, '').toUpperCase() } : { kode: kode.replace(/\s+/g, '') },
       );
+      if (modePemulihan) {
+        try {
+          sessionStorage.setItem('pr_recovery_login', '1');
+        } catch {
+          /* ignore */
+        }
+      }
       try {
         const me = await client.me();
         const sisa = me.mfa?.sisa_kode_pemulihan;
