@@ -39,12 +39,13 @@ use redis::{Script, Value};
 
 use super::metrik::{self, Komponen};
 use super::pemulihan::{
-    JendelaRate, KUNCI_SIAP, baca_run_id, kunci_antre, kunci_attempts, kunci_ember, kunci_retry,
-    kunci_rl, kunci_slot, kunci_tolak, member_slot, nomor_ember_absolut, periksa_pool,
+    JendelaRate, KUNCI_SIAP, baca_run_id, kunci_antre, kunci_antre_dp, kunci_attempts, kunci_ember,
+    kunci_retry, kunci_rl, kunci_slot, kunci_tolak, member_slot, nomor_ember_absolut, periksa_pool,
 };
 use super::periode::JUMLAH_EMBER_HARIAN;
 
 const SKRIP_INTAKE: &str = include_str!("lua/rakitan/kuota_intake.lua");
+const SKRIP_INTAKE_ALOKASI: &str = include_str!("lua/rakitan/kuota_intake_alokasi.lua");
 const SKRIP_TOKEN: &str = include_str!("lua/rakitan/kuota_ambil_token.lua");
 const SKRIP_KLAIM: &str = include_str!("lua/rakitan/slot_klaim.lua");
 const SKRIP_LEPAS: &str = include_str!("lua/rakitan/slot_lepas.lua");
@@ -140,6 +141,21 @@ pub enum HasilIntake {
         terpakai: i64,
         antre: i64,
     },
+}
+
+/// Intake input for a route that has an allocation (ADR-0006 rev 1 section 10,
+/// spec `f1-prioritas-alokasi` AC-8).
+///
+/// `ruang_intake` is [`crate::kuota::rencana::ruang_intake`], a pure estimate
+/// computed by the caller from the budget plan; the script compares it with
+/// the route's own queue. The atomic enforcement stays in dispatch.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct IntakeAlokasi {
+    /// Route (`downstream_pool_id`) whose queue is counted in
+    /// `pr:antre:dp:{<pool>}:<d>`.
+    pub downstream_pool_id: i64,
+    /// Room of that route right now, `>= 0`.
+    pub ruang_intake: i64,
 }
 
 /// Numbers every token reply carries.
@@ -296,6 +312,17 @@ pub trait KuotaStore: Send + Sync {
         client_id: &str,
     ) -> impl Future<Output = Result<HasilIntake, GalatStore>> + Send;
 
+    /// Intake of a route that has an allocation: the F0 gate first, then
+    /// `antre_d >= ruang_intake` (AC-8). An accepted async request raises both
+    /// `pr:antre:{<pool>}` and `pr:antre:dp:{<pool>}:<d>` in one EVAL.
+    fn intake_alokasi(
+        &self,
+        ctx: &KonteksKuota,
+        sync: bool,
+        client_id: &str,
+        alokasi: &IntakeAlokasi,
+    ) -> impl Future<Output = Result<HasilIntake, GalatStore>> + Send;
+
     fn ambil_token(
         &self,
         ctx: &KonteksKuota,
@@ -339,6 +366,7 @@ pub trait KuotaStore: Send + Sync {
 
 struct KumpulanSkrip {
     intake: Script,
+    intake_alokasi: Script,
     token: Script,
     klaim: Script,
     lepas: Script,
@@ -351,6 +379,7 @@ impl KumpulanSkrip {
     fn baru() -> Self {
         Self {
             intake: Script::new(SKRIP_INTAKE),
+            intake_alokasi: Script::new(SKRIP_INTAKE_ALOKASI),
             token: Script::new(SKRIP_TOKEN),
             klaim: Script::new(SKRIP_KLAIM),
             lepas: Script::new(SKRIP_LEPAS),
@@ -523,6 +552,28 @@ fn no_ember(ctx: &KonteksKuota) -> i64 {
     nomor_ember_absolut(ctx.requested_at)
 }
 
+/// The shared reply shape of both intake scripts (F0 and allocated).
+fn hasil_intake(j: &[Value]) -> Result<HasilIntake, GalatStore> {
+    let kode = teks(&j[0])?;
+    let terpakai = angka(j.get(1));
+    let antre = angka(j.get(2));
+    match kode.as_str() {
+        "lolos" => Ok(HasilIntake::Lolos {
+            terpakai: terpakai?,
+            antre: antre?,
+        }),
+        "kuota_habis" => Ok(HasilIntake::KuotaHabis {
+            terpakai: terpakai?,
+            antre: antre?,
+        }),
+        "antrean_penuh" => Ok(HasilIntake::AntreanPenuh {
+            terpakai: terpakai?,
+            antre: antre?,
+        }),
+        lain => Err(galat_skrip(lain)),
+    }
+}
+
 impl<C> KuotaStore for KuotaRedis<C>
 where
     C: ConnectionLike + Clone + Send + Sync,
@@ -550,24 +601,43 @@ where
             no_ember(ctx).to_string(),
         ];
         let j = self.jalankan(&self.skrip.intake, kunci, arg).await?;
-        let kode = teks(&j[0])?;
-        let terpakai = angka(j.get(1));
-        let antre = angka(j.get(2));
-        match kode.as_str() {
-            "lolos" => Ok(HasilIntake::Lolos {
-                terpakai: terpakai?,
-                antre: antre?,
-            }),
-            "kuota_habis" => Ok(HasilIntake::KuotaHabis {
-                terpakai: terpakai?,
-                antre: antre?,
-            }),
-            "antrean_penuh" => Ok(HasilIntake::AntreanPenuh {
-                terpakai: terpakai?,
-                antre: antre?,
-            }),
-            lain => Err(galat_skrip(lain)),
+        hasil_intake(&j)
+    }
+
+    async fn intake_alokasi(
+        &self,
+        ctx: &KonteksKuota,
+        sync: bool,
+        client_id: &str,
+        alokasi: &IntakeAlokasi,
+    ) -> Result<HasilIntake, GalatStore> {
+        periksa_ctx(ctx)?;
+        periksa_id("client_id", client_id)?;
+        if alokasi.ruang_intake < 0 {
+            return Err(GalatStore::ArgumenTidakSah(
+                "ruang_intake harus >= 0".into(),
+            ));
         }
+        let kunci = vec![
+            KUNCI_SIAP.to_owned(),
+            kunci_attempts(&ctx.pool_id, ctx.periode_mulai),
+            kunci_ember(&ctx.pool_id),
+            kunci_antre(&ctx.pool_id),
+            kunci_antre_dp(&ctx.pool_id, alokasi.downstream_pool_id),
+        ];
+        let arg = vec![
+            ctx.mode.sebagai_arg().to_owned(),
+            if sync { "1" } else { "0" }.to_owned(),
+            client_id.to_owned(),
+            ctx.kuota_efektif.to_string(),
+            JUMLAH_EMBER_HARIAN.to_string(),
+            no_ember(ctx).to_string(),
+            alokasi.ruang_intake.to_string(),
+        ];
+        let j = self
+            .jalankan(&self.skrip.intake_alokasi, kunci, arg)
+            .await?;
+        hasil_intake(&j)
     }
 
     async fn ambil_token(

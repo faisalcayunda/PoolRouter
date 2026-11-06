@@ -6,11 +6,12 @@
 use chrono::{DateTime, Duration, Utc};
 use poolrouter_core::kuota::pemulihan::{
     GalatPemulihan, JendelaRate, KeadaanPool, SumberRebuild, baca_run_id, bangun_ulang,
+    kunci_antre, kunci_antre_dp,
 };
 use poolrouter_core::kuota::store::{
     AsalLepas, BURST_PENOLAKAN, GalatStore, HasilIntake, HasilKlaim, HasilPenolakan, HasilTambah,
-    HasilToken, ISI_ULANG_PENOLAKAN_MIKRO, KonteksKuota, KuotaRedis, KuotaStore, ModeJendela,
-    PermintaanToken,
+    HasilToken, ISI_ULANG_PENOLAKAN_MIKRO, IntakeAlokasi, KonteksKuota, KuotaRedis, KuotaStore,
+    ModeJendela, PermintaanToken,
 };
 use redis::aio::MultiplexedConnection;
 
@@ -581,4 +582,110 @@ async fn metrik_kuota_dicatat_oleh_store() {
     for terlarang in ["req-m", "rt-0"] {
         assert!(!out.contains(terlarang), "label bocor: {terlarang}");
     }
+}
+
+/// Counter of a key, `0` when absent.
+async fn baca_counter(c: &mut MultiplexedConnection, kunci: &str) -> i64 {
+    redis::cmd("GET")
+        .arg(kunci)
+        .query_async::<Option<i64>>(c)
+        .await
+        .unwrap()
+        .unwrap_or(0)
+}
+
+/// AC-8: the F0 gate runs first, then `antre_d >= ruang_intake`; an accepted
+/// async request raises `pr:antre:{<pool>}` and `pr:antre:dp:{<pool>}:<d>` in
+/// the same EVAL, and a refusal raises neither.
+#[tokio::test]
+#[ignore = "butuh Redis: make -C backend uji-redis"]
+async fn intake_alokasi_menegakkan_antre_dp() {
+    if lewati() {
+        return;
+    }
+    let (mut c, store) = siap().await;
+    let k = ctx("pool-a", 100);
+    let alokasi = IntakeAlokasi {
+        downstream_pool_id: 7,
+        ruang_intake: 2,
+    };
+    let dp = kunci_antre_dp("pool-a", 7);
+    let f0 = kunci_antre("pool-a");
+
+    for i in 1..=2 {
+        assert_eq!(
+            store
+                .intake_alokasi(&k, false, "c", &alokasi)
+                .await
+                .unwrap(),
+            HasilIntake::Lolos {
+                terpakai: 0,
+                antre: i
+            }
+        );
+    }
+    assert_eq!(baca_counter(&mut c, &dp).await, 2, "antre_d naik");
+    assert_eq!(baca_counter(&mut c, &f0).await, 2, "antre F0 naik");
+
+    // `antre_d >= ruang_intake` → 429 `kuota_habis`, dan tidak ada counter naik.
+    assert_eq!(
+        store
+            .intake_alokasi(&k, false, "c", &alokasi)
+            .await
+            .unwrap(),
+        HasilIntake::KuotaHabis {
+            terpakai: 0,
+            antre: 2
+        }
+    );
+    assert_eq!(baca_counter(&mut c, &dp).await, 2, "antre_d tetap");
+    assert_eq!(baca_counter(&mut c, &f0).await, 2, "antre F0 tetap");
+
+    // Cek F0 lebih dulu: `terpakai + antre >= kuota_efektif` menolak
+    // `antrean_penuh` walau ruang rute masih lapang.
+    let sempit = ctx("pool-b", 1);
+    let lapang = IntakeAlokasi {
+        downstream_pool_id: 7,
+        ruang_intake: 1_000,
+    };
+    assert!(matches!(
+        store
+            .intake_alokasi(&sempit, false, "c", &lapang)
+            .await
+            .unwrap(),
+        HasilIntake::Lolos { .. }
+    ));
+    assert_eq!(
+        store
+            .intake_alokasi(&sempit, false, "c", &lapang)
+            .await
+            .unwrap(),
+        HasilIntake::AntreanPenuh {
+            terpakai: 0,
+            antre: 1
+        }
+    );
+    assert_eq!(
+        baca_counter(&mut c, &kunci_antre_dp("pool-b", 7)).await,
+        1,
+        "antre_d tidak naik saat F0 menolak"
+    );
+
+    // Sync tidak masuk antrean: kedua counter tetap.
+    assert!(matches!(
+        store.intake_alokasi(&k, true, "c", &alokasi).await.unwrap(),
+        HasilIntake::Lolos { .. }
+    ));
+    assert_eq!(baca_counter(&mut c, &dp).await, 2);
+    assert_eq!(baca_counter(&mut c, &f0).await, 2);
+
+    // Ruang negatif adalah bug konfigurasi, bukan penolakan.
+    let buruk = IntakeAlokasi {
+        downstream_pool_id: 7,
+        ruang_intake: -1,
+    };
+    assert!(matches!(
+        store.intake_alokasi(&k, false, "c", &buruk).await,
+        Err(GalatStore::ArgumenTidakSah(_))
+    ));
 }
