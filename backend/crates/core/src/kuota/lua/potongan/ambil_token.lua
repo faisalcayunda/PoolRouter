@@ -44,6 +44,9 @@
 -- `o.nomor`      nomor percobaan
 -- `o.request_id` UUID percobaan
 -- `o.sekarang`   fungsi pengembali mikrodetik (Redis TIME)
+-- `o.pilih_sumber`     hook F1 (opsional): dipanggil sesudah semua gates F0,
+--                      sebelum tulis; kembalikan nil atau `{ kode, tabel }`
+-- `o.kunci_slot_sumber` hook F1 (opsional): dipanggil sesudah slot ditulis
 --
 -- Kembalian: `{ kode = ..., tabel = <bentuk kembalian skrip F0> }`. `kode`
 -- adalah `tabel[1]`, disediakan supaya pemanggil bisa memeriksa tanpa
@@ -161,6 +164,16 @@ local function ambil_token(KEYS, o)
     return { kode = 'rate_limit', tabel = { 'rate_limit', terpakai, slot_aktif, kedaluwarsa, tunggu, isi, isi_porsi } }
   end
 
+  -- Tahap anggaran F1 (hook, AC-5/AC-6): sesudah SEMUA gates F0 dan sebelum
+  -- tulis. Hook menolak dengan `{ kode, tabel }` seperti rejection global;
+  -- saat itu belum ada satu pun kunci yang berubah. `opsi` nil = F0 apa adanya.
+  if o.pilih_sumber then
+    local tolak = o.pilih_sumber(KEYS, o, terpakai, slot_aktif)
+    if tolak then
+      return tolak
+    end
+  end
+
   -- Langkah 8: tulis. TAT baru = TAT lama + T, dan TTL-nya `TAT_baru − now +
   -- 60 s`, bukan `TAT − now`: dengan TTL lama, kunci bisa hilang sebelum TAT
   -- terlewati sehingga satu menit pertama sesudahnya menerima burst penuh
@@ -193,6 +206,12 @@ local function ambil_token(KEYS, o)
   local ditambah = redis.call('ZADD', KEYS[4], 'NX', now + o.ttl, member)
   if ditambah == 0 then
     return { kode = 'slot_ganda', tabel = { 'slot_ganda', terpakai, slot_aktif, kedaluwarsa, 0, isi, isi_porsi } }
+  end
+
+  -- Sumber slot (hook T2c): dicatat sesudah slot benar-benar milik pemanggil,
+  -- supaya `slot_klaim.lua`/`slot_lepas.lua` bisa mengembalikan bebannya.
+  if o.kunci_slot_sumber then
+    o.kunci_slot_sumber(KEYS, o, member)
   end
 
   -- Anggaran retry: catat percobaan (`p<menit>`) dan, bila retry, `r<menit>`.
