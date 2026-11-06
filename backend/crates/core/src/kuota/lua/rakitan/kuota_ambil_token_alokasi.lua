@@ -597,8 +597,6 @@ end
 return { jalankan = kerangka }
 end)()
 
--- shortcut: tahap anggaran (pilih_sumber/kunci_slot_sumber) belum diisi;
--- skrip ini masih berperilaku sama dengan F0. Upgrade di T2b (ARC-170).
 local alokasi_anggaran = (function()
 -- Potongan tahap anggaran (AC-6): pilih sumber pertama dari urutan_sumber
 -- yang masih punya ruang (u_x < a_x), catat sumber di pr:slot_sumber, dan

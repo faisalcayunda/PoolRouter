@@ -20,8 +20,6 @@
 -- sisip: potongan/ambil_token.lua sebagai ambil_token
 -- sisip: potongan/kerangka.lua sebagai kerangka
 
--- shortcut: tahap anggaran (pilih_sumber/kunci_slot_sumber) belum diisi;
--- skrip ini masih berperilaku sama dengan F0. Upgrade di T2b (ARC-170).
 -- sisip: potongan/alokasi_anggaran.lua sebagai alokasi_anggaran
 local opsi = {
   pilih_sumber = alokasi_anggaran.pilih_sumber,
