@@ -254,9 +254,14 @@ proptest! {
         let rencana = RencanaAnggaran::baru(kuota, margin, &rute).unwrap();
         // A pool cannot lend to itself; the caller hands in other pools only,
         // so the generator drops the pool's own id like the dispatcher does.
+        // One pool appears once: the dispatcher builds the list from a map, and
+        // a duplicate id would be two contradictory rooms for the same pool —
+        // no order can satisfy "room desc, then id" over `[(2, 0), (2, 0)]`.
+        let mut terlihat = std::collections::HashSet::new();
         let peminjam: Vec<PoolPeminjam> = donors
             .iter()
             .filter(|(id, _)| *id != 1)
+            .filter(|(id, _)| terlihat.insert(*id))
             .map(|(id, ruang)| PoolPeminjam { downstream_pool_id: *id, ruang: *ruang })
             .collect();
 

@@ -33,5 +33,6 @@ pub use periode::{
     ember_mulai, indeks_ember, nomor_ember, periode_untuk,
 };
 pub use rencana::{
-    PoolPeminjam, RencanaAnggaran, Rute, Sumber, SumberDana, rencana_anggaran, ruang_intake, urutan_sumber,
+    PoolPeminjam, RencanaAnggaran, Rute, Sumber, SumberDana, rencana_anggaran, ruang_intake,
+    urutan_sumber,
 };

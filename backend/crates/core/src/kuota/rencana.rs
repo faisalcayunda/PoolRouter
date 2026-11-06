@@ -209,12 +209,25 @@ pub fn urutan_sumber(
             .cmp(&a.ruang.max(0))
             .then(a.downstream_pool_id.cmp(&b.downstream_pool_id))
     });
+    // What is left is shareable and no route reserves it, so the donors
+    // together may not offer more than `a_sisa` (ADR-0006 §4 butir 7). The
+    // entries are consumed in order, so the head of the list is the part a
+    // dispatcher walking it would take first.
+    let mut sisa_shareable = rencana.sisa();
+    let mut dipinjam: Vec<(i64, i64)> = Vec::with_capacity(lain.len());
     for p in lain {
+        let ruang = p.ruang.max(0).min(sisa_shareable);
+        sisa_shareable -= ruang;
+        dipinjam.push((p.downstream_pool_id, ruang));
+    }
+    // Capping can make two donors equal (both truncated to the same room, or to
+    // zero), so the tie-break has to be applied again on the capped rooms —
+    // otherwise the order would depend on which donor arrived first.
+    dipinjam.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
+    for (downstream_pool_id, ruang) in dipinjam {
         hasil.push(SumberDana::baru(
-            Sumber::Pinjam {
-                downstream_pool_id: p.downstream_pool_id,
-            },
-            p.ruang,
+            Sumber::Pinjam { downstream_pool_id },
+            ruang,
         ));
     }
     hasil
@@ -223,7 +236,7 @@ pub fn urutan_sumber(
 /// How many attempts downstream route `d` may accept right now (AC-3).
 ///
 /// Its own reservation, unallocated quota and donor capacity are capped at
-/// remaining global quota room (ADR-0006 §4 butir 7).
+/// remaining global quota room `Q − terpakai` (ADR-0006 §4 butir 7).
 pub fn ruang_intake(
     rencana: &RencanaAnggaran,
     downstream_pool_id: i64,
@@ -236,11 +249,19 @@ pub fn ruang_intake(
     if !boleh_pinjam_d {
         return sendiri.min(ruang_global);
     }
-    let ruang_sisa = rencana.sisa().min(ruang_global.saturating_sub(sendiri));
+    // `a_sisa` is not reserved by any route, and `terpakai` already counts what
+    // this route spent *inside* its own reservation, so it does not eat the
+    // unallocated part: the route may take the whole of it, up to `Q −
+    // terpakai`. Donors are likewise capped by `a_sisa`, never by
+    // `Q − terpakai` alone — otherwise a stale donor read would reach into
+    // another pool's reservation (ADR-0006 §4 butir 7).
+    let ruang_sisa = rencana.sisa().min(ruang_global);
     let mut total = sendiri.saturating_add(ruang_sisa);
+    let mut pinjam = 0i64;
     for p in peminjam {
-        total = total.saturating_add(p.ruang.max(0)).min(ruang_global);
+        pinjam = pinjam.saturating_add(p.ruang.max(0)).min(ruang_sisa);
     }
+    total = total.saturating_add(pinjam).min(ruang_global);
     total
 }
 
@@ -400,7 +421,10 @@ mod tests {
         let r = RencanaAnggaran::baru(
             300,
             0.01,
-            &[Rute::beralokasi(1, exact(30)), Rute::beralokasi(2, exact(60))],
+            &[
+                Rute::beralokasi(1, exact(30)),
+                Rute::beralokasi(2, exact(60)),
+            ],
         )
         .unwrap();
         let u = urutan_sumber(&r, 1, true, &[]);
@@ -478,6 +502,138 @@ mod tests {
             0
         );
         // A negative donor contributes nothing rather than eating the rest.
-        assert_eq!(ruang_intake(&r, 1, 0, true, &[PoolPeminjam { downstream_pool_id: 2, ruang: -5 }]), r.sisa());
+        assert_eq!(
+            ruang_intake(
+                &r,
+                1,
+                0,
+                true,
+                &[PoolPeminjam {
+                    downstream_pool_id: 2,
+                    ruang: -5
+                }]
+            ),
+            r.sisa()
+        );
+    }
+
+    #[test]
+    fn ruang_intake_pinjam_dari_donor_dibatasi_sisa_tak_teralokasi() {
+        // Elsewhere the global room (Q − terpakai) is the binding cap, so a
+        // donor reporting above its shareable part is capped twice over and a
+        // formula that ignored `a_sisa` would pass by accident. Here both the
+        // own reservation (500) and the unallocated part (500) are small, and
+        // the donors (3000 together) would reach into pool 2's reservation if
+        // they were capped by `Q − terpakai` alone.
+        let r = RencanaAnggaran::baru(
+            4000,
+            0.0,
+            &[
+                Rute::beralokasi(1, exact(500)),
+                Rute::beralokasi(2, exact(3000)),
+            ],
+        )
+        .unwrap();
+        assert_eq!(r.sisa(), 500);
+        let donors = [
+            PoolPeminjam {
+                downstream_pool_id: 2,
+                ruang: 1500,
+            },
+            PoolPeminjam {
+                downstream_pool_id: 3,
+                ruang: 1500,
+            },
+        ];
+        // 400 own + 500 unallocated + 500 of donor; the rest would be pool 2's
+        // reservation. Spending the own part does not shrink `a_sisa`, which is
+        // why this is 1400 and not 400 + min(500, 3500 − 400).
+        assert_eq!(ruang_intake(&r, 1, 100, true, &donors), 1400);
+        assert_eq!(ruang_intake(&r, 1, 100, false, &donors), 400);
+
+        // A donor that reports within the shareable part still counts in full,
+        // so the cap is not a blanket `a_sisa` either way.
+        let donors = [
+            PoolPeminjam {
+                downstream_pool_id: 2,
+                ruang: 300,
+            },
+            PoolPeminjam {
+                downstream_pool_id: 3,
+                ruang: 400,
+            },
+        ];
+        assert_eq!(ruang_intake(&r, 1, 100, true, &donors), 1400);
+    }
+
+    #[test]
+    fn urutan_pinjam_ikut_terbatas_sisa_tak_teralokasi() {
+        // The same rule one level down: the borrowing entries of the order may
+        // not offer more than the unallocated quota. A dispatcher that walks
+        // the list in order would otherwise spend another pool's reservation.
+        let r = RencanaAnggaran::baru(
+            4000,
+            0.0,
+            &[
+                Rute::beralokasi(1, exact(500)),
+                Rute::beralokasi(2, exact(3000)),
+            ],
+        )
+        .unwrap();
+        let u = urutan_sumber(
+            &r,
+            1,
+            true,
+            &[
+                PoolPeminjam {
+                    downstream_pool_id: 2,
+                    ruang: 300,
+                },
+                PoolPeminjam {
+                    downstream_pool_id: 3,
+                    ruang: 400,
+                },
+            ],
+        );
+        // Own allocation, the unallocated part, then donors largest first.
+        assert_eq!(
+            u.iter().map(|s| s.sumber).collect::<Vec<_>>(),
+            [
+                Sumber::Sendiri,
+                Sumber::Sisa,
+                Sumber::Pinjam {
+                    downstream_pool_id: 3
+                },
+                Sumber::Pinjam {
+                    downstream_pool_id: 2
+                },
+            ]
+        );
+        assert_eq!(u[0].ruang, 500);
+        assert_eq!(u[1].ruang, 500);
+        // The donors are capped by what the pool left unallocated, in order.
+        assert_eq!(u[2].ruang, 400);
+        assert_eq!(u[3].ruang, 100);
+        assert_eq!(u.iter().map(|s| s.ruang).sum::<i64>(), 1500);
+        // Route 1 may accept exactly what the order offers.
+        assert_eq!(
+            ruang_intake(
+                &r,
+                1,
+                0,
+                true,
+                &[
+                    PoolPeminjam {
+                        downstream_pool_id: 2,
+                        ruang: 300
+                    },
+                    PoolPeminjam {
+                        downstream_pool_id: 3,
+                        ruang: 400
+                    }
+                ]
+            ),
+            u.iter().map(|s| s.ruang).sum::<i64>()
+        );
     }
 }
