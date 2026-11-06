@@ -613,9 +613,9 @@ where
     ) -> Result<HasilIntake, GalatStore> {
         periksa_ctx(ctx)?;
         periksa_id("client_id", client_id)?;
-        if alokasi.ruang_intake < 0 {
+        if alokasi.downstream_pool_id < 1 || alokasi.ruang_intake < 0 {
             return Err(GalatStore::ArgumenTidakSah(
-                "ruang_intake harus >= 0".into(),
+                "downstream_pool_id harus >= 1 dan ruang_intake >= 0".into(),
             ));
         }
         let kunci = vec![
@@ -634,9 +634,7 @@ where
             no_ember(ctx).to_string(),
             alokasi.ruang_intake.to_string(),
         ];
-        let j = self
-            .jalankan(&self.skrip.intake_alokasi, kunci, arg)
-            .await?;
+        let j = self.jalankan(&self.skrip.intake_alokasi, kunci, arg).await?;
         hasil_intake(&j)
     }
 

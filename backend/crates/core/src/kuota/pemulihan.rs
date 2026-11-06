@@ -85,7 +85,7 @@ pub fn kunci_antre(pool: &str) -> String {
     format!("pr:antre:{{{pool}}}")
 }
 
-/// `pr:antre:dp:{<upstream_pool_id>}:<downstream_pool_id>`.
+/// `pr:antre:dp:{<pool>}:<downstream_pool_id>`.
 pub fn kunci_antre_dp(pool: &str, downstream_pool_id: i64) -> String {
     format!("pr:antre:dp:{{{pool}}}:{downstream_pool_id}")
 }
