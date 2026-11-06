@@ -22,4 +22,9 @@
 
 -- shortcut: tahap anggaran (pilih_sumber/kunci_slot_sumber) belum diisi;
 -- skrip ini masih berperilaku sama dengan F0. Upgrade di T2b (ARC-170).
-return kerangka.jalankan(KEYS, ARGV, nil)
+-- sisip: potongan/alokasi_anggaran.lua sebagai alokasi_anggaran
+local opsi = {
+  pilih_sumber = alokasi_anggaran.pilih_sumber,
+  kunci_slot_sumber = alokasi_anggaran.kunci_slot_sumber,
+}
+return kerangka.jalankan(KEYS, ARGV, opsi)
