@@ -501,7 +501,7 @@ $$;
 -- pr_webhook reads terminal async requests through this view only (column grants cannot restrict rows).
 CREATE VIEW v_request_webhook WITH (security_barrier = true) AS
   SELECT r.request_id, r.client_id, r.status, r.attempt_count, r.cancel_reason, r.failure_reason, r.completed_at,
-         r.webhook_status, r.webhook_attempt_count, r.output_payload, r.payload_purged_at
+         r.webhook_status, r.webhook_attempt_count, r.webhook_not_before, r.output_payload, r.payload_purged_at
     FROM request r
    WHERE r.mode = 'async' AND r.status IN ('done', 'failed', 'expired', 'cancelled');
 

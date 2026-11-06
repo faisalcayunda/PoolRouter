@@ -148,7 +148,8 @@ CREATE FUNCTION fn_klaim_webhook(
   p_request_id uuid,
   p_sekarang timestamptz,
   p_http_status integer,
-  p_galat text)
+  p_galat text,
+  p_diharapkan integer DEFAULT 0)
 RETURNS integer
 LANGUAGE plpgsql
 SECURITY DEFINER
@@ -158,20 +159,22 @@ DECLARE
   n integer;
 BEGIN
   UPDATE public.request
-     SET webhook_attempt_count = 1,
+     SET webhook_attempt_count = p_diharapkan + 1,
          webhook_last_at = p_sekarang,
+         webhook_not_before = NULL,
          webhook_status = CASE WHEN p_galat IS NULL THEN webhook_status ELSE 'gagal' END,
          webhook_last_http_status = p_http_status,
          webhook_last_error = p_galat
    WHERE request_id = p_request_id
      AND webhook_status = 'menunggu'
-     AND webhook_attempt_count = 0
+     AND webhook_attempt_count = p_diharapkan
+     AND (webhook_not_before IS NULL OR webhook_not_before <= p_sekarang)
      AND (p_galat IS NULL OR webhook_last_at < p_sekarang - interval '5 minutes');
   GET DIAGNOSTICS n = ROW_COUNT;
   RETURN n;
 END $$;
 REVOKE ALL ON FUNCTION fn_klaim_webhook(uuid, timestamptz, integer, text) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION fn_klaim_webhook(uuid, timestamptz, integer, text) TO pr_webhook;
+GRANT EXECUTE ON FUNCTION fn_klaim_webhook(uuid, timestamptz, integer, text, integer) TO pr_webhook;
 
 -- AC-26: a claim older than the given limit is closed `gagal` without a second send. The age test lives
 -- inside the function: the outbox scan only runs on columns pr_webhook may read, and comparing
