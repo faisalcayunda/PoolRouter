@@ -284,6 +284,7 @@ pub async fn jalankan_putaran(
            FROM v_request_webhook v JOIN request r ON r.request_id = v.request_id \
           WHERE v.webhook_status = 'menunggu' \
             AND (v.webhook_not_before IS NULL OR v.webhook_not_before <= $2) \
+            AND v.webhook_attempt_count < fn_konfigurasi_int('webhook_batas_percobaan', 6) \
           ORDER BY v.completed_at \
           LIMIT $1",
     )
