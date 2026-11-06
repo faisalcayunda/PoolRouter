@@ -442,7 +442,8 @@ mod uji {
         assert!(parse(json!({ "periode": { "jam": "00:60" } })).is_err());
         assert!(parse(json!({ "periode": { "jam": "0:00" } })).is_err());
         assert!(parse(json!({ "periode": { "zona": "  " } })).is_err());
-        assert!(parse(json!({ "periode": { "jam": "07:30" } })).is_ok());
+        assert!(parse(json!({ "periode": { "jam": "07:30" } })).is_err());
+        assert!(parse(json!({ "periode": { "zona": "Asia/Jakarta" } })).is_ok());
     }
 
     #[test]
