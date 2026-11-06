@@ -181,11 +181,6 @@ pub fn router(state: AdminState) -> Router {
             "/admin/v1/webhook-allowlist/{domain}",
             put(allowlist::put_allowlist_entry).delete(allowlist::delete_allowlist_entry),
         )
-        .route("/admin/v1/providers", get(provider::list_providers).post(provider::create_provider))
-        .route(
-            "/admin/v1/providers/{id}",
-            get(provider::get_provider).put(provider::update_provider),
-        )
         .with_state(state)
         .layer(RequestBodyLimitLayer::new(16 * 1024))
         .layer(SetResponseHeaderLayer::overriding(
