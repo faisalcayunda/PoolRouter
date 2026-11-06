@@ -241,10 +241,7 @@ impl KonfigurasiDataBalikan {
             None => dasar.jam_kirim,
         };
         if jam_kirim != (0, 0) {
-            return Err(GalatDataBalikan::TidakSah(
-                "periode.jam",
-                "harus 00:00",
-            ));
+            return Err(GalatDataBalikan::TidakSah("periode.jam", "harus 00:00"));
         }
         let zona = p.zona.unwrap_or_else(|| dasar.zona.clone());
         if zona != "Asia/Jakarta" {
