@@ -24,6 +24,17 @@ use super::problem_admin::ProblemAdmin as Problem;
 // Schemas
 // ---------------------------------------------------------------------------
 
+fn default_pemicu_jumlah_n() -> i64 { 10000 }
+fn default_toleransi_detik() -> i64 { 3600 }
+fn default_ukuran_batch_maks() -> i64 { 10000 }
+fn default_kirim_batas_percobaan() -> i64 { 5 }
+fn default_backoff_base_detik() -> i64 { 300 }
+fn default_backoff_cap_detik() -> i64 { 3600 }
+fn default_format_version() -> String { "tiruan-1".to_owned() }
+fn default_periode_jenis() -> String { "harian".to_owned() }
+fn default_periode_jam() -> String { "00:00".to_owned() }
+fn default_periode_zona() -> String { "Asia/Jakarta".to_owned() }
+
 /// Login body. Two consecutive failures count against the limiter (5 per 15
 /// minutes per username).
 #[derive(Debug, Clone, Deserialize, ToSchema)]
@@ -66,6 +77,54 @@ pub struct SesiStatus {
     pub waktu_server: DateTime<Utc>,
 }
 
+/// Periode batch data balikan (skema 2, AC-15). Selalu `harian` 00:00 `Asia/Jakarta`.
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct DataBalikanPeriode {
+    /// Jenis periode; hanya `harian` yang dikenal.
+    #[serde(default = "default_periode_jenis")]
+    #[schema(example = "harian")]
+    pub jenis: String,
+    /// Jam kirim `HH:MM`; hanya `00:00` yang sah.
+    #[serde(default = "default_periode_jam")]
+    #[schema(example = "00:00")]
+    pub jam: String,
+    /// Zona waktu; hanya `Asia/Jakarta`.
+    #[serde(default = "default_periode_zona")]
+    #[schema(example = "Asia/Jakarta")]
+    pub zona: String,
+}
+
+/// Blok `data_balikan` pada konfigurasi provider skema 2 (AC-15, V-05).
+/// Field tanpa default memakai nilai WB11 dari `core::data_balikan`.
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct DataBalikanConfig {
+    #[serde(default = "default_pemicu_jumlah_n")]
+    #[schema(minimum = 1)]
+    pub pemicu_jumlah_n: i64,
+    #[serde(default)]
+    pub periode: Option<DataBalikanPeriode>,
+    #[serde(default = "default_toleransi_detik")]
+    pub toleransi_detik: i64,
+    #[serde(default = "default_ukuran_batch_maks")]
+    #[schema(minimum = 1, maximum = 10000)]
+    pub ukuran_batch_maks: i64,
+    #[serde(default = "default_kirim_batas_percobaan")]
+    #[schema(minimum = 1, maximum = 10)]
+    pub kirim_batas_percobaan: i64,
+    #[serde(default = "default_backoff_base_detik")]
+    pub backoff_base_detik: i64,
+    #[serde(default = "default_backoff_cap_detik")]
+    pub backoff_cap_detik: i64,
+    /// Endpoint HTTPS tujuan data balikan.
+    pub endpoint: String,
+    /// Rujukan secret bentuk `{{secret.X}}`.
+    pub rujukan_secret: String,
+    #[serde(default = "default_format_version")]
+    pub format_version: String,
+}
+
 /// Provider configuration body (`createProvider`/`updateProvider`, US-01/04).
 #[derive(Debug, Clone, Deserialize, ToSchema)]
 #[serde(deny_unknown_fields)]
@@ -87,9 +146,13 @@ pub struct ProviderConfig {
     pub tls_trust: String,
     #[schema(example = "ringkas")]
     pub log_mode: String,
-    /// Fixed 1 in F0; any other value is 422.
-    #[schema(minimum = 1, maximum = 1, example = 1)]
+    /// 1 (F0) atau 2 (F1, dengan blok `data_balikan`). Nilai lain 422.
+    #[schema(minimum = 1, maximum = 2, example = 1)]
     pub config_schema_version: i64,
+    /// Blok konfigurasi data balikan (hanya untuk `config_schema_version` = 2).
+    /// Validasi mengikuti AC-15 (`KonfigurasiDataBalikan::parse`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub data_balikan: Option<DataBalikanConfig>,
     /// Reason; required on update (written to the config audit).
     #[serde(skip_serializing_if = "Option::is_none")]
     #[schema(min_length = 10, max_length = 500)]
@@ -154,9 +217,12 @@ pub struct Provider {
     pub tls_trust: String,
     #[schema(example = "ringkas")]
     pub log_mode: String,
-    /// Fixed 1 in F0.
-    #[schema(minimum = 1, maximum = 1, example = 1)]
+    /// 1 (F0) atau 2 (F1, dengan blok `data_balikan`).
+    #[schema(minimum = 1, maximum = 2, example = 1)]
     pub config_schema_version: i64,
+    /// Blok konfigurasi data balikan (hanya untuk `config_schema_version` = 2).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub data_balikan: Option<DataBalikanConfig>,
     #[schema(example = 2)]
     pub provider_config_version: i64,
     pub aktif: bool,

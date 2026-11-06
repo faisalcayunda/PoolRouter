@@ -2536,6 +2536,68 @@ components:
             `pr_<credential_id 32 hex>_<secret 256-bit base64url>` (ADR-0001 5a.5,
             SHAA-198 U-13). Never returned again (contract 3.1b).
           example: pr_0193b8a27c4e7d108a3f5e6b7c8d9e0f_2fJ8N0qk0e6h7h0F1D2J3k4L5m6N7o8P9Q0r1S2t3U4
+    DataBalikanConfig:
+      type: object
+      description: |-
+        Blok `data_balikan` pada konfigurasi provider skema 2 (AC-15, V-05).
+        Field tanpa default memakai nilai WB11 dari `core::data_balikan`.
+      required:
+      - endpoint
+      - rujukan_secret
+      properties:
+        backoff_base_detik:
+          type: integer
+          format: int64
+        backoff_cap_detik:
+          type: integer
+          format: int64
+        endpoint:
+          type: string
+          description: Endpoint HTTPS tujuan data balikan.
+        format_version:
+          type: string
+        kirim_batas_percobaan:
+          type: integer
+          format: int64
+          maximum: 10
+          minimum: 1
+        pemicu_jumlah_n:
+          type: integer
+          format: int64
+          minimum: 1
+        periode:
+          oneOf:
+          - $ref: '#/components/schemas/DataBalikanPeriode'
+          - type: 'null'
+        rujukan_secret:
+          type: string
+          description: Rujukan secret bentuk `{{secret.X}}`.
+        toleransi_detik:
+          type: integer
+          format: int64
+        ukuran_batch_maks:
+          type: integer
+          format: int64
+          maximum: 10000
+          minimum: 1
+      additionalProperties: false
+    DataBalikanPeriode:
+      type: object
+      description: Periode batch data balikan (skema 2, AC-15). Selalu `harian` 00:00 `Asia/Jakarta`.
+      properties:
+        jam:
+          type: string
+          description: Jam kirim `HH:MM`; hanya `00:00` yang sah.
+          example: 00:00
+        jenis:
+          type: string
+          description: Jenis periode; hanya `harian` yang dikenal.
+          example: harian
+        zona:
+          type: string
+          description: Zona waktu; hanya `Asia/Jakarta`.
+          example: Asia/Jakarta
+      additionalProperties: false
     DownstreamPool:
       type: object
       description: |-
@@ -3348,10 +3410,15 @@ components:
         config_schema_version:
           type: integer
           format: int64
-          description: Fixed 1 in F0.
+          description: 1 (F0) atau 2 (F1, dengan blok `data_balikan`).
           example: 1
-          maximum: 1
+          maximum: 2
           minimum: 1
+        data_balikan:
+          oneOf:
+          - $ref: '#/components/schemas/DataBalikanConfig'
+            description: Blok konfigurasi data balikan (hanya untuk `config_schema_version` = 2).
+          - type: 'null'
         log_mode:
           type: string
           example: ringkas
@@ -3406,10 +3473,17 @@ components:
         config_schema_version:
           type: integer
           format: int64
-          description: Fixed 1 in F0; any other value is 422.
+          description: 1 (F0) atau 2 (F1, dengan blok `data_balikan`). Nilai lain 422.
           example: 1
-          maximum: 1
+          maximum: 2
           minimum: 1
+        data_balikan:
+          oneOf:
+          - $ref: '#/components/schemas/DataBalikanConfig'
+            description: |-
+              Blok konfigurasi data balikan (hanya untuk `config_schema_version` = 2).
+              Validasi mengikuti AC-15 (`KonfigurasiDataBalikan::parse`).
+          - type: 'null'
         log_mode:
           type: string
           example: ringkas

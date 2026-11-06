@@ -1100,6 +1100,48 @@ export interface components {
             secret: string;
         };
         /**
+         * @description Blok `data_balikan` pada konfigurasi provider skema 2 (AC-15, V-05).
+         *     Field tanpa default memakai nilai WB11 dari `core::data_balikan`.
+         */
+        DataBalikanConfig: {
+            /** Format: int64 */
+            backoff_base_detik?: number;
+            /** Format: int64 */
+            backoff_cap_detik?: number;
+            /** @description Endpoint HTTPS tujuan data balikan. */
+            endpoint: string;
+            format_version?: string;
+            /** Format: int64 */
+            kirim_batas_percobaan?: number;
+            /** Format: int64 */
+            pemicu_jumlah_n?: number;
+            periode?: components["schemas"]["DataBalikanPeriode"] | null;
+            /** @description Rujukan secret bentuk `{{secret.X}}`. */
+            rujukan_secret: string;
+            /** Format: int64 */
+            toleransi_detik?: number;
+            /** Format: int64 */
+            ukuran_batch_maks?: number;
+        };
+        /** @description Periode batch data balikan (skema 2, AC-15). Selalu `harian` 00:00 `Asia/Jakarta`. */
+        DataBalikanPeriode: {
+            /**
+             * @description Jam kirim `HH:MM`; hanya `00:00` yang sah.
+             * @example 00:00
+             */
+            jam?: string;
+            /**
+             * @description Jenis periode; hanya `harian` yang dikenal.
+             * @example harian
+             */
+            jenis?: string;
+            /**
+             * @description Zona waktu; hanya `Asia/Jakarta`.
+             * @example Asia/Jakarta
+             */
+            zona?: string;
+        };
+        /**
          * @description Downstream pool entity. `prioritas` is derived by the allocation: read-only
          *     here, always 1 in F0.
          */
@@ -1550,10 +1592,11 @@ export interface components {
             body_template: string;
             /**
              * Format: int64
-             * @description Fixed 1 in F0.
+             * @description 1 (F0) atau 2 (F1, dengan blok `data_balikan`).
              * @example 1
              */
             config_schema_version: number;
+            data_balikan?: components["schemas"]["DataBalikanConfig"] | null;
             /** @example ringkas */
             log_mode: string;
             /** @description Provider parameters plus their validation rules. */
@@ -1590,10 +1633,11 @@ export interface components {
             body_template: string;
             /**
              * Format: int64
-             * @description Fixed 1 in F0; any other value is 422.
+             * @description 1 (F0) atau 2 (F1, dengan blok `data_balikan`). Nilai lain 422.
              * @example 1
              */
             config_schema_version: number;
+            data_balikan?: components["schemas"]["DataBalikanConfig"] | null;
             /** @example ringkas */
             log_mode: string;
             /** @description Provider parameters plus their validation rules. */
