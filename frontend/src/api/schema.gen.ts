@@ -155,6 +155,61 @@ export interface paths {
         patch: operations["updatePreferensi"];
         trace?: never;
     };
+    "/admin/v1/auth/mfa": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Second login step: TOTP or a recovery code (ADR-0006 §9, AC-10).
+         * @description Reads the `__Host-pr_mfa` pre-session cookie; on success sets
+         *     `__Host-pr_session` and clears the pre-session cookie.
+         */
+        post: operations["mfaVerifikasi"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/auth/mfa/daftar": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Start MFA enrollment: returns the `otpauth://` URI once (AC-12). */
+        post: operations["mfaDaftar"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/auth/mfa/daftar/konfirmasi": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Confirm enrollment with one TOTP code; returns the 10 recovery codes (AC-13). */
+        post: operations["mfaKonfirmasi"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/v1/auth/sesi": {
         parameters: {
             query?: never;
@@ -1092,10 +1147,17 @@ export interface components {
             /** Format: date-time */
             kedaluwarsa_at?: string | null;
             /**
-             * @description 256-bit base64url secret; never returned again (contract 3.1b).
-             * @example 2fJ8N0qk0e6h7h0F1D2J3k4L5m6N7o8P9Q0r1S2t3U4v
+             * @description Client secret: 256-bit base64url. API key: the full string
+             *     `pr_<credential_id 32 hex>_<secret 256-bit base64url>` (ADR-0001 5a.5,
+             *     SHAA-198 U-13). Never returned again (contract 3.1b).
+             * @example pr_0193b8a27c4e7d108a3f5e6b7c8d9e0f_2fJ8N0qk0e6h7h0F1D2J3k4L5m6N7o8P9Q0r1S2t3U4
              */
             secret: string;
+        };
+        /** @description Body of `POST /auth/mfa/daftar` (AC-12): the registration code. */
+        DaftarMfaRequest: {
+            /** @description The one-time code issued to this user; required, never reusable. */
+            kode_pendaftaran: string;
         };
         /**
          * @description Downstream pool entity. `prioritas` is derived by the allocation: read-only
@@ -1253,6 +1315,21 @@ export interface components {
          * @enum {string}
          */
         KelasErrorWebhook: "timeout" | "koneksi" | "rate_limit_provider" | "respons_tidak_valid" | "tls" | "provider_sementara";
+        /** @description Body of `POST /auth/mfa` (AC-10): exactly one of the two code kinds. */
+        KodeMfaRequest: {
+            /**
+             * @description Six-digit TOTP code.
+             * @example 123456
+             */
+            kode?: string | null;
+            /** @description One of the 10 recovery codes issued at enrollment. */
+            kode_pemulihan?: string | null;
+        };
+        /** @description Body of `POST /auth/mfa/daftar/konfirmasi` (AC-13). */
+        KonfirmasiMfaRequest: {
+            /** @example 123456 */
+            kode_totp: string;
+        };
         /** @description One quota tracker row (US-12; KP-07: numbers from the DB, not Redis). */
         KuotaTracker: {
             /** Format: date-time */
@@ -1363,12 +1440,32 @@ export interface components {
              * @description Set only for `client_owner` sessions.
              */
             client_id?: string | null;
+            /** @description MFA state for this account (AC-14, MF3). */
+            mfa: components["schemas"]["MeMfa"];
             /** Format: uuid */
             pengguna_id: string;
             /** @description Role granted to this user (contract section 8.1). */
             peran: components["schemas"]["Peran"][];
             /** @example auditor_01 */
             username: string;
+        };
+        /**
+         * @description `Me.mfa` (AC-14): whether the step is required, whether it is enrolled, and
+         *     how many recovery codes remain.
+         */
+        MeMfa: {
+            /** @description `true` once a TOTP secret is confirmed (`pengguna_mfa.status = 'aktif'`). */
+            aktif: boolean;
+            /**
+             * Format: int64
+             * @description Unused recovery codes: 10 right after enrollment, 9 after one login.
+             */
+            sisa_kode_pemulihan: number;
+            /**
+             * @description `true` when `POOLROUTER_MFA_WAJIB` is on and the caller's role is one
+             *     the policy covers.
+             */
+            wajib: boolean;
         };
         /**
          * @description Metadata field definition (US-15). Also serialized: the endpoint entity
@@ -1391,6 +1488,21 @@ export interface components {
             /** @example string */
             tipe: string;
             wajib: boolean;
+        };
+        /** @description `POST /auth/mfa/daftar` response: shown once, never logged (AC-12). */
+        MfaDaftar: {
+            /**
+             * @description `otpauth://totp/...` for the authenticator app (issuer `PoolRouter`).
+             * @example otpauth://totp/PoolRouter:auditor_01?secret=JBSWY3DPEHPK3PXP&issuer=PoolRouter
+             */
+            otpauth_uri: string;
+            /** @description The same secret in base32, for manual entry. */
+            rahasia_base32: string;
+        };
+        /** @description `POST /auth/mfa/daftar/konfirmasi` response: the recovery codes, once (AC-13). */
+        MfaKonfirmasi: {
+            /** @description 10 codes; each works once. */
+            kode_pemulihan: string[];
         };
         /**
          * @description `searchLogByNik` body (auditor only; exact 16-digit NIK, no wildcard or
@@ -2276,6 +2388,94 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PreferensiUpdate"];
+                };
+            };
+            401: components["responses"]["Problem401Admin"];
+            403: components["responses"]["Problem403Admin"];
+            422: components["responses"]["Problem422Admin"];
+        };
+    };
+    mfaVerifikasi: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["KodeMfaRequest"];
+            };
+        };
+        responses: {
+            /** @description Kode diterima; cookie sesi diterbitkan */
+            204: {
+                headers: {
+                    /** @description Selalu no-store (R-16) */
+                    "Cache-Control"?: string;
+                    /** @description __Host-pr_session=...; HttpOnly; Secure; SameSite=Strict; Path=/ */
+                    "Set-Cookie"?: string;
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Problem401Admin"];
+            422: components["responses"]["Problem422Admin"];
+            429: components["responses"]["Problem429Admin"];
+        };
+    };
+    mfaDaftar: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DaftarMfaRequest"];
+            };
+        };
+        responses: {
+            /** @description URI otpauth dan secret base32; ditampilkan sekali */
+            200: {
+                headers: {
+                    /** @description Selalu no-store (R-16) */
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MfaDaftar"];
+                };
+            };
+            401: components["responses"]["Problem401Admin"];
+            403: components["responses"]["Problem403Admin"];
+        };
+    };
+    mfaKonfirmasi: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["KonfirmasiMfaRequest"];
+            };
+        };
+        responses: {
+            /** @description MFA aktif; kode pemulihan dan cookie sesi diterbitkan */
+            200: {
+                headers: {
+                    /** @description Selalu no-store (R-16) */
+                    "Cache-Control"?: string;
+                    /** @description __Host-pr_session=...; HttpOnly; Secure; SameSite=Strict; Path=/ */
+                    "Set-Cookie"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MfaKonfirmasi"];
                 };
             };
             401: components["responses"]["Problem401Admin"];
