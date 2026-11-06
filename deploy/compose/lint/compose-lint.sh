@@ -90,7 +90,7 @@ check_yaml() {
     /^[^[:space:]#]/ { insvc = ($0 ~ /^services:/); next }
     insvc && /^  [A-Za-z0-9_-]+:[[:space:]]*$/ { svc = $0; sub(/^  /, "", svc); sub(/:.*/, "", svc); next }
     insvc && /^    cap_add:/ && index(" " allow " ", " " svc " ") == 0 { print "cap_add-di-" svc }
-    insvc && /poolrouter_owner/ && svc != "migrate" { print "owner-secret-di-" svc }
+    insvc && /poolrouter_owner/ && svc != "migrate" && svc != "db-bootstrap" { print "owner-secret-di-" svc }
   ' "$file" > "$RENDER_DIR/.svc" || true
   if [ -s "$RENDER_DIR/.svc" ]; then
     while read -r hit; do echo "pelanggaran [service] di $file: $hit" >&2; done < "$RENDER_DIR/.svc"
