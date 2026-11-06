@@ -137,6 +137,7 @@ pub struct Baris {
     pub failure_reason: Option<String>,
     pub output_payload: Option<serde_json::Value>,
     pub webhook_attempt_count: i32,
+    pub webhook_not_before: Option<DateTime<Utc>>,
 }
 
 /// Konfigurasi webhook milik client.
@@ -279,20 +280,22 @@ pub async fn jalankan_putaran(
     let macet = tutup_macet(pool, sekarang).await?;
     let kandidat = sqlx::query_as::<_, Baris>(
         "SELECT v.request_id, r.client_id, v.status, v.attempt_count, v.cancel_reason, \
-                v.failure_reason, v.output_payload, v.webhook_attempt_count \
+                v.failure_reason, v.output_payload, v.webhook_attempt_count, v.webhook_not_before \
            FROM v_request_webhook v JOIN request r ON r.request_id = v.request_id \
-          WHERE v.webhook_status = 'menunggu' AND v.webhook_attempt_count = 0 \
+          WHERE v.webhook_status = 'menunggu' \
+            AND (v.webhook_not_before IS NULL OR v.webhook_not_before <= $2) \
           ORDER BY v.completed_at \
           LIMIT $1",
     )
     .bind(BATAS_PER_PUTARAN)
+    .bind(sekarang)
     .fetch_all(pool)
     .await
     .map_err(|e| e.to_string())?;
 
     let mut jumlah = macet > 0;
     for baris in kandidat {
-        if klaim(pool, baris.request_id, sekarang).await? {
+        if klaim(pool, baris.request_id, sekarang, baris.webhook_attempt_count).await? {
             kirim(pool, brankas, resolver, sekarang, &baris).await?;
             jumlah = true;
         }
@@ -307,11 +310,12 @@ pub async fn jalankan_putaran(
 /// diberikan ke `pr_webhook` (W-02), jadi UPDATE langsung akan ditolak di dalam
 /// trigger meski grant kolomnya ada. Baris yang klaimnya sudah diambil job lain
 /// menghasilkan 0 baris → `false`, bukan error yang menghentikan putaran.
-async fn klaim(pool: &PgPool, request_id: Uuid, sekarang: DateTime<Utc>) -> Result<bool, String> {
+async fn klaim(pool: &PgPool, request_id: Uuid, sekarang: DateTime<Utc>, diharapkan: i32) -> Result<bool, String> {
     let jumlah =
-        sqlx::query_scalar::<_, i32>("SELECT fn_klaim_webhook($1, $2, NULL::integer, NULL::text)")
+        sqlx::query_scalar::<_, i32>("SELECT fn_klaim_webhook($1, $2, NULL::integer, NULL::text, $3::integer)")
             .bind(request_id)
             .bind(sekarang)
+            .bind(diharapkan)
             .fetch_one(pool)
             .await
             .map_err(|e| e.to_string())?;
