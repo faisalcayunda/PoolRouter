@@ -16,11 +16,13 @@ describe('S01 masuk', () => {
     renderWithI18n(<LoginScreen client={client} onBerhasil={onBerhasil} />);
 
     await userEvent.type(screen.getByLabelText('Nama pengguna'), 'auditor_01');
-    await userEvent.type(screen.getByLabelText('Kata sandi'), 'rahasia-panjang');
+    // gitguardian:ignore
+await userEvent.type(screen.getByLabelText('Kata sandi'), 'rahasia-panjang');
     await userEvent.click(screen.getByRole('button', { name: 'Masuk' }));
 
     expect(client.login).toHaveBeenCalledWith({
       username: 'auditor_01',
+      // gitguardian:ignore
       password: 'rahasia-panjang',
     });
     expect(onBerhasil).toHaveBeenCalledTimes(1);
@@ -53,7 +55,8 @@ describe('S01 masuk', () => {
     renderWithI18n(<LoginScreen client={client} />);
 
     await userEvent.type(screen.getByLabelText('Nama pengguna'), 'auditor_01');
-    await userEvent.type(screen.getByLabelText('Kata sandi'), 'rahasia-panjang');
+    // gitguardian:ignore
+await userEvent.type(screen.getByLabelText('Kata sandi'), 'rahasia-panjang');
     await userEvent.click(screen.getByRole('button', { name: 'Masuk' }));
 
     const pesan = await screen.findByRole('alert');
@@ -70,7 +73,8 @@ describe('S01 masuk', () => {
     renderWithI18n(<LoginScreen client={client} />);
 
     await userEvent.type(screen.getByLabelText('Nama pengguna'), 'auditor_01');
-    await userEvent.type(screen.getByLabelText('Kata sandi'), 'rahasia-panjang');
+    // gitguardian:ignore
+await userEvent.type(screen.getByLabelText('Kata sandi'), 'rahasia-panjang');
     await userEvent.click(screen.getByRole('button', { name: 'Masuk' }));
 
     expect(
@@ -83,7 +87,8 @@ describe('S01 masuk', () => {
     renderWithI18n(<LoginScreen client={client} />);
 
     await userEvent.type(screen.getByLabelText('Nama pengguna'), 'auditor_01');
-    await userEvent.type(screen.getByLabelText('Kata sandi'), 'rahasia-panjang');
+    // gitguardian:ignore
+await userEvent.type(screen.getByLabelText('Kata sandi'), 'rahasia-panjang');
     await userEvent.click(screen.getByRole('button', { name: 'Masuk' }));
 
     expect(
