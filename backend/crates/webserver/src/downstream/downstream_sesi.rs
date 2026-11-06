@@ -259,7 +259,7 @@ impl PgSessionDownstream {
         let versi: Option<i32> = baris
             .try_get("config_versi_aktif")
             .map_err(|_| GalatDownstream::Layanan)?;
-        let versi = versi.ok_or(GalatDownstream::ObjekNonaktif)?;
+        let versi = versi.unwrap_or(0);
         let input = sqlx::query(
             "SELECT nama_field, tipe, wajib, nilai_diizinkan, aturan_validasi, klasifikasi, \
                     kirim_ke_data_balikan, deskripsi, versi \
@@ -322,7 +322,7 @@ impl PgSessionDownstream {
                FROM downstream_endpoint e \
                JOIN downstream_pool p USING (downstream_pool_id) \
                JOIN provider pr USING (provider_id) \
-              WHERE e.downstream_endpoint_id = $8 AND e.config_versi_aktif IS NOT NULL \
+              WHERE e.downstream_endpoint_id = $8 \
              ON CONFLICT (client_id, idempotency_key) WHERE idempotency_key IS NOT NULL DO NOTHING \
              RETURNING request_id",
         )
