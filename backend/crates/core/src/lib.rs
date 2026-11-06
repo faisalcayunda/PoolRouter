@@ -8,6 +8,7 @@ pub mod admin;
 pub mod arsip;
 pub mod audit;
 pub mod config;
+pub mod data_balikan;
 pub mod kredensial;
 pub mod kuota;
 pub mod queue;
