@@ -172,7 +172,7 @@ pub struct PoolPeminjam {
     pub ruang: i64,
 }
 
-/// Where pool `d` may take a token from, in order (AC-2).
+/// Where route `d` may take a token from, in order (AC-2).
 ///
 /// With `boleh_pinjam_d = false` the list is just `[anggaran d]`. With `true` it
 /// is `[anggaran d, sisa, lalu shareable pool lain]`, the borrowed pools ordered
@@ -180,21 +180,22 @@ pub struct PoolPeminjam {
 /// `downstream_pool_id`, so the order is total and does not depend on how the
 /// pools happened to arrive.
 ///
+/// The first entry is route `d`'s own `a_i`, not the whole pool's reservation:
+/// a plan holds every route of the pool, and the dispatcher asks for one of them
+/// (spec AC-2, `urutan_sumber(downstream_pool_id, &RencanaAnggaran)`).
+///
 /// The result never contains another pool's *reservation*: a borrowed source is
 /// a shareable part only. That is the invariant the property test pins.
 pub fn urutan_sumber(
     rencana: &RencanaAnggaran,
+    downstream_pool_id: i64,
     boleh_pinjam_d: bool,
     peminjam: &[PoolPeminjam],
 ) -> Vec<SumberDana> {
     let mut hasil = Vec::with_capacity(2 + peminjam.len());
-    // `sendiri` is the route's own reservation. A plan is per pool, so the
-    // dispatcher passes the route's `a_i` through the caller-visible
-    // `anggaran_rute()`; here the whole pool's reservation is what the route
-    // may spend, which is why the entry is the budget rather than one route.
     hasil.push(SumberDana::baru(
         Sumber::Sendiri,
-        rencana.anggaran().reserved(),
+        rencana.anggaran_rute(downstream_pool_id),
     ));
     hasil.push(SumberDana::baru(Sumber::Sisa, rencana.sisa()));
     if !boleh_pinjam_d {
@@ -318,6 +319,7 @@ mod tests {
         let r = RencanaAnggaran::baru(300, 0.01, &[Rute::beralokasi(1, exact(30))]).unwrap();
         let u = urutan_sumber(
             &r,
+            1,
             false,
             &[PoolPeminjam {
                 downstream_pool_id: 9,
@@ -335,6 +337,7 @@ mod tests {
         let r = RencanaAnggaran::baru(300, 0.01, &[Rute::beralokasi(1, exact(30))]).unwrap();
         let u = urutan_sumber(
             &r,
+            1,
             true,
             &[
                 PoolPeminjam {
@@ -378,6 +381,7 @@ mod tests {
         let r = RencanaAnggaran::baru(300, 0.01, &[Rute::beralokasi(1, exact(30))]).unwrap();
         let u = urutan_sumber(
             &r,
+            1,
             true,
             &[PoolPeminjam {
                 downstream_pool_id: 2,
@@ -457,6 +461,8 @@ mod tests {
 
     #[test]
     fn ruang_tidak_pernah_negatif() {
+        // Already over the global quota: no room, not a negative and not the
+        // unallocated part of a plan that no longer applies.
         let r = RencanaAnggaran::baru(300, 0.01, &[]).unwrap();
         assert_eq!(
             ruang_intake(
@@ -469,7 +475,9 @@ mod tests {
                     ruang: -5
                 }]
             ),
-            r.sisa()
+            0
         );
+        // A negative donor contributes nothing rather than eating the rest.
+        assert_eq!(ruang_intake(&r, 1, 0, true, &[PoolPeminjam { downstream_pool_id: 2, ruang: -5 }]), r.sisa());
     }
 }

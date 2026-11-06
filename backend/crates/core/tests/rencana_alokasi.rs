@@ -260,7 +260,7 @@ proptest! {
             .map(|(id, ruang)| PoolPeminjam { downstream_pool_id: *id, ruang: *ruang })
             .collect();
 
-        let urutan = urutan_sumber(&rencana, boleh_pinjam, &peminjam);
+        let urutan = urutan_sumber(&rencana, 1, boleh_pinjam, &peminjam);
 
         // Every borrowed source is a pool that was offered, and never the pool
         // asking: its own part is `sendiri` and `sisa`.
