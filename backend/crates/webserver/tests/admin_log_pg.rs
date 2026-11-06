@@ -482,7 +482,8 @@ async fn nik_dan_payload_sintetis_tidak_muncul_di_log() {
         .with_ansi(false)
         .with_writer(penyangga.clone())
         .finish();
-    let _guard = tracing::subscriber::set_default(subscriber);
+    let dispatch = tracing::Dispatch::new(subscriber);
+    let _guard = tracing::dispatcher::set_default(&dispatch);
     let u = siapkan().await;
     let (_, au) = u.pengguna(&["auditor"]).await;
     let (kode, req_id, nik) = u.siapkan_log().await;
