@@ -176,14 +176,8 @@ fn ac17_jadwal_batch_full_jitter_memakai_kebijakan_retry_yang_sama() {
 }
 
 // AC-18: port + adapter tiruan.
-#[tokio::test]
-async fn ac18_adapter_tiruan_bisa_diprogam_per_percobaan() {
-    let pengirim = PengirimTiruan::dengan_program(vec![
-        HasilDiprogam::GagalSementara,
-        HasilDiprogam::Diterima,
-    ]);
+async fn kontrak_pengirim<P: PengirimDataBalikan>(pengirim: &P) {
     let body = || stream::iter(vec![bytes::Bytes::from_static(b"{\"item\":[]}")]);
-
     assert!(matches!(
         pengirim.kirim(batch(10), body()).await,
         HasilKirimBatch::GagalSementara { .. }
@@ -192,6 +186,15 @@ async fn ac18_adapter_tiruan_bisa_diprogam_per_percobaan() {
         pengirim.kirim(batch(10), body()).await,
         HasilKirimBatch::Diterima { .. }
     ));
+}
+
+#[tokio::test]
+async fn ac18_adapter_tiruan_bisa_diprogam_per_percobaan() {
+    let pengirim = PengirimTiruan::dengan_program(vec![
+        HasilDiprogam::GagalSementara,
+        HasilDiprogam::Diterima,
+    ]);
+    kontrak_pengirim(&pengirim).await;
     let rekaman = pengirim.rekaman();
     assert_eq!(rekaman.len(), 2);
     assert_eq!(rekaman[0].batch_id, rekaman[1].batch_id);

@@ -240,11 +240,17 @@ impl KonfigurasiDataBalikan {
             Some(ref s) => baca_jam(s)?,
             None => dasar.jam_kirim,
         };
+        if jam_kirim != (0, 0) {
+            return Err(GalatDataBalikan::TidakSah(
+                "periode.jam",
+                "harus 00:00",
+            ));
+        }
         let zona = p.zona.unwrap_or_else(|| dasar.zona.clone());
-        if zona.trim().is_empty() {
+        if zona != "Asia/Jakarta" {
             return Err(GalatDataBalikan::TidakSah(
                 "periode.zona",
-                "tidak boleh kosong",
+                "harus Asia/Jakarta",
             ));
         }
         Ok(Periode {
