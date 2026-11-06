@@ -41,6 +41,7 @@ function SignedIn({ pathname, search }: { pathname: string; search: string }) {
       <AppShell
         pathname={pathname}
         user={{ username: sesi.me.username, peran: sesi.me.peran?.[0] ?? '' }}
+        sesi={sesi}
       >
         <RoutedScreens pathname={pathname} search={search} role={peranShell(sesi.me.peran)} />
       </AppShell>
