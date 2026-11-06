@@ -7,6 +7,14 @@
 use sqlx::PgPool;
 use uuid::Uuid;
 
+pub const ALASAN_MIN: usize = 10;
+pub const ALASAN_MAX: usize = 500;
+
+/// Memastikan alasan memenuhi kontrak K-20 sebelum diteruskan ke SQL.
+pub fn validasi_alasan(alasan: &str) -> bool {
+    (ALASAN_MIN..=ALASAN_MAX).contains(&alasan.chars().count())
+}
+
 /// Entity kinds accepted by the K-20 database functions.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum JenisEntitas {
@@ -80,6 +88,7 @@ impl K20Service {
     }
 
     pub async fn nonaktifkan(&self, jenis: JenisEntitas, id: Uuid, pengguna_id: Uuid, alasan: &str) -> Result<HasilK20, sqlx::Error> {
+        debug_assert!(validasi_alasan(alasan));
         sqlx::query_as::<_, HasilK20Row>(
             "SELECT jumlah_cancelled, jumlah_failed FROM fn_nonaktifkan_entitas($1, $2, $3, $4)",
         )
@@ -88,6 +97,7 @@ impl K20Service {
     }
 
     pub async fn aktifkan(&self, jenis: JenisEntitas, id: Uuid, pengguna_id: Uuid, alasan: &str) -> Result<(), sqlx::Error> {
+        debug_assert!(validasi_alasan(alasan));
         sqlx::query("SELECT fn_aktifkan_entitas($1, $2, $3, $4)")
             .bind(jenis.as_str()).bind(id).bind(pengguna_id).bind(alasan)
             .execute(&self.pool).await.map(|_| ())
@@ -104,7 +114,7 @@ impl From<PratinjauK20Row> for PratinjauK20 { fn from(r: PratinjauK20Row) -> Sel
 
 #[cfg(test)]
 mod tests {
-    use super::JenisEntitas;
+    use super::{JenisEntitas, validasi_alasan};
     #[test]
     fn entity_kind_mapping_is_closed_and_matches_sql_contract() {
         assert_eq!(JenisEntitas::Client.as_str(), "client");
@@ -114,5 +124,13 @@ mod tests {
         assert_eq!(JenisEntitas::UpstreamPool.as_str(), "upstream_pool");
         assert_eq!(JenisEntitas::Provider.as_str(), "provider");
         assert!(JenisEntitas::try_from("nik").is_err());
+    }
+
+    #[test]
+    fn alasan_uses_character_limits() {
+        assert!(!validasi_alasan("pendek"));
+        assert!(validasi_alasan(&"x".repeat(10)));
+        assert!(validasi_alasan(&"🙂".repeat(500)));
+        assert!(!validasi_alasan(&"x".repeat(501)));
     }
 }
