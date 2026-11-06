@@ -9,7 +9,6 @@
 //! reason below is synthetic.
 
 use std::net::SocketAddr;
-use std::io::Write as _;
 use std::sync::{Arc, Mutex};
 
 use axum::Router;
@@ -508,7 +507,10 @@ async fn nik_dan_payload_sintetis_tidak_muncul_di_log() {
     let log = String::from_utf8(penyangga.0.lock().unwrap().clone()).unwrap();
     assert!(!log.is_empty(), "penangkap tracing dipasang");
     assert!(!log.contains(&nik), "NIK tidak muncul di tracing");
-    assert!(!log.contains(payload), "payload sintetis tidak muncul di tracing");
+    assert!(
+        !log.contains(payload),
+        "payload sintetis tidak muncul di tracing"
+    );
 }
 
 #[tokio::test]
