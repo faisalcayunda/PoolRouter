@@ -61,7 +61,7 @@ pub enum TipeToken {
 }
 
 /// Satu field input pada kontrak endpoint.
-#[derive(Debug, Clone, Serialize, ToSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, ToSchema)]
 pub struct FieldInput {
     pub nama: String,
     /// Tipe logis field, misalnya `string` atau `number`.
@@ -70,7 +70,7 @@ pub struct FieldInput {
 }
 
 /// Satu field metadata pada kontrak endpoint.
-#[derive(Debug, Clone, Serialize, ToSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, ToSchema)]
 pub struct FieldMetadata {
     pub nama_field: String,
     pub tipe: String,
@@ -86,7 +86,7 @@ pub struct FieldMetadata {
 
 /// Respons `getEndpointKontrak`. Path yang menentukan sinkron atau asinkron, jadi
 /// tidak ada field mode yang dikirim.
-#[derive(Debug, Clone, Serialize, ToSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, ToSchema)]
 pub struct EndpointKontrak {
     pub endpoint_id: Uuid,
     pub field_input: Vec<FieldInput>,
