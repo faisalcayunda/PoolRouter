@@ -224,7 +224,7 @@ export function AuditScreen({ client = api }: AuditScreenProps): ReactNode {
                         className="hide-md typescale-body-medium px-4 py-3 align-middle"
                       >
                         {/* Section 13.2: the raw id is an identifier, labelled as one — never a name. */}
-                        <span className="break-all font-mono text-on-surface-variant">
+                        <span className="break-all font-code text-on-surface-variant">
                           {row.pengguna_id}
                         </span>
                       </td>

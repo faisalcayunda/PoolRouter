@@ -1,5 +1,7 @@
 /* Tailwind 4 theme: maps utilities onto the M3 tokens only (ADR-0003 3.5). Default colour, radius and breakpoint scales are removed. */
 @import 'tailwindcss';
+@import '@fontsource-variable/inter';
+@import '@fontsource/jetbrains-mono/400.css';
 @import './color.css';
 @import './tokens.css';
 @import './components.css';
@@ -13,6 +15,7 @@
   --font-*: initial;
   --font-sans: var(--md-ref-typeface-plain);
   --font-brand: var(--md-ref-typeface-brand);
+  --font-code: var(--md-ref-typeface-code);
   --color-transparent: transparent;
   --color-current: currentColor;
   --color-primary: var(--md-sys-color-primary);
