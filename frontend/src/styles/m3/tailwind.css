@@ -13,6 +13,7 @@
   --font-*: initial;
   --font-sans: var(--md-ref-typeface-plain);
   --font-brand: var(--md-ref-typeface-brand);
+  --font-code: var(--md-ref-typeface-code);
   --color-transparent: transparent;
   --color-current: currentColor;
   --color-primary: var(--md-sys-color-primary);

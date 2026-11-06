@@ -41,7 +41,7 @@ function JsonBlock({
         <p className="typescale-body-medium text-on-surface-variant">{emptyLabel}</p>
       ) : (
         <ScrollArea label={label} className="max-h-64 overflow-auto">
-          <pre className="typescale-body-small m3-focus rounded-small bg-surface-container p-3 text-on-surface">
+          <pre className="font-code typescale-body-small m3-focus rounded-small bg-surface-container p-3 text-on-surface">
             {JSON.stringify(value, null, 2)}
           </pre>
         </ScrollArea>

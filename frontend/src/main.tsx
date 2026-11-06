@@ -6,6 +6,8 @@ import { DEFAULT_LOCALE, isBahasaUi } from './i18n/locales';
 import { AppShell } from './app/AppShell';
 import { RoutedScreens } from './app/routes';
 import './styles/m3/tailwind.css';
+import '@fontsource-variable/inter';
+import '@fontsource/jetbrains-mono/400.css';
 
 const root = document.getElementById('root');
 if (!root) throw new Error('index.html: #root tidak ditemukan');

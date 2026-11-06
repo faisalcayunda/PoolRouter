@@ -9,6 +9,7 @@
 - **Reviewer:** tidak ada (lihat Status). Penerapannya di kode tetap direview Ridley per hash commit (K-35, §6).
 - **Lokasi akhir:** `docs/adr/0003-stack-web-ui.md` di repo `faisalcayunda/PoolRouter`. Sejak rev 6 di-commit, salinan repo itulah salinan resmi. Sampai saat itu, lampiran rev 6 di SHAA-378 adalah salinan resmi (menggantikan lampiran rev 5 di SHAA-196). Catatan rev 6: salinan repo sebelum rev 6 memuat rev 4 ditambah koreksi CSP SHAA-197 yang diberi label "rev 5", dan belum memuat §3.6f. Rev 6 menyatukan keduanya; label "rev 5" untuk koreksi CSP tidak dipakai lagi.
 - **Hubungan dengan ADR lain:** menggantikan ADR-0001 §8.3 opsi R1 (dua repo) untuk struktur repo, sesuai keputusan owner 2026-11-03. Menjawab sisi frontend ADR-0001 T-2 untuk F0. ADR-0001 diperbarui di revisi berikutnya (bersama hasil spike SHAA-177) untuk merujuk ADR ini. Tidak mengubah bagian lain ADR-0001 atau ADR-0002.
+- **Digantikan sebagian:** §3.5 (butir typeface), §7.1 (baris Breadcrumbs), §7.2, §7.3, dan §7.4 digantikan ADR-0008 UI v2 di repo KB `products/poolrouter/adr/0008-ui-v2-hybrid-m3.md`. Bagian lain ADR ini tetap berlaku.
 
 ## 1. Konteks
 

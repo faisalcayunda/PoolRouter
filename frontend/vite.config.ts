@@ -35,6 +35,12 @@ export default defineConfig(({ mode }) => ({
     },
   },
   preview: { host: true, port: 4173 },
+  build: {
+    // Fonts stay files: CSP is `font-src 'self'` and a data: URI is blocked (ADR-0008 section 2.3).
+    // Small @font-face subsets fall under the 4 KiB default and would otherwise be inlined.
+    assetsInlineLimit: (filePath: string) =>
+      /\.(woff2?|ttf|otf)$/.test(filePath) ? false : undefined,
+  },
   test: {
     environment: 'jsdom',
     globals: true,
