@@ -6,7 +6,7 @@ import { createContext, useContext, type ReactNode } from 'react';
  * value is `null`, which renders as "no role-specific affordances" — the API stays the last guard
  * for every role-gated action (handoff spec section 18.1).
  */
-export type AdminRole = 'platform_admin' | 'operator' | 'auditor';
+export type AdminRole = 'platform_admin' | 'operator' | 'auditor' | 'client_owner';
 
 export const RoleContext = createContext<AdminRole | null>(null);
 

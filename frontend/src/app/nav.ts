@@ -74,3 +74,24 @@ export function activeHref(pathname: string): string | undefined {
   }
   return best ?? (pathname === '/' ? '/' : undefined);
 }
+
+import type { AdminRole } from '../features/common/RoleContext';
+
+/** Groups each role may see in the drawer (handoff ui-v2-layar, section 2). */
+const ROLE_GROUPS: Record<AdminRole, ReadonlyArray<NavGroupId>> = {
+  platform_admin: ['monitoring', 'config', 'client', 'compliance', 'account'],
+  operator: ['monitoring', 'compliance', 'account'],
+  auditor: ['compliance', 'account'],
+  client_owner: ['client', 'account'],
+};
+
+/** Returns the nav groups visible to `role`. `null` (no session) shows everything. */
+export function visibleNavGroups(role: AdminRole | null): NavGroup[] {
+  if (role === null) return NAV_GROUPS;
+  const allowed = new Set(ROLE_GROUPS[role]);
+  return NAV_GROUPS.filter((g) => allowed.has(g.id));
+}
+
+export const filterNavByRole = visibleNavGroups;
+export const navForRole = visibleNavGroups;
+export const filterMenuByRole = visibleNavGroups;

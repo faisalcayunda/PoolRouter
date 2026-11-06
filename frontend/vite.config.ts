@@ -2,7 +2,7 @@ import { defineConfig } from 'vitest/config';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
 import svgr from 'vite-plugin-svgr';
-import { cspPlugin } from './vite.csp';
+import { cspPlugin } from './vite.csp.ts';
 
 /**
  * Role seam (SHAA-203 design review): `?peran=` may only pin a role in a build made for the e2e

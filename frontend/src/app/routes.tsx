@@ -1,6 +1,6 @@
 import { lazy, Suspense, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
-import { RoleProvider, type AdminRole } from '../features/common/RoleContext';
+import { RoleProvider, useRole, type AdminRole } from '../features/common/RoleContext';
 import { LogPageScreen } from '../features/log/LogPageScreen';
 
 /*
@@ -32,15 +32,47 @@ function NotFound(): ReactNode {
   );
 }
 
+function Forbidden(): ReactNode {
+  const { t } = useTranslation();
+  return (
+    <section className="flex flex-col gap-2">
+      <h1 className="typescale-headline-small">{t('error.http.403.title')}</h1>
+      <p className="typescale-body-medium">{t('error.http.403.body')}</p>
+    </section>
+  );
+}
+
 /** `/log/<kode_transaksi>` — S11 opened on one transaction (section 7). */
 const LOG_DETAIL = /^\/log\/([^/]+)$/;
 
 /** Path → screen. Longest exact match wins; anything else renders the not-found panel. */
+const ROUTE_ROLES: Record<string, readonly AdminRole[]> = {
+  '/': ['platform_admin', 'operator', 'auditor', 'client_owner'],
+  '/nik': ['auditor', 'platform_admin'],
+  '/audit': ['auditor', 'platform_admin'],
+  '/kuota': ['platform_admin', 'operator'],
+  '/provider': ['platform_admin'],
+  '/secret': ['platform_admin'],
+  '/upstream': ['platform_admin'],
+  '/downstream': ['platform_admin'],
+  '/client': ['platform_admin', 'client_owner'],
+  '/settings': ['platform_admin', 'operator', 'auditor', 'client_owner'],
+};
+
+function allowedFor(pathname: string, role: AdminRole | null): boolean {
+  if (role === null) return true;
+  const base = pathname.split('/')[1] ? `/${pathname.split('/')[1]}` : '/';
+  const allowed = ROUTE_ROLES[base];
+  if (!allowed) return true;
+  return allowed.includes(role);
+}
+
 export function ScreenForPath({ pathname }: { pathname: string }): ReactNode {
+  const role = useRole();
   const clean = pathname.replace(/\/+$/, '') || '/';
+  if (!allowedFor(clean, role)) return <Forbidden />;
   const logDetail = LOG_DETAIL.exec(clean);
   if (logDetail) {
-    // The code is never a NIK (section 18.3), so it is safe to keep in the URL.
     return <LogPageScreen initialCode={decodeURIComponent(logDetail[1] ?? '')} />;
   }
   switch (clean) {
@@ -52,7 +84,22 @@ export function ScreenForPath({ pathname }: { pathname: string }): ReactNode {
       return <AuditScreen />;
     case '/kuota':
       return <QuotaScreen />;
+    case '/provider':
+    case '/secret':
+    case '/upstream':
+    case '/downstream':
+    case '/client':
+    case '/settings':
+      return <NotFound />;
     default:
+      if (
+        clean.startsWith('/provider/') ||
+        clean.startsWith('/upstream/') ||
+        clean.startsWith('/client/') ||
+        clean.startsWith('/downstream/')
+      ) {
+        return <NotFound />;
+      }
       return <NotFound />;
   }
 }
@@ -68,7 +115,7 @@ export function ScreenForPath({ pathname }: { pathname: string }): ReactNode {
  * branch — and therefore the `?peran=` read itself — is dropped. Design review (SHAA-203) requires that a production URL cannot set the role; the API
  * stays the last guard for every role-gated action either way (section 18.1).
  */
-const ROLES: readonly AdminRole[] = ['platform_admin', 'operator', 'auditor'];
+const ROLES: readonly AdminRole[] = ['platform_admin', 'operator', 'auditor', 'client_owner'];
 
 function roleFromSearch(search: string): AdminRole | null {
   if (!import.meta.env.VITE_TEST_ROLE_SEAM) return null;
