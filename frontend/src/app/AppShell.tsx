@@ -60,6 +60,8 @@ function DrawerNav({ pathname, onNavigate }: { pathname: string; onNavigate?: ()
 export interface AppShellProps {
   /** Current route path, used to mark the active drawer item. */
   pathname?: string;
+  /** Signed-in identity shown at the right of the top app bar (spec section 13.1). */
+  user?: { username: string; peran: string } | null;
   /** Screen rendered inside `<main>`. */
   children?: ReactNode;
 }
@@ -72,7 +74,7 @@ export interface AppShellProps {
  *   opened from the menu button.
  * - expanded and up (>= 840 px): `NavigationDrawer variant="standard"`, always visible.
  */
-export function AppShell({ pathname = '/', children }: AppShellProps) {
+export function AppShell({ pathname = '/', user, children }: AppShellProps) {
   const { t } = useTranslation();
   const isExpanded = useIsExpanded();
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -99,6 +101,13 @@ export function AppShell({ pathname = '/', children }: AppShellProps) {
               <Icon icon={icons.menu} />
             </IconButton>
           )
+        }
+        trailing={
+          user ? (
+            <span className="typescale-body-medium text-on-surface-variant">
+              {user.username} · {t(`enum.peran.${user.peran}`)}
+            </span>
+          ) : undefined
         }
         title={<span className="font-brand px-2 text-primary">{t('common.app.name')}</span>}
       />

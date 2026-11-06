@@ -43,12 +43,15 @@ export interface EksporBerkas {
 export class ApiError extends Error {
   readonly status: number;
   readonly problem: Problem | null;
+  /** Seconds from the `Retry-After` header, when the server sent one (ADR-0003 3.6 throttle). */
+  readonly retryAfterDetik: number | null;
 
-  constructor(status: number, problem: Problem | null) {
+  constructor(status: number, problem: Problem | null, retryAfterDetik: number | null = null) {
     super(problem?.kode ?? problem?.title ?? `HTTP ${status}`);
     this.name = 'ApiError';
     this.status = status;
     this.problem = problem;
+    this.retryAfterDetik = retryAfterDetik;
   }
 
   /** Stable code from the problem body, or a synthetic `http_<status>` when the body had none. */
@@ -77,7 +80,13 @@ export interface RequestOptions {
 
 export interface ApiClient {
   /** POST /auth/login — success sets the `__Host-pr_session` cookie. */
-  login(body: LoginRequest, options?: RequestOptions): Promise<void>;
+  login(body: LoginRequest, options?: RequestOptions): Promise<{ langkah?: 'mfa' | 'daftar_mfa' } | null>;
+  /** POST /auth/mfa — verify TOTP or recovery code. */
+  mfa(body: { kode?: string | null; kode_pemulihan?: string | null }, options?: RequestOptions): Promise<void>;
+  /** POST /auth/mfa/daftar — start enrollment, returns otpauth URI once. */
+  mfaDaftar(body: { kode_pendaftaran: string }, options?: RequestOptions): Promise<{ otpauth_uri: string; rahasia_base32: string }>;
+  /** POST /auth/mfa/daftar/konfirmasi — confirm enrollment, returns recovery codes once. */
+  mfaKonfirmasi(body: { kode_totp: string }, options?: RequestOptions): Promise<{ kode_pemulihan: string[] }>;
   /** POST /auth/logout — clears the session cookie. */
   logout(options?: RequestOptions): Promise<void>;
   /** GET /auth/me — current identity (role drives the shell). */
@@ -110,6 +119,22 @@ export interface ApiClient {
   updateProvider(id: string, body: ProviderConfig, options?: RequestOptions): Promise<Provider>;
 }
 
+/** A 401 from any endpoint ends the shell session; screens do not each need their own wiring. */
+function announce401(response: Response): void {
+  if (response.status === 401 && typeof window !== 'undefined') {
+    window.dispatchEvent(new Event(SESI_BERAKHIR_EVENT));
+  }
+}
+
+/** `Retry-After` is either delta-seconds or an HTTP date; screens only show whole seconds. */
+function retryAfterFrom(response: Response): number | null {
+  const raw = response.headers.get('Retry-After')?.trim();
+  if (!raw) return null;
+  if (/^\d+$/.test(raw)) return Number(raw);
+  const at = Date.parse(raw);
+  return Number.isFinite(at) ? Math.max(0, Math.ceil((at - Date.now()) / 1000)) : null;
+}
+
 function problemFrom(status: number, body: unknown): Problem | null {
   if (body && typeof body === 'object') {
     const obj = body as Record<string, unknown>;
@@ -138,6 +163,9 @@ function digestFrom(header: string | null): string | null {
   return match?.[1] ?? null;
 }
 
+/** Any screen's 401 means the shell's session is gone; the client announces it once, here. */
+export const SESI_BERAKHIR_EVENT = 'pr:sesi-berakhir';
+
 export function createApiClient(options: ApiClientOptions = {}): ApiClient {
   const origin =
     options.origin ??
@@ -161,20 +189,59 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
     opts.alasan === undefined ? {} : { 'X-Alasan': opts.alasan };
 
   const ok = <T>(result: { data?: T; error?: unknown; response: Response }): T => {
-    if (!result.response.ok)
-      throw new ApiError(result.response.status, problemFrom(result.response.status, result.error));
+    if (!result.response.ok) {
+      announce401(result.response);
+      throw new ApiError(
+        result.response.status,
+        problemFrom(result.response.status, result.error),
+        retryAfterFrom(result.response),
+      );
+    }
     return result.data as T;
   };
 
   return {
     async login(body, opts = {}) {
+      const result = await client.POST(`${ADMIN_PREFIX}/auth/login`, {
+        body,
+        headers: headers(opts),
+        signal: opts.signal,
+      });
+      if (!result.response.ok) {
+        announce401(result.response);
+        throw new ApiError(result.response.status, problemFrom(result.response.status, result.error), retryAfterFrom(result.response));
+      }
+      if (result.response.status === 204) return null;
+      const data = (result.data ?? {}) as { langkah?: 'mfa' | 'daftar_mfa' };
+      return data;
+    },
+
+    async mfa(body, opts = {}) {
       ok(
-        await client.POST(`${ADMIN_PREFIX}/auth/login`, {
-          body,
+        await client.POST(`${ADMIN_PREFIX}/auth/mfa`, {
+          body: body as never,
           headers: headers(opts),
           signal: opts.signal,
         }),
       );
+    },
+
+    async mfaDaftar(body, opts = {}) {
+      const result = await client.POST(`${ADMIN_PREFIX}/auth/mfa/daftar`, {
+        body: body as never,
+        headers: headers(opts),
+        signal: opts.signal,
+      });
+      return ok(result) as { otpauth_uri: string; rahasia_base32: string };
+    },
+
+    async mfaKonfirmasi(body, opts = {}) {
+      const result = await client.POST(`${ADMIN_PREFIX}/auth/mfa/daftar/konfirmasi`, {
+        body: body as never,
+        headers: headers(opts),
+        signal: opts.signal,
+      });
+      return ok(result) as { kode_pemulihan: string[] };
     },
 
     async logout(opts = {}) {
@@ -255,6 +322,7 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
         parseAs: 'blob',
       });
       if (!result.response.ok) {
+        announce401(result.response);
         throw new ApiError(
           result.response.status,
           problemFrom(result.response.status, result.error),
