@@ -47,6 +47,7 @@ async fn main() -> std::process::ExitCode {
         return poolrouter_core::runtime::start("controller", Component::Controller, &args).await;
     }
     poolrouter_core::runtime::init_tracing();
+    poolrouter_core::runtime::spawn_ready_server();
 
     let cfg = match Config::from_env(Component::Controller) {
         Ok(cfg) => cfg,
