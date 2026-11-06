@@ -44,6 +44,16 @@ allow = ["CDLA-Permissive-2.0"]
 crate = "xxhash-rust"
 allow = ["BSL-1.0"]
 
+# Arrow's `arrow-array` turns on `ahash/compile-time-rng` for wasm32 only, which
+# drags in `const-random-macro` -> `tiny-keccak` (CC0-1.0). The crate is a
+# proc-macro input to ahash's compile-time seed and never reaches a native build
+# or runtime; it is in the lock because the lock is target-agnostic. Removing
+# `arrow`'s `prettyprint` feature does not drop it. Disetujui Shu di bawah
+# ADR-0004 section 3 rule 3 (ARC-146, 5 November 2026) bersama SHAA-191.
+[[licenses.exceptions]]
+crate = "tiny-keccak"
+allow = ["CC0-1.0"]
+
 [bans]
 multiple-versions = "warn"
 wildcards = "deny"

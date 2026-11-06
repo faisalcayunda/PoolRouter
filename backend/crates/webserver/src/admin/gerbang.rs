@@ -34,6 +34,10 @@ pub(super) struct Peminta {
     pub peran: Peran,
     pub sesi_id: Uuid,
     pub sumber_ip: String,
+    /// The client a `client_owner` administers (`admin_user.client_id`). Loaded
+    /// only when the operation accepts `client_owner`; `None` for every other
+    /// role.
+    pub client_id: Option<Uuid>,
 }
 
 /// Check `Origin` (write methods only), the session, and the role, in that
@@ -88,6 +92,22 @@ pub(super) async fn masuk(
         peran,
         sesi_id: sesi.sesi_id,
         sumber_ip: ip,
+        client_id: None,
+    };
+    let peminta = if diterima.contains(&Peran::ClientOwner) {
+        let client_id = sqlx::query_scalar::<_, Option<Uuid>>(
+            "SELECT client_id FROM admin_user WHERE pengguna_id = $1",
+        )
+        .bind(peminta.pengguna_id)
+        .fetch_one(&s.pool)
+        .await
+        .map_err(|e| galat_db(&e))?;
+        Peminta {
+            client_id,
+            ..peminta
+        }
+    } else {
+        peminta
     };
     // One line per authorized admin operation: who, as which role, from where,
     // doing what. Ids and names only — never a payload value (AC-6).

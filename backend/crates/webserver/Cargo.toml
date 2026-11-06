@@ -51,3 +51,5 @@ regex = { workspace = true }
 # Integration tests capture the log stream to prove a secret value never reaches
 # it (ARC-48 AC-6).
 tracing-subscriber = { workspace = true }
+# Membaca `openapi/*.yaml` hasil generate di test AC-8.
+yaml_serde = { workspace = true }
