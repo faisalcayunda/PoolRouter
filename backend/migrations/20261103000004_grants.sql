@@ -84,6 +84,7 @@ GRANT INSERT ON webhook_log TO pr_webhook;
 -- W-02: exactly eight columns of client_webhook, plus the allowlist
 GRANT SELECT (client_id, webhook_url, aktif, secret_versi, secret_ciphertext, secret_dek_terbungkus, secret_nonce, kek_id) ON client_webhook TO pr_webhook;
 GRANT SELECT ON webhook_domain_allowlist TO pr_webhook;
+GRANT SELECT (kunci, nilai) ON konfigurasi_platform TO pr_webhook;  -- WB2a retry policy
 
 -- ================================================================ pr_admin_api (admin API for the Web UI)
 -- Entity status flags (aktif) change only through fn_nonaktifkan_entitas / fn_aktifkan_entitas (audit + mass cancel).
@@ -193,7 +194,8 @@ BEGIN
      SET webhook_status = 'gagal',
          webhook_last_error = 'klaim_kedaluwarsa'
    WHERE webhook_status = 'menunggu'
-     AND webhook_attempt_count = 1
+     AND webhook_attempt_count >= 1
+     AND webhook_not_before IS NULL
      AND webhook_last_at < p_sekarang - make_interval(secs => p_detik);
   GET DIAGNOSTICS n = ROW_COUNT;
   RETURN n;
