@@ -153,31 +153,39 @@ async fn cache_dipakai_sebelum_30_detik_dan_dibaca_ulang_sesudahnya() {
 /// AC-6: each of the six entities flips its own flag.
 #[tokio::test]
 async fn status_enam_entitas_mengikuti_aktif_dan_kredensial_aktif() {
-    let u = Uji::baru().await;
-    let t0 = u.sekarang();
-    for (jenis, id) in [
-        ("provider", u.provider_id),
-        ("upstream_pool", u.upstream_id),
-        ("downstream_pool", u.pool_id),
-        ("downstream_endpoint", u.endpoint_id),
-        ("kredensial", u.kredensial),
-        ("client", u.client_id),
+    for jenis in [
+        "provider",
+        "upstream_pool",
+        "downstream_pool",
+        "downstream_endpoint",
+        "kredensial",
+        "client",
     ] {
+        let u = Uji::baru().await;
+        let t0 = u.sekarang();
+        u.konfig.muat(u.client_id, u.endpoint_id, t0).await.unwrap();
+        let id = match jenis {
+            "provider" => u.provider_id,
+            "upstream_pool" => u.upstream_id,
+            "downstream_pool" => u.pool_id,
+            "downstream_endpoint" => u.endpoint_id,
+            "kredensial" => u.kredensial,
+            "client" => u.client_id,
+            _ => unreachable!(),
+        };
         u.nonaktifkan(jenis, id).await;
-        let e = u.konfig.muat(u.client_id, u.endpoint_id, t0).await.unwrap();
+        let e = u
+            .konfig
+            .muat(u.client_id, u.endpoint_id, t0 + TTL)
+            .await
+            .unwrap();
         let s = e.status.expect("endpoint ada");
-        let semua = [
-            s.client,
-            s.kredensial,
-            s.endpoint,
-            s.downstream_pool,
-            s.upstream_pool,
-            s.provider,
-        ];
-        assert!(
-            semua.iter().any(|a| !a),
-            "{jenis} nonaktif tidak tercermin di status"
-        );
+        assert_eq!(s.client, jenis != "client");
+        assert_eq!(s.kredensial, jenis != "kredensial");
+        assert_eq!(s.endpoint, jenis != "downstream_endpoint");
+        assert_eq!(s.downstream_pool, jenis != "downstream_pool");
+        assert_eq!(s.upstream_pool, jenis != "upstream_pool");
+        assert_eq!(s.provider, jenis != "provider");
         assert!(e.kontrak.is_some(), "GW3: kontrak tetap ada ({jenis})");
     }
 }
