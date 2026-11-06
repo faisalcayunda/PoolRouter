@@ -17,3 +17,4 @@ pub mod retry;
 pub mod runtime;
 pub mod secret;
 pub mod status_api;
+pub mod template;

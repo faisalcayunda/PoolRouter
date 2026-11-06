@@ -32,7 +32,7 @@ use tower_http::limit::RequestBodyLimitLayer;
 use tower_http::set_header::SetResponseHeaderLayer;
 
 use super::pembatas::PembatasLogin;
-use super::{allowlist, klien, kredensial, login, me, secret, webhook};
+use super::{allowlist, klien, kredensial, log, login, me, provider, secret, webhook};
 
 use crate::api::problem::{ProblemKodeAdmin, ValidasiErrorAdmin};
 use crate::api::problem_admin::ProblemAdmin;
@@ -115,6 +115,14 @@ pub fn router(state: AdminState) -> Router {
         .route(
             "/admin/v1/clients",
             get(klien::list_clients).post(klien::create_client),
+        )
+        .route(
+            "/admin/v1/providers",
+            get(provider::list_providers).post(provider::create_provider),
+        )
+        .route(
+            "/admin/v1/providers/{id}",
+            get(provider::get_provider).put(provider::update_provider),
         )
         .route(
             "/admin/v1/clients/{id}",
