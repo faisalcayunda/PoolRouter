@@ -9,9 +9,9 @@
 -- Kenapa dipotong. Validasi ARGV dan urutan gates F0 hanya boleh punya satu
 -- salinan; skrip alokasi F1 membedakan diri lewat `opsi`, bukan lewat salinan
 -- validasi. `opsi` berisi hook opsional untuk T2b/T2c:
---   * `pilih_sumber(KEYS, o)` → nil atau `{ kode = '...', tabel = { ... } }`,
---     dipanggil di `potongan/ambil_token.lua` sesudah semua gates F0 dan
---     sebelum tulis;
+--   * `pilih_sumber(KEYS, o, terpakai, slot_aktif)` → nil atau
+--     `{ kode = '...', tabel = { ... } }`, dipanggil di
+--     `potongan/ambil_token.lua` sesudah semua gates F0 dan sebelum tulis;
 --   * `kunci_slot_sumber(KEYS, o, member)` → mencatat sumber slot yang baru
 --     ditulis.
 -- `opsi` nil berarti perilaku F0 apa adanya (AC-5).
@@ -115,9 +115,8 @@ local function kerangka(KEYS, ARGV, opsi)
     sekarang = bersama.mikro
   }
   if opsi ~= nil then
-    for k, v in pairs(opsi) do
-      o[k] = v
-    end
+    o.pilih_sumber = opsi.pilih_sumber
+    o.kunci_slot_sumber = opsi.kunci_slot_sumber
   end
 
   local hasil = ambil_token.ambil_token(KEYS, o)
