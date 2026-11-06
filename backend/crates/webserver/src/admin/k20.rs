@@ -12,7 +12,8 @@ pub const ALASAN_MAX: usize = 500;
 
 /// Memastikan alasan memenuhi kontrak K-20 sebelum diteruskan ke SQL.
 pub fn validasi_alasan(alasan: &str) -> bool {
-    (ALASAN_MIN..=ALASAN_MAX).contains(&alasan.chars().count())
+    let trimmed = alasan.trim();
+    (ALASAN_MIN..=ALASAN_MAX).contains(&trimmed.chars().count())
 }
 
 /// Entity kinds accepted by the K-20 database functions.
@@ -78,39 +79,91 @@ pub struct K20Service {
 }
 
 impl K20Service {
-    pub fn baru(pool: PgPool) -> Self { Self { pool } }
+    pub fn baru(pool: PgPool) -> Self {
+        Self { pool }
+    }
 
-    pub async fn pratinjau(&self, jenis: JenisEntitas, id: Uuid) -> Result<PratinjauK20, sqlx::Error> {
+    pub async fn pratinjau(
+        &self,
+        jenis: JenisEntitas,
+        id: Uuid,
+    ) -> Result<PratinjauK20, sqlx::Error> {
         sqlx::query_as::<_, PratinjauK20Row>(
             "SELECT akan_cancelled, akan_failed, dihitung_at FROM fn_pratinjau_nonaktif($1, $2)",
         )
-        .bind(jenis.as_str()).bind(id).fetch_one(&self.pool).await.map(Into::into)
+        .bind(jenis.as_str())
+        .bind(id)
+        .fetch_one(&self.pool)
+        .await
+        .map(Into::into)
     }
 
-    pub async fn nonaktifkan(&self, jenis: JenisEntitas, id: Uuid, pengguna_id: Uuid, alasan: &str) -> Result<HasilK20, sqlx::Error> {
-        debug_assert!(validasi_alasan(alasan));
+    pub async fn nonaktifkan(
+        &self,
+        jenis: JenisEntitas,
+        id: Uuid,
+        pengguna_id: Uuid,
+        alasan: &str,
+    ) -> Result<HasilK20, sqlx::Error> {
         sqlx::query_as::<_, HasilK20Row>(
             "SELECT jumlah_cancelled, jumlah_failed FROM fn_nonaktifkan_entitas($1, $2, $3, $4)",
         )
-        .bind(jenis.as_str()).bind(id).bind(pengguna_id).bind(alasan)
-        .fetch_one(&self.pool).await.map(Into::into)
+        .bind(jenis.as_str())
+        .bind(id)
+        .bind(pengguna_id)
+        .bind(alasan)
+        .fetch_one(&self.pool)
+        .await
+        .map(Into::into)
     }
 
-    pub async fn aktifkan(&self, jenis: JenisEntitas, id: Uuid, pengguna_id: Uuid, alasan: &str) -> Result<(), sqlx::Error> {
-        debug_assert!(validasi_alasan(alasan));
+    pub async fn aktifkan(
+        &self,
+        jenis: JenisEntitas,
+        id: Uuid,
+        pengguna_id: Uuid,
+        alasan: &str,
+    ) -> Result<(), sqlx::Error> {
         sqlx::query("SELECT fn_aktifkan_entitas($1, $2, $3, $4)")
-            .bind(jenis.as_str()).bind(id).bind(pengguna_id).bind(alasan)
-            .execute(&self.pool).await.map(|_| ())
+            .bind(jenis.as_str())
+            .bind(id)
+            .bind(pengguna_id)
+            .bind(alasan)
+            .execute(&self.pool)
+            .await
+            .map(|_| ())
     }
 }
 
 #[derive(sqlx::FromRow)]
-struct HasilK20Row { jumlah_cancelled: i32, jumlah_failed: i32 }
-impl From<HasilK20Row> for HasilK20 { fn from(r: HasilK20Row) -> Self { Self { jumlah_cancelled: r.jumlah_cancelled, jumlah_failed: r.jumlah_failed } } }
+struct HasilK20Row {
+    jumlah_cancelled: i32,
+    jumlah_failed: i32,
+}
+impl From<HasilK20Row> for HasilK20 {
+    fn from(r: HasilK20Row) -> Self {
+        Self {
+            jumlah_cancelled: r.jumlah_cancelled,
+            jumlah_failed: r.jumlah_failed,
+        }
+    }
+}
 
 #[derive(sqlx::FromRow)]
-struct PratinjauK20Row { akan_cancelled: i32, akan_failed: i32, dihitung_at: chrono::DateTime<chrono::Utc> }
-impl From<PratinjauK20Row> for PratinjauK20 { fn from(r: PratinjauK20Row) -> Self { Self { akan_cancelled: r.akan_cancelled, akan_failed: r.akan_failed, dihitung_at: r.dihitung_at } } }
+struct PratinjauK20Row {
+    akan_cancelled: i32,
+    akan_failed: i32,
+    dihitung_at: chrono::DateTime<chrono::Utc>,
+}
+impl From<PratinjauK20Row> for PratinjauK20 {
+    fn from(r: PratinjauK20Row) -> Self {
+        Self {
+            akan_cancelled: r.akan_cancelled,
+            akan_failed: r.akan_failed,
+            dihitung_at: r.dihitung_at,
+        }
+    }
+}
 
 #[cfg(test)]
 mod tests {
@@ -119,7 +172,10 @@ mod tests {
     fn entity_kind_mapping_is_closed_and_matches_sql_contract() {
         assert_eq!(JenisEntitas::Client.as_str(), "client");
         assert_eq!(JenisEntitas::Kredensial.as_str(), "kredensial");
-        assert_eq!(JenisEntitas::DownstreamEndpoint.as_str(), "downstream_endpoint");
+        assert_eq!(
+            JenisEntitas::DownstreamEndpoint.as_str(),
+            "downstream_endpoint"
+        );
         assert_eq!(JenisEntitas::DownstreamPool.as_str(), "downstream_pool");
         assert_eq!(JenisEntitas::UpstreamPool.as_str(), "upstream_pool");
         assert_eq!(JenisEntitas::Provider.as_str(), "provider");
@@ -132,5 +188,7 @@ mod tests {
         assert!(validasi_alasan(&"x".repeat(10)));
         assert!(validasi_alasan(&"🙂".repeat(500)));
         assert!(!validasi_alasan(&"x".repeat(501)));
+        assert!(!validasi_alasan("          "));
+        assert!(validasi_alasan("  alasan cukup  "));
     }
 }
