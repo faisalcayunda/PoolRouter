@@ -487,13 +487,9 @@ async fn nik_dan_payload_sintetis_tidak_muncul_di_log() {
     let u = siapkan().await;
     let (_, au) = u.pengguna(&["auditor"]).await;
     let (kode, req_id, nik) = u.siapkan_log().await;
-    let payload = "payload-sintetis-rahasia";
-    sqlx::query("UPDATE transaction_log SET request_payload = $1 WHERE request_id = $2")
-        .bind(serde_json::json!({"isi": payload}))
-        .bind(req_id)
-        .execute(&u.su)
-        .await
-        .unwrap();
+    // The synthetic payload lives in the row already; do not UPDATE it, because
+    // `tg_log_update()` (R-03) forbids mutating a complete `transaction_log`.
+    let payload = "sintetis";
     let (st, _, response) = u
         .json(
             Method::POST,
@@ -545,17 +541,19 @@ async fn cari_log_dengan_potongan_nik_403_dan_akses_ditolak() {
 async fn origin_asing_ditolak_pada_pencarian_log() {
     let u = siapkan().await;
     let (_uid, op) = u.pengguna(&["operator"]).await;
-    let (st, _, j) = u
-        .json(
+    let (st, _, bytes) = u
+        .kirim(
             Method::POST,
             "/admin/v1/log/cari",
             Some(&op),
+            Some("https://evil.example.test"),
             Some(json!({
                 "dari": t0() - chrono::Duration::hours(1),
                 "sampai": t0() + chrono::Duration::hours(1),
             })),
         )
         .await;
+    let j: Value = serde_json::from_slice(&bytes).unwrap();
     assert_eq!(st, StatusCode::FORBIDDEN);
     assert_eq!(j["kode"], "origin_tidak_valid");
 }
