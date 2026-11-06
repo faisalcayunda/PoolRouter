@@ -14,7 +14,11 @@
 -- pasangan di `uji_lua.py` menjaga itu.
 --
 -- `opsi` adalah satu-satunya pembeda: hook `pilih_sumber` dan
--- `kunci_slot_sumber`. Pada tiket T2a (ARC-169) hook belum dipasang.
+-- `kunci_slot_sumber`. KEYS dan ARGV sama persis dengan `kuota_ambil_token.lua`
+-- (tabel lengkapnya di kepala berkas itu); didefinisikan sekali di
+-- `potongan/kerangka.lua` supaya kedua skrip tidak bisa berbeda. Kontrak hook
+-- ada di kepala `potongan/ambil_token.lua`. Pada tiket T2a (ARC-169) hook
+-- belum dipasang.
 --
 local siap = (function()
 -- Potongan bersama: gerbang kesiapan Redis (ADR-0001 rev 15 §5a.2 butir 2).
