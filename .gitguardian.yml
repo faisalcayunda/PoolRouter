@@ -1,0 +1,4 @@
+# GitGuardian configuration for PoolRouter
+# Ignore test files with synthetic credentials
+ignore_paths:
+  - "frontend/tests/login.test.tsx"
