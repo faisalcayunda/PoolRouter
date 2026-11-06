@@ -20,6 +20,7 @@ use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
 use chrono::{DateTime, Utc};
 use poolrouter_core::secret::{Amplop, Brankas};
+use poolrouter_core::webhook::retry as kebijakan_retry;
 use poolrouter_core::status_api::{StatusInternal, StatusTerpetakan, status_api};
 use sqlx::PgPool;
 use uuid::Uuid;
@@ -194,6 +195,7 @@ struct HasilKirim {
     status_akhir: &'static str,
     responded_at: Option<DateTime<Utc>>,
     duration_ms: i32,
+    retry_after: Option<chrono::Duration>,
 }
 
 impl HasilKirim {
@@ -213,6 +215,7 @@ impl HasilKirim {
             status_akhir: "gagal",
             responded_at: None,
             duration_ms: 0,
+            retry_after: None,
         }
     }
 
@@ -227,6 +230,7 @@ impl HasilKirim {
             status_akhir: "tidak_dikirim",
             responded_at: None,
             duration_ms: 0,
+            retry_after: None,
         }
     }
 }
@@ -463,6 +467,9 @@ async fn kirim_ke_jaringan(
     match jawab {
         Ok(respons) => {
             let kode = respons.status().as_u16();
+            let retry_after = respons.headers().get("retry-after")
+                .and_then(|h| h.to_str().ok())
+                .and_then(|v| kebijakan_retry::parse_retry_after(v, sekarang, chrono::Duration::seconds(7200)));
             let (hasil, kelas, akhir) = klasifikasi(kode);
             Ok(HasilKirim {
                 hasil,
@@ -472,6 +479,7 @@ async fn kirim_ke_jaringan(
                 status_akhir: akhir,
                 responded_at: Some(sekarang),
                 duration_ms: durasi,
+                retry_after,
             })
         }
         Err(_) => Ok(HasilKirim {
@@ -482,6 +490,7 @@ async fn kirim_ke_jaringan(
             status_akhir: "gagal",
             responded_at: None,
             duration_ms: durasi,
+            retry_after: None,
         }),
     }
 }
@@ -502,18 +511,27 @@ async fn catat(
     baris: &Baris,
     hasil: HasilKirim,
 ) -> Result<(), String> {
+    let base = sqlx::query_scalar::<_, i32>("SELECT fn_konfigurasi_int('webhook_backoff_base_detik', 30)")
+        .fetch_one(pool).await.unwrap_or(30);
+    let cap = sqlx::query_scalar::<_, i32>("SELECT fn_konfigurasi_int('webhook_backoff_cap_detik', 7200)")
+        .fetch_one(pool).await.unwrap_or(7200);
+    let batas = sqlx::query_scalar::<_, i32>("SELECT fn_konfigurasi_int('webhook_batas_percobaan', 6)")
+        .fetch_one(pool).await.unwrap_or(6);
+    let jitter = sqlx::query_scalar::<_, i32>("SELECT fn_konfigurasi_int('webhook_jitter_persen', 20)")
+        .fetch_one(pool).await.unwrap_or(20);
+
+    let attempt = baris.webhook_attempt_count + 1;
+    let keputusan = kebijakan_retry::klasifikasi(hasil.hasil, hasil.http_status, hasil.error_class);
+
     let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
     if hasil.hasil != "tidak_dikirim" {
         sqlx::query(
-            "INSERT INTO webhook_log (webhook_delivery_id, request_id, client_id, attempt_no, \
-                    status_api, sent_at, responded_at, http_status, hasil, error_class, \
-                    duration_ms, secret_versi) \
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)",
+            "INSERT INTO webhook_log (webhook_delivery_id, request_id, client_id, attempt_no,                     status_api, sent_at, responded_at, http_status, hasil, error_class,                     duration_ms, secret_versi)              VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)",
         )
         .bind(Uuid::now_v7())
         .bind(baris.request_id)
         .bind(baris.client_id)
-        .bind(baris.webhook_attempt_count + 1)
+        .bind(attempt)
         .bind(status_api_terminal(&baris.status))
         .bind(sekarang)
         .bind(hasil.responded_at)
@@ -526,16 +544,27 @@ async fn catat(
         .await
         .map_err(|e| e.to_string())?;
     }
+
+    let (status_akhir, not_before) = if hasil.hasil == "tidak_dikirim" {
+        ("tidak_dikirim", None)
+    } else if hasil.hasil == "terkirim" {
+        ("terkirim", None)
+    } else if keputusan == kebijakan_retry::Keputusan::Retry && attempt < batas {
+        let jeda_dur = kebijakan_retry::jeda(attempt as u32, base as u32, cap as u32, jitter as u32, 0, hasil.retry_after);
+        ("menunggu", Some(sekarang + jeda_dur))
+    } else {
+        ("gagal", None)
+    };
+
     sqlx::query(
-        "UPDATE request SET webhook_status = $2, webhook_last_at = $3, \
-                webhook_last_http_status = $4, webhook_last_error = $5 \
-          WHERE request_id = $1",
+        "UPDATE request SET webhook_status = $2, webhook_last_at = $3,                 webhook_last_http_status = $4, webhook_last_error = $5,                 webhook_not_before = $6           WHERE request_id = $1",
     )
     .bind(baris.request_id)
-    .bind(hasil.status_akhir)
+    .bind(status_akhir)
     .bind(sekarang)
     .bind(hasil.http_status)
     .bind(hasil.error_class)
+    .bind(not_before)
     .execute(&mut *tx)
     .await
     .map_err(|e| e.to_string())?;
