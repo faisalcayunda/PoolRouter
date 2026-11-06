@@ -93,7 +93,8 @@ impl Uji {
         cookie: Option<&str>,
         body: Option<Value>,
     ) -> (StatusCode, HeaderMap, Value) {
-        let (st, h, b) = self.kirim(method, path, cookie, Some(ASAL), body).await;
+        let origin = (method != Method::GET).then_some(ASAL);
+        let (st, h, b) = self.kirim(method, path, cookie, origin, body).await;
         (st, h, serde_json::from_slice(&b).unwrap_or(Value::Null))
     }
 
