@@ -122,7 +122,6 @@ impl Uji {
 
 /// AC-6: the cached row is used before 30 s and re-read from PostgreSQL after.
 #[tokio::test]
-#[ignore = "requires the PostgreSQL integration-test harness; run `make -C backend uji-pg`"]
 async fn cache_dipakai_sebelum_30_detik_dan_dibaca_ulang_sesudahnya() {
     let u = Uji::baru().await;
     let t0 = u.sekarang();
@@ -153,7 +152,6 @@ async fn cache_dipakai_sebelum_30_detik_dan_dibaca_ulang_sesudahnya() {
 
 /// AC-6: each of the six entities flips its own flag.
 #[tokio::test]
-#[ignore = "requires the PostgreSQL integration-test harness; run `make -C backend uji-pg`"]
 async fn status_enam_entitas_mengikuti_aktif_dan_kredensial_aktif() {
     for jenis in [
         "provider",
