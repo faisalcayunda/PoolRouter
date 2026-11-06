@@ -148,7 +148,9 @@
         "body": "Peran Anda tidak mencakup halaman ini. Percobaan ini dicatat. Hubungi platform admin bila Anda perlu akses.",
         "action": "Ke halaman awal"
       }
-    }
+    },
+    "throttled_retry": "Terlalu banyak percobaan. Coba lagi nanti.",
+    "throttled_menit": "Terlalu banyak percobaan. Coba lagi dalam {{menit}} menit."
   },
   "login": {
     "page": {
@@ -734,6 +736,45 @@
       "body": "Hasil ekspor belum bisa dibuat. Coba lagi.",
       "action": "Coba lagi",
       "too_large": "Hasil terlalu besar. Persempit rentang waktu hingga paling banyak 10.000 record."
+    }
+  },
+  "auth": {
+    "mfa": {
+      "code": {
+        "title": "Verifikasi dua langkah",
+        "subtitle": "Halo, {{username}}. Masukkan kode dari aplikasi authenticator.",
+        "field_label": "Kode authenticator",
+        "submit": "Verifikasi",
+        "verifying": "Memverifikasi…",
+        "use_recovery": "Pakai kode pemulihan",
+        "back_to_login": "Kembali ke login"
+      },
+      "registration": {
+        "step": "Langkah 1 dari 3",
+        "title": "Daftarkan authenticator",
+        "subtitle": "Masukkan kode pendaftaran dari platform admin.",
+        "field_label": "Kode pendaftaran",
+        "submit": "Lanjut"
+      },
+      "qr": {
+        "step": "Langkah 2 dari 3",
+        "title": "Pindai kode QR",
+        "manual_hint": "Tidak bisa memindai? Masukkan kunci setup.",
+        "qr_aria": "Kode QR pendaftaran PoolRouter untuk aplikasi authenticator. Bila tidak bisa memindai, pakai kunci setup di bawahnya.",
+        "copied_setup": "Kunci setup disalin",
+        "copy_failed": "Gagal menyalin. Pilih teks secara manual.",
+        "code_label": "Kode dari authenticator",
+        "confirm": "Konfirmasi",
+        "account": "Akun: {{account}} · Penerbit: {{issuer}}"
+      },
+      "recovery": {
+        "title": "Simpan kode pemulihan",
+        "subtitle": "Simpan kode ini di tempat aman. Kode hanya ditampilkan sekali.",
+        "copied_all": "10 kode pemulihan disalin",
+        "copy_failed": "Gagal menyalin. Pilih teks secara manual.",
+        "copy_all": "Salin semua",
+        "acknowledge": "Sudah saya simpan"
+      }
     }
   }
 }
