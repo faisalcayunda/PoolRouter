@@ -120,7 +120,7 @@ services:
       PGPORT: ${POOLROUTER_DB_PORT:-5432}
       PGUSER: ${POSTGRES_USER:?isi POSTGRES_USER di file env}
       PGPASSWORD_FILE: /run/secrets/db_password
-    secrets: [db_password, poolrouter_owner, pr_api, pr_admin_api, pr_controller, pr_worker, pr_webhook]
+    secrets: [db_password, poolrouter_owner, pr_api, pr_admin_api, pr_controller, pr_worker, pr_webhook, pr_job_balikan, pr_job_arsip, pr_restore, pr_blend]
     volumes:
       - ./../db:/db:ro
     depends_on:
@@ -283,6 +283,14 @@ secrets:
     file: ${POOLROUTER_SECRETS_DIR:?}/pr_webhook
   pr_worker:
     file: ${POOLROUTER_SECRETS_DIR:?}/pr_worker
+  pr_job_balikan:
+    file: ${POOLROUTER_SECRETS_DIR:?}/pr_job_balikan
+  pr_job_arsip:
+    file: ${POOLROUTER_SECRETS_DIR:?}/pr_job_arsip
+  pr_restore:
+    file: ${POOLROUTER_SECRETS_DIR:?}/pr_restore
+  pr_blend:
+    file: ${POOLROUTER_SECRETS_DIR:?}/pr_blend
   poolrouter_kek:
     file: ${POOLROUTER_SECRETS_DIR:?}/poolrouter_kek
   poolrouter_jwt_signing_key:

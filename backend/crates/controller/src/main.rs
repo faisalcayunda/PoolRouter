@@ -40,6 +40,9 @@ const TIMEOUT_AKUISISI: Duration = Duration::from_secs(5);
 #[tokio::main]
 async fn main() -> std::process::ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
+    if args.first().map(String::as_str) == Some("healthcheck") {
+        return poolrouter_core::runtime::healthcheck().await;
+    }
     if args.iter().any(|a| a == "--check") {
         return poolrouter_core::runtime::start("controller", Component::Controller, &args).await;
     }
