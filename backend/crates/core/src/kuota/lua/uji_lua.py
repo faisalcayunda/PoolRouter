@@ -21,6 +21,11 @@ Keputusan Shu SHAA-195 (addendum ADR-0001 rev 15) yang diuji di sini:
         `Retry-After` dari ember tertua, `isi` bucket melaporkan `burst` saat
         penuh, dan TTL TAT `TAT_baru − now + 60 s`.
 
+Anggaran alokasi (spec `f1-prioritas-alokasi`, ARC-108) diuji lewat
+`potongan/alokasi.lua`: potongan itu belum disisipkan ke skrip kuota mana pun
+sampai T2 menegakkannya, jadi harness memanggilnya langsung, dalam bentuk yang
+sama dengan yang nanti disisipkan perakit.
+
 Pemakaian: `python3 uji_lua.py [--host 127.0.0.1] [--port 6395] [--iterasi 300]`
 (gate: `make -C backend uji-lua`, yang menjalankan ini di dalam container
 Redis 7 supaya seri Redis-nya sama dengan produksi).
@@ -30,6 +35,7 @@ from __future__ import annotations
 
 import argparse
 import difflib
+import json
 import os
 import random
 import socket
@@ -216,6 +222,149 @@ class Uji:
 
     def panggil(self, skrip: str, keys: list[str], argv: list[str]):
         return self.r.evalsha(self.skrip[skrip].sha, keys, argv)
+
+    # -- anggaran alokasi (potongan/alokasi.lua) --------------------------
+
+    def alokasi(self, q, daftar, rute=None, terpakai_rute=0, terpakai_pool=0):
+        """Panggil potongan anggaran di dalam Redis, balasannya list.
+
+        Potongan adalah BERKAS, bukan skrip: sandbox Redis tidak punya
+        `dofile`. Pembungkus di bawah menyalin bentuk yang dipakai perakit
+        (`local alokasi = (function() ... end)()`) di depan isi potongan, jadi
+        yang diuji adalah fungsi yang benar-benar akan disisipkan ke skrip
+        kuota, bukan salinannya.
+
+        ARGV skrip: Q, lalu pasangan `jenis nilai` per alokasi, lalu — bila
+        `rute is not False` — `terpakai_rute terpakai_pool jenis_rute
+        [nilai_rute]`. `rute = None` berarti rute tanpa alokasi (AL-05).
+        """
+        sumber = (HERE / "potongan" / "alokasi.lua").read_text()
+        pakai_rute = rute is not False
+        pembungkus = [
+            "local alokasi = (function()",
+            sumber,
+            "end)()",
+            # ARGV[2..] adalah daftar datar; jumlah pasangan dihitung di sini,
+            # sama seperti skrip kuota yang mengirim `n` di ARGV.
+            "local awal = 2",
+        ]
+        if pakai_rute:
+            argv = [str(q)]
+            for pasangan in daftar:
+                argv.extend([str(pasangan[0]), str(pasangan[1])])
+            # Alokasi dihitung dari ARGV[2..2+2n-1]; ekor rute di belakangnya.
+            jumlah = len(daftar)
+            pembungkus.append(f"local n = {jumlah}")
+            pembungkus.append(f"local ekor = awal + 2 * n")
+            argv.extend([str(terpakai_rute), str(terpakai_pool)])
+            argv.append("" if rute is None else str(rute[0]))
+            if rute is not None:
+                argv.append(str(rute[1]))
+        else:
+            argv = [str(q)]
+            for pasangan in daftar:
+                argv.extend([str(pasangan[0]), str(pasangan[1])])
+            jumlah = len(daftar)
+            pembungkus.append(f"local n = {jumlah}")
+            pembungkus.append("local ekor = awal + 2 * n")
+        pembungkus += [
+            "local daftar, kode = alokasi.urai(ARGV, awal, n)",
+            "if daftar == nil then return { 'galat', kode } end",
+            "local a, kode2 = alokasi.hitung(ARGV[1], daftar)",
+            "if a == nil then return { 'galat', kode2 } end",
+            "local hasil = { 'ok', a.kuota, a.reserved, a.shareable }",
+        ]
+        if pakai_rute:
+            pembungkus += [
+                "local rute = nil",
+                "if ARGV[ekor + 2] ~= nil and ARGV[ekor + 2] ~= '' then",
+                "  rute = { jenis = ARGV[ekor + 2], nilai = ARGV[ekor + 3] }",
+                "end",
+                "hasil[#hasil + 1] = alokasi.batas_rute(a, rute, ARGV[ekor], ARGV[ekor + 1])",
+            ]
+        pembungkus.append("return hasil")
+        sha = self.r.cmd("SCRIPT", "LOAD", "\n".join(pembungkus))
+        return self.r.evalsha(sha, [], argv)
+
+    def uji_alokasi_bagian(self) -> None:
+        print("anggaran alokasi: reserved, shareable, dan batas rute (AL-01..AL-05)")
+        h = self.alokasi(297, [["exact", 30], ["persen", 10]], rute=False)
+        self.periksa("reserved = exact + floor(Q x persen)",
+                     h == ["ok", 297, 59, 238], str(h))
+
+        # `persen` dibulatkan KE BAWAH: 10% dari 297 = 29.7 -> 29.
+        h = self.alokasi(297, [["persen", 10]], rute=False)
+        self.periksa("persen dibulatkan ke bawah", h == ["ok", 297, 29, 268], str(h))
+
+        # Tepat pas boleh: reserved == Q, tidak ada yang shareable.
+        h = self.alokasi(297, [["exact", 297]], rute=False)
+        self.periksa("reserved tepat sama dengan Q diterima",
+                     h == ["ok", 297, 297, 0], str(h))
+
+        # AL-01: total di atas Q adalah galat konfigurasi, bukan pemotongan.
+        h = self.alokasi(297, [["exact", 298]], rute=False)
+        self.periksa("reserved > Q: alokasi_melebihi_anggaran",
+                     h == ["galat", "alokasi_melebihi_anggaran"], str(h))
+        h = self.alokasi(297, [["exact", 200], ["persen", 40]], rute=False)
+        self.periksa("gabungan exact + persen yang melebihi Q ditolak",
+                     h == ["galat", "alokasi_melebihi_anggaran"], str(h))
+
+        # Tanpa alokasi: seluruh Q shareable.
+        h = self.alokasi(297, [], rute=False)
+        self.periksa("tanpa alokasi: shareable = Q", h == ["ok", 297, 0, 297], str(h))
+
+    def uji_alokasi_tidak_sah(self) -> None:
+        print("anggaran alokasi: masukan tidak sah ditolak, bukan ditebak")
+        for nama, daftar in [
+            ("exact nol", [["exact", 0]]),
+            ("exact negatif", [["exact", -3]]),
+            ("exact pecahan", [["exact", 2.5]]),
+            ("persen nol", [["persen", 0]]),
+            ("persen negatif", [["persen", -1]]),
+            ("persen di atas 100", [["persen", 100.01]]),
+            ("jenis tidak dikenal", [["persentase", 10]]),
+            ("nilai bukan angka", [["exact", "banyak"]]),
+        ]:
+            h = self.alokasi(297, daftar, rute=False)
+            self.periksa(f"{nama}: alokasi_tidak_sah",
+                         h == ["galat", "alokasi_tidak_sah"], str(h))
+
+        # Q tidak sah adalah galat konfigurasi, bukan "kuota habis".
+        for q in [0, -1, 2.5]:
+            h = self.alokasi(q, [], rute=False)
+            self.periksa(f"Q = {q}: kuota_efektif_tidak_sah",
+                         h == ["galat", "kuota_efektif_tidak_sah"], str(h))
+
+    def uji_alokasi_batas_rute(self) -> None:
+        print("anggaran alokasi: batas rute menghormati reserved dan shareable")
+        # Q = 297, reserved 30 exact + 29 persen = 59, shareable 238.
+        a = [["exact", 30], ["persen", 10]]
+
+        # Rute ber-alokasi yang sudah memakai 110 (30 reserved + 80 shareable),
+        # sementara pool sudah 297: sisa shareable untuk rute ini 51.
+        h = self.alokasi(297, a, rute=["exact", 30], terpakai_rute=110, terpakai_pool=297)
+        self.periksa("rute ber-alokasi memakai sisa shareable",
+                     h == ["ok", 297, 59, 238, 51], str(h))
+
+        # `terpakai_pool` adalah percobaan SELURUH rute, termasuk rute yang
+        # sedang dihitung: rute A yang memakai 30 (jatahnya) menyisakan 238
+        # shareable utuh, karena bagian shareable yang terpakai adalah
+        # 30 - 30 = 0.
+        h = self.alokasi(297, a, rute=["exact", 30], terpakai_rute=30, terpakai_pool=30)
+        self.periksa("pemakaian di dalam jatah tidak memakan shareable",
+                     h == ["ok", 297, 59, 238, 238], str(h))
+
+        # Rute tanpa alokasi hanya meminjam dari shareable: tidak ada jatah.
+        h = self.alokasi(297, a, rute=None, terpakai_rute=20, terpakai_pool=110)
+        self.periksa("rute tanpa alokasi dibatasi sisa Q",
+                     h == ["ok", 297, 59, 238, 187], str(h))
+
+        # Jatah rute habis dan rute lain memakai seluruh shareable: 0, bukan
+        # angka negatif yang bisa terbaca sebagai jatah besar.
+        h = self.alokasi(297, a, rute=["exact", 30], terpakai_rute=30, terpakai_pool=268)
+        self.periksa("jatah habis dan shareable habis: 0", h[-1] == 0, str(h))
+        h = self.alokasi(297, a, rute=None, terpakai_rute=0, terpakai_pool=9999)
+        self.periksa("Q terlampaui: batas 0, bukan negatif", h[-1] == 0, str(h))
 
     # -- kunci (D1.7) -----------------------------------------------------
 
@@ -973,6 +1122,9 @@ class Uji:
         self.periksa(f"konkurensi {klien}×{per_klien}", True)
 
     def jalankan_semua(self, iterasi: int) -> int:
+        self.uji_alokasi_bagian()
+        self.uji_alokasi_tidak_sah()
+        self.uji_alokasi_batas_rute()
         self.uji_gerbang_siap()
         self.uji_penolakan()
         self.uji_argumen_tidak_sah()
