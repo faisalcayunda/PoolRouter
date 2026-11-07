@@ -15,9 +15,10 @@ GRANT SELECT (kunci, nilai) ON konfigurasi_platform TO pr_webhook;
 GRANT EXECUTE ON FUNCTION fn_konfigurasi_int(text, integer) TO pr_webhook;
 
 -- v_request_webhook needs webhook_not_before so the outbox scan can find due retries.
+-- CREATE OR REPLACE VIEW may only append columns at the end; the new column goes last.
 CREATE OR REPLACE VIEW v_request_webhook WITH (security_barrier = true) AS
   SELECT r.request_id, r.client_id, r.status, r.attempt_count, r.cancel_reason, r.failure_reason, r.completed_at,
-         r.webhook_status, r.webhook_attempt_count, r.webhook_not_before, r.output_payload, r.payload_purged_at
+         r.webhook_status, r.webhook_attempt_count, r.output_payload, r.payload_purged_at, r.webhook_not_before
     FROM request r
    WHERE r.mode = 'async' AND r.status IN ('done', 'failed', 'expired', 'cancelled');
 
