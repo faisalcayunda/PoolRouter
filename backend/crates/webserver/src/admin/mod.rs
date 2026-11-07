@@ -3,6 +3,7 @@
 
 pub mod allowlist;
 pub mod gerbang;
+pub mod k20;
 pub mod klien;
 pub mod kredensial;
 pub mod listener;

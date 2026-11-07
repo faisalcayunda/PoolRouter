@@ -32,7 +32,7 @@ use tower_http::limit::RequestBodyLimitLayer;
 use tower_http::set_header::SetResponseHeaderLayer;
 
 use super::pembatas::PembatasLogin;
-use super::{allowlist, klien, kredensial, log, login, me, secret, webhook};
+use super::{allowlist, k20, klien, kredensial, log, login, me, secret, webhook};
 
 use crate::api::problem::{ProblemKodeAdmin, ValidasiErrorAdmin};
 use crate::api::problem_admin::ProblemAdmin;
@@ -49,6 +49,7 @@ pub struct AdminState {
     /// The `pr_admin_api` pool. It is the only pool admin handlers can reach;
     /// the downstream router never receives it (ADR-0001 §7.2).
     pub pool: PgPool,
+    pub k20: k20::K20Service,
     pub asal: AsalUi,
     pub jam: Jam,
     pub pembatas: Arc<PembatasLogin>,
@@ -58,9 +59,11 @@ pub struct AdminState {
 
 impl AdminState {
     pub fn baru(pool: PgPool, asal: AsalUi, pembatas: PembatasLogin, brankas: Brankas) -> Self {
+        let k20 = k20::K20Service::baru(pool.clone());
         Self {
             sesi: SesiStore::baru(pool.clone()),
             pool,
+            k20,
             asal,
             jam: Arc::new(Utc::now),
             pembatas: Arc::new(pembatas),
