@@ -4,7 +4,7 @@
 //! `make -C backend uji-pg`: the store reads as `pr_api`, fixtures use
 //! `pr_admin_api`, both real grants.
 
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use poolrouter_webserver::downstream::konfigurasi_endpoint::{
@@ -23,8 +23,6 @@ fn url_uji(nama: &str) -> String {
 struct Uji {
     /// `pr_admin_api` pool for fixtures and deactivations.
     admin: PgPool,
-    /// Clock the cache measures its window with; the test moves it by hand.
-    jam: Arc<Mutex<Instant>>,
     konfig: Arc<CachedKonfigurasi>,
     client_id: Uuid,
     endpoint_id: Uuid,
@@ -92,7 +90,6 @@ impl Uji {
         ))));
         Self {
             admin,
-            jam: Arc::new(Mutex::new(Instant::now())),
             konfig,
             client_id,
             endpoint_id,
@@ -114,17 +111,13 @@ impl Uji {
             .await
             .unwrap();
     }
-
-    fn sekarang(&self) -> Instant {
-        *self.jam.lock().unwrap()
-    }
 }
 
 /// AC-6: the cached row is used before 30 s and re-read from PostgreSQL after.
 #[tokio::test]
 async fn cache_dipakai_sebelum_30_detik_dan_dibaca_ulang_sesudahnya() {
     let u = Uji::baru().await;
-    let t0 = u.sekarang();
+    let t0 = Instant::now();
     let awal = u.konfig.muat(u.client_id, u.endpoint_id, t0).await.unwrap();
     assert!(awal.status.is_some(), "endpoint ada");
     assert!(awal.kontrak.is_some(), "kontrak terbaca");
@@ -162,7 +155,7 @@ async fn status_enam_entitas_mengikuti_aktif_dan_kredensial_aktif() {
         "client",
     ] {
         let u = Uji::baru().await;
-        let t0 = u.sekarang();
+        let t0 = Instant::now();
         u.konfig.muat(u.client_id, u.endpoint_id, t0).await.unwrap();
         let id = match jenis {
             "provider" => u.provider_id,
