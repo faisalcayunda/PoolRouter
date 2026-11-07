@@ -20,6 +20,7 @@ use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
 use chrono::{DateTime, Utc};
 use poolrouter_core::secret::{Amplop, Brankas};
+use poolrouter_core::webhook::retry as kebijakan_retry;
 use poolrouter_core::status_api::{StatusInternal, StatusTerpetakan, status_api};
 use sqlx::PgPool;
 use uuid::Uuid;
@@ -137,6 +138,7 @@ pub struct Baris {
     pub failure_reason: Option<String>,
     pub output_payload: Option<serde_json::Value>,
     pub webhook_attempt_count: i32,
+    pub webhook_not_before: Option<DateTime<Utc>>,
 }
 
 /// Konfigurasi webhook milik client.
@@ -190,9 +192,9 @@ struct HasilKirim {
     error_class: Option<&'static str>,
     http_status: Option<i32>,
     secret_versi: Option<i32>,
-    status_akhir: &'static str,
     responded_at: Option<DateTime<Utc>>,
     duration_ms: i32,
+    retry_after: Option<chrono::Duration>,
 }
 
 impl HasilKirim {
@@ -209,9 +211,9 @@ impl HasilKirim {
             error_class: Some(error_class),
             http_status: None,
             secret_versi: versi,
-            status_akhir: "gagal",
             responded_at: None,
             duration_ms: 0,
+            retry_after: None,
         }
     }
 
@@ -223,9 +225,9 @@ impl HasilKirim {
             error_class: None,
             http_status: None,
             secret_versi: None,
-            status_akhir: "tidak_dikirim",
             responded_at: None,
             duration_ms: 0,
+            retry_after: None,
         }
     }
 }
@@ -279,20 +281,23 @@ pub async fn jalankan_putaran(
     let macet = tutup_macet(pool, sekarang).await?;
     let kandidat = sqlx::query_as::<_, Baris>(
         "SELECT v.request_id, r.client_id, v.status, v.attempt_count, v.cancel_reason, \
-                v.failure_reason, v.output_payload, v.webhook_attempt_count \
+                v.failure_reason, v.output_payload, v.webhook_attempt_count, v.webhook_not_before \
            FROM v_request_webhook v JOIN request r ON r.request_id = v.request_id \
-          WHERE v.webhook_status = 'menunggu' AND v.webhook_attempt_count = 0 \
+          WHERE v.webhook_status = 'menunggu' \
+            AND (v.webhook_not_before IS NULL OR v.webhook_not_before <= $2) \
+            AND v.webhook_attempt_count < fn_konfigurasi_int('webhook_batas_percobaan', 6) \
           ORDER BY v.completed_at \
           LIMIT $1",
     )
     .bind(BATAS_PER_PUTARAN)
+    .bind(sekarang)
     .fetch_all(pool)
     .await
     .map_err(|e| e.to_string())?;
 
     let mut jumlah = macet > 0;
     for baris in kandidat {
-        if klaim(pool, baris.request_id, sekarang).await? {
+        if klaim(pool, baris.request_id, sekarang, baris.webhook_attempt_count).await? {
             kirim(pool, brankas, resolver, sekarang, &baris).await?;
             jumlah = true;
         }
@@ -307,11 +312,12 @@ pub async fn jalankan_putaran(
 /// diberikan ke `pr_webhook` (W-02), jadi UPDATE langsung akan ditolak di dalam
 /// trigger meski grant kolomnya ada. Baris yang klaimnya sudah diambil job lain
 /// menghasilkan 0 baris → `false`, bukan error yang menghentikan putaran.
-async fn klaim(pool: &PgPool, request_id: Uuid, sekarang: DateTime<Utc>) -> Result<bool, String> {
+async fn klaim(pool: &PgPool, request_id: Uuid, sekarang: DateTime<Utc>, diharapkan: i32) -> Result<bool, String> {
     let jumlah =
-        sqlx::query_scalar::<_, i32>("SELECT fn_klaim_webhook($1, $2, NULL::integer, NULL::text)")
+        sqlx::query_scalar::<_, i32>("SELECT fn_klaim_webhook($1, $2, NULL::integer, NULL::text, $3::integer)")
             .bind(request_id)
             .bind(sekarang)
+            .bind(diharapkan)
             .fetch_one(pool)
             .await
             .map_err(|e| e.to_string())?;
@@ -458,15 +464,18 @@ async fn kirim_ke_jaringan(
     match jawab {
         Ok(respons) => {
             let kode = respons.status().as_u16();
-            let (hasil, kelas, akhir) = klasifikasi(kode);
+            let retry_after = respons.headers().get("retry-after")
+                .and_then(|h| h.to_str().ok())
+                .and_then(|v| kebijakan_retry::parse_retry_after(v, sekarang, chrono::Duration::seconds(7200)));
+            let (hasil, kelas, _akhir) = klasifikasi(kode);
             Ok(HasilKirim {
                 hasil,
                 error_class: kelas,
                 http_status: Some(i32::from(kode)),
                 secret_versi: Some(konf.secret_versi),
-                status_akhir: akhir,
                 responded_at: Some(sekarang),
                 duration_ms: durasi,
+                retry_after,
             })
         }
         Err(_) => Ok(HasilKirim {
@@ -474,9 +483,9 @@ async fn kirim_ke_jaringan(
             error_class: Some("gagal_jaringan"),
             http_status: None,
             secret_versi: Some(konf.secret_versi),
-            status_akhir: "gagal",
             responded_at: None,
             duration_ms: durasi,
+            retry_after: None,
         }),
     }
 }
@@ -497,18 +506,27 @@ async fn catat(
     baris: &Baris,
     hasil: HasilKirim,
 ) -> Result<(), String> {
+    let base = sqlx::query_scalar::<_, i32>("SELECT fn_konfigurasi_int('webhook_backoff_base_detik', 30)")
+        .fetch_one(pool).await.unwrap_or(30);
+    let cap = sqlx::query_scalar::<_, i32>("SELECT fn_konfigurasi_int('webhook_backoff_cap_detik', 7200)")
+        .fetch_one(pool).await.unwrap_or(7200);
+    let batas = sqlx::query_scalar::<_, i32>("SELECT fn_konfigurasi_int('webhook_batas_percobaan', 6)")
+        .fetch_one(pool).await.unwrap_or(6);
+    let jitter = sqlx::query_scalar::<_, i32>("SELECT fn_konfigurasi_int('webhook_jitter_persen', 20)")
+        .fetch_one(pool).await.unwrap_or(20);
+
+    let attempt = baris.webhook_attempt_count + 1;
+    let keputusan = kebijakan_retry::klasifikasi(hasil.hasil, hasil.http_status, hasil.error_class);
+
     let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
     if hasil.hasil != "tidak_dikirim" {
         sqlx::query(
-            "INSERT INTO webhook_log (webhook_delivery_id, request_id, client_id, attempt_no, \
-                    status_api, sent_at, responded_at, http_status, hasil, error_class, \
-                    duration_ms, secret_versi) \
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)",
+            "INSERT INTO webhook_log (webhook_delivery_id, request_id, client_id, attempt_no,                     status_api, sent_at, responded_at, http_status, hasil, error_class,                     duration_ms, secret_versi)              VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)",
         )
         .bind(Uuid::now_v7())
         .bind(baris.request_id)
         .bind(baris.client_id)
-        .bind(baris.webhook_attempt_count + 1)
+        .bind(attempt)
         .bind(status_api_terminal(&baris.status))
         .bind(sekarang)
         .bind(hasil.responded_at)
@@ -521,16 +539,28 @@ async fn catat(
         .await
         .map_err(|e| e.to_string())?;
     }
+
+    let (status_akhir, not_before) = if hasil.hasil == "tidak_dikirim" {
+        ("tidak_dikirim", None)
+    } else if hasil.hasil == "terkirim" {
+        ("terkirim", None)
+    } else if keputusan == kebijakan_retry::Keputusan::Retry && attempt < batas {
+        let acak = poolrouter_core::retry::AcakAwsLc::baru();
+        let jeda_dur = kebijakan_retry::jeda(attempt as u32, base as u32, cap as u32, jitter as u32, &acak, hasil.retry_after);
+        ("menunggu", Some(sekarang + jeda_dur))
+    } else {
+        ("gagal", None)
+    };
+
     sqlx::query(
-        "UPDATE request SET webhook_status = $2, webhook_last_at = $3, \
-                webhook_last_http_status = $4, webhook_last_error = $5 \
-          WHERE request_id = $1",
+        "UPDATE request SET webhook_status = $2, webhook_last_at = $3,                 webhook_last_http_status = $4, webhook_last_error = $5,                 webhook_not_before = $6           WHERE request_id = $1",
     )
     .bind(baris.request_id)
-    .bind(hasil.status_akhir)
+    .bind(status_akhir)
     .bind(sekarang)
     .bind(hasil.http_status)
     .bind(hasil.error_class)
+    .bind(not_before)
     .execute(&mut *tx)
     .await
     .map_err(|e| e.to_string())?;
@@ -593,6 +623,7 @@ mod tes {
             failure_reason: None,
             output_payload: Some(serde_json::json!({"data": {"nik": "3273"}})),
             webhook_attempt_count: 0,
+            webhook_not_before: None,
         };
         let body = body(&baris).expect("body");
         let id = baris.request_id.to_string();
@@ -628,6 +659,7 @@ mod tes {
             failure_reason: None,
             output_payload: Some(serde_json::json!({"data": {}})),
             webhook_attempt_count: 0,
+            webhook_not_before: None,
         };
         let parse = |b: Baris| {
             serde_json::from_slice::<serde_json::Value>(&body(&b).expect("body")).expect("json")
