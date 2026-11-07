@@ -24,7 +24,7 @@ use super::problem::{Problem, ProblemKodeDown};
 use crate::downstream::downstream_sesi::{
     AntrePermintaan, BarisRequest, GalatDownstream, SesiKlien, SessionDownstream,
 };
-use crate::downstream::pengenal::PengenalDownstream;
+use crate::downstream::pengenal::{GalatPengenal, PengenalDownstream};
 
 /// State of the downstream API router: the credential resolver and the request
 /// store, nothing else. The admin pool never reaches this router (ADR-0001 7.2).
@@ -72,10 +72,15 @@ fn galat(e: GalatDownstream) -> Response {
         GalatDownstream::ObjekNonaktif => {
             problem(ProblemKodeDown::ObjekNonaktif, StatusCode::FORBIDDEN)
         }
-        GalatDownstream::Layanan => problem(
-            ProblemKodeDown::LayananTidakTersedia,
-            StatusCode::SERVICE_UNAVAILABLE,
-        ),
+        GalatDownstream::Layanan => {
+            let mut res = problem(
+                ProblemKodeDown::LayananTidakTersedia,
+                StatusCode::SERVICE_UNAVAILABLE,
+            );
+            res.headers_mut()
+                .insert(header::RETRY_AFTER, HeaderValue::from_static("5"));
+            res
+        }
     }
 }
 
@@ -85,7 +90,18 @@ fn galat(e: GalatDownstream) -> Response {
 async fn masuk(state: &DownstreamState, headers: &HeaderMap) -> Result<SesiKlien, Response> {
     match state.pengenal.kenali(headers).await {
         Ok(k) => Ok(k),
-        Err(_) => {
+        // The credential store did not answer: fail closed with 503, never a
+        // false 401 that would make the client discard a valid credential.
+        Err(GalatPengenal::Layanan) => {
+            let mut res = problem(
+                ProblemKodeDown::LayananTidakTersedia,
+                StatusCode::SERVICE_UNAVAILABLE,
+            );
+            res.headers_mut()
+                .insert(header::RETRY_AFTER, HeaderValue::from_static("5"));
+            Err(res)
+        }
+        Err(GalatPengenal::Ditolak) => {
             let mut res = problem(
                 ProblemKodeDown::TidakTerautentikasi,
                 StatusCode::UNAUTHORIZED,
@@ -198,7 +214,11 @@ fn referensi_client(headers: &HeaderMap) -> Result<Option<String>, Response> {
 }
 
 /// SHA-256 hex (64 chars, the column width) over the endpoint and the exact
-/// body, so two calls with one key but different payloads are a conflict.
+/// body. `request.idempotency_fingerprint` is NOT NULL whenever
+/// `idempotency_key` is set (`chk_idem`), so this only satisfies that column;
+/// it does not yet compare against a stored fingerprint to answer 422
+/// `idempotency_key_konflik` on a same-key-different-body replay — that
+/// compare-and-reject (AC-11) is ARC-63's scope, not this slice's AC-1/2/3/9.
 fn sidik(endpoint: Uuid, body: &[u8]) -> String {
     let mut h = Sha256::new();
     h.update(endpoint.as_bytes());
@@ -303,10 +323,13 @@ pub(crate) async fn submit_sync(
     if let Err(r) = validasi_metadata(&state, klien, endpoint, &kirim).await {
         return r;
     }
-    problem(
+    let mut res = problem(
         ProblemKodeDown::LayananTidakTersedia,
         StatusCode::SERVICE_UNAVAILABLE,
-    )
+    );
+    res.headers_mut()
+        .insert(header::RETRY_AFTER, HeaderValue::from_static("5"));
+    res
 }
 
 // ---------------------------------------------------------------------------

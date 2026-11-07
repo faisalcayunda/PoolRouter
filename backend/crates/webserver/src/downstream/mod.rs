@@ -6,6 +6,7 @@ pub mod credential;
 pub mod downstream_sesi;
 pub mod gcra;
 pub mod jwt;
+pub mod konfigurasi_endpoint;
 pub mod layers;
 pub mod pengenal;
 pub mod probe;

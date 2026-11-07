@@ -259,7 +259,9 @@ impl PgSessionDownstream {
         let versi: Option<i32> = baris
             .try_get("config_versi_aktif")
             .map_err(|_| GalatDownstream::Layanan)?;
-        let versi = versi.unwrap_or(0);
+        // No active config version means the endpoint is not fully provisioned
+        // yet; report it as a store problem rather than fabricating version 0.
+        let versi = versi.ok_or(GalatDownstream::Layanan)?;
         let input = sqlx::query(
             "SELECT nama_field, tipe, wajib, nilai_diizinkan, aturan_validasi, klasifikasi, \
                     kirim_ke_data_balikan, deskripsi, versi \
