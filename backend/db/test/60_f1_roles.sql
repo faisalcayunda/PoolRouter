@@ -50,6 +50,11 @@ SELECT t.jalan('SELECT request_id, webhook_not_before FROM request', 'WR-07: pr_
 SELECT t.jalan($$UPDATE request SET webhook_not_before = now() WHERE false$$, 'WR-07: pr_webhook updates webhook_not_before');
 SELECT t.gagal('SELECT 1 FROM pengguna_mfa', '42501', 'pr_webhook: no MFA tables');
 SELECT t.gagal('SELECT * FROM arsip_pulih.transaction_log', '42501', 'pr_webhook: no arsip_pulih');
+-- WB2a (ARC-120): pr_webhook reads the retry policy, never writes it.
+SELECT t.jalan('SELECT kunci, nilai FROM konfigurasi_platform', 'WB2a: pr_webhook reads konfigurasi_platform');
+SELECT t.gagal($$UPDATE konfigurasi_platform SET nilai = '1'::jsonb WHERE kunci = 'webhook_batas_percobaan'$$, '42501', 'WB2a: pr_webhook cannot write konfigurasi_platform');
+SELECT t.gagal($$INSERT INTO konfigurasi_platform (kunci, nilai) VALUES ('x', '1'::jsonb)$$, '42501', 'WB2a: pr_webhook cannot insert konfigurasi_platform');
+SELECT t.jalan('SELECT fn_konfigurasi_int(''webhook_batas_percobaan'', 6)', 'ARC-120: pr_webhook executes fn_konfigurasi_int');
 ROLLBACK;
 BEGIN;
 SET LOCAL ROLE pr_worker;
