@@ -535,6 +535,53 @@ impl MfaStore {
         };
         Ok(self.brankas.dekripsi(&amplop)?.ke_dalam())
     }
+
+    /// Whether the user has an active TOTP enrollment. Used at login to decide
+    /// between `{langkah: "mfa"}` and `{langkah: "daftar_mfa"}` (AC-9).
+    pub async fn aktif(&self, pengguna_id: Uuid) -> Result<bool, GalatMfa> {
+        let aktif: Option<bool> =
+            sqlx::query_scalar("SELECT status = 'aktif' FROM pengguna_mfa WHERE pengguna_id = $1")
+                .bind(pengguna_id)
+                .fetch_optional(&self.pool)
+                .await?;
+        Ok(aktif.unwrap_or(false))
+    }
+
+    /// Remaining unused recovery codes; `GET /auth/me` reports it (AC-14).
+    pub async fn sisa_kode_pemulihan(&self, pengguna_id: Uuid) -> Result<i64, GalatMfa> {
+        let sisa: i64 = sqlx::query_scalar(
+            "SELECT count(*) FROM kode_pemulihan_mfa WHERE pengguna_id = $1 AND dipakai_at IS NULL",
+        )
+        .bind(pengguna_id)
+        .fetch_one(&self.pool)
+        .await?;
+        Ok(sisa)
+    }
+
+    /// Active roles for the user, in the contract's spellings.
+    ///
+    /// A user needs the second step if any role they hold is in
+    /// [`Peran::wajib_mfa`] and `mfa_wajib` is on (ADR-0006 §9).
+    pub async fn peran_aktif(
+        &self,
+        pengguna_id: Uuid,
+        sekarang: DateTime<Utc>,
+    ) -> Result<Vec<crate::audit::Peran>, GalatMfa> {
+        let baris: Vec<(String,)> = sqlx::query_as(
+            "SELECT peran FROM admin_user_peran \
+             WHERE pengguna_id = $1 AND dicabut_at IS NULL \
+               AND (berlaku_sampai IS NULL OR berlaku_sampai > $2) \
+             ORDER BY peran",
+        )
+        .bind(pengguna_id)
+        .bind(sekarang)
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(baris
+            .iter()
+            .filter_map(|(p,)| super::pengguna::peran_dari_teks(p))
+            .collect())
+    }
 }
 
 #[derive(sqlx::FromRow)]

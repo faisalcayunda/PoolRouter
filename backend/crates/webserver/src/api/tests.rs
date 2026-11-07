@@ -67,11 +67,11 @@ fn downstream_milik_enam_operasi() {
     assert_eq!(operations(&downstream_doc()).len(), 6);
 }
 
-/// 1c: admin count (64 operations: sesi, konfigurasi, kuota, log/audit, dan
+/// 1c: admin count (67 operations: sesi, konfigurasi, kuota, log/audit, dan
 /// operasi K-20; daftarnya ditentukan di `admin-api.yaml`).
 #[test]
-fn admin_milik_enam_puluh_empat_operasi() {
-    assert_eq!(operations(&admin_doc()).len(), 64);
+fn admin_milik_enam_puluh_tujuh_operasi() {
+    assert_eq!(operations(&admin_doc()).len(), 67);
 }
 
 /// 2: `webhooks:` with `requestTerminal`, four headers, JSON body and 2xx.

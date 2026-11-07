@@ -216,6 +216,9 @@ async fn siapkan() -> Uji {
         AsalUi::baru(ASAL).unwrap(),
         PembatasLogin::baru(redis::Client::open(redis_ujian()).unwrap(), KUNCI_HMAC),
         Brankas::dari_isi_kek(KEK_HEX).unwrap(),
+        redis::Client::open(redis_ujian()).unwrap(),
+        // These tests exercise the secret endpoints, not the login policy.
+        false,
     )
     .dengan_jam(Arc::new(t0));
     let app = router(state).layer(MockConnectInfo(SocketAddr::from(([203, 0, 113, 9], 4000))));
