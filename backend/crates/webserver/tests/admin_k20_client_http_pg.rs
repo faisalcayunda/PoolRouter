@@ -532,3 +532,260 @@ async fn credential_pratinjau_cabut_dan_aktifkan_selalu_409() {
         .await;
     assert_eq!(st, StatusCode::FORBIDDEN);
 }
+
+/// AC-29 (client): HasilK20 == baris audit_konfigurasi, termasuk angka non-nol.
+#[tokio::test]
+#[ignore]
+async fn client_hasil_k20_sama_dengan_audit() {
+    let u = siapkan().await;
+    let (_, pa) = u.pengguna(&["platform_admin"], None).await;
+    let cid = u.klien(&unik("KlienHasil")).await;
+    let uid = u.pengguna(&["platform_admin"], None).await.0;
+    let kid = u.kredensial(cid, uid).await;
+    let endpoint = u.endpoint(&unik("ep")).await;
+    let dpool: Uuid = sqlx::query_scalar(
+        "SELECT downstream_pool_id FROM downstream_endpoint WHERE downstream_endpoint_id = $1",
+    )
+    .bind(endpoint)
+    .fetch_one(&u.su)
+    .await
+    .unwrap();
+    request_queued(&u.su, cid, kid, endpoint, dpool, "0000000000000077").await;
+
+    let alasan = "uji kesamaan angka HasilK20 dengan audit";
+    let (st, _, hasil) = u
+        .kirim(
+            Method::POST,
+            &format!("/admin/v1/clients/{cid}/nonaktifkan"),
+            Some(&pa),
+            Some(ASAL),
+            Some(json!({ "alasan": alasan })),
+        )
+        .await;
+    assert_eq!(st, StatusCode::OK);
+    assert_eq!(hasil["jumlah_cancelled"], 1);
+    assert_eq!(hasil["jumlah_failed"], 0);
+
+    let audit = u.audit_terakhir("client", cid).await.expect("audit client");
+    assert_eq!(audit["aksi"], "nonaktifkan");
+    assert_eq!(audit["jumlah_cancelled"], hasil["jumlah_cancelled"]);
+    assert_eq!(audit["jumlah_failed"], hasil["jumlah_failed"]);
+    assert_eq!(audit["alasan"], alasan);
+}
+
+/// AC-31: dua nonaktifkan bersamaan pada client yang sama -> satu transisi per
+/// request, satu baris audit dengan angka bukan nol.
+#[tokio::test]
+#[ignore]
+async fn client_dua_nonaktifkan_bersamaan_satu_transisi() {
+    let u = siapkan().await;
+    let (_, pa) = u.pengguna(&["platform_admin"], None).await;
+    let cid = u.klien(&unik("KlienParalel")).await;
+    let uid = u.pengguna(&["platform_admin"], None).await.0;
+    let kid = u.kredensial(cid, uid).await;
+    let endpoint = u.endpoint(&unik("epp")).await;
+    let dpool: Uuid = sqlx::query_scalar(
+        "SELECT downstream_pool_id FROM downstream_endpoint WHERE downstream_endpoint_id = $1",
+    )
+    .bind(endpoint)
+    .fetch_one(&u.su)
+    .await
+    .unwrap();
+    request_queued(&u.su, cid, kid, endpoint, dpool, "0000000000000088").await;
+
+    let alasan_a = "uji paralel client pertama sintetis";
+    let alasan_b = "uji paralel client kedua sintetis";
+    let app = u.app.clone();
+    let pa_a = pa.clone();
+    let pa_b = pa.clone();
+    let path = format!("/admin/v1/clients/{cid}/nonaktifkan");
+    let (ra, rb) = tokio::join!(
+        async {
+            let req = Request::builder()
+                .method(Method::POST)
+                .uri(path.clone())
+                .header(header::COOKIE, pa_a.as_str())
+                .header(header::ORIGIN, ASAL)
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(json!({ "alasan": alasan_a }).to_string()))
+                .unwrap();
+            app.clone().oneshot(req).await.unwrap()
+        },
+        async {
+            let req = Request::builder()
+                .method(Method::POST)
+                .uri(path.clone())
+                .header(header::COOKIE, pa_b.as_str())
+                .header(header::ORIGIN, ASAL)
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(json!({ "alasan": alasan_b }).to_string()))
+                .unwrap();
+            app.clone().oneshot(req).await.unwrap()
+        }
+    );
+
+    let mut ada_nonzero = false;
+    for res in [ra, rb] {
+        let b = to_bytes(res.into_body(), usize::MAX).await.unwrap();
+        let j: Value = serde_json::from_slice(&b).unwrap_or(Value::Null);
+        if j["jumlah_cancelled"].as_i64().unwrap_or(0) > 0 {
+            ada_nonzero = true;
+        }
+    }
+    assert!(
+        ada_nonzero,
+        "AC-31: minimal satu eksekusi mencatat cancel non-nol"
+    );
+
+    let status: String = sqlx::query_scalar("SELECT status FROM request WHERE client_id = $1")
+        .bind(cid)
+        .fetch_one(&u.su)
+        .await
+        .unwrap();
+    assert_eq!(status, "cancelled");
+
+    let jumlah_cancelled_history: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM request_status_history WHERE status_ke = 'cancelled' \
+         AND request_id IN (SELECT request_id FROM request WHERE client_id = $1)",
+    )
+    .bind(cid)
+    .fetch_one(&u.su)
+    .await
+    .unwrap();
+    assert_eq!(
+        jumlah_cancelled_history, 1,
+        "request dicatat cancelled tepat sekali"
+    );
+
+    let jumlah_audit_nonzero: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM audit_konfigurasi WHERE entitas_jenis = 'client' \
+         AND entitas_id = $1 AND jumlah_cancelled > 0",
+    )
+    .bind(cid)
+    .fetch_one(&u.pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        jumlah_audit_nonzero, 1,
+        "AC-31: satu baris audit dengan angka bukan nol"
+    );
+}
+
+/// AC-1..AC-7: tracing tidak memuat NIK atau payload sintetis (pola admin_log_pg).
+#[tokio::test]
+#[ignore]
+async fn k20_tracing_tidak_memuat_nik_atau_payload() {
+    use std::io::Write;
+    use std::sync::{Arc, Mutex};
+    use tracing_subscriber::fmt::MakeWriter;
+
+    #[derive(Clone, Default)]
+    struct Penyangga(Arc<Mutex<Vec<u8>>>);
+    struct Penulis(Arc<Mutex<Vec<u8>>>);
+    impl Write for Penulis {
+        fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+            self.0.lock().unwrap().extend_from_slice(buf);
+            Ok(buf.len())
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+    impl<'a> MakeWriter<'a> for Penyangga {
+        type Writer = Penulis;
+        fn make_writer(&'a self) -> Self::Writer {
+            Penulis(self.0.clone())
+        }
+    }
+
+    let penyangga = Penyangga::default();
+    let subscriber = tracing_subscriber::fmt()
+        .with_max_level(tracing::Level::TRACE)
+        .with_ansi(false)
+        .with_writer(penyangga.clone())
+        .finish();
+    let _guard = tracing::subscriber::set_default(subscriber);
+
+    let u = siapkan().await;
+    let (_, pa) = u.pengguna(&["platform_admin"], None).await;
+    let cid = u.klien(&unik("KlienTrace")).await;
+    let uid = u.pengguna(&["platform_admin"], None).await.0;
+    let kid = u.kredensial(cid, uid).await;
+    let endpoint = u.endpoint(&unik("eptrace")).await;
+    let dpool: Uuid = sqlx::query_scalar(
+        "SELECT downstream_pool_id FROM downstream_endpoint WHERE downstream_endpoint_id = $1",
+    )
+    .bind(endpoint)
+    .fetch_one(&u.su)
+    .await
+    .unwrap();
+    let nik = "0000000000000055";
+    request_queued(&u.su, cid, kid, endpoint, dpool, nik).await;
+
+    let (st, _, _) = u
+        .kirim(
+            Method::GET,
+            &format!("/admin/v1/credentials/{kid}/pratinjau-cabut"),
+            Some(&pa),
+            Some(ASAL),
+            None,
+        )
+        .await;
+    assert_eq!(st, StatusCode::OK);
+
+    let (st, _, _) = u
+        .kirim(
+            Method::POST,
+            &format!("/admin/v1/credentials/{kid}/cabut"),
+            Some(&pa),
+            Some(ASAL),
+            Some(json!({ "alasan": "uji tracing leak sintetis" })),
+        )
+        .await;
+    assert_eq!(st, StatusCode::OK);
+
+    let log = String::from_utf8(penyangga.0.lock().unwrap().clone()).unwrap();
+    assert!(!log.is_empty(), "penangkap tracing dipasang");
+    assert!(!log.contains(nik), "NIK tidak muncul di tracing");
+}
+
+/// AC-29 (credential): jumlah_cancelled/jumlah_failed di audit == angka yang
+/// dihasilkan (cabutCredential tidak mengembalikan HasilK20 lewat HTTP).
+#[tokio::test]
+#[ignore]
+async fn credential_audit_angka_non_nol() {
+    let u = siapkan().await;
+    let (pa_id, pa) = u.pengguna(&["platform_admin"], None).await;
+    let cid = u.klien(&unik("KlienAudit")).await;
+    let kid = u.kredensial(cid, pa_id).await;
+    let endpoint = u.endpoint(&unik("epaudit")).await;
+    let dpool: Uuid = sqlx::query_scalar(
+        "SELECT downstream_pool_id FROM downstream_endpoint WHERE downstream_endpoint_id = $1",
+    )
+    .bind(endpoint)
+    .fetch_one(&u.su)
+    .await
+    .unwrap();
+    request_queued(&u.su, cid, kid, endpoint, dpool, "0000000000000066").await;
+
+    let alasan = "uji audit angka kredensial non-nol";
+    let (st, _, _) = u
+        .kirim(
+            Method::POST,
+            &format!("/admin/v1/credentials/{kid}/cabut"),
+            Some(&pa),
+            Some(ASAL),
+            Some(json!({ "alasan": alasan })),
+        )
+        .await;
+    assert_eq!(st, StatusCode::OK);
+
+    let audit = u
+        .audit_terakhir("kredensial", kid)
+        .await
+        .expect("audit kredensial");
+    assert_eq!(audit["aksi"], "cabut");
+    assert_eq!(audit["jumlah_cancelled"], 1);
+    assert_eq!(audit["jumlah_failed"], 0);
+    assert_eq!(audit["alasan"], alasan);
+}

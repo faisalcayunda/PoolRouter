@@ -2159,8 +2159,8 @@ async fn pratinjau_nonaktifkan_client(
     stub()
 }
 
-/// Deactivate a client (K-20): cancel queued, fail waiting-for-retry, expire
-/// the rest. Same numbers go to the config audit.
+/// Deactivate a client (K-20): cancel queued, fail waiting for retry; in-flight
+/// requests are left untouched and expire by TTL. Same numbers go to the config audit.
 #[utoipa::path(
     post,
     path = "/admin/v1/clients/{id}/nonaktifkan",
@@ -2238,8 +2238,8 @@ async fn pratinjau_cabut_credential(
     stub()
 }
 
-/// Revoke a credential (K-20): cancel queued, fail waiting for retry, expire
-/// the rest.
+/// Revoke a credential (K-20): cancel queued, fail waiting for retry; in-flight
+/// requests are left untouched and expire by TTL.
 #[utoipa::path(
     post,
     path = "/admin/v1/credentials/{id}/cabut",
