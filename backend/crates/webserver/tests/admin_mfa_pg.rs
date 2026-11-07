@@ -48,6 +48,8 @@ fn t0() -> DateTime<Utc> {
 struct Uji {
     app: Router,
     pool: PgPool,
+    /// Superuser connection, for reading audit rows.
+    su: PgPool,
     jam: Arc<Mutex<DateTime<Utc>>>,
     username: String,
     pengguna_id: Uuid,
@@ -63,17 +65,29 @@ async fn siapkan(peran: &[&str], mfa_wajib: bool) -> Uji {
         "POOLROUTER_TEST_DATABASE_URL belum diset; jalankan lewat `make -C backend uji-pg`",
     );
     let pool = PgPool::connect(&url).await.expect("database");
+    // Reading audit tables needs the superuser pool: `pr_admin_api` only has
+    // INSERT on `audit_akses` (migrations/20261103000004_grants.sql).
+    let su_url = std::env::var("POOLROUTER_TEST_DATABASE_URL_SU").expect(
+        "POOLROUTER_TEST_DATABASE_URL_SU belum diset; jalankan lewat `make -C backend uji-pg`",
+    );
+    let su = PgPool::connect(&su_url).await.expect("database su");
     let redis_url = redis_ujian();
 
     let uid = Uuid::now_v7();
     let penerbit = Uuid::now_v7();
+    // Auditor/operator grants need a distinct proposer and approver (A-02), so
+    // the fixture carries two extra accounts and never grants to itself.
+    let penyetuju = Uuid::now_v7();
     let username = format!("mfa-{}", uid.simple());
+    let nama_penerbit = format!("penerbit-{}", penerbit.simple());
+    let nama_penyetuju = format!("penyetuju-{}", penyetuju.simple());
     let hash = hash_password(PASSWORD, KebijakanPassword::f0(), ParameterArgon2::OWASP)
         .unwrap()
         .to_string();
     for (id, nama, h) in [
         (uid, username.as_str(), hash.as_str()),
-        (penerbit, "penerbit-sintetis", "x"),
+        (penerbit, nama_penerbit.as_str(), "x"),
+        (penyetuju, nama_penyetuju.as_str(), "x"),
     ] {
         sqlx::query(
             "INSERT INTO admin_user (pengguna_id, username, password_hash) VALUES ($1, $2, $3)",
@@ -86,12 +100,16 @@ async fn siapkan(peran: &[&str], mfa_wajib: bool) -> Uji {
         .unwrap();
     }
     if !peran.is_empty() {
+        // A role grant records who proposed and who approved it; the column is
+        // NOT NULL and A-02 forbids either party being the user themselves.
         sqlx::query(
-            "INSERT INTO admin_user_peran (pengguna_id, peran) \
-             SELECT $1, unnest($2::text[])",
+            "INSERT INTO admin_user_peran (pengguna_id, peran, diajukan_oleh, disetujui_oleh) \
+             SELECT $1, unnest($2::text[]), $3, $4",
         )
         .bind(uid)
         .bind(peran)
+        .bind(penerbit)
+        .bind(penyetuju)
         .execute(&pool)
         .await
         .unwrap();
@@ -114,6 +132,7 @@ async fn siapkan(peran: &[&str], mfa_wajib: bool) -> Uji {
     Uji {
         app,
         pool,
+        su,
         jam,
         username,
         pengguna_id: uid,
@@ -124,6 +143,13 @@ async fn siapkan(peran: &[&str], mfa_wajib: bool) -> Uji {
 impl Uji {
     fn maju(&self, d: Duration) {
         *self.jam.lock().unwrap() = t0() + d;
+    }
+
+    /// A TOTP code for the clock the server is currently on, so tests never
+    /// reuse a step that anti-replay has already accepted.
+    fn kode_sekarang(&self, rahasia: &str) -> String {
+        let sekarang = *self.jam.lock().unwrap();
+        totp::hitung(rahasia, (sekarang.timestamp() / 30) as u64)
     }
 
     /// POST JSON with the given cookies and a valid `Origin`.
@@ -189,24 +215,24 @@ impl Uji {
         kode.expose().to_owned()
     }
 
-    /// Seed an active MFA enrollment directly and return its base32 secret, so
-    /// the verification path can be tested without going through enrollment.
+    /// Seed an active MFA enrollment and return its base32 secret, so the
+    /// verification path can be tested without going through enrollment. The
+    /// secret is written by the store, so the ciphertext really decrypts.
     async fn pasang_mfa_aktif(&self) -> String {
-        let rahasia = totp::encode(&[0x41u8; 20]);
-        let pengguna_id = self.pengguna_id;
-        sqlx::query(
-            "INSERT INTO pengguna_mfa \
-             (pengguna_id, secret_ciphertext, secret_dek_terbungkus, secret_nonce, kek_id, status, \
-              didaftarkan_at, dikonfirmasi_at, langkah_terakhir) \
-             VALUES ($1, $2, $3, $4, 'uji', 'aktif', now(), now(), 0)",
-        )
-        .bind(pengguna_id)
-        .bind(vec![0u8; 40])
-        .bind(vec![0u8; 40])
-        .bind(vec![0u8; 12])
-        .execute(&self.pool)
-        .await
-        .unwrap();
+        let store = poolrouter_core::admin::mfa::MfaStore::baru(
+            self.pool.clone(),
+            Brankas::dari_isi_kek(&"5a".repeat(32)).unwrap(),
+        );
+        let pendaftaran = store.daftar(self.pengguna_id).await.unwrap();
+        let rahasia = pendaftaran.rahasia().to_owned();
+        let kode = self.kode_sekarang(&rahasia);
+        store
+            .konfirmasi(self.pengguna_id, &kode, t0())
+            .await
+            .unwrap();
+        // Anti-replay (MF-03): the confirmation spent step 0, so move the clock
+        // forward one step before the test logs in and needs a fresh code.
+        self.maju(Duration::seconds(30));
         rahasia
     }
 }
@@ -285,7 +311,7 @@ async fn password_salah_tetap_401_tanpa_token_pra_sesi() {
 #[ignore = "butuh PostgreSQL dan Redis; jalankan lewat make -C backend uji-pg"]
 async fn kode_salah_generik_dan_kelima_menghanguskan_token() {
     let u = siapkan(&["auditor"], true).await;
-    u.pasang_mfa_aktif().await;
+    let rahasia = u.pasang_mfa_aktif().await;
     let (_, headers, _) = u.login(PASSWORD).await;
     let token = Uji::cookie(&headers, COOKIE_PRA_SESI).unwrap();
     let cookie = format!("{COOKIE_PRA_SESI}={token}");
@@ -314,11 +340,12 @@ async fn kode_salah_generik_dan_kelima_menghanguskan_token() {
     assert_eq!(body["kode"], "kredensial_salah");
 
     // The token is gone: even a valid code is refused now (AC-11).
+    let kode_sah = u.kode_sekarang(&rahasia);
     let (status, _, _) = u
         .kirim(
             "/admin/v1/auth/mfa",
             Some(&cookie),
-            Some(serde_json::json!({ "kode": totp::hitung(&totp::encode(&[0x41u8; 20]), 0) })),
+            Some(serde_json::json!({ "kode": kode_sah })),
         )
         .await;
     assert_eq!(status, StatusCode::UNAUTHORIZED);
@@ -332,7 +359,7 @@ async fn kode_totp_sah_menerbitkan_sesi_dengan_mfa_terverifikasi() {
     let (_, headers, _) = u.login(PASSWORD).await;
     let token = Uji::cookie(&headers, COOKIE_PRA_SESI).unwrap();
 
-    let kode = totp::hitung(&rahasia, (t0().timestamp() / 30) as u64);
+    let kode = u.kode_sekarang(&rahasia);
     let (status, headers, _) = u
         .kirim(
             "/admin/v1/auth/mfa",
@@ -370,7 +397,7 @@ async fn token_pra_sesi_hanya_bisa_dipakai_sekali() {
     let (_, headers, _) = u.login(PASSWORD).await;
     let token = Uji::cookie(&headers, COOKIE_PRA_SESI).unwrap();
     let cookie = format!("{COOKIE_PRA_SESI}={token}");
-    let kode = totp::hitung(&rahasia, (t0().timestamp() / 30) as u64);
+    let kode = u.kode_sekarang(&rahasia);
 
     let (status, _, _) = u
         .kirim(
@@ -468,7 +495,7 @@ async fn percobaan_kode_tercatat_di_audit_login() {
         "SELECT count(*) FROM audit_login WHERE pengguna_id = $1 AND hasil = 'gagal'",
     )
     .bind(u.pengguna_id)
-    .fetch_one(&u.pool)
+    .fetch_one(&u.su)
     .await
     .unwrap();
     assert!(gagal >= 1, "percobaan kode harus tercatat di audit_login");
@@ -622,7 +649,7 @@ async fn daftar_tanpa_kode_atau_kode_salah_ditolak() {
     let ditolak: i64 = sqlx::query_scalar(
         "SELECT count(*) FROM audit_akses WHERE aksi = 'daftar_mfa' AND hasil = 'ditolak'",
     )
-    .fetch_one(&u.pool)
+    .fetch_one(&u.su)
     .await
     .unwrap();
     assert!(ditolak >= 1, "penolakan daftar_mfa harus tercatat");
@@ -679,7 +706,10 @@ async fn konfirmasi_mengaktifkan_dan_mengembalikan_sepuluh_kode() {
     assert_eq!(status, StatusCode::OK);
     let rahasia = body["rahasia_base32"].as_str().unwrap().to_owned();
 
-    let kode = totp::hitung(&rahasia, (t0().timestamp() / 30) as u64);
+    // `daftar` seeds `langkah_terakhir = 0`, and confirmation requires a strictly
+    // greater step (MF-03 anti-replay), so confirm on the next step.
+    u.maju(Duration::seconds(30));
+    let kode = u.kode_sekarang(&rahasia);
     let (status, headers, body) = u
         .kirim(
             "/admin/v1/auth/mfa/daftar/konfirmasi",
@@ -745,7 +775,10 @@ async fn me_setelah_login_kode_pemulihan_melaporkan_sisa_sembilan() {
     assert_eq!(status, StatusCode::OK);
     let rahasia = body["rahasia_base32"].as_str().unwrap().to_owned();
 
-    let kode = totp::hitung(&rahasia, (t0().timestamp() / 30) as u64);
+    // `daftar` seeds `langkah_terakhir = 0`, and confirmation requires a strictly
+    // greater step (MF-03 anti-replay), so confirm on the next step.
+    u.maju(Duration::seconds(30));
+    let kode = u.kode_sekarang(&rahasia);
     let (status, _, body) = u
         .kirim(
             "/admin/v1/auth/mfa/daftar/konfirmasi",
