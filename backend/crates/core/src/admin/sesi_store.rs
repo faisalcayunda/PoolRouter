@@ -105,13 +105,42 @@ impl SesiStore {
         user_agent: Option<&str>,
         sekarang: DateTime<Utc>,
     ) -> Result<SesiTersimpan, GalatSesi> {
+        self.terbitkan_dengan_mfa(pengguna_id, hash, user_agent, sekarang, None)
+            .await
+    }
+
+    /// Insert a session that has already passed the MFA step (AC-10, AC-13).
+    ///
+    /// `mfa_terverifikasi_at` is written in the same `INSERT`, so a session that
+    /// carries the MFA stamp and its `audit_login` row commit or roll back
+    /// together; there is no window where a verified session exists unstamped.
+    pub async fn terbitkan_terverifikasi_mfa(
+        &self,
+        pengguna_id: Uuid,
+        hash: &HashToken,
+        user_agent: Option<&str>,
+        sekarang: DateTime<Utc>,
+    ) -> Result<SesiTersimpan, GalatSesi> {
+        self.terbitkan_dengan_mfa(pengguna_id, hash, user_agent, sekarang, Some(sekarang))
+            .await
+    }
+
+    async fn terbitkan_dengan_mfa(
+        &self,
+        pengguna_id: Uuid,
+        hash: &HashToken,
+        user_agent: Option<&str>,
+        sekarang: DateTime<Utc>,
+        mfa_terverifikasi_at: Option<DateTime<Utc>>,
+    ) -> Result<SesiTersimpan, GalatSesi> {
         let sesi_id = Uuid::now_v7();
         let kedaluwarsa = sekarang + Duration::seconds(self.batas.absolut_detik);
         let ua = user_agent.map(potong_user_agent);
         sqlx::query(
             "INSERT INTO admin_session \
-             (sesi_id, token_sha256, pengguna_id, dibuat_at, terakhir_aktif_at, kedaluwarsa_at, user_agent) \
-             VALUES ($1, decode($2, 'hex'), $3, $4, $4, $5, $6)",
+             (sesi_id, token_sha256, pengguna_id, dibuat_at, terakhir_aktif_at, kedaluwarsa_at, user_agent, \
+              mfa_terverifikasi_at) \
+             VALUES ($1, decode($2, 'hex'), $3, $4, $4, $5, $6, $7)",
         )
         .bind(sesi_id)
         .bind(hash.as_str())
@@ -119,6 +148,7 @@ impl SesiStore {
         .bind(sekarang)
         .bind(kedaluwarsa)
         .bind(ua)
+        .bind(mfa_terverifikasi_at)
         .execute(&self.pool)
         .await?;
         Ok(SesiTersimpan {

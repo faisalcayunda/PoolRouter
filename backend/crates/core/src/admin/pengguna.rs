@@ -44,3 +44,15 @@ pub async fn cari_login(
         }),
     )
 }
+
+/// Parse a role as the contract spells it.
+pub fn peran_dari_teks(t: &str) -> Option<crate::audit::Peran> {
+    use crate::audit::Peran;
+    match t {
+        "auditor" => Some(Peran::Auditor),
+        "operator" => Some(Peran::Operator),
+        "platform_admin" => Some(Peran::PlatformAdmin),
+        "client_owner" => Some(Peran::ClientOwner),
+        _ => None,
+    }
+}

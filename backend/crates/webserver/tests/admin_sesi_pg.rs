@@ -45,6 +45,10 @@ fn app_baru(pool: &PgPool, redis_url: &str, jam: Arc<Mutex<DateTime<Utc>>>) -> R
         pembatas(redis_url),
         // Synthetic KEK; these endpoints never touch a secret.
         Brankas::dari_isi_kek(&"5a".repeat(32)).unwrap(),
+        redis::Client::open(redis_url).unwrap(),
+        // F0 behaviour: the password step alone issues the session, so the
+        // session endpoint tests are unaffected by the MFA policy.
+        false,
     )
     .dengan_jam(Arc::new(move || *jam.lock().unwrap()));
     router(state).layer(MockConnectInfo(SocketAddr::from(([203, 0, 113, 9], 4000))))
