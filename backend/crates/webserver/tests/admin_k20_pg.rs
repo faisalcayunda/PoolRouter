@@ -239,6 +239,60 @@ async fn request_queued(su: &PgPool, rute: &Rute, nik: &str) -> Uuid {
     rid
 }
 
+/// One `dispatched` request, `attempt_count = 0` (AC-29 names `queued` and
+/// `dispatched` together for the zero-attempt -> cancelled case; `dispatched`
+/// means a worker claimed it but has not logged an attempt yet). `tg_request_transisi`
+/// only allows `INSERT` as `rejected`/`queued`/`in_flight` (migration
+/// `20261103000002_request_log.sql`), so this inserts `queued` and transitions
+/// it to `dispatched` in the same transaction, same as the real dispatcher would.
+async fn request_dispatched(su: &PgPool, rute: &Rute, nik: &str) -> Uuid {
+    let rid = Uuid::now_v7();
+    let mut tx = su.begin().await.unwrap();
+    sqlx::query(
+        "INSERT INTO request (request_id, client_id, credential_id, downstream_endpoint_id, downstream_pool_id, \
+            provider_id, provider_config_version, endpoint_config_version, mode, prioritas, prioritas_efektif, \
+            status, input_payload, metadata, received_at, ttl_expires_at, attempt_count) \
+         SELECT $1, $2, $3, $4, $5, provider_id, 1, 1, 'async', 1, 1, 'queued', $6, '{}'::jsonb, $7, $7 + interval '1 day', 0 \
+           FROM downstream_endpoint WHERE downstream_endpoint_id = $4",
+    )
+    .bind(rid)
+    .bind(rute.client)
+    .bind(rute.kredensial)
+    .bind(rute.endpoint)
+    .bind(rute.dpool)
+    .bind(serde_json::json!({ "NIK": nik }))
+    .bind(Utc::now())
+    .execute(&mut *tx)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO request_status_history (request_id, seq, status_dari, status_ke, aktor) \
+         VALUES ($1, 1, NULL, 'queued', 'webserver')",
+    )
+    .bind(rid)
+    .execute(&mut *tx)
+    .await
+    .unwrap();
+    sqlx::query(
+        "UPDATE request SET status = 'dispatched', dispatch_key = gen_random_uuid(), dispatched_at = $2 WHERE request_id = $1",
+    )
+    .bind(rid)
+    .bind(Utc::now())
+    .execute(&mut *tx)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO request_status_history (request_id, seq, status_dari, status_ke, aktor) \
+         VALUES ($1, 2, 'queued', 'dispatched', 'webserver')",
+    )
+    .bind(rid)
+    .execute(&mut *tx)
+    .await
+    .unwrap();
+    tx.commit().await.unwrap();
+    rid
+}
+
 /// One request that already waited through a dispatch attempt: `queued`,
 /// `attempt_count = 1`, with a matching `transaction_log` row (AC-29's
 /// "menunggu retry" case).
@@ -361,8 +415,10 @@ async fn service_nonaktifkan_transisi_ac29_dan_audit_tunggal() {
     let rute = klien_dengan_kredensial(&su, "transisi").await;
 
     let nik_cancelled = "0000000000000031";
+    let nik_cancelled_dispatched = "0000000000000033";
     let nik_failed = "0000000000000032";
     let r_cancelled = request_queued(&su, &rute, nik_cancelled).await;
+    let r_cancelled_dispatched = request_dispatched(&su, &rute, nik_cancelled_dispatched).await;
     let r_failed = request_menunggu_retry(&su, &rute, nik_failed).await;
     let r_in_flight = request_in_flight(&su, &rute).await;
 
@@ -374,7 +430,7 @@ async fn service_nonaktifkan_transisi_ac29_dan_audit_tunggal() {
         .nonaktifkan(JenisEntitas::Kredensial, rute.kredensial, operator, alasan)
         .await
         .unwrap();
-    assert_eq!(hasil.jumlah_cancelled, 1);
+    assert_eq!(hasil.jumlah_cancelled, 2);
     assert_eq!(hasil.jumlah_failed, 1);
 
     // pr_admin_api has no SELECT grant on `request`/`request_status_history`
@@ -387,6 +443,16 @@ async fn service_nonaktifkan_transisi_ac29_dan_audit_tunggal() {
             .await
             .unwrap();
     assert_eq!(status_cancelled, "cancelled");
+    let status_cancelled_dispatched: String =
+        sqlx::query_scalar("SELECT status FROM request WHERE request_id = $1")
+            .bind(r_cancelled_dispatched)
+            .fetch_one(&su)
+            .await
+            .unwrap();
+    assert_eq!(
+        status_cancelled_dispatched, "cancelled",
+        "AC-29: dispatched/attempt_count=0 -> cancelled, sama seperti queued"
+    );
     let status_failed: String =
         sqlx::query_scalar("SELECT status FROM request WHERE request_id = $1")
             .bind(r_failed)
@@ -425,7 +491,7 @@ async fn service_nonaktifkan_transisi_ac29_dan_audit_tunggal() {
         Some(false),
         "nilai_baru.aktif harus false, bukan sekadar mengandung substring"
     );
-    assert_eq!(jumlah_cancelled, Some(1));
+    assert_eq!(jumlah_cancelled, Some(2));
     assert_eq!(jumlah_failed, Some(1));
     let jumlah_baris_audit: i64 =
         sqlx::query_scalar("SELECT count(*) FROM audit_konfigurasi WHERE entitas_jenis = 'kredensial' AND entitas_id = $1")
@@ -440,7 +506,13 @@ async fn service_nonaktifkan_transisi_ac29_dan_audit_tunggal() {
 
     // AC-6: redaction — secret/NIK/payload never surface in audit_konfigurasi or the captured log.
     let log = isi_log(&log_writer);
-    for rahasia in [nik_cancelled, nik_failed, "secret", "kunci_hash"] {
+    for rahasia in [
+        nik_cancelled,
+        nik_cancelled_dispatched,
+        nik_failed,
+        "secret",
+        "kunci_hash",
+    ] {
         assert!(!log.contains(rahasia), "log tidak boleh memuat {rahasia}");
     }
     let audit_json: String = sqlx::query_scalar(
@@ -452,6 +524,7 @@ async fn service_nonaktifkan_transisi_ac29_dan_audit_tunggal() {
     .await
     .unwrap();
     assert!(!audit_json.contains(nik_cancelled));
+    assert!(!audit_json.contains(nik_cancelled_dispatched));
     assert!(!audit_json.contains(nik_failed));
     assert!(!audit_json.contains("secret"));
 }
@@ -488,16 +561,34 @@ async fn service_dua_eksekusi_paralel_hanya_satu_transisi_dan_satu_audit() {
         ),
     );
 
-    // Both calls run the same idempotent SQL function (fn_set_status_kredensial
-    // guards `dicabut` as terminal, EN-03); the DB-contract tests in
-    // `40_functions.sql` cover the terminal-state rejection path. Here we only
-    // assert the externally visible invariant both executors must honour:
-    // exactly one request transition, exactly one audit row.
-    assert!(hasil_a.is_ok() || matches!(hasil_a, Err(GalatK20::BasisData(_))));
-    assert!(hasil_b.is_ok() || matches!(hasil_b, Err(GalatK20::BasisData(_))));
-    assert!(
-        hasil_a.is_ok() || hasil_b.is_ok(),
-        "paling sedikit satu eksekusi harus berhasil"
+    // `fn_set_status_kredensial` guards `dicabut` as terminal (EN-03): the row
+    // lock (`FOR UPDATE`) serializes the two callers, so exactly one succeeds
+    // and the other sees the credential already `dicabut` and is refused with
+    // `check_violation` (SQLSTATE 23514, message `kredensial_dicabut_terminal`)
+    // — not an arbitrary `GalatK20::BasisData`.
+    let kode_galat = |hasil: &Result<_, GalatK20>| -> Option<String> {
+        match hasil {
+            Err(GalatK20::BasisData(e)) => e
+                .as_database_error()
+                .and_then(|d| d.code())
+                .map(|c| c.to_string()),
+            _ => None,
+        }
+    };
+    let (ok_count, err_terminal_count) = match (&hasil_a, &hasil_b) {
+        (Ok(_), Err(_)) | (Err(_), Ok(_)) => (1, 1),
+        _ => (0, 0),
+    };
+    assert_eq!(
+        (ok_count, err_terminal_count),
+        (1, 1),
+        "AC-31: tepat satu Ok dan satu Err, dapat {hasil_a:?} / {hasil_b:?}"
+    );
+    let kode_err = kode_galat(&hasil_a).or_else(|| kode_galat(&hasil_b));
+    assert_eq!(
+        kode_err.as_deref(),
+        Some("23514"),
+        "panggilan yang kalah harus gagal dengan check_violation (kredensial_dicabut_terminal), bukan galat DB sembarang"
     );
 
     // pr_admin_api has no SELECT grant on `request`/`request_status_history`;
