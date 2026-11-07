@@ -1,8 +1,8 @@
-//! Reusable K-20 request and database-function harness.
+//! Harness request K-20 dan fungsi basis data yang dapat digunakan ulang.
 //!
-//! The ignored tests use the same `pr_admin_api` connection as the real
-//! service. Fixtures are loaded by `make -C backend uji-pg`; no production
-//! credentials or identifiers belong in this file.
+//! Test yang diabaikan memakai koneksi `pr_admin_api` yang sama dengan service
+//! nyata. Fixture dimuat oleh `make -C backend uji-pg`; kredensial atau
+//! pengenal produksi tidak boleh ada di berkas ini.
 
 use axum::Router;
 use axum::body::Body;
@@ -14,7 +14,7 @@ use tower::ServiceExt;
 use tracing_subscriber::fmt::MakeWriter;
 use uuid::Uuid;
 
-/// Sends a request while keeping status and body assertions at the call site.
+/// Mengirim request agar assertion status dan body tetap di lokasi pemanggil.
 pub async fn kirim(app: Router, method: &str, path: &str, body: Option<&str>) -> Response {
     let mut request = Request::builder().method(method).uri(path);
     if body.is_some() {
@@ -53,7 +53,7 @@ impl std::io::Write for Penulis {
     }
 }
 
-/// Captures one tracing subscriber scope for redaction assertions.
+/// Menangkap satu scope subscriber tracing untuk assertion redaksi.
 pub fn penangkap_log() -> (Penyangga, tracing::subscriber::DefaultGuard) {
     let writer = Penyangga::default();
     let subscriber = tracing_subscriber::fmt()

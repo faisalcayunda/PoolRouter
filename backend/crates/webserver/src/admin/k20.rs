@@ -1,8 +1,8 @@
-//! Transactional K-20 entity operations.
+//! Operasi entitas K-20 secara transaksional.
 //!
-//! The database functions own locking, mass-cancel semantics, and audit rows;
-//! this seam deliberately only maps the closed entity-kind vocabulary and
-//! keeps all calls on the admin pool.
+//! Fungsi basis data menangani penguncian, pembatalan massal, dan baris audit;
+//! seam ini hanya memetakan kosakata jenis entitas yang tertutup dan
+//! memastikan semua panggilan memakai pool admin.
 
 use sqlx::PgPool;
 use uuid::Uuid;
@@ -16,7 +16,7 @@ pub fn validasi_alasan(alasan: &str) -> bool {
     (ALASAN_MIN..=ALASAN_MAX).contains(&trimmed.chars().count())
 }
 
-/// Entity kinds accepted by the K-20 database functions.
+/// Jenis entitas yang diterima fungsi basis data K-20.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum JenisEntitas {
     Client,
@@ -51,6 +51,14 @@ pub struct PratinjauK20 {
     pub akan_cancelled: i32,
     pub akan_failed: i32,
     pub dihitung_at: chrono::DateTime<chrono::Utc>,
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum GalatK20 {
+    #[error("alasan K-20 harus terdiri dari 10 sampai 500 karakter setelah trim")]
+    AlasanTidakValid,
+    #[error(transparent)]
+    BasisData(#[from] sqlx::Error),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -104,7 +112,8 @@ impl K20Service {
         id: Uuid,
         pengguna_id: Uuid,
         alasan: &str,
-    ) -> Result<HasilK20, sqlx::Error> {
+    ) -> Result<HasilK20, GalatK20> {
+        let alasan = alasan_tervalidasi(alasan)?;
         sqlx::query_as::<_, HasilK20Row>(
             "SELECT jumlah_cancelled, jumlah_failed FROM fn_nonaktifkan_entitas($1, $2, $3, $4)",
         )
@@ -123,7 +132,8 @@ impl K20Service {
         id: Uuid,
         pengguna_id: Uuid,
         alasan: &str,
-    ) -> Result<(), sqlx::Error> {
+    ) -> Result<(), GalatK20> {
+        let alasan = alasan_tervalidasi(alasan)?;
         sqlx::query("SELECT fn_aktifkan_entitas($1, $2, $3, $4)")
             .bind(jenis.as_str())
             .bind(id)
@@ -132,6 +142,15 @@ impl K20Service {
             .execute(&self.pool)
             .await
             .map(|_| ())
+    }
+}
+
+fn alasan_tervalidasi(alasan: &str) -> Result<String, GalatK20> {
+    let trimmed = alasan.trim();
+    if validasi_alasan(trimmed) {
+        Ok(trimmed.to_owned())
+    } else {
+        Err(GalatK20::AlasanTidakValid)
     }
 }
 
@@ -190,5 +209,22 @@ mod tests {
         assert!(!validasi_alasan(&"x".repeat(501)));
         assert!(!validasi_alasan("          "));
         assert!(validasi_alasan("  alasan cukup  "));
+    }
+
+    #[tokio::test]
+    async fn service_menolak_alasan_tidak_valid_sebelum_memanggil_basis_data() {
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .connect_lazy("postgres://invalid.invalid/poolrouter")
+            .unwrap();
+        let service = super::K20Service::baru(pool);
+        let hasil = service
+            .nonaktifkan(
+                JenisEntitas::Client,
+                uuid::Uuid::nil(),
+                uuid::Uuid::nil(),
+                "pendek",
+            )
+            .await;
+        assert!(matches!(hasil, Err(super::GalatK20::AlasanTidakValid)));
     }
 }
