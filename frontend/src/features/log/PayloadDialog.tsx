@@ -194,7 +194,7 @@ export function PayloadDialog({
           }
         }}
         title={t('log.payload.dialog_title')}
-        closeLabel={t('common.action.close')}
+        closeLabel={t('common.close')}
         footer={
           <Button
             variant="text"
@@ -203,7 +203,7 @@ export function PayloadDialog({
               onClose();
             }}
           >
-            {t('common.action.close')}
+            {t('common.close')}
           </Button>
         }
       >
@@ -225,7 +225,7 @@ export function PayloadDialog({
             </div>
           ) : (
             <InlineAlert tone="error" live="polite">
-              {errorKode === 'jaringan' ? t('error.network.load') : t('risk.common.action_failed')}
+              {errorKode === 'jaringan' ? t('error.network') : t('risk.common.action_failed')}
             </InlineAlert>
           )
         ) : null}

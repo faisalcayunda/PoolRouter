@@ -50,6 +50,7 @@
     "app": {
       "name": "PoolRouter"
     },
+    "close": "Tutup",
     "action": {
       "save": "Simpan",
       "cancel": "Batal",
@@ -61,7 +62,6 @@
       "open": "Buka",
       "details": "Detail",
       "got_it": "Mengerti",
-      "close": "Tutup",
       "all": "Semua",
       "copy": "Salin"
     },
@@ -139,9 +139,7 @@
     }
   },
   "error": {
-    "network": {
-      "load": "Data belum bisa dimuat. Periksa koneksi, lalu coba lagi."
-    },
+    "network": "Data belum bisa dimuat. Periksa koneksi, lalu coba lagi.",
     "http": {
       "403": {
         "title": "Anda tidak punya akses ke halaman ini",
@@ -746,7 +744,11 @@
         "field_label": "Kode authenticator",
         "submit": "Verifikasi",
         "verifying": "Memverifikasi…",
-        "use_recovery": "Pakai kode pemulihan",
+        "recovery_title": "Masukkan kode pemulihan",
+      "recovery_subtitle": "Pakai salah satu kode pemulihan 10 karakter yang Anda simpan saat mendaftar. Setiap kode hanya berlaku sekali.",
+      "recovery_field_label": "Kode pemulihan",
+      "use_totp": "Pakai kode authenticator",
+      "use_recovery": "Pakai kode pemulihan",
         "back_to_login": "Kembali ke login"
       },
       "registration": {
@@ -770,6 +772,7 @@
       "recovery": {
         "title": "Simpan kode pemulihan",
         "subtitle": "Simpan kode ini di tempat aman. Kode hanya ditampilkan sekali.",
+        "list_aria": "{{count}} kode pemulihan",
         "copied_all": "10 kode pemulihan disalin",
         "copy_failed": "Gagal menyalin. Pilih teks secara manual.",
         "copy_all": "Salin semua",

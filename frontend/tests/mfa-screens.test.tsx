@@ -19,12 +19,12 @@ describe('MFA screens (AC-29/31)', () => {
   it('accepts a recovery code with or without spaces', async () => {
     const onSubmit = vi.fn();
     renderWithI18n(<MfaCodeScreen onSubmit={onSubmit} />);
-    // toggle to recovery mode via prop? MfaCodeScreen has no mode toggle in this variant;
-    // normalise spaces in code field instead.
-    const field = screen.getByRole('textbox', { name: 'Kode authenticator' });
-    await userEvent.type(field, '482193');
+    // S17 has one screen with two modes: the link switches to the 10-character recovery field.
+    await userEvent.click(screen.getByRole('button', { name: 'Pakai kode pemulihan' }));
+    const field = screen.getByRole('textbox', { name: 'Kode pemulihan' });
+    await userEvent.type(field, 'con toh-aaa2');
     await userEvent.click(screen.getByRole('button', { name: 'Verifikasi' }));
-    expect(onSubmit).toHaveBeenCalledWith('482193');
+    expect(onSubmit).toHaveBeenCalledWith('CONTOHAAA2');
   });
 
   it('renders the QR with the otpauth value but never leaks it into the aria-label', () => {

@@ -18,6 +18,8 @@ export interface DialogProps extends ModalOverlayProps {
   variant?: 'basic' | 'full-screen';
   /** Accessible name of the close button; catalog text, never empty (§7.5). */
   closeLabel: string;
+  /** `alertdialog` for dialogs that must be answered, such as the one-time recovery codes. */
+  role?: 'dialog' | 'alertdialog';
   footer?: ReactNode;
   children: ReactNode;
 }
@@ -28,13 +30,16 @@ export interface DialogProps extends ModalOverlayProps {
  *
  * Open state belongs to the caller: `DialogTrigger` around it, or `isOpen` +
  * `onOpenChange` for a controlled dialog. Every dismissal (Esc, scrim, close
- * button) funnels through that one callback.
+ * button) funnels through that one callback. `isDismissable={false}` hides the
+ * close button and blocks Esc and the scrim, so only the footer can exit.
  */
 export function Dialog({
   title,
   description,
   variant = 'basic',
   closeLabel,
+  role = 'dialog',
+  isDismissable = true,
   footer,
   children,
   ...props
@@ -42,7 +47,7 @@ export function Dialog({
   return (
     <Modal
       {...props}
-      isDismissable
+      isDismissable={isDismissable}
       className={cx(
         'fixed inset-0 z-50 flex bg-on-surface/32 data-[entering]:animate-none data-[exiting]:animate-none',
         // Section 4: the dialog is at most the viewport width minus 48 px.
@@ -50,6 +55,7 @@ export function Dialog({
       )}
     >
       <RacDialog
+        role={role}
         className={cx(
           'm3-focus flex flex-col bg-surface-container-high text-on-surface shadow-level3 outline-none',
           variant === 'basic'
@@ -63,9 +69,11 @@ export function Dialog({
               <Heading slot="title" level={2} className="typescale-headline-small text-on-surface">
                 {title}
               </Heading>
-              <IconButton aria-label={closeLabel} icon-position="end" onPress={close}>
-                <Icon icon={icons.close} />
-              </IconButton>
+              {isDismissable ? (
+                <IconButton aria-label={closeLabel} icon-position="end" onPress={close}>
+                  <Icon icon={icons.close} />
+                </IconButton>
+              ) : null}
             </div>
             {description ? (
               <p className="typescale-body-medium text-on-surface-variant">{description}</p>

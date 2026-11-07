@@ -50,6 +50,7 @@
     "app": {
       "name": "PoolRouter"
     },
+    "close": "Close",
     "action": {
       "save": "Save",
       "cancel": "Cancel",
@@ -61,7 +62,6 @@
       "open": "Open",
       "details": "Details",
       "got_it": "Got it",
-      "close": "Close",
       "all": "All",
       "copy": "Copy"
     },
@@ -139,9 +139,7 @@
     }
   },
   "error": {
-    "network": {
-      "load": "Couldn't load the data. Check your connection, then try again."
-    },
+    "network": "Couldn't load the data. Check your connection, then try again.",
     "http": {
       "403": {
         "title": "You don't have access to this page",
@@ -752,7 +750,11 @@
         "field_label": "Authenticator code",
         "submit": "Verify",
         "verifying": "Verifying…",
-        "use_recovery": "Use a recovery code",
+        "recovery_title": "Enter a recovery code",
+      "recovery_subtitle": "Use one of the 10-character recovery codes you saved when registering. Each code works only once.",
+      "recovery_field_label": "Recovery code",
+      "use_totp": "Use authenticator code",
+      "use_recovery": "Use a recovery code",
         "back_to_login": "Back to login"
       },
       "registration": {
@@ -776,6 +778,7 @@
       "recovery": {
         "title": "Save recovery codes",
         "subtitle": "Save these codes in a safe place. They are shown only once.",
+        "list_aria": "{{count}} recovery codes",
         "copied_all": "10 recovery codes copied",
         "copy_failed": "Copy failed. Select the text manually.",
         "copy_all": "Copy all",

@@ -59,7 +59,7 @@ export function MfaQrScreen({
             <QRCodeSVG
               value={otpauthUri}
               size={200}
-              includeMargin
+              marginSize={4}
               fgColor="var(--md-sys-color-on-surface)"
               bgColor="var(--md-sys-color-surface-container-lowest)"
             />
@@ -84,6 +84,8 @@ export function MfaQrScreen({
           label={t('auth.mfa.qr.code_label')}
           inputMode="numeric"
           autoComplete="one-time-code"
+          maxLength={6}
+          pattern="[0-9]{6}"
           spellCheck="false"
           value={code}
           onChange={(value) => setCode(value)}

@@ -119,7 +119,7 @@ export function ReasonDialog({
         if (!open) onCancel();
       }}
       title={title}
-      closeLabel={t('common.action.close')}
+      closeLabel={t('common.close')}
     >
       {/*
         One form around the body *and* the footer. The footer outlives the body in the DOM, so a
