@@ -28,10 +28,14 @@ pub fn jeda(n: u32, base: u32, cap: u32, jitter_persen: u32, acak: &dyn SumberAc
     }
     let kali = 4u64.pow(n.saturating_sub(1));
     let nominal = (base as u64).saturating_mul(kali).min(cap as u64);
-    // jitter: acak_hingga returns 0..=batas; batas = jitter_persen (in percent units)
-    let batas = (jitter_persen as u64).max(1);
-    let draw = acak.acak_hingga(batas * 2);
-    let faktor = 100i64 + (draw as i64 - jitter_persen as i64);
+    // jitter: acak_hingga returns 0..=batas; batas = jitter_persen (in percent units).
+    // jitter_persen = 0 is deterministic (factor 100) rather than drawing a +/-1% range.
+    let faktor = if jitter_persen == 0 {
+        100i64
+    } else {
+        let draw = acak.acak_hingga((jitter_persen as u64) * 2);
+        100i64 + (draw as i64 - jitter_persen as i64)
+    };
     let ms = (nominal as i64 * 1000 * faktor / 100).max(0);
     Duration::milliseconds(ms.min(cap as i64 * 1000))
 }

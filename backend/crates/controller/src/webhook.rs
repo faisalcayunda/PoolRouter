@@ -192,7 +192,6 @@ struct HasilKirim {
     error_class: Option<&'static str>,
     http_status: Option<i32>,
     secret_versi: Option<i32>,
-    status_akhir: &'static str,
     responded_at: Option<DateTime<Utc>>,
     duration_ms: i32,
     retry_after: Option<chrono::Duration>,
@@ -212,7 +211,6 @@ impl HasilKirim {
             error_class: Some(error_class),
             http_status: None,
             secret_versi: versi,
-            status_akhir: "gagal",
             responded_at: None,
             duration_ms: 0,
             retry_after: None,
@@ -227,7 +225,6 @@ impl HasilKirim {
             error_class: None,
             http_status: None,
             secret_versi: None,
-            status_akhir: "tidak_dikirim",
             responded_at: None,
             duration_ms: 0,
             retry_after: None,
@@ -470,13 +467,12 @@ async fn kirim_ke_jaringan(
             let retry_after = respons.headers().get("retry-after")
                 .and_then(|h| h.to_str().ok())
                 .and_then(|v| kebijakan_retry::parse_retry_after(v, sekarang, chrono::Duration::seconds(7200)));
-            let (hasil, kelas, akhir) = klasifikasi(kode);
+            let (hasil, kelas, _akhir) = klasifikasi(kode);
             Ok(HasilKirim {
                 hasil,
                 error_class: kelas,
                 http_status: Some(i32::from(kode)),
                 secret_versi: Some(konf.secret_versi),
-                status_akhir: akhir,
                 responded_at: Some(sekarang),
                 duration_ms: durasi,
                 retry_after,
@@ -487,7 +483,6 @@ async fn kirim_ke_jaringan(
             error_class: Some("gagal_jaringan"),
             http_status: None,
             secret_versi: Some(konf.secret_versi),
-            status_akhir: "gagal",
             responded_at: None,
             duration_ms: durasi,
             retry_after: None,
@@ -628,6 +623,7 @@ mod tes {
             failure_reason: None,
             output_payload: Some(serde_json::json!({"data": {"nik": "3273"}})),
             webhook_attempt_count: 0,
+            webhook_not_before: None,
         };
         let body = body(&baris).expect("body");
         let id = baris.request_id.to_string();
@@ -663,6 +659,7 @@ mod tes {
             failure_reason: None,
             output_payload: Some(serde_json::json!({"data": {}})),
             webhook_attempt_count: 0,
+            webhook_not_before: None,
         };
         let parse = |b: Baris| {
             serde_json::from_slice::<serde_json::Value>(&body(&b).expect("body")).expect("json")
