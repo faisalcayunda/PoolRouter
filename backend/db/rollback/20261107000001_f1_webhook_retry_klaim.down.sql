@@ -64,11 +64,14 @@ END $$;
 REVOKE ALL ON FUNCTION fn_tutup_klaim_macet(timestamptz, integer) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION fn_tutup_klaim_macet(timestamptz, integer) TO pr_webhook;
 
-CREATE OR REPLACE VIEW v_request_webhook WITH (security_barrier = true) AS
+-- Restoring the F0 view drops a column, which CREATE OR REPLACE cannot do: recreate instead.
+DROP VIEW IF EXISTS v_request_webhook;
+CREATE VIEW v_request_webhook WITH (security_barrier = true) AS
   SELECT r.request_id, r.client_id, r.status, r.attempt_count, r.cancel_reason, r.failure_reason, r.completed_at,
          r.webhook_status, r.webhook_attempt_count, r.output_payload, r.payload_purged_at
     FROM request r
    WHERE r.mode = 'async' AND r.status IN ('done', 'failed', 'expired', 'cancelled');
+GRANT SELECT ON v_request_webhook TO pr_webhook;
 
 REVOKE EXECUTE ON FUNCTION fn_konfigurasi_int(text, integer) FROM pr_webhook;
 REVOKE SELECT (kunci, nilai) ON konfigurasi_platform FROM pr_webhook;
