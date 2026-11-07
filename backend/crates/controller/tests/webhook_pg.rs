@@ -706,7 +706,8 @@ async fn ac5_klaim_n_ke_n_plus_1_cas_konkuren() {
     };
     let su = pool(&url_su).await;
     let f = Fixture::baru(su.clone()).await;
-    let webhook_pool = pool(&url("POOLROUTER_TEST_DATABASE_URL_WEBHOOK").expect("url webhook")).await;
+    let webhook_pool =
+        pool(&url("POOLROUTER_TEST_DATABASE_URL_WEBHOOK").expect("url webhook")).await;
 
     for n in 0..100i32 {
         let request_id = f.request("menunggu", n, None).await;
@@ -757,7 +758,8 @@ async fn ac5_klaim_menunggu_not_before() {
         .await
         .expect("set not_before");
 
-    let webhook_pool = pool(&url("POOLROUTER_TEST_DATABASE_URL_WEBHOOK").expect("url webhook")).await;
+    let webhook_pool =
+        pool(&url("POOLROUTER_TEST_DATABASE_URL_WEBHOOK").expect("url webhook")).await;
 
     // Sebelum jatuh tempo: klaim gagal (0 baris).
     let sebelum: i32 = sqlx::query_scalar(
@@ -779,7 +781,10 @@ async fn ac5_klaim_menunggu_not_before() {
     .fetch_one(&webhook_pool)
     .await
     .expect("klaim setelah jatuh tempo");
-    assert_eq!(setelah, 1, "klaim berhasil setelah webhook_not_before lewat");
+    assert_eq!(
+        setelah, 1,
+        "klaim berhasil setelah webhook_not_before lewat"
+    );
 
     let (status, jumlah, _) = status_webhook(&su, request_id).await;
     assert_eq!(status, "menunggu");

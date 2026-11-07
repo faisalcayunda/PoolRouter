@@ -20,8 +20,8 @@ use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
 use chrono::{DateTime, Utc};
 use poolrouter_core::secret::{Amplop, Brankas};
-use poolrouter_core::webhook::retry as kebijakan_retry;
 use poolrouter_core::status_api::{StatusInternal, StatusTerpetakan, status_api};
+use poolrouter_core::webhook::retry as kebijakan_retry;
 use sqlx::PgPool;
 use uuid::Uuid;
 
@@ -297,7 +297,14 @@ pub async fn jalankan_putaran(
 
     let mut jumlah = macet > 0;
     for baris in kandidat {
-        if klaim(pool, baris.request_id, sekarang, baris.webhook_attempt_count).await? {
+        if klaim(
+            pool,
+            baris.request_id,
+            sekarang,
+            baris.webhook_attempt_count,
+        )
+        .await?
+        {
             kirim(pool, brankas, resolver, sekarang, &baris).await?;
             jumlah = true;
         }
@@ -312,15 +319,21 @@ pub async fn jalankan_putaran(
 /// diberikan ke `pr_webhook` (W-02), jadi UPDATE langsung akan ditolak di dalam
 /// trigger meski grant kolomnya ada. Baris yang klaimnya sudah diambil job lain
 /// menghasilkan 0 baris → `false`, bukan error yang menghentikan putaran.
-async fn klaim(pool: &PgPool, request_id: Uuid, sekarang: DateTime<Utc>, diharapkan: i32) -> Result<bool, String> {
-    let jumlah =
-        sqlx::query_scalar::<_, i32>("SELECT fn_klaim_webhook($1, $2, NULL::integer, NULL::text, $3::integer)")
-            .bind(request_id)
-            .bind(sekarang)
-            .bind(diharapkan)
-            .fetch_one(pool)
-            .await
-            .map_err(|e| e.to_string())?;
+async fn klaim(
+    pool: &PgPool,
+    request_id: Uuid,
+    sekarang: DateTime<Utc>,
+    diharapkan: i32,
+) -> Result<bool, String> {
+    let jumlah = sqlx::query_scalar::<_, i32>(
+        "SELECT fn_klaim_webhook($1, $2, NULL::integer, NULL::text, $3::integer)",
+    )
+    .bind(request_id)
+    .bind(sekarang)
+    .bind(diharapkan)
+    .fetch_one(pool)
+    .await
+    .map_err(|e| e.to_string())?;
     Ok(jumlah == 1)
 }
 
@@ -464,9 +477,13 @@ async fn kirim_ke_jaringan(
     match jawab {
         Ok(respons) => {
             let kode = respons.status().as_u16();
-            let retry_after = respons.headers().get("retry-after")
+            let retry_after = respons
+                .headers()
+                .get("retry-after")
                 .and_then(|h| h.to_str().ok())
-                .and_then(|v| kebijakan_retry::parse_retry_after(v, sekarang, chrono::Duration::seconds(7200)));
+                .and_then(|v| {
+                    kebijakan_retry::parse_retry_after(v, sekarang, chrono::Duration::seconds(7200))
+                });
             let (hasil, kelas, _akhir) = klasifikasi(kode);
             Ok(HasilKirim {
                 hasil,
@@ -506,14 +523,27 @@ async fn catat(
     baris: &Baris,
     hasil: HasilKirim,
 ) -> Result<(), String> {
-    let base = sqlx::query_scalar::<_, i32>("SELECT fn_konfigurasi_int('webhook_backoff_base_detik', 30)")
-        .fetch_one(pool).await.unwrap_or(30);
-    let cap = sqlx::query_scalar::<_, i32>("SELECT fn_konfigurasi_int('webhook_backoff_cap_detik', 7200)")
-        .fetch_one(pool).await.unwrap_or(7200);
-    let batas = sqlx::query_scalar::<_, i32>("SELECT fn_konfigurasi_int('webhook_batas_percobaan', 6)")
-        .fetch_one(pool).await.unwrap_or(6);
-    let jitter = sqlx::query_scalar::<_, i32>("SELECT fn_konfigurasi_int('webhook_jitter_persen', 20)")
-        .fetch_one(pool).await.unwrap_or(20);
+    let base =
+        sqlx::query_scalar::<_, i32>("SELECT fn_konfigurasi_int('webhook_backoff_base_detik', 30)")
+            .fetch_one(pool)
+            .await
+            .unwrap_or(30);
+    let cap = sqlx::query_scalar::<_, i32>(
+        "SELECT fn_konfigurasi_int('webhook_backoff_cap_detik', 7200)",
+    )
+    .fetch_one(pool)
+    .await
+    .unwrap_or(7200);
+    let batas =
+        sqlx::query_scalar::<_, i32>("SELECT fn_konfigurasi_int('webhook_batas_percobaan', 6)")
+            .fetch_one(pool)
+            .await
+            .unwrap_or(6);
+    let jitter =
+        sqlx::query_scalar::<_, i32>("SELECT fn_konfigurasi_int('webhook_jitter_persen', 20)")
+            .fetch_one(pool)
+            .await
+            .unwrap_or(20);
 
     let attempt = baris.webhook_attempt_count + 1;
     let keputusan = kebijakan_retry::klasifikasi(hasil.hasil, hasil.http_status, hasil.error_class);
@@ -546,7 +576,14 @@ async fn catat(
         ("terkirim", None)
     } else if keputusan == kebijakan_retry::Keputusan::Retry && attempt < batas {
         let acak = poolrouter_core::retry::AcakAwsLc::baru();
-        let jeda_dur = kebijakan_retry::jeda(attempt as u32, base as u32, cap as u32, jitter as u32, &acak, hasil.retry_after);
+        let jeda_dur = kebijakan_retry::jeda(
+            attempt as u32,
+            base as u32,
+            cap as u32,
+            jitter as u32,
+            &acak,
+            hasil.retry_after,
+        );
         ("menunggu", Some(sekarang + jeda_dur))
     } else {
         ("gagal", None)
