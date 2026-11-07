@@ -15,14 +15,9 @@ use axum::http::{HeaderMap, HeaderValue, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use uuid::Uuid;
 
-use super::downstream::{
-    EndpointKontrak, EnqueueResponse, FieldMetadata, RequestStatus, SubmitRequest,
-};
-use super::enums::ApiStatus;
+use super::downstream::{EndpointKontrak, FieldMetadata, SubmitRequest};
 use super::problem::{Problem, ProblemKodeDown};
-use crate::downstream::downstream_sesi::{
-    AntrePermintaan, BarisRequest, GalatDownstream, SesiKlien, SessionDownstream,
-};
+use crate::downstream::downstream_sesi::{GalatDownstream, SesiKlien, SessionDownstream};
 use crate::downstream::pengenal::{GalatPengenal, PengenalDownstream};
 
 /// State of the downstream API router: the credential resolver and the request
@@ -212,25 +207,6 @@ fn referensi_client(headers: &HeaderMap) -> Result<Option<String>, Response> {
     Ok(Some(s.to_owned()))
 }
 
-fn ke_status(b: BarisRequest) -> RequestStatus {
-    let status = b.status.unwrap_or(ApiStatus::Queued);
-    RequestStatus {
-        queue_id: b.request_id,
-        status,
-        // `hasil` only travels with `done`; the contract says so.
-        hasil: match status {
-            ApiStatus::Done => b.hasil.and_then(|v| serde_json::from_value(v).ok()),
-            _ => None,
-        },
-        failure_reason: b
-            .failure_reason
-            .and_then(|s| serde_json::from_value(serde_json::Value::String(s)).ok()),
-        cancel_reason: b
-            .cancel_reason
-            .and_then(|s| serde_json::from_value(serde_json::Value::String(s)).ok()),
-    }
-}
-
 // ---------------------------------------------------------------------------
 // getEndpointKontrak
 // ---------------------------------------------------------------------------
@@ -359,7 +335,11 @@ pub(crate) async fn enqueue_async(
         Ok(r) => r,
         Err(r) => return r,
     };
+    // Endpoint must not be inactive before proceeding (AC-1 objek_nonaktif 403).
     // Stub: enqueue dispatch wired in enqueue slice (ARC-61).
+    if let Err(e) = state.sesi.kontrak(klien, endpoint).await {
+        return galat(e);
+    }
     // No sesi.antre() call: this slice does not write request rows or idempotency state.
     problem(
         ProblemKodeDown::LayananTidakTersedia,

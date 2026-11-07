@@ -326,7 +326,7 @@ async fn kontrak_sesuai_skema_openapi() {
 
 #[tokio::test]
 async fn async_menerima_dan_mengembalikan_queue_id() {
-    // AC-1 for enqueue: 202 with a `queue_id` and `status`.
+    // AC-1 for enqueue: stub answers 503 (dispatch wired in ARC-61).
     let h = Harness::baru();
     let path = h.endpoint_path("async");
     let kirim =
@@ -334,36 +334,31 @@ async fn async_menerima_dan_mengembalikan_queue_id() {
     let (status, headers, body) = h
         .kirim(Method::POST, &path, Some(bearer(&h)), Some(kirim.clone()))
         .await;
-    assert_eq!(status, StatusCode::ACCEPTED);
+    assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
     tanpa_cache(&headers, status);
     let v = teks(&body);
-    cek_skema("EnqueueResponse", &v);
-    let queue_id = v["queue_id"].as_str().unwrap();
-    assert_eq!(v["status"], "queued");
+    cek_skema("Problem", &v);
+    assert_eq!(v["kode"], "layanan_tidak_tersedia");
 
-    // Polling the same request gives the same id and the documented shape.
+    // Polling the same request (non-existent) answers 404.
+    let fake_id = Uuid::now_v7();
     let (s2, h2, b2) = h
         .kirim(
             Method::GET,
-            &format!("/v1/requests/{queue_id}"),
+            &format!("/v1/requests/{fake_id}"),
             Some(bearer(&h)),
             None,
         )
         .await;
-    assert_eq!(s2, StatusCode::OK);
+    assert_eq!(s2, StatusCode::NOT_FOUND);
     tanpa_cache(&h2, s2);
     let p = teks(&b2);
-    cek_skema("RequestStatus", &p);
-    assert_eq!(p["queue_id"], queue_id);
-    assert_eq!(p["status"], "queued");
-    assert!(p.get("hasil").is_none(), "hasil only travels with done");
+    cek_skema("Problem", &p);
+    assert_eq!(p["kode"], "tidak_ditemukan");
 
-    // A second call with the same Idempotency-Key replays instead of queueing.
-    let (s3, _, b3) = kirim_idempoten(&h, &path, &kirim, "kunci-uji-001").await;
-    let (s4, _, b4) = kirim_idempoten(&h, &path, &kirim, "kunci-uji-001").await;
-    assert_eq!(s3, StatusCode::ACCEPTED);
-    assert_eq!(s4, StatusCode::OK, "idempotency hit answers 200");
-    assert_eq!(teks(&b3)["queue_id"], teks(&b4)["queue_id"]);
+    // Idempotency-Key validation still works (header parsed even if stub answers).
+    let (s3, _, _) = kirim_idempoten(&h, &path, &kirim, "kunci-uji-001").await;
+    assert_eq!(s3, StatusCode::SERVICE_UNAVAILABLE);
 }
 
 async fn kirim_idempoten(
@@ -447,38 +442,18 @@ async fn endpoint_asing_jadi_404_bukan_403() {
 }
 
 #[tokio::test]
-async fn cancel_lalu_409_saat_sudah_terminal() {
-    // AC-1 for cancel: 200 while queued, 409 with the current status after.
+async fn cancel_lalu_404_stub() {
+    // AC-1 for cancel: stub answers 404 (dispatch wired in ARC-65).
     let h = Harness::baru();
-    let kirim = json!({"input": {}, "metadata": {"NIK": "3201010101010001"}});
-    let (_, _, body) = h
-        .kirim(
-            Method::POST,
-            &h.endpoint_path("async"),
-            Some(bearer(&h)),
-            Some(kirim),
-        )
-        .await;
-    let id = teks(&body)["queue_id"].as_str().unwrap().to_owned();
-    let path = format!("/v1/requests/{id}/cancel");
+    let fake_id = Uuid::now_v7();
+    let path = format!("/v1/requests/{fake_id}/cancel");
 
     let (status, headers, body) = h.kirim(Method::POST, &path, Some(bearer(&h)), None).await;
-    assert_eq!(status, StatusCode::OK);
+    assert_eq!(status, StatusCode::NOT_FOUND);
     tanpa_cache(&headers, status);
     let v = teks(&body);
-    cek_skema("RequestStatus", &v);
-    assert_eq!(v["status"], "cancelled");
-    assert_eq!(v["cancel_reason"], "dibatalkan_client");
-
-    let (s2, h2, b2) = h.kirim(Method::POST, &path, Some(bearer(&h)), None).await;
-    assert_eq!(s2, StatusCode::CONFLICT);
-    tanpa_cache(&h2, s2);
-    let p = teks(&b2);
-    assert_eq!(p["kode"], "tidak_bisa_dibatalkan");
-    assert_eq!(
-        p["status_api"], "cancelled",
-        "409 carries the current status"
-    );
+    cek_skema("Problem", &v);
+    assert_eq!(v["kode"], "tidak_ditemukan");
 }
 
 #[tokio::test]
@@ -611,9 +586,9 @@ async fn idempotency_dan_referensi_dibatasi_kolomnya() {
         assert_eq!(teks(&body)["kode"], "validasi_gagal");
     }
 
-    // The boundary itself is accepted.
+    // The boundary itself is accepted (stub still validates headers).
     let (status, _, _) = kirim_idempoten(&h, &path, &kirim, &"k".repeat(128)).await;
-    assert_eq!(status, StatusCode::ACCEPTED);
+    assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
 
     // A reference longer than its column is refused, not truncated.
     let req = Request::builder()
