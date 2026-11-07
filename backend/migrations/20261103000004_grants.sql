@@ -174,7 +174,7 @@ BEGIN
   GET DIAGNOSTICS n = ROW_COUNT;
   RETURN n;
 END $$;
-REVOKE ALL ON FUNCTION fn_klaim_webhook(uuid, timestamptz, integer, text) FROM PUBLIC;
+REVOKE ALL ON FUNCTION fn_klaim_webhook(uuid, timestamptz, integer, text, integer) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION fn_klaim_webhook(uuid, timestamptz, integer, text, integer) TO pr_webhook;
 
 -- AC-26: a claim older than the given limit is closed `gagal` without a second send. The age test lives
