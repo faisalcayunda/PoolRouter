@@ -2,6 +2,7 @@
 resolver = "3"
 members = [
     "crates/core",
+    "crates/adapter-provider",
     "crates/webserver",
     "crates/controller",
     "crates/worker",

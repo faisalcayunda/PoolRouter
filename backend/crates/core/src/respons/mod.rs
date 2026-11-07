@@ -6,5 +6,6 @@
 pub mod status_skor;
 
 pub use status_skor::{
-    HasilElemen, KonfigurasiStatusSkor, ResponsTidakValid, StatusKesesuaian, parse_respons,
+    HasilElemen, KonfigurasiStatusSkor, LiteralStatus, ResponsTidakValid, StatusKesesuaian,
+    parse_respons,
 };
