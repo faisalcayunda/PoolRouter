@@ -7,6 +7,8 @@ import { NavigationDrawer } from '../components/m3/NavigationDrawer';
 import { TopAppBar } from '../components/m3/TopAppBar';
 import { Icon, icons } from '../icons';
 import { activeHref, NAV_GROUPS } from './nav';
+import { RecoveryBanner } from '../features/auth/RecoveryBanner';
+import type { SesiState } from '../features/auth/useSesi';
 
 /** M3 window size class breakpoint for the `expanded` layout (tailwind.css `--breakpoint-expanded`). */
 const EXPANDED_QUERY = '(min-width: 840px)';
@@ -60,6 +62,10 @@ function DrawerNav({ pathname, onNavigate }: { pathname: string; onNavigate?: ()
 export interface AppShellProps {
   /** Current route path, used to mark the active drawer item. */
   pathname?: string;
+  /** Signed-in identity shown at the right of the top app bar (spec section 13.1). */
+  user?: { username: string; peran: string } | null;
+  /** Session state; drives the recovery-code banner (AC-32). */
+  sesi?: SesiState;
   /** Screen rendered inside `<main>`. */
   children?: ReactNode;
 }
@@ -72,7 +78,7 @@ export interface AppShellProps {
  *   opened from the menu button.
  * - expanded and up (>= 840 px): `NavigationDrawer variant="standard"`, always visible.
  */
-export function AppShell({ pathname = '/', children }: AppShellProps) {
+export function AppShell({ pathname = '/', user, sesi, children }: AppShellProps) {
   const { t } = useTranslation();
   const isExpanded = useIsExpanded();
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -100,8 +106,17 @@ export function AppShell({ pathname = '/', children }: AppShellProps) {
             </IconButton>
           )
         }
+        trailing={
+          user ? (
+            <span className="typescale-body-medium text-on-surface-variant">
+              {user.username} · {t(`enum.peran.${user.peran}`)}
+            </span>
+          ) : undefined
+        }
         title={<span className="font-brand px-2 text-primary">{t('common.app.name')}</span>}
       />
+
+      <RecoveryBanner sesi={sesi} />
 
       <div className="flex">
         <NavigationDrawer

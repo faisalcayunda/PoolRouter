@@ -9,7 +9,7 @@ title = "PoolRouter gitleaks"
 useDefault = true
 
 [allowlist]
-description = "Contoh sintetis yang sudah dinilai: token contoh OpenAPI/Rust dan fixture lint"
+description = "Contoh sintetis yang sudah dinilai: token contoh OpenAPI/Rust, fixture lint, dan test password sintetis"
 # 1) Token contoh sintetis di dokumentasi OpenAPI dan anotasi Rust (header ES256 + payload sub=client,
 #    signature 12 karakter, bukan token nyata). Allowlist mencocokkan token UTUH sebagai tiga ruas literal
 #    (header, payload, signature 12 karakter) yang dipisah titik yang di-escape; tidak ada wildcard, kelas
@@ -20,6 +20,8 @@ regexes = [
   '''^eyJhbGciOiJFUzI1NiJ9\.eyJzdWIiOiJjbGllbnQifQ\.c2lnbmF0dXJl$''',
 ]
 # 2) Fixture pelanggaran lint compose (sengaja salah; berisi digest, bukan kredensial). Satu berkas saja.
+# 3) File test login dengan password sintetis (bukan kredensial nyata).
 paths = [
   '''^deploy/compose/lint/fixtures/render-bad-prod-mock\.yaml$''',
+  '''^frontend/tests/login\.test\.tsx$''',
 ]

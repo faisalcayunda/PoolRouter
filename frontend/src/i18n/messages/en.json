@@ -161,7 +161,45 @@
     },
     "error": {
       "invalid": "The username or password doesn't match.",
-      "throttled": "Too many attempts. Try again in 15 minutes."
+      "throttled": "Too many attempts. Try again in 15 minutes.",
+      "throttled_retry": "Too many attempts. Try again in <b>{{detik}} seconds</b>.",
+      "network": "Couldn't connect. Check your network, then try again.",
+      "throttled_menit": "Too many attempts. Try again in <b>{{menit}} minutes</b>."
+    },
+    "mfa": {
+      "title": "Two-step verification",
+      "greeting": "Hello, {{username}}",
+      "error_invalid": "Invalid code",
+      "error_network": "Network error",
+      "recovery_code": "Recovery code",
+      "authenticator_code": "Authenticator code",
+      "verifying": "Verifying…",
+      "submit": "Verify",
+      "use_authenticator": "Use authenticator code",
+      "use_recovery": "Use recovery code",
+      "back": "Back to sign in",
+      "recovery_low": "{{sisa}} recovery codes left. Ask the platform admin for a reset."
+    },
+    "enroll": {
+      "title": "Register authenticator",
+      "step1": "Step 1 of 3",
+      "error_invalid": "Invalid enrollment code",
+      "code": "Enrollment code",
+      "next": "Continue"
+    },
+    "confirm": {
+      "title": "Scan the QR code",
+      "step2": "Step 2 of 3",
+      "qr_label": "PoolRouter enrollment QR code for your authenticator app. If you cannot scan it, use the setup key below.",
+      "qr_placeholder": "QR",
+      "copy": "Copy",
+      "code": "Code from authenticator",
+      "submit": "Confirm"
+    },
+    "recovery": {
+      "title": "Save your recovery codes",
+      "copy_all": "Copy all",
+      "done": "I have saved them"
     }
   },
   "provider": {
@@ -741,5 +779,28 @@
       "action": "Try again",
       "too_large": "The result is too large. Narrow the time range to 10,000 records or fewer."
     }
+  },
+  "sesi": {
+    "idle_dialog": {
+      "title": "Session expiring soon",
+      "body": "You have been inactive for {{jam}} hour(s). Your session will expire in {{detik}} seconds and can be extended by pressing the Extend session button below.",
+      "btn_extend": "Extend session",
+      "btn_exit": "Exit",
+      "extend_success": "Session extended",
+      "extend_error": "The session could not be extended. Check your connection, then extend again."
+    },
+    "absolute_dialog": {
+      "title": "Session has expired",
+      "body": "You can no longer extend your session time. Your session ended at {{waktu}} WIB and cannot be renewed. Save your work now.",
+      "btn_ok": "Got it"
+    },
+    "banner_absolute": {
+      "message": "Your session has ended since {{waktu}} WIB"
+    }
+  },
+  "recovery": {
+    "warning": "Sisa kode pemulihan Anda tinggal {{n}}. Atur ulang MFA untuk membuat kode baru.",
+    "error": "Kode pemulihan Anda habis. Atur ulang MFA.",
+    "info": "Anda masuk menggunakan kode pemulihan. Buat kode pemulihan baru saat siap."
   }
 }

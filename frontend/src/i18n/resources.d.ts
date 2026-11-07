@@ -288,9 +288,42 @@ export default interface Resources {
       }
     },
     "login": {
+      "confirm": {
+        "code": "Kode dari authenticator",
+        "copy": "Salin",
+        "qr_label": "Kode QR pendaftaran PoolRouter untuk aplikasi authenticator. Bila tidak bisa memindai, pakai kunci setup di bawahnya.",
+        "qr_placeholder": "QR",
+        "step2": "Langkah 2 dari 3",
+        "submit": "Konfirmasi",
+        "title": "Pindai kode QR"
+      },
+      "enroll": {
+        "code": "Kode pendaftaran",
+        "error_invalid": "Kode pendaftaran tidak valid",
+        "next": "Lanjut",
+        "step1": "Langkah 1 dari 3",
+        "title": "Daftarkan authenticator"
+      },
       "error": {
         "invalid": "Nama pengguna atau kata sandi tidak cocok.",
-        "throttled": "Terlalu banyak percobaan. Coba lagi dalam 15 menit."
+        "network": "Belum bisa terhubung. Periksa jaringan, lalu coba lagi.",
+        "throttled": "Terlalu banyak percobaan. Coba lagi dalam 15 menit.",
+        "throttled_menit": "Terlalu banyak percobaan. Coba lagi dalam <b>{{menit}} menit</b>.",
+        "throttled_retry": "Terlalu banyak percobaan. Coba lagi dalam <b>{{detik}} detik</b>."
+      },
+      "mfa": {
+        "authenticator_code": "Kode authenticator",
+        "back": "Kembali ke login",
+        "error_invalid": "Kode tidak valid",
+        "error_network": "Gangguan jaringan",
+        "greeting": "Halo, {{username}}",
+        "recovery_code": "Kode pemulihan",
+        "recovery_low": "Sisa {{sisa}} kode pemulihan. Minta reset ke platform admin.",
+        "submit": "Verifikasi",
+        "title": "Verifikasi dua langkah",
+        "use_authenticator": "Pakai kode authenticator",
+        "use_recovery": "Pakai kode pemulihan",
+        "verifying": "Memverifikasi…"
       },
       "page": {
         "password": "Kata sandi",
@@ -299,6 +332,11 @@ export default interface Resources {
         "subtitle": "Gunakan akun yang diberikan Pusdatin BGN.",
         "title": "Masuk ke PoolRouter",
         "username": "Nama pengguna"
+      },
+      "recovery": {
+        "copy_all": "Salin semua",
+        "done": "Sudah saya simpan",
+        "title": "Simpan kode pemulihan"
       }
     },
     "metadata": {
@@ -505,6 +543,11 @@ export default interface Resources {
         "used_left": "Terpakai {{persen, number}}%, sisa {{sisa, number}}"
       }
     },
+    "recovery": {
+      "error": "Kode pemulihan Anda habis. Atur ulang MFA.",
+      "info": "Anda masuk menggunakan kode pemulihan. Buat kode pemulihan baru saat siap.",
+      "warning": "Sisa kode pemulihan Anda tinggal {{n}}. Atur ulang MFA untuk membuat kode baru."
+    },
     "risk": {
       "client": {
         "confirm": "Nonaktifkan client",
@@ -613,6 +656,24 @@ export default interface Resources {
         "copied": "Secret disalin",
         "done": "Sudah saya simpan",
         "shown_once": "ditampilkan sekali"
+      }
+    },
+    "sesi": {
+      "absolute_dialog": {
+        "body": "Anda tidak bisa memperpanjang sesi lagi. Sesi Anda berakhir pada {{waktu}} WIB dan tidak dapat diperbarui. Simpan pekerjaan Anda sekarang.",
+        "btn_ok": "Mengerti",
+        "title": "Sesi telah berakhir"
+      },
+      "banner_absolute": {
+        "message": "Sesi Anda telah berakhir sejak {{waktu}} WIB"
+      },
+      "idle_dialog": {
+        "body": "Anda sedang tidak aktif selama {{jam}} jam. Sesi Anda akan berakhir dalam {{detik}} detik dan dapat diperpanjang dengan menekan tombol Perpanjang sesi di bawah ini.",
+        "btn_exit": "Keluar",
+        "btn_extend": "Perpanjang sesi",
+        "extend_error": "Sesi belum bisa diperpanjang. Periksa koneksi, lalu perpanjang lagi.",
+        "extend_success": "Sesi diperpanjang",
+        "title": "Sesi akan berakhir"
       }
     },
     "settings": {

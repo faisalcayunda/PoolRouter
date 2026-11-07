@@ -3,8 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { AppI18nProvider } from './i18n/provider';
 import { appI18n, loadLanguage } from './i18n/i18n';
 import { DEFAULT_LOCALE, isBahasaUi } from './i18n/locales';
-import { AppShell } from './app/AppShell';
-import { RoutedScreens } from './app/routes';
+import { AppRoot } from './app/AppRoot';
 import './styles/m3/tailwind.css';
 
 const root = document.getElementById('root');
@@ -24,9 +23,7 @@ async function start(): Promise<void> {
   createRoot(root!).render(
     <StrictMode>
       <AppI18nProvider>
-        <AppShell pathname={window.location.pathname}>
-          <RoutedScreens pathname={window.location.pathname} search={window.location.search} />
-        </AppShell>
+        <AppRoot pathname={window.location.pathname} search={window.location.search} />
       </AppI18nProvider>
     </StrictMode>,
   );

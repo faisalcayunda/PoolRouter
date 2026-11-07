@@ -24,9 +24,7 @@ use axum::extract::rejection::JsonRejection;
 use axum::http::{HeaderMap, HeaderValue, Method, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use chrono::{DateTime, Utc};
-use poolrouter_core::admin::mfa::{
-    GalatMfa, HasilPemulihan, HasilPeriksa, HasilVerifikasi, KodePemulihan,
-};
+use poolrouter_core::admin::mfa::{HasilPemulihan, HasilPeriksa, HasilVerifikasi, KodePemulihan};
 use poolrouter_core::admin::pra_sesi::{JenisPraSesi, PraSesi};
 use serde::Deserialize;
 use uuid::Uuid;
@@ -111,15 +109,9 @@ async fn pra_sesi_dari(
     s: &AdminState,
     headers: &HeaderMap,
     jenis: JenisPraSesi,
-    konsumsi: bool,
 ) -> Result<(String, PraSesi), Galat> {
     let token = token_pra_sesi(headers).ok_or_else(salah)?;
-    let dibaca = if konsumsi {
-        s.pra_sesi.pakai(&token).await
-    } else {
-        s.pra_sesi.intip(&token).await
-    };
-    let pra = dibaca.map_err(|e| {
+    let pra = s.pra_sesi.pakai(&token).await.map_err(|e| {
         tracing::error!(error = %e, "admin: pra-sesi tidak terbaca");
         Galat::layanan()
     })?;
@@ -182,7 +174,7 @@ pub(super) async fn mfa(
     let ip = sumber_ip(&headers, peer);
     let ua = super::login::user_agent(&headers);
     let sekarang: DateTime<Utc> = (s.jam)();
-    let (token, pra) = pra_sesi_dari(&s, &headers, JenisPraSesi::Mfa, false).await?;
+    let (token, pra) = pra_sesi_dari(&s, &headers, JenisPraSesi::Mfa).await?;
     let pengguna_id = pra.pengguna_id;
 
     // AC-11: the code step shares the password limiter's bucket, so guessing
@@ -249,8 +241,6 @@ pub(super) async fn mfa(
             if s.pembatas.berhasil(&username).await.is_err() {
                 tracing::warn!("admin: hitungan gagal tidak terhapus setelah MFA berhasil");
             }
-            // Consume the pre-session now that the code was accepted (AC-10).
-            s.pra_sesi.buang(&token).await.ok();
             terbitkan_sesi_mfa(&s, pengguna_id, &headers, &ip).await
         }
         Err(()) => {
@@ -292,10 +282,7 @@ pub(super) async fn daftar(
     })?;
     let ip = sumber_ip(&headers, peer);
     let sekarang = (s.jam)();
-    // Enrollment spans two calls (`daftar`, then `daftar/konfirmasi`) under one
-    // pre-session, so this first call peeks instead of spending the token.
-    // Only `konfirmasi` consumes it, since that is the call that mints a session.
-    let (token, pra) = pra_sesi_dari(&s, &headers, JenisPraSesi::DaftarMfa, false).await?;
+    let (token, pra) = pra_sesi_dari(&s, &headers, JenisPraSesi::DaftarMfa).await?;
 
     let pengguna_id = pra.pengguna_id;
     let username = super::login::username_dari(&s.pool, pengguna_id)
@@ -344,7 +331,7 @@ pub(super) async fn daftar(
 /// One `audit_akses` row with action `daftar_mfa`, success or failure (AC-12,
 /// AC-13). Written before the response so a refused start is always on record.
 async fn catat_daftar_mfa(s: &AdminState, pengguna_id: Uuid, berhasil: bool, ip: &str) {
-    use poolrouter_core::audit::{AksesBaru, Aksi, Hasil, Pelaku, Penulis, Peran};
+    use poolrouter_core::audit::{AksesBaru, Aksi, Hasil, Pelaku, Penulis, Peran, TampilanNik};
 
     // The audit row must not outlive a failed request, so it travels in its own
     // tiny transaction; a broken audit trail is logged, never silently dropped.
@@ -356,15 +343,26 @@ async fn catat_daftar_mfa(s: &AdminState, pengguna_id: Uuid, berhasil: bool, ip:
         }
     };
     let mut tx = tx;
-    // `daftar_mfa` is a self-service account action, so `target_pengguna_id` is
-    // required by `chk_audit_target_pengguna` and points back at the actor.
-    let mut baris = AksesBaru::berhasil(Pelaku::baru(pengguna_id, Peran::Auditor), Aksi::DaftarMfa)
-        .dengan_target_pengguna(pengguna_id)
-        .dengan_sumber_ip(ip.to_owned())
-        .dengan_sesi(pengguna_id.to_string());
-    if !berhasil {
-        baris.hasil = Hasil::Ditolak;
-    }
+    let baris = AksesBaru {
+        // The role is only used to label the actor; enrollment is self-service,
+        // so the caller's own roles are what `me` reports. Auditor is the
+        // narrowest label that never grants more than they hold at this step.
+        pelaku: Pelaku::baru(pengguna_id, Peran::Auditor),
+        aksi: Aksi::DaftarMfa,
+        tampilan_nik: TampilanNik::TidakAda,
+        hasil: if berhasil {
+            Hasil::Berhasil
+        } else {
+            Hasil::Ditolak
+        },
+        filter_kueri: None,
+        nik_hmac: None,
+        nik_tersamar: None,
+        jumlah_record: None,
+        alasan: None,
+        sumber_ip: Some(ip.to_owned()),
+        sesi_id: Some(pengguna_id.to_string()),
+    };
     let hasil = Penulis::baru(&mut tx).catat_akses(baris).await;
     match hasil {
         Ok(_) => {
@@ -395,7 +393,7 @@ pub(super) async fn konfirmasi(
     let ip = sumber_ip(&headers, peer);
     let ua = super::login::user_agent(&headers);
     let sekarang = (s.jam)();
-    let (token, pra) = pra_sesi_dari(&s, &headers, JenisPraSesi::DaftarMfa, false).await?;
+    let (token, pra) = pra_sesi_dari(&s, &headers, JenisPraSesi::DaftarMfa).await?;
     let pengguna_id = pra.pengguna_id;
 
     let username = super::login::username_dari(&s.pool, pengguna_id)
@@ -423,20 +421,17 @@ pub(super) async fn konfirmasi(
     }
 
     let kode = req.kode_totp.trim().to_owned();
-    // A wrong or expired code is a refusal (401), not a server fault; only the
-    // storage failures are 503. Collapsing them would tell the client the
-    // server was broken when it simply rejected the code.
-    let konfirmasi = match s.mfa.konfirmasi(pengguna_id, &kode, sekarang).await {
-        Ok(k) => Ok(k),
-        Err(GalatMfa::KodeTidakCocok | GalatMfa::KeadaanTidakCocok) => Err(()),
-        Err(e) => {
+    let konfirmasi = s
+        .mfa
+        .konfirmasi(pengguna_id, &kode, sekarang)
+        .await
+        .map_err(|e| {
             tracing::error!(error = %e, "admin: konfirmasi MFA gagal");
-            return Err(Galat::layanan());
-        }
-    };
+            Galat::layanan()
+        });
     let daftar_kode: KodePemulihan = match konfirmasi {
         Ok(k) => k,
-        Err(()) => {
+        Err(_) => {
             super::login::audit(
                 &s,
                 Some(pengguna_id),
@@ -457,8 +452,6 @@ pub(super) async fn konfirmasi(
     }
     // AC-13: the successful enrollment is on record before the session exists.
     catat_daftar_mfa(&s, pengguna_id, true, &ip).await;
-    // Consume the pre-session now that enrollment succeeded (AC-13).
-    s.pra_sesi.buang(&token).await.ok();
     // AC-13: the session is issued with `mfa_terverifikasi_at`, and the codes
     // travel in this one body only.
     let res = terbitkan_sesi_mfa(&s, pengguna_id, &headers, &ip).await?;
