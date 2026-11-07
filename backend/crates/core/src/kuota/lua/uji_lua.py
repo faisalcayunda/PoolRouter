@@ -62,6 +62,7 @@ RAKIT = AKAR / "scripts" / "rakit-lua.sh"
 # yang lupa dirakit akan gagal saat dimuat, bukan diam-diam dilewati.
 NAMA_SKRIP = {
     "intake": "kuota_intake.lua",
+    "intake_alokasi": "kuota_intake_alokasi.lua",
     "token": "kuota_ambil_token.lua",
     "klaim": "slot_klaim.lua",
     "lepas": "slot_lepas.lua",
