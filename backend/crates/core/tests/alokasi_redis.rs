@@ -9,7 +9,8 @@
 
 use chrono::{DateTime, Duration, Utc};
 use poolrouter_core::kuota::pemulihan::{
-    GalatPemulihan, KeadaanPool, SumberRebuild, baca_run_id, bangun_ulang, kunci_antre, kunci_antre_dp,
+    GalatPemulihan, KeadaanPool, SumberRebuild, baca_run_id, bangun_ulang, kunci_antre,
+    kunci_antre_dp,
 };
 use poolrouter_core::kuota::store::{
     GalatStore, HasilIntake, IntakeAlokasi, KonteksKuota, KuotaRedis, KuotaStore, ModeJendela,
@@ -80,7 +81,10 @@ async fn intake_alokasi_menegakkan_antre_dp() {
     // Dua permintaan async masih di bawah `ruang_intake`: lolos, kedua counter naik.
     for i in 1..=2 {
         assert_eq!(
-            store.intake_alokasi(&k, false, "c", &alokasi).await.unwrap(),
+            store
+                .intake_alokasi(&k, false, "c", &alokasi)
+                .await
+                .unwrap(),
             HasilIntake::Lolos {
                 terpakai: 0,
                 antre: i
@@ -92,7 +96,10 @@ async fn intake_alokasi_menegakkan_antre_dp() {
 
     // `antre_d >= ruang_intake` → 429 `kuota_habis`; tidak ada counter naik.
     assert_eq!(
-        store.intake_alokasi(&k, false, "c", &alokasi).await.unwrap(),
+        store
+            .intake_alokasi(&k, false, "c", &alokasi)
+            .await
+            .unwrap(),
         HasilIntake::KuotaHabis {
             terpakai: 0,
             antre: 2
@@ -109,11 +116,17 @@ async fn intake_alokasi_menegakkan_antre_dp() {
         ruang_intake: 1_000,
     };
     assert!(matches!(
-        store.intake_alokasi(&sempit, false, "c", &lapang).await.unwrap(),
+        store
+            .intake_alokasi(&sempit, false, "c", &lapang)
+            .await
+            .unwrap(),
         HasilIntake::Lolos { .. }
     ));
     assert_eq!(
-        store.intake_alokasi(&sempit, false, "c", &lapang).await.unwrap(),
+        store
+            .intake_alokasi(&sempit, false, "c", &lapang)
+            .await
+            .unwrap(),
         HasilIntake::AntreanPenuh {
             terpakai: 0,
             antre: 1
@@ -149,6 +162,4 @@ async fn intake_alokasi_menegakkan_antre_dp() {
             Err(GalatStore::ArgumenTidakSah(_))
         ));
     }
-
 }
-

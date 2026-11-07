@@ -634,7 +634,9 @@ where
             no_ember(ctx).to_string(),
             alokasi.ruang_intake.to_string(),
         ];
-        let j = self.jalankan(&self.skrip.intake_alokasi, kunci, arg).await?;
+        let j = self
+            .jalankan(&self.skrip.intake_alokasi, kunci, arg)
+            .await?;
         hasil_intake(&j)
     }
 
