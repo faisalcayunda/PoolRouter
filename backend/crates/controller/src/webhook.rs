@@ -137,6 +137,7 @@ pub struct Baris {
     pub failure_reason: Option<String>,
     pub output_payload: Option<serde_json::Value>,
     pub webhook_attempt_count: i32,
+    pub webhook_not_before: Option<chrono::DateTime<chrono::Utc>>,
 }
 
 /// Konfigurasi webhook milik client.
