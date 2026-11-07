@@ -21,6 +21,7 @@ path = "src/lib.rs"
 
 [dependencies]
 poolrouter-core = { workspace = true }
+poolrouter-queue-apalis = { workspace = true }
 anyhow = { workspace = true }
 tokio = { workspace = true }
 tokio-util = { workspace = true }

@@ -5,6 +5,7 @@
 //! (CW10 seams a, b and c). The binary in `src/main.rs` only wires the modules
 //! together.
 
+pub mod balikan;
 pub mod jadwal;
 pub mod leader;
 pub mod rebuild;
