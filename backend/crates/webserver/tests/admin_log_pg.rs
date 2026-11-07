@@ -96,8 +96,7 @@ impl Uji {
         cookie: Option<&str>,
         body: Option<Value>,
     ) -> (StatusCode, HeaderMap, Value) {
-        let origin = (method != Method::GET).then_some(ASAL);
-        let (st, h, b) = self.kirim(method, path, cookie, origin, body).await;
+        let (st, h, b) = self.kirim(method, path, cookie, Some(ASAL), body).await;
         (st, h, serde_json::from_slice(&b).unwrap_or(Value::Null))
     }
 
@@ -487,8 +486,7 @@ async fn nik_dan_payload_sintetis_tidak_muncul_di_log() {
         .with_ansi(false)
         .with_writer(penyangga.clone())
         .finish();
-    let dispatch = tracing::Dispatch::new(subscriber);
-    let _guard = tracing::dispatcher::set_default(&dispatch);
+    let _guard = tracing::subscriber::set_default(subscriber);
     let u = siapkan().await;
     let (_, au) = u.pengguna(&["auditor"]).await;
     let (kode, _req_id, nik) = u.siapkan_log().await;

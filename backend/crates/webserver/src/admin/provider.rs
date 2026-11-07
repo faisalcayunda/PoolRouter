@@ -539,17 +539,30 @@ fn alasan_create(_body: &ProviderConfig) -> String {
 
 /// `updateProvider` requires `alasan` (DESIGN.md §3). The contract marks it
 /// optional because create does not use it, so a missing one on update is a 422.
+const ALASAN_MIN: usize = 10;
+const ALASAN_MAX: usize = 500;
+
 fn alasan_wajib(body: &ProviderConfig) -> Result<String, Galat> {
-    match body.alasan.as_deref() {
-        Some(a) if a.trim().len() >= 10 => Ok(a.to_owned()),
-        _ => Err(Galat::validasi(vec![ValidasiErrorAdmin {
+    let Some(a) = body.alasan.as_deref() else {
+        return Err(Galat::validasi(vec![ValidasiErrorAdmin {
             field: "/alasan".to_owned(),
             kode: "wajib".to_owned(),
             batas: None,
             posisi: None,
             nama: None,
-        }])),
+        }]));
+    };
+    let panjang = a.trim().len();
+    if !(ALASAN_MIN..=ALASAN_MAX).contains(&panjang) {
+        return Err(Galat::validasi(vec![ValidasiErrorAdmin {
+            field: "/alasan".to_owned(),
+            kode: "rentang".to_owned(),
+            batas: Some(ALASAN_MAX as f64),
+            posisi: None,
+            nama: None,
+        }]));
     }
+    Ok(a.to_owned())
 }
 
 /// One `audit_konfigurasi` row in the caller's transaction.
