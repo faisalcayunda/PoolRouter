@@ -442,6 +442,12 @@ async fn ac26_klaim_cas_satu_kali_kirim() {
         .await
         .expect("hitung log");
     assert_eq!(total, 1, "satu request hanya sekali kirim");
+
+    // Restore webhook_batas_percobaan to default (6) so other tests are not affected.
+    sqlx::query("UPDATE konfigurasi_platform SET nilai = '6'::jsonb WHERE kunci = 'webhook_batas_percobaan'")
+        .execute(&su)
+        .await
+        .expect("restore webhook_batas_percobaan");
 }
 
 /// AC-28 / CW9: rotasi versi secret berlaku untuk pengiriman berikutnya. Job
