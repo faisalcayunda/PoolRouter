@@ -91,11 +91,7 @@ impl K20Service {
         Self { pool }
     }
 
-    pub async fn pratinjau(
-        &self,
-        jenis: JenisEntitas,
-        id: Uuid,
-    ) -> Result<PratinjauK20, sqlx::Error> {
+    pub async fn pratinjau(&self, jenis: JenisEntitas, id: Uuid) -> Result<PratinjauK20, GalatK20> {
         sqlx::query_as::<_, PratinjauK20Row>(
             "SELECT akan_cancelled, akan_failed, dihitung_at FROM fn_pratinjau_nonaktif($1, $2)",
         )
@@ -104,6 +100,7 @@ impl K20Service {
         .fetch_one(&self.pool)
         .await
         .map(Into::into)
+        .map_err(GalatK20::from)
     }
 
     pub async fn nonaktifkan(
@@ -124,6 +121,7 @@ impl K20Service {
         .fetch_one(&self.pool)
         .await
         .map(Into::into)
+        .map_err(GalatK20::from)
     }
 
     pub async fn aktifkan(
@@ -142,6 +140,7 @@ impl K20Service {
             .execute(&self.pool)
             .await
             .map(|_| ())
+            .map_err(GalatK20::from)
     }
 }
 
