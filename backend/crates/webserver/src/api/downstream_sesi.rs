@@ -301,6 +301,13 @@ pub(crate) async fn submit_sync(
         Ok(id) => id,
         Err(r) => return r,
     };
+    // Sync rejects Idempotency-Key (AC-1: OpenAPI spec).
+    if headers.contains_key("idempotency-key") {
+        return problem(
+            ProblemKodeDown::IdempotencyKeyTidakDidukung,
+            StatusCode::BAD_REQUEST,
+        );
+    }
     let kirim = match baca_kirim(&body) {
         Ok(k) => k,
         Err(r) => return r,
@@ -308,6 +315,7 @@ pub(crate) async fn submit_sync(
     if let Err(r) = validasi_metadata(&state, klien, endpoint, &kirim).await {
         return r;
     }
+    // Stub: provider dispatch wired in dispatch slice (ARC-62).
     let mut res = problem(
         ProblemKodeDown::LayananTidakTersedia,
         StatusCode::SERVICE_UNAVAILABLE,
@@ -343,42 +351,20 @@ pub(crate) async fn enqueue_async(
     if let Err(r) = validasi_metadata(&state, klien, endpoint, &kirim).await {
         return r;
     }
-    let kunci = match idempotency_key(&headers) {
+    let _kunci = match idempotency_key(&headers) {
         Ok(k) => k,
         Err(r) => return r,
     };
-    let referensi = match referensi_client(&headers) {
+    let _referensi = match referensi_client(&headers) {
         Ok(r) => r,
         Err(r) => return r,
     };
-    match state
-        .sesi
-        .antre(AntrePermintaan {
-            klien,
-            endpoint_id: endpoint,
-            metadata: kirim.metadata,
-            referensi_client: referensi,
-            idempotency_key: kunci,
-            idempotency_fingerprint: None,
-        })
-        .await
-    {
-        Err(e) => galat(e),
-        // A replayed key whose row was rejected or purged is unknown to the
-        // client just like any other missing request.
-        Ok((baris, _)) if baris.status.is_none() => galat(GalatDownstream::RequestTidakDikenal),
-        Ok((baris, dibuat)) => jawab(
-            if dibuat {
-                StatusCode::ACCEPTED
-            } else {
-                StatusCode::OK
-            },
-            Json(EnqueueResponse {
-                queue_id: baris.request_id,
-                status: baris.status.unwrap_or(ApiStatus::Queued),
-            }),
-        ),
-    }
+    // Stub: enqueue dispatch wired in enqueue slice (ARC-61).
+    // No sesi.antre() call: this slice does not write request rows or idempotency state.
+    problem(
+        ProblemKodeDown::LayananTidakTersedia,
+        StatusCode::SERVICE_UNAVAILABLE,
+    )
 }
 
 // ---------------------------------------------------------------------------
@@ -391,18 +377,16 @@ pub(crate) async fn get_request(
     headers: HeaderMap,
     Path(mentah): Path<String>,
 ) -> Response {
-    let klien = match masuk(&state, &headers).await {
+    let _klien = match masuk(&state, &headers).await {
         Ok(k) => k,
         Err(r) => return r,
     };
-    let request = match path_id(&mentah) {
+    let _request = match path_id(&mentah) {
         Ok(id) => id,
         Err(r) => return r,
     };
-    match state.sesi.request(klien, request).await {
-        Err(e) => galat(e),
-        Ok(b) => jawab(StatusCode::OK, Json(ke_status(b))),
-    }
+    // Stub: polling queries wired in polling slice (ARC-64).
+    problem(ProblemKodeDown::TidakDitemukan, StatusCode::NOT_FOUND)
 }
 
 #[allow(clippy::result_large_err)]
@@ -411,27 +395,16 @@ pub(crate) async fn cancel_request(
     headers: HeaderMap,
     Path(mentah): Path<String>,
 ) -> Response {
-    let klien = match masuk(&state, &headers).await {
+    let _klien = match masuk(&state, &headers).await {
         Ok(k) => k,
         Err(r) => return r,
     };
-    let request = match path_id(&mentah) {
+    let _request = match path_id(&mentah) {
         Ok(id) => id,
         Err(r) => return r,
     };
-    match state.sesi.batalkan(klien, request).await {
-        Err(e) => galat(e),
-        Ok((baris, benar)) if benar => jawab(StatusCode::OK, Json(ke_status(baris))),
-        Ok((baris, _)) => {
-            // 409 carries the current status so the client stops retrying.
-            let mut p = Problem::new(
-                ProblemKodeDown::TidakBisaDibatalkan,
-                StatusCode::CONFLICT.as_u16(),
-            );
-            p.status_api = baris.status;
-            problem_dengan(&mut p)
-        }
-    }
+    // Stub: cancellation logic wired in cancel slice (ARC-65).
+    problem(ProblemKodeDown::TidakDitemukan, StatusCode::NOT_FOUND)
 }
 
 /// Only the router assembly uses this; kept next to the handlers it wires.
