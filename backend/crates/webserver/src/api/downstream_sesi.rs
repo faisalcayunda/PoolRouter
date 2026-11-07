@@ -13,7 +13,6 @@ use axum::body::Bytes;
 use axum::extract::{Path, State};
 use axum::http::{HeaderMap, HeaderValue, StatusCode, header};
 use axum::response::{IntoResponse, Response};
-use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
 use super::downstream::{
@@ -213,20 +212,6 @@ fn referensi_client(headers: &HeaderMap) -> Result<Option<String>, Response> {
     Ok(Some(s.to_owned()))
 }
 
-/// SHA-256 hex (64 chars, the column width) over the endpoint and the exact
-/// body. `request.idempotency_fingerprint` is NOT NULL whenever
-/// `idempotency_key` is set (`chk_idem`), so this only satisfies that column;
-/// it does not yet compare against a stored fingerprint to answer 422
-/// `idempotency_key_konflik` on a same-key-different-body replay — that
-/// compare-and-reject (AC-11) is ARC-63's scope, not this slice's AC-1/2/3/9.
-fn sidik(endpoint: Uuid, body: &[u8]) -> String {
-    let mut h = Sha256::new();
-    h.update(endpoint.as_bytes());
-    h.update(b"\0");
-    h.update(body);
-    format!("{:x}", h.finalize())
-}
-
 fn ke_status(b: BarisRequest) -> RequestStatus {
     let status = b.status.unwrap_or(ApiStatus::Queued);
     RequestStatus {
@@ -366,7 +351,6 @@ pub(crate) async fn enqueue_async(
         Ok(r) => r,
         Err(r) => return r,
     };
-    let fingerprint = kunci.as_ref().map(|_| sidik(endpoint, &body));
     match state
         .sesi
         .antre(AntrePermintaan {
@@ -375,7 +359,7 @@ pub(crate) async fn enqueue_async(
             metadata: kirim.metadata,
             referensi_client: referensi,
             idempotency_key: kunci,
-            idempotency_fingerprint: fingerprint,
+            idempotency_fingerprint: None,
         })
         .await
     {
