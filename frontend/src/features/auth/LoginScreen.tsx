@@ -68,7 +68,9 @@ export function LoginScreen({ client = api, search = '', onBerhasil }: Props) {
     setGalat(null);
     try {
       await client.mfa(
-        modePemulihan ? { kode_pemulihan: kode.replace(/\s+/g, '').toUpperCase() } : { kode: kode.replace(/\s+/g, '') },
+        modePemulihan
+          ? { kode_pemulihan: kode.replace(/\s+/g, '').toUpperCase() }
+          : { kode: kode.replace(/\s+/g, '') },
       );
       if (modePemulihan) {
         try {
@@ -131,7 +133,11 @@ export function LoginScreen({ client = api, search = '', onBerhasil }: Props) {
   };
 
   const card = (children: React.ReactNode) => (
-    <main id="main-content" tabIndex={-1} className="flex min-h-screen flex-col items-center justify-center gap-6 bg-surface px-4 py-12">
+    <main
+      id="main-content"
+      tabIndex={-1}
+      className="flex min-h-screen flex-col items-center justify-center gap-6 bg-surface px-4 py-12"
+    >
       <div className="w-full max-w-[428px] rounded-2xl border border-outline-variant bg-surface-container-lowest p-8 flex flex-col gap-4">
         {children}
       </div>
@@ -140,28 +146,63 @@ export function LoginScreen({ client = api, search = '', onBerhasil }: Props) {
 
   if (step === 'login') {
     return (
-      <main id="main-content" tabIndex={-1} className="flex min-h-screen flex-col items-center justify-center gap-6 bg-surface px-4 py-12">
+      <main
+        id="main-content"
+        tabIndex={-1}
+        className="flex min-h-screen flex-col items-center justify-center gap-6 bg-surface px-4 py-12"
+      >
         <h1 className="typescale-headline-medium text-on-surface">{t('login.page.title')}</h1>
         {search.includes('sesi_berakhir') ? (
-          <div className="w-full max-w-[360px]"><InlineAlert tone="info">{t('login.page.session_expired')}</InlineAlert></div>
+          <div className="w-full max-w-[360px]">
+            <InlineAlert tone="info">{t('login.page.session_expired')}</InlineAlert>
+          </div>
         ) : null}
         {galat ? (
           <div className="w-full max-w-[360px]">
             <InlineAlert tone="error" live="assertive">
-              {galat === 'network' ? t('login.error.network') : galat === 'throttled' && tungguDetik !== null ? (
+              {galat === 'network' ? (
+                t('login.error.network')
+              ) : galat === 'throttled' && tungguDetik !== null ? (
                 tungguDetik >= 60 ? (
-                  <Trans i18nKey="login.error.throttled_menit" values={{ menit: Math.ceil(tungguDetik / 60) }} components={{ b: <span className="font-semibold tabular-nums" /> }} />
+                  <Trans
+                    i18nKey="login.error.throttled_menit"
+                    values={{ menit: Math.ceil(tungguDetik / 60) }}
+                    components={{ b: <span className="font-semibold tabular-nums" /> }}
+                  />
                 ) : (
-                  <Trans i18nKey="login.error.throttled_retry" values={{ detik: tungguDetik }} components={{ b: <span className="font-semibold tabular-nums" /> }} />
+                  <Trans
+                    i18nKey="login.error.throttled_retry"
+                    values={{ detik: tungguDetik }}
+                    components={{ b: <span className="font-semibold tabular-nums" /> }}
+                  />
                 )
-              ) : t(`login.error.${galat}`)}
+              ) : (
+                t(`login.error.${galat}`)
+              )}
             </InlineAlert>
           </div>
         ) : null}
         <form onSubmit={(e) => void masuk(e)} className="flex w-full max-w-[360px] flex-col gap-4">
-          <TextField label={t('login.page.username')} value={username} isDisabled={mengirim} onChange={setUsername} autoComplete="username" isRequired />
-          <TextField label={t('login.page.password')} type="password" value={password} isDisabled={mengirim} onChange={setPassword} autoComplete="current-password" isRequired />
-          <Button type="submit" isDisabled={mengirim}>{t('login.page.submit')}</Button>
+          <TextField
+            label={t('login.page.username')}
+            value={username}
+            isDisabled={mengirim}
+            onChange={setUsername}
+            autoComplete="username"
+            isRequired
+          />
+          <TextField
+            label={t('login.page.password')}
+            type="password"
+            value={password}
+            isDisabled={mengirim}
+            onChange={setPassword}
+            autoComplete="current-password"
+            isRequired
+          />
+          <Button type="submit" isDisabled={mengirim}>
+            {t('login.page.submit')}
+          </Button>
         </form>
       </main>
     );
@@ -170,13 +211,19 @@ export function LoginScreen({ client = api, search = '', onBerhasil }: Props) {
   if (step === 'mfa') {
     return card(
       <>
-        <h1 className="typescale-title-large text-on-surface">Verifikasi dua langkah</h1>
-        <p className="typescale-body-medium text-on-surface-variant">Halo, {username}</p>
-        {galat ? <InlineAlert tone="error" live="assertive">{galat === 'invalid' ? 'Kode tidak valid' : 'Gangguan jaringan'}</InlineAlert> : null}
+        <h1 className="typescale-title-large text-on-surface">{t('login.mfa.title')}</h1>
+        <p className="typescale-body-medium text-on-surface-variant">
+          {t('login.mfa.greeting', { username })}
+        </p>
+        {galat ? (
+          <InlineAlert tone="error" live="assertive">
+            {galat === 'invalid' ? t('login.mfa.error_invalid') : t('login.mfa.error_network')}
+          </InlineAlert>
+        ) : null}
         <form onSubmit={(e) => void verifikasi(e)} className="flex flex-col gap-4">
           {modePemulihan ? (
             <TextField
-              label="Kode pemulihan"
+              label={t('login.mfa.recovery_code')}
               value={kode}
               isDisabled={mengirim}
               onChange={setKode}
@@ -187,7 +234,7 @@ export function LoginScreen({ client = api, search = '', onBerhasil }: Props) {
             />
           ) : (
             <TextField
-              label="Kode authenticator"
+              label={t('login.mfa.authenticator_code')}
               value={kode}
               isDisabled={mengirim}
               onChange={(v) => setKode(v.replace(/\s/g, ''))}
@@ -197,14 +244,24 @@ export function LoginScreen({ client = api, search = '', onBerhasil }: Props) {
               isRequired
             />
           )}
-          <Button type="submit" isDisabled={mengirim}>{mengirim ? 'Memverifikasi…' : 'Verifikasi'}</Button>
+          <Button type="submit" isDisabled={mengirim}>
+            {mengirim ? t('login.mfa.verifying') : t('login.mfa.submit')}
+          </Button>
         </form>
-        <button type="button" className="text-primary text-sm" onClick={() => setModePemulihan((m) => !m)}>
-          {modePemulihan ? 'Pakai kode authenticator' : 'Pakai kode pemulihan'}
+        <button
+          type="button"
+          className="text-primary text-sm"
+          onClick={() => setModePemulihan((m) => !m)}
+        >
+          {modePemulihan ? t('login.mfa.use_authenticator') : t('login.mfa.use_recovery')}
         </button>
-        <button type="button" className="text-primary text-sm" onClick={() => setStep('login')}>Kembali ke login</button>
+        <button type="button" className="text-primary text-sm" onClick={() => setStep('login')}>
+          {t('login.mfa.back')}
+        </button>
         {sisaKode !== null && sisaKode <= 3 ? (
-          <InlineAlert tone="warning">Sisa {sisaKode} kode pemulihan. Minta reset ke platform admin.</InlineAlert>
+          <InlineAlert tone="warning">
+            {t('login.mfa.recovery_low', { sisa: sisaKode })}
+          </InlineAlert>
         ) : null}
       </>,
     );
@@ -213,14 +270,30 @@ export function LoginScreen({ client = api, search = '', onBerhasil }: Props) {
   if (step === 'daftar') {
     return card(
       <>
-        <h1 className="typescale-title-large text-on-surface">Daftarkan authenticator</h1>
-        <p className="typescale-body-medium text-on-surface-variant">Langkah 1 dari 3</p>
-        {galat ? <InlineAlert tone="error" live="assertive">Kode pendaftaran tidak valid</InlineAlert> : null}
+        <h1 className="typescale-title-large text-on-surface">{t('login.enroll.title')}</h1>
+        <p className="typescale-body-medium text-on-surface-variant">{t('login.enroll.step1')}</p>
+        {galat ? (
+          <InlineAlert tone="error" live="assertive">
+            {t('login.enroll.error_invalid')}
+          </InlineAlert>
+        ) : null}
         <form onSubmit={(e) => void mulaiDaftar(e)} className="flex flex-col gap-4">
-          <TextField label="Kode pendaftaran" value={kodeDaftar} isDisabled={mengirim} onChange={(v) => setKodeDaftar(v.toUpperCase().replace(/\s|-/g, ''))} inputMode="text" autoComplete="off" isRequired />
-          <Button type="submit" isDisabled={mengirim}>{mengirim ? 'Memverifikasi…' : 'Lanjut'}</Button>
+          <TextField
+            label={t('login.enroll.code')}
+            value={kodeDaftar}
+            isDisabled={mengirim}
+            onChange={(v) => setKodeDaftar(v.toUpperCase().replace(/\s|-/g, ''))}
+            inputMode="text"
+            autoComplete="off"
+            isRequired
+          />
+          <Button type="submit" isDisabled={mengirim}>
+            {mengirim ? t('login.mfa.verifying') : t('login.enroll.next')}
+          </Button>
         </form>
-        <button type="button" className="text-primary text-sm" onClick={() => setStep('login')}>Kembali ke login</button>
+        <button type="button" className="text-primary text-sm" onClick={() => setStep('login')}>
+          {t('login.mfa.back')}
+        </button>
       </>,
     );
   }
@@ -228,17 +301,46 @@ export function LoginScreen({ client = api, search = '', onBerhasil }: Props) {
   if (step === 'konfirmasi') {
     return card(
       <>
-        <h1 className="typescale-title-large text-on-surface">Pindai kode QR</h1>
-        <p className="typescale-body-medium text-on-surface-variant">Langkah 2 dari 3</p>
-        <div role="img" aria-label="Kode QR pendaftaran PoolRouter untuk aplikasi authenticator. Bila tidak bisa memindai, pakai kunci setup di bawahnya." className="flex items-center justify-center w-[200px] h-[200px] border border-dashed border-outline mx-auto">
-          <span className="text-on-surface-variant text-xs">QR</span>
+        <h1 className="typescale-title-large text-on-surface">{t('login.confirm.title')}</h1>
+        <p className="typescale-body-medium text-on-surface-variant">{t('login.confirm.step2')}</p>
+        <div
+          role="img"
+          aria-label={t('login.confirm.qr_label')}
+          className="flex items-center justify-center w-[200px] h-[200px] border border-dashed border-outline mx-auto"
+        >
+          <span className="text-on-surface-variant text-xs">
+            {t('login.confirm.qr_placeholder')}
+          </span>
         </div>
-        <div className="font-mono text-sm break-all bg-surface-container-lowest border border-outline p-2 rounded">{secret.match(/.{1,4}/g)?.join(' ')}</div>
-        <button type="button" className="text-primary text-sm" onClick={() => navigator.clipboard?.writeText(secret)}>Salin</button>
-        {galat ? <InlineAlert tone="error" live="assertive">Kode tidak valid</InlineAlert> : null}
+        <div className="font-mono text-sm break-all bg-surface-container-lowest border border-outline p-2 rounded">
+          {secret.match(/.{1,4}/g)?.join(' ')}
+        </div>
+        <button
+          type="button"
+          className="text-primary text-sm"
+          onClick={() => navigator.clipboard?.writeText(secret)}
+        >
+          {t('login.confirm.copy')}
+        </button>
+        {galat ? (
+          <InlineAlert tone="error" live="assertive">
+            {t('login.mfa.error_invalid')}
+          </InlineAlert>
+        ) : null}
         <form onSubmit={(e) => void konfirmasi(e)} className="flex flex-col gap-4">
-          <TextField label="Kode dari authenticator" value={kodeTotp} isDisabled={mengirim} onChange={(v) => setKodeTotp(v.replace(/\s/g, ''))} inputMode="numeric" autoComplete="one-time-code" maxLength={6} isRequired />
-          <Button type="submit" isDisabled={mengirim}>{mengirim ? 'Memverifikasi…' : 'Konfirmasi'}</Button>
+          <TextField
+            label={t('login.confirm.code')}
+            value={kodeTotp}
+            isDisabled={mengirim}
+            onChange={(v) => setKodeTotp(v.replace(/\s/g, ''))}
+            inputMode="numeric"
+            autoComplete="one-time-code"
+            maxLength={6}
+            isRequired
+          />
+          <Button type="submit" isDisabled={mengirim}>
+            {mengirim ? t('login.mfa.verifying') : t('login.confirm.submit')}
+          </Button>
         </form>
       </>,
     );
@@ -248,15 +350,22 @@ export function LoginScreen({ client = api, search = '', onBerhasil }: Props) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-inverse-surface/40">
       <div className="w-full max-w-[480px] rounded-2xl bg-surface-container-high p-6 flex flex-col gap-4">
-        <h2 className="typescale-title-large text-on-surface">Simpan kode pemulihan</h2>
+        <h2 className="typescale-title-large text-on-surface">{t('login.recovery.title')}</h2>
         <ol className="grid grid-cols-2 gap-2 font-mono text-sm">
           {recoveryCodes.map((c, i) => (
-            <li key={i}>{i + 1}. {c}</li>
+            <li key={i}>
+              {i + 1}. {c}
+            </li>
           ))}
         </ol>
         <div className="flex gap-2">
-          <Button variant="outlined" onPress={() => navigator.clipboard?.writeText(recoveryCodes.join('\n'))}>Salin semua</Button>
-          <Button onPress={selesaiDialog}>Sudah saya simpan</Button>
+          <Button
+            variant="outlined"
+            onPress={() => navigator.clipboard?.writeText(recoveryCodes.join('\n'))}
+          >
+            {t('login.recovery.copy_all')}
+          </Button>
+          <Button onPress={selesaiDialog}>{t('login.recovery.done')}</Button>
         </div>
       </div>
     </div>

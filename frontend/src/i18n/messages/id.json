@@ -165,6 +165,41 @@
       "throttled_retry": "Terlalu banyak percobaan. Coba lagi dalam <b>{{detik}} detik</b>.",
       "network": "Belum bisa terhubung. Periksa jaringan, lalu coba lagi.",
       "throttled_menit": "Terlalu banyak percobaan. Coba lagi dalam <b>{{menit}} menit</b>."
+    },
+    "mfa": {
+      "title": "Verifikasi dua langkah",
+      "greeting": "Halo, {{username}}",
+      "error_invalid": "Kode tidak valid",
+      "error_network": "Gangguan jaringan",
+      "recovery_code": "Kode pemulihan",
+      "authenticator_code": "Kode authenticator",
+      "verifying": "Memverifikasi…",
+      "submit": "Verifikasi",
+      "use_authenticator": "Pakai kode authenticator",
+      "use_recovery": "Pakai kode pemulihan",
+      "back": "Kembali ke login",
+      "recovery_low": "Sisa {{sisa}} kode pemulihan. Minta reset ke platform admin."
+    },
+    "enroll": {
+      "title": "Daftarkan authenticator",
+      "step1": "Langkah 1 dari 3",
+      "error_invalid": "Kode pendaftaran tidak valid",
+      "code": "Kode pendaftaran",
+      "next": "Lanjut"
+    },
+    "confirm": {
+      "title": "Pindai kode QR",
+      "step2": "Langkah 2 dari 3",
+      "qr_label": "Kode QR pendaftaran PoolRouter untuk aplikasi authenticator. Bila tidak bisa memindai, pakai kunci setup di bawahnya.",
+      "qr_placeholder": "QR",
+      "copy": "Salin",
+      "code": "Kode dari authenticator",
+      "submit": "Konfirmasi"
+    },
+    "recovery": {
+      "title": "Simpan kode pemulihan",
+      "copy_all": "Salin semua",
+      "done": "Sudah saya simpan"
     }
   },
   "provider": {

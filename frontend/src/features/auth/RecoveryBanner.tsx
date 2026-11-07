@@ -30,7 +30,12 @@ function hapusInfoFlag() {
   }
 }
 
-export function RecoveryBanner({ sesi, me: meProp, memuat: memuatProp, galat: galatProp }: RecoveryBannerProps) {
+export function RecoveryBanner({
+  sesi,
+  me: meProp,
+  memuat: memuatProp,
+  galat: galatProp,
+}: RecoveryBannerProps) {
   const { t } = useTranslation();
   const me = sesi ? sesi.me : (meProp ?? null);
   const memuat = sesi ? sesi.memuat : (memuatProp ?? false);

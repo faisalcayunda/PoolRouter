@@ -41,7 +41,8 @@
       "webhook.reason.http",
       "log.payload.input",
       "log.payload.metadata",
-      "log.filter.queue"
+      "log.filter.queue",
+      "login.confirm.qr_placeholder"
     ]
   }
 }

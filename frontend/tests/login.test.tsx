@@ -18,12 +18,12 @@ describe('S01 masuk', () => {
     renderWithI18n(<LoginScreen client={client} onBerhasil={onBerhasil} />);
 
     await userEvent.type(screen.getByLabelText('Nama pengguna'), 'auditor_01');
-await userEvent.type(screen.getByLabelText('Kata sandi'), SANDI_UJI);
+    await userEvent.type(screen.getByLabelText('Kata sandi'), SANDI_UJI);
     await userEvent.click(screen.getByRole('button', { name: 'Masuk' }));
 
     expect(client.login).toHaveBeenCalledWith({
       username: 'auditor_01',
-        password: SANDI_UJI,
+      password: SANDI_UJI,
     });
     expect(onBerhasil).toHaveBeenCalledTimes(1);
   });
@@ -55,7 +55,7 @@ await userEvent.type(screen.getByLabelText('Kata sandi'), SANDI_UJI);
     renderWithI18n(<LoginScreen client={client} />);
 
     await userEvent.type(screen.getByLabelText('Nama pengguna'), 'auditor_01');
-await userEvent.type(screen.getByLabelText('Kata sandi'), SANDI_UJI);
+    await userEvent.type(screen.getByLabelText('Kata sandi'), SANDI_UJI);
     await userEvent.click(screen.getByRole('button', { name: 'Masuk' }));
 
     const pesan = await screen.findByRole('alert');
@@ -72,7 +72,7 @@ await userEvent.type(screen.getByLabelText('Kata sandi'), SANDI_UJI);
     renderWithI18n(<LoginScreen client={client} />);
 
     await userEvent.type(screen.getByLabelText('Nama pengguna'), 'auditor_01');
-await userEvent.type(screen.getByLabelText('Kata sandi'), SANDI_UJI);
+    await userEvent.type(screen.getByLabelText('Kata sandi'), SANDI_UJI);
     await userEvent.click(screen.getByRole('button', { name: 'Masuk' }));
 
     expect(
@@ -85,7 +85,7 @@ await userEvent.type(screen.getByLabelText('Kata sandi'), SANDI_UJI);
     renderWithI18n(<LoginScreen client={client} />);
 
     await userEvent.type(screen.getByLabelText('Nama pengguna'), 'auditor_01');
-await userEvent.type(screen.getByLabelText('Kata sandi'), SANDI_UJI);
+    await userEvent.type(screen.getByLabelText('Kata sandi'), SANDI_UJI);
     await userEvent.click(screen.getByRole('button', { name: 'Masuk' }));
 
     expect(

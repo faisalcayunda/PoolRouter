@@ -80,13 +80,25 @@ export interface RequestOptions {
 
 export interface ApiClient {
   /** POST /auth/login — success sets the `__Host-pr_session` cookie. */
-  login(body: LoginRequest, options?: RequestOptions): Promise<{ langkah?: 'mfa' | 'daftar_mfa' } | null>;
+  login(
+    body: LoginRequest,
+    options?: RequestOptions,
+  ): Promise<{ langkah?: 'mfa' | 'daftar_mfa' } | null>;
   /** POST /auth/mfa — verify TOTP or recovery code. */
-  mfa(body: { kode?: string | null; kode_pemulihan?: string | null }, options?: RequestOptions): Promise<void>;
+  mfa(
+    body: { kode?: string | null; kode_pemulihan?: string | null },
+    options?: RequestOptions,
+  ): Promise<void>;
   /** POST /auth/mfa/daftar — start enrollment, returns otpauth URI once. */
-  mfaDaftar(body: { kode_pendaftaran: string }, options?: RequestOptions): Promise<{ otpauth_uri: string; rahasia_base32: string }>;
+  mfaDaftar(
+    body: { kode_pendaftaran: string },
+    options?: RequestOptions,
+  ): Promise<{ otpauth_uri: string; rahasia_base32: string }>;
   /** POST /auth/mfa/daftar/konfirmasi — confirm enrollment, returns recovery codes once. */
-  mfaKonfirmasi(body: { kode_totp: string }, options?: RequestOptions): Promise<{ kode_pemulihan: string[] }>;
+  mfaKonfirmasi(
+    body: { kode_totp: string },
+    options?: RequestOptions,
+  ): Promise<{ kode_pemulihan: string[] }>;
   /** POST /auth/logout — clears the session cookie. */
   logout(options?: RequestOptions): Promise<void>;
   /** GET /auth/me — current identity (role drives the shell). */
@@ -209,7 +221,11 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
       });
       if (!result.response.ok) {
         announce401(result.response);
-        throw new ApiError(result.response.status, problemFrom(result.response.status, result.error), retryAfterFrom(result.response));
+        throw new ApiError(
+          result.response.status,
+          problemFrom(result.response.status, result.error),
+          retryAfterFrom(result.response),
+        );
       }
       if (result.response.status === 204) return null;
       const data = (result.data ?? {}) as { langkah?: 'mfa' | 'daftar_mfa' };
