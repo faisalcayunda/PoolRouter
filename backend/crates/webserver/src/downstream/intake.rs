@@ -545,7 +545,48 @@ mod tests {
     }
 
     #[test]
-    fn kontrak_cocok_tanpa_galat() {
+    fn nama_tidak_wajar_jumlah_nol_kembali_none() {
+        // Ketika tidak ada nama field yang tidak wajar, jumlah_nama_tidak_cocok harus None (absen),
+        // meski ada kesalahan validasi lain (misal field wajib hilang).
+        let kontrak = vec![
+            FieldInputKontrak {
+                nama: "NIK".to_owned(),
+                tipe: "string".to_owned(),
+                wajib: true,
+            },
+            FieldInputKontrak {
+                nama: "NAMA_LGKAP".to_owned(),
+                tipe: "string".to_owned(),
+                wajib: true,
+            },
+        ];
+        // Tidak ada field sama sekali, tapi ada field wajib → error wajib, tapi semua nama field valid (tidak ada yang "tidak wajar")
+        let kontrak = vec![FieldInputKontrak {
+            nama: "NIK".to_owned(),
+            tipe: "string".to_owned(),
+            wajib: true,
+        }];
+        // Input kosong → NIK wajib hilang, tapi tidak ada field "tidak wajar"
+        let input = serde_json::json!({});
+        let TolakIntake::InputTidakValid {
+            errors,
+            jumlah_nama_tidak_cocok,
+        } = validasi_input(&input, &kontrak).unwrap_err()
+        else {
+            panic!("harus input tidak valid");
+        };
+        assert_eq!(errors.len(), 1, "harus ada error field wajib hilang");
+        assert_eq!(errors[0].field, "NIK");
+        assert_eq!(errors[0].kode, "wajib");
+        // jumlah_nama_tidak_cocok harus None karena tidak ada field "tidak wajar" di input
+        assert!(
+            jumlah_nama_tidak_cocok.is_none(),
+            "jumlah_nama_tidak_cocok harus None saat tidak ada nama yang tidak wajar"
+        );
+    }
+
+    #[test]
+    fn input_valid_diterima() {
         let input = serde_json::json!({"NIK": "1234567890123456", "NAMA_LGKAP": "Budi"});
         assert!(validasi_input(&input, &input_kontrak()).is_ok());
     }

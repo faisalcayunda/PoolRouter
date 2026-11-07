@@ -254,9 +254,9 @@ pub struct Posisi {
 /// dilanggar (tidak pernah nilai yang ditolak). Tidak ada `posisi`: error
 /// template hanya ada di API admin.
 ///
-/// `PartialEq` tanpa `Eq` dan itu disengaja: `batas` bertipe `f64`, sehingga
-/// perbandingan hanya untuk uji dan tipe ini tidak boleh dipakai sebagai kunci
-/// map.
+// `PartialEq` tanpa `Eq` dan itu disengaja: `batas` bertipe `f64`, sehingga
+// perbandingan hanya untuk uji dan tipe ini tidak boleh dipakai sebagai kunci
+// map.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]
 pub struct ValidasiErrorDown {
     /// Nama field yang ditolak, persis seperti dikirim (`TRESHOLD`, `NAMA_LGKAP`,
