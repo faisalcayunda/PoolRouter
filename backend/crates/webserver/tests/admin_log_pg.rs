@@ -8,7 +8,6 @@
 //! whose insert the admin role deliberately cannot do. Every NIK, payload and
 //! reason below is synthetic.
 
-use std::io::Write as _;
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 
