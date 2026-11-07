@@ -251,9 +251,8 @@ impl CredentialStore for CachedStore {
     }
 }
 
-#[cfg(test)]
-pub(crate) mod fake {
-    //! In-memory store for handler and auth tests; counts calls.
+pub mod fake {
+    //! In-memory store for handler, auth and router tests; counts calls.
     use super::*;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
