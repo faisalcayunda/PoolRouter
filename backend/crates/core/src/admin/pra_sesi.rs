@@ -175,6 +175,24 @@ impl PraSesiStore {
         Ok(token)
     }
 
+    /// Read the token without consuming it.
+    ///
+    /// Enrollment takes two calls (`daftar` then `daftar/konfirmasi`) under one
+    /// pre-session, so the first call must not spend it. Only `konfirmasi` runs
+    /// on the token that actually creates a session, and that one consumes.
+    pub async fn intip(&self, token: &str) -> Result<Option<PraSesi>, GalatPraSesi> {
+        let hash = hash_token(token);
+        let mut koneksi = self.koneksi().await?;
+        let nilai: Option<String> = koneksi
+            .get(kunci(&hash))
+            .await
+            .map_err(GalatPraSesi::Penyimpanan)?;
+        let Some(nilai) = nilai else {
+            return Ok(None);
+        };
+        urai_nilai(&nilai).map(Some).ok_or(GalatPraSesi::DataRusak)
+    }
+
     /// Consume the token and return what it carried. `None` means unknown,
     /// expired, already used, or destroyed by too many failures.
     pub async fn pakai(&self, token: &str) -> Result<Option<PraSesi>, GalatPraSesi> {

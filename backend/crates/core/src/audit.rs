@@ -326,6 +326,9 @@ pub struct AksesBaru {
     pub alasan: Option<Alasan>,
     pub sumber_ip: Option<String>,
     pub sesi_id: Option<String>,
+    /// Required by the `chk_audit_target_pengguna` constraint for the account
+    /// actions (`daftar_mfa`, `terbit_kode_daftar`, `reset_mfa*`, ...).
+    pub target_pengguna_id: Option<Uuid>,
 }
 
 impl AksesBaru {
@@ -343,6 +346,7 @@ impl AksesBaru {
             alasan: None,
             sumber_ip: None,
             sesi_id: None,
+            target_pengguna_id: None,
         }
     }
 
@@ -357,6 +361,13 @@ impl AksesBaru {
             hasil: Hasil::Ditolak,
             ..Self::berhasil(pelaku, Aksi::AksesDitolak)
         }
+    }
+
+    /// Point the row at the account the action was taken on, which the
+    /// `chk_audit_target_pengguna` constraint requires for `daftar_mfa`.
+    pub const fn dengan_target_pengguna(mut self, target: Uuid) -> Self {
+        self.target_pengguna_id = Some(target);
+        self
     }
 
     pub fn dengan_tampilan_nik(mut self, tampilan: TampilanNik) -> Self {
@@ -553,8 +564,8 @@ impl<'tx> Penulis<'tx> {
         sqlx::query(
             "INSERT INTO audit_akses \
              (audit_id, pengguna_id, peran, aksi, tampilan_nik, filter_kueri, nik_hmac, nik_tersamar, \
-              jumlah_record, alasan, hasil, sumber_ip, sesi_id) \
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)",
+              jumlah_record, alasan, hasil, sumber_ip, sesi_id, target_pengguna_id) \
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)",
         )
         .bind(audit_id)
         .bind(baris.pelaku.pengguna_id)
@@ -569,6 +580,7 @@ impl<'tx> Penulis<'tx> {
         .bind(baris.hasil.as_str())
         .bind(baris.sumber_ip)
         .bind(baris.sesi_id)
+        .bind(baris.target_pengguna_id)
         .execute(&mut **self.tx)
         .await?;
 
