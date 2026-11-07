@@ -165,6 +165,12 @@ pub fn jawaban_untuk(tolak: TolakIntake) -> Jawaban {
 /// `kuota_habis`, `porsi_sync_habis` and `objek_nonaktif` as `reject_reason`.
 /// ADR-0001 section 4 therefore calls these "penolakan tanpa baris": they still
 /// cost a rejection token, they just never write a row.
+///
+/// `IdempotencyKeyTidakSah` (malformed key header) maps to `validasi_gagal` at
+/// line 110, so the schema does permit writing it. However, it is formatted as
+/// a 400 with ProblemKodeDown::ValidasiGagal, not as a rejection reason. It is
+/// excluded from `menulis_baris` because it is a request validation failure, not
+/// a resource rejection; writes would be redundant with the response status.
 fn menulis_baris(j: &Jawaban) -> bool {
     !matches!(
         j,
@@ -412,5 +418,26 @@ mod tests {
         let j = Jawaban::PenolakanBerlebih { retry_after: 3 }.into_api_error();
         assert_eq!(j.status(), StatusCode::TOO_MANY_REQUESTS);
         assert_eq!(j.retry_after_secs(), Some(3));
+        // Verify body only contains type, title, status, kode
+        let body_str = serde_json::to_string(&j).unwrap_or_default();
+        let body: serde_json::Map<String, serde_json::Value> =
+            serde_json::from_str(&body_str).unwrap_or_default();
+        let kunci_diizinkan = vec!["type", "title", "status", "kode"];
+        for kunci in body.keys() {
+            assert!(
+                kunci_diizinkan.contains(&kunci.as_str()),
+                "key {} tidak boleh ada di body",
+                kunci
+            );
+        }
+        // Cek tidak ada error atau errors
+        assert!(
+            !body.contains_key("error"),
+            "body tidak boleh punya key 'error'"
+        );
+        assert!(
+            !body.contains_key("errors"),
+            "body tidak boleh punya key 'errors'"
+        );
     }
 }

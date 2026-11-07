@@ -334,13 +334,15 @@ fn kosong(v: &Value) -> bool {
     }
 }
 
-/// Logical type check. `string` accepts any JSON scalar because providers
-/// express numeric identifiers as strings, and the per-field rules do the real
-/// work; `number`/`boolean` stay strict.
+/// Logical type check. `string` accepts only JSON scalars (strings, numbers,
+/// booleans, null), never arrays or objects. Providers express numeric
+/// identifiers as strings; per-field rules do the real work. `number`/`boolean`
+/// stay strict.
 fn tipe_cocok(v: &Value, tipe: &str) -> bool {
     match tipe {
         "number" | "integer" => v.is_number(),
         "boolean" => v.is_boolean(),
+        "string" => !v.is_object() && !v.is_array(),
         _ => true,
     }
 }
@@ -548,19 +550,6 @@ mod tests {
     fn nama_tidak_wajar_jumlah_nol_kembali_none() {
         // Ketika tidak ada nama field yang tidak wajar, jumlah_nama_tidak_cocok harus None (absen),
         // meski ada kesalahan validasi lain (misal field wajib hilang).
-        let kontrak = vec![
-            FieldInputKontrak {
-                nama: "NIK".to_owned(),
-                tipe: "string".to_owned(),
-                wajib: true,
-            },
-            FieldInputKontrak {
-                nama: "NAMA_LGKAP".to_owned(),
-                tipe: "string".to_owned(),
-                wajib: true,
-            },
-        ];
-        // Tidak ada field sama sekali, tapi ada field wajib → error wajib, tapi semua nama field valid (tidak ada yang "tidak wajar")
         let kontrak = vec![FieldInputKontrak {
             nama: "NIK".to_owned(),
             tipe: "string".to_owned(),
@@ -630,6 +619,39 @@ mod tests {
     }
 
     #[test]
+    fn error_body_tidak_bocor_input_nik_secret() {
+        // AC: error body hanya boleh punya field nama, kode, batas (jika ada);
+        // tidak boleh ada nilai input, NIK, atau secret.
+        let input = serde_json::json!({
+            "NIK": "1234567890123456",
+            "NAMA_LGKAP": "   ",
+            "secret_field": "rahasia"
+        });
+        let TolakIntake::InputTidakValid { errors, .. } =
+            validasi_input(&input, &input_kontrak()).unwrap_err()
+        else {
+            panic!("harus input tidak valid");
+        };
+        // Serialize errors ke JSON
+        let errors_json = serde_json::to_string(&errors).unwrap();
+        // Pastikan tidak ada NIK, nilai rahasia, atau secret di dalam body
+        assert!(
+            !errors_json.contains("1234567890123456"),
+            "NIK bocor ke error body"
+        );
+        assert!(
+            !errors_json.contains("rahasia"),
+            "nilai secret bocor ke error body"
+        );
+        // Cek struktur: hanya field, kode, batas
+        for err in &errors {
+            assert!(!err.field.is_empty(), "field harus ada");
+            assert!(!err.kode.is_empty(), "kode harus ada");
+            // batas bisa None atau Some
+        }
+    }
+
+    #[test]
     fn tipe_number_menolak_string() {
         let kontrak = vec![FieldInputKontrak {
             nama: "jumlah".to_owned(),
@@ -638,6 +660,29 @@ mod tests {
         }];
         let galat = validasi_input(&serde_json::json!({"jumlah": "12"}), &kontrak).unwrap_err();
         let TolakIntake::InputTidakValid { errors, .. } = galat else {
+            panic!("harus input tidak valid");
+        };
+        assert_eq!(errors[0].kode, "tipe_salah");
+    }
+
+    #[test]
+    fn tipe_string_menolak_objek_dan_array() {
+        let kontrak = vec![FieldInputKontrak {
+            nama: "NIK".to_owned(),
+            tipe: "string".to_owned(),
+            wajib: true,
+        }];
+        // Objek harus ditolak untuk field string
+        let galat_objek =
+            validasi_input(&serde_json::json!({"NIK": {"nested": "value"}}), &kontrak).unwrap_err();
+        let TolakIntake::InputTidakValid { errors, .. } = galat_objek else {
+            panic!("harus input tidak valid");
+        };
+        assert_eq!(errors[0].kode, "tipe_salah");
+        // Array harus ditolak untuk field string
+        let galat_array =
+            validasi_input(&serde_json::json!({"NIK": ["1", "2"]}), &kontrak).unwrap_err();
+        let TolakIntake::InputTidakValid { errors, .. } = galat_array else {
             panic!("harus input tidak valid");
         };
         assert_eq!(errors[0].kode, "tipe_salah");
