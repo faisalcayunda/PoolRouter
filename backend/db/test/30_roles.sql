@@ -76,6 +76,8 @@ SELECT t.gagal('SELECT secret_ciphertext FROM client_webhook', '42501', 'pr_api:
 SELECT t.jalan('SELECT client_id, aktif FROM client_webhook', 'pr_api: client_webhook (client_id, aktif) readable');
 SELECT t.jalan('SELECT secret_ciphertext FROM provider_secret', 'pr_api: reads provider secret ciphertext');
 SELECT t.jalan('SELECT kunci_hash, status FROM client_kredensial', 'pr_api: authenticates against credential hash');
+SELECT t.jalan('SELECT credential_id, client_id, jenis, kunci_hash, status, kedaluwarsa_at FROM client_kredensial ORDER BY dibuat_at DESC LIMIT 5',
+  'pr_api: the credential store query (ORDER BY dibuat_at) is permitted');
 SELECT t.gagal('SELECT * FROM audit_akses', '42501', 'pr_api: audit_akses denied');
 SELECT t.gagal('DELETE FROM request', '42501', 'pr_api: no DELETE');
 SELECT t.gagal('SELECT input_payload FROM request', '42501', 'pr_api: input_payload not readable');
@@ -191,7 +193,8 @@ SELECT t.ok(t.hitung($q$
   SELECT count(*) FROM information_schema.role_table_grants
    WHERE grantee IN ('pr_api','pr_admin_api','pr_controller','pr_worker','pr_webhook') AND privilege_type = 'DELETE'
      AND table_name NOT IN ('downstream_pool_rute', 'client_endpoint', 'endpoint_metadata_field', 'admin_session',
-                          'pengguna_mfa', 'kode_pemulihan_mfa', 'kode_daftar_mfa', 'provider_secret')$q$) = 0,   -- the last three: MF-09 (F1), pinned in 60_f1_roles.sql; provider_secret: AD1/ARC-48, deleteSecret is a real delete
+                          'pengguna_mfa', 'kode_pemulihan_mfa', 'kode_daftar_mfa', 'provider_secret',
+                          'webhook_domain_allowlist')$q$) = 0,   -- the last three: MF-09 (F1), pinned in 60_f1_roles.sql; provider_secret: AD1/ARC-48, deleteSecret is a real delete; webhook_domain_allowlist: AC-24 (T4), pinned in 90_t4_roles.sql
   'no application role can DELETE outside the allowed configuration tables');
 SELECT t.ok(t.hitung($q$
   SELECT count(*) FROM information_schema.role_table_grants

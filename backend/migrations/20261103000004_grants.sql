@@ -16,7 +16,7 @@ $$;
 GRANT SELECT ON downstream_endpoint, downstream_pool, downstream_pool_rute, upstream_pool, provider, provider_config_versi,
   endpoint_config_versi, endpoint_metadata_field, client_endpoint, provider_secret, upstream_attempt_daily TO pr_api;
 GRANT SELECT (client_id, nama, aktif, limiter_penolakan_burst, limiter_penolakan_isi_ulang_per_detik) ON client TO pr_api;
-GRANT SELECT (credential_id, client_id, jenis, kunci_hash, status, kedaluwarsa_at) ON client_kredensial TO pr_api;   -- authentication
+GRANT SELECT (credential_id, client_id, jenis, kunci_hash, status, kedaluwarsa_at, dibuat_at) ON client_kredensial TO pr_api;   -- authentication; dibuat_at is the store's ORDER BY
 GRANT SELECT (client_id, aktif) ON client_webhook TO pr_api;
 DO $$ BEGIN
   EXECUTE format('GRANT SELECT (%s) ON request TO pr_api', pg_temp.kolom('request', ARRAY['input_payload', 'metadata']));
@@ -76,7 +76,8 @@ GRANT EXECUTE ON FUNCTION fn_purge_p02(uuid), fn_purge_p03(integer), fn_tutup_lo
   fn_entitas_nonaktif_pertama(uuid), fn_ditahan_data_balikan(uuid) TO pr_controller;
 
 -- ================================================================ pr_webhook (webhook job in the controller)
-GRANT SELECT (request_id, webhook_status, webhook_attempt_count) ON request TO pr_webhook;   -- CAS claim 0 -> 1
+GRANT SELECT (request_id, webhook_status, webhook_attempt_count) ON request TO pr_webhook;   -- outbox scan + CAS claim 0 -> 1
+GRANT SELECT (client_id, status, attempt_count) ON request TO pr_webhook;                    -- body: owner, terminal status, attempt_no
 GRANT UPDATE (webhook_status, webhook_attempt_count, webhook_last_at, webhook_last_http_status, webhook_last_error) ON request TO pr_webhook;
 GRANT SELECT ON v_request_webhook TO pr_webhook;                       -- terminal async rows, output_payload, no input / metadata
 GRANT INSERT ON webhook_log TO pr_webhook;
@@ -137,3 +138,63 @@ REVOKE ALL ON FUNCTION fn_set_status_kredensial(uuid, text, uuid, text) FROM PUB
 -- added by a later migration (created by poolrouter_owner) must not be executable by PUBLIC either. Grants stay
 -- explicit and per role, as for the functions above.
 ALTER DEFAULT PRIVILEGES FOR ROLE poolrouter_owner IN SCHEMA public REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC;
+
+-- ---------------------------------------------------------------- webhook claim (ARC-73, AC-26)
+-- `pr_webhook` owns the five webhook_* columns of `request`, but a plain column UPDATE still fails: the
+-- BEFORE UPDATE triggers (request_transisi, request_history_wajib, ...) read columns the role is deliberately
+-- not granted (W-02). The claim therefore goes through one SECURITY DEFINER function that touches only those
+-- five columns; EXECUTE is granted to pr_webhook alone right here.
+CREATE FUNCTION fn_klaim_webhook(
+  p_request_id uuid,
+  p_sekarang timestamptz,
+  p_http_status integer,
+  p_galat text)
+RETURNS integer
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, public
+AS $$
+DECLARE
+  n integer;
+BEGIN
+  UPDATE public.request
+     SET webhook_attempt_count = 1,
+         webhook_last_at = p_sekarang,
+         webhook_status = CASE WHEN p_galat IS NULL THEN webhook_status ELSE 'gagal' END,
+         webhook_last_http_status = p_http_status,
+         webhook_last_error = p_galat
+   WHERE request_id = p_request_id
+     AND webhook_status = 'menunggu'
+     AND webhook_attempt_count = 0
+     AND (p_galat IS NULL OR webhook_last_at < p_sekarang - interval '5 minutes');
+  GET DIAGNOSTICS n = ROW_COUNT;
+  RETURN n;
+END $$;
+REVOKE ALL ON FUNCTION fn_klaim_webhook(uuid, timestamptz, integer, text) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION fn_klaim_webhook(uuid, timestamptz, integer, text) TO pr_webhook;
+
+-- AC-26: a claim older than the given limit is closed `gagal` without a second send. The age test lives
+-- inside the function: the outbox scan only runs on columns pr_webhook may read, and comparing
+-- webhook_last_at to a bound timestamp in the scan fails with "permission denied for table request"
+-- (most likely a plan-time permission check on the column's index) even though the column is granted.
+CREATE FUNCTION fn_tutup_klaim_macet(p_sekarang timestamptz, p_detik integer)
+RETURNS bigint
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, public
+AS $$
+DECLARE
+  n bigint;
+BEGIN
+  UPDATE public.request
+     SET webhook_status = 'gagal',
+         webhook_last_error = 'klaim_kedaluwarsa'
+   WHERE webhook_status = 'menunggu'
+     AND webhook_attempt_count = 1
+     AND webhook_last_at < p_sekarang - make_interval(secs => p_detik);
+  GET DIAGNOSTICS n = ROW_COUNT;
+  RETURN n;
+END $$;
+REVOKE ALL ON FUNCTION fn_tutup_klaim_macet(timestamptz, integer) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION fn_tutup_klaim_macet(timestamptz, integer) TO pr_webhook;
+

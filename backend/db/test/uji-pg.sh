@@ -75,8 +75,18 @@ $ENGINE exec -e POOLROUTER_SECRETS_DIR=/tmp/sec -e PGUSER=postgres -e PGHOST=127
 
 PW=$($ENGINE exec "$NAME" cat /tmp/sec/pr_admin_api)
 export POOLROUTER_TEST_DATABASE_URL="postgres://pr_admin_api:$PW@127.0.0.1:$PORT/poolrouter_test"
+API_PW=$($ENGINE exec "$NAME" cat /tmp/sec/pr_api)
+export POOLROUTER_TEST_DATABASE_URL_API="postgres://pr_api:$API_PW@127.0.0.1:$PORT/poolrouter_test"
 export POOLROUTER_TEST_REDIS="redis://127.0.0.1:$RPORT"
 export POOLROUTER_TEST_DATABASE_URL_SU="postgres://postgres:$SU_PW@127.0.0.1:$PORT/poolrouter_test"
-echo "uji-pg: PostgreSQL 127.0.0.1:$PORT sebagai pr_admin_api"
+# The controller tests run as the role the controller itself uses (ARC-69): the
+# snapshot and rebuild must work under pr_controller's column grants, not the
+# stricter pr_admin_api ones, and not as superuser.
+PW_C=$($ENGINE exec "$NAME" cat /tmp/sec/pr_controller)
+export POOLROUTER_TEST_DATABASE_URL_CONTROLLER="postgres://pr_controller:$PW_C@127.0.0.1:$PORT/poolrouter_test"
+# AC-73: webhook job runs as pr_webhook, which needs its own pool and role grants.
+PW_W=$($ENGINE exec "$NAME" cat /tmp/sec/pr_webhook)
+export POOLROUTER_TEST_DATABASE_URL_WEBHOOK="postgres://pr_webhook:$PW_W@127.0.0.1:$PORT/poolrouter_test"
+echo "uji-pg: PostgreSQL 127.0.0.1:$PORT sebagai pr_admin_api (dan pr_webhook untuk uji ARC-73)"
 $MAKE_CMD
 echo "uji-pg: lulus"

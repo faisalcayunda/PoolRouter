@@ -112,6 +112,7 @@ pub enum Aksi {
     RestoreArsip,
     UbahPeran,
     AksesDitolak,
+    PakaiKodePemulihan,
 }
 
 impl Aksi {
@@ -126,10 +127,11 @@ impl Aksi {
             Self::RestoreArsip => "restore_arsip",
             Self::UbahPeran => "ubah_peran",
             Self::AksesDitolak => "akses_ditolak",
+            Self::PakaiKodePemulihan => "pakai_kode_pemulihan",
         }
     }
 
-    pub const SEMUA: [Self; 9] = [
+    pub const SEMUA: [Self; 10] = [
         Self::LihatLog,
         Self::CariLog,
         Self::CariNik,
@@ -139,6 +141,7 @@ impl Aksi {
         Self::RestoreArsip,
         Self::UbahPeran,
         Self::AksesDitolak,
+        Self::PakaiKodePemulihan,
     ];
 }
 
@@ -184,8 +187,10 @@ pub enum Hasil {
 
 impl Hasil {
     pub const fn as_str(self) -> &'static str {
+        // The audit_akses CHECK (migrations/20261103000002_request_log.sql) and the
+        // F0 SQL functions use `diizinkan` for a carried-out action.
         match self {
-            Self::Berhasil => "berhasil",
+            Self::Berhasil => "diizinkan",
             Self::Ditolak => "ditolak",
         }
     }
@@ -721,9 +726,10 @@ mod tests {
 
     #[test]
     fn aksi_values_are_the_column_check_constraint() {
-        // Mirrors migrations/20261103000002_request_log.sql. If this list and
-        // the constraint drift, every write of the new value fails at runtime
-        // in production only, so pin it here.
+        // Mirrors migrations/20261103000002_request_log.sql and the F1 additions
+        // in 20261104000002_f1_audit_balikan_arsip.sql. If this list and the
+        // constraint drift, every write of the new value fails at runtime in
+        // production only, so pin it here.
         assert_eq!(
             Aksi::SEMUA.map(Aksi::as_str),
             [
@@ -735,7 +741,8 @@ mod tests {
                 "lihat_audit",
                 "restore_arsip",
                 "ubah_peran",
-                "akses_ditolak"
+                "akses_ditolak",
+                "pakai_kode_pemulihan"
             ]
         );
     }
@@ -847,7 +854,7 @@ mod tests {
 
     #[test]
     fn hasil_and_tampilan_display_match_column_values() {
-        assert_eq!(Hasil::Berhasil.to_string(), "berhasil");
+        assert_eq!(Hasil::Berhasil.to_string(), "diizinkan");
         assert_eq!(Hasil::Ditolak.to_string(), "ditolak");
         assert_eq!(TampilanNik::Utuh.to_string(), "utuh");
         assert_eq!(TampilanNik::Tersamar.to_string(), "tersamar");

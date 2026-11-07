@@ -7,6 +7,7 @@ pub mod gcra;
 pub mod gerbang;
 pub mod intake;
 pub mod jwt;
+pub mod konfigurasi_endpoint;
 pub mod layers;
 pub mod probe;
 pub mod server;

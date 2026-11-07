@@ -32,7 +32,7 @@ use tower_http::limit::RequestBodyLimitLayer;
 use tower_http::set_header::SetResponseHeaderLayer;
 
 use super::pembatas::PembatasLogin;
-use super::{login, me, secret};
+use super::{allowlist, klien, kredensial, log, login, me, secret, webhook};
 
 use crate::api::problem::{ProblemKodeAdmin, ValidasiErrorAdmin};
 use crate::api::problem_admin::ProblemAdmin;
@@ -86,6 +86,22 @@ pub fn router(state: AdminState) -> Router {
             axum::routing::patch(me::update_preferensi),
         )
         .route("/admin/v1/secrets", get(secret::list_secrets))
+        // T7: request log, auditor search, payload opening, export, audit read.
+        .route("/admin/v1/log/cari", post(log::search_log))
+        .route("/admin/v1/log/{kode_transaksi}", get(log::get_log_entry))
+        .route(
+            "/admin/v1/auditor/log/cari-nik",
+            post(log::search_log_by_nik),
+        )
+        .route("/admin/v1/auditor/payload", post(log::open_payload))
+        .route(
+            "/admin/v1/auditor/log/ekspor",
+            post(log::export_log_auditor),
+        )
+        .route(
+            "/admin/v1/auditor/audit-akses/cari",
+            post(log::search_audit_akses),
+        )
         .route(
             "/admin/v1/secrets/{nama}",
             put(secret::put_secret).delete(secret::delete_secret),
@@ -95,6 +111,38 @@ pub fn router(state: AdminState) -> Router {
         .route(
             "/admin/v1/secrets/",
             put(secret::put_secret_kosong).delete(secret::delete_secret_kosong),
+        )
+        .route(
+            "/admin/v1/clients",
+            get(klien::list_clients).post(klien::create_client),
+        )
+        .route(
+            "/admin/v1/clients/{id}",
+            get(klien::get_client).put(klien::update_client),
+        )
+        .route(
+            "/admin/v1/clients/{id}/credentials",
+            get(kredensial::list_credentials).post(kredensial::create_credential),
+        )
+        .route(
+            "/admin/v1/clients/{id}/webhook",
+            get(webhook::get_webhook_config).put(webhook::put_webhook_config),
+        )
+        .route(
+            "/admin/v1/clients/{id}/webhook/rotasi-secret",
+            post(webhook::rotate_webhook_secret),
+        )
+        .route(
+            "/admin/v1/clients/{id}/webhook/log",
+            get(webhook::list_webhook_log),
+        )
+        .route(
+            "/admin/v1/webhook-allowlist",
+            get(allowlist::list_allowlist),
+        )
+        .route(
+            "/admin/v1/webhook-allowlist/{domain}",
+            put(allowlist::put_allowlist_entry).delete(allowlist::delete_allowlist_entry),
         )
         .with_state(state)
         .layer(RequestBodyLimitLayer::new(16 * 1024))
