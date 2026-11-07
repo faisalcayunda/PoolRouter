@@ -258,7 +258,7 @@ pub(super) async fn aktifkan_credential(
     ConnectInfo(peer): ConnectInfo<SocketAddr>,
     Path(id): Path<Uuid>,
 ) -> Result<Response, Galat> {
-    let peminta = masuk(
+    let _peminta = masuk(
         &s,
         &method,
         &headers,
@@ -267,31 +267,14 @@ pub(super) async fn aktifkan_credential(
         "aktifkanCredential",
     )
     .await?;
+    // `fn_aktifkan_entitas` has no credential path other than raising
+    // `kredensial_dicabut_terminal` (U-54b); the outcome is known up front, so
+    // reject here without running the transactional SQL (and its audit row).
     ada_kredensial(&s, id).await?;
-
-    let err = s
-        .k20
-        .aktifkan(
-            JenisEntitas::Kredensial,
-            id,
-            peminta.pengguna_id,
-            "Percobaan reaktivasi kredensial (U-54b); selalu ditolak.",
-        )
-        .await
-        .expect_err("fn_aktifkan_entitas selalu menolak jenis kredensial (U-54b)");
-    match &err {
-        GalatK20::BasisData(e)
-            if e.as_database_error()
-                .and_then(|d| d.code())
-                .is_some_and(|c| c == "23514") =>
-        {
-            Err(Galat::baru(
-                StatusCode::CONFLICT,
-                ProblemKodeAdmin::KredensialDicabut,
-            ))
-        }
-        _ => Err(galat_k20(&err)),
-    }
+    Err(Galat::baru(
+        StatusCode::CONFLICT,
+        ProblemKodeAdmin::KredensialDicabut,
+    ))
 }
 
 /// One credential row, by id; 404 when it does not exist.
