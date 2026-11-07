@@ -508,6 +508,11 @@ export default interface Resources {
         "used_left": "Terpakai {{persen, number}}%, sisa {{sisa, number}}"
       }
     },
+    "recovery": {
+      "error": "Kode pemulihan Anda habis. Atur ulang MFA.",
+      "info": "Anda masuk menggunakan kode pemulihan. Buat kode pemulihan baru saat siap.",
+      "warning": "Sisa kode pemulihan Anda tinggal {{n}}. Atur ulang MFA untuk membuat kode baru."
+    },
     "risk": {
       "client": {
         "confirm": "Nonaktifkan client",
