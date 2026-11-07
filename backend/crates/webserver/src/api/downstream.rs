@@ -111,7 +111,7 @@ pub struct SubmitRequest {
 }
 
 /// Hasil untuk satu elemen yang diperiksa.
-#[derive(Debug, Clone, Serialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct HasilElemen {
     pub status: StatusHasil,
     /// 0..=100, atau `null` bila provider tidak memberi skor.
