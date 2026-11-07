@@ -1,0 +1,4 @@
+# expect: image-tanpa-digest
+services:
+  backend-webserver:
+    image: ghcr.io/faisalcayunda/poolrouter-backend:latest

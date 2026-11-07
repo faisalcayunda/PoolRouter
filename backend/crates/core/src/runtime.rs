@@ -58,6 +58,33 @@ pub async fn start(
     std::process::ExitCode::SUCCESS
 }
 
+/// Probe the component readiness endpoint for Compose healthchecks.
+pub async fn healthcheck() -> std::process::ExitCode {
+    let addr = std::env::var("POOLROUTER_ADMIN_ADDR")
+        .unwrap_or_else(|_| "127.0.0.1:9090".to_owned());
+    let url = format!("http://{addr}/readyz");
+    let result = tokio::time::timeout(
+        std::time::Duration::from_secs(2),
+        reqwest::Client::new().get(url).send(),
+    )
+    .await
+    .ok()
+    .and_then(Result::ok)
+    .is_some_and(|response| response.status().is_success());
+    if result { std::process::ExitCode::SUCCESS } else { std::process::ExitCode::FAILURE }
+}
+
+/// Expose the local readiness endpoint used by the container probe.
+pub fn spawn_ready_server() {
+    let addr = std::env::var("POOLROUTER_ADMIN_ADDR")
+        .unwrap_or_else(|_| "0.0.0.0:9090".to_owned());
+    tokio::spawn(async move {
+        let Ok(listener) = tokio::net::TcpListener::bind(&addr).await else { return };
+        let app = axum::Router::new().route("/readyz", axum::routing::get(|| async { "ok" }));
+        let _ = axum::serve(listener, app).await;
+    });
+}
+
 /// Skeleton entry point used by the binaries until the real services land.
 ///
 /// With `--check` it initialises logging and returns immediately (smoke test).
