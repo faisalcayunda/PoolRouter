@@ -66,8 +66,8 @@ pub async fn start(
 
 /// Probe the component readiness endpoint for Compose healthchecks.
 pub async fn healthcheck() -> std::process::ExitCode {
-    let addr = std::env::var("POOLROUTER_ADMIN_ADDR")
-        .unwrap_or_else(|_| "127.0.0.1:9090".to_owned());
+    let addr =
+        std::env::var("POOLROUTER_ADMIN_ADDR").unwrap_or_else(|_| "127.0.0.1:9090".to_owned());
     healthcheck_at(&addr).await
 }
 
@@ -82,13 +82,16 @@ pub async fn healthcheck_at(addr: &str) -> std::process::ExitCode {
     .ok()
     .and_then(Result::ok)
     .is_some_and(|response| response.status().is_success());
-    if result { std::process::ExitCode::SUCCESS } else { std::process::ExitCode::FAILURE }
+    if result {
+        std::process::ExitCode::SUCCESS
+    } else {
+        std::process::ExitCode::FAILURE
+    }
 }
 
 /// Expose the local readiness endpoint used by the container probe.
 pub fn spawn_ready_server() {
-    let addr = std::env::var("POOLROUTER_ADMIN_ADDR")
-        .unwrap_or_else(|_| "0.0.0.0:9090".to_owned());
+    let addr = std::env::var("POOLROUTER_ADMIN_ADDR").unwrap_or_else(|_| "0.0.0.0:9090".to_owned());
     spawn_ready_server_on(&addr);
 }
 
@@ -96,7 +99,9 @@ pub fn spawn_ready_server() {
 pub fn spawn_ready_server_on(addr: &str) {
     let addr = addr.to_owned();
     tokio::spawn(async move {
-        let Ok(listener) = TcpListener::bind(&addr).await else { return };
+        let Ok(listener) = TcpListener::bind(&addr).await else {
+            return;
+        };
         let metrics = PrometheusBuilder::new().build_recorder().handle();
         let metrics_handle = metrics.clone();
         let app = Router::new()
