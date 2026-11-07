@@ -286,6 +286,11 @@ pub struct ValidasiErrorAdmin {
     /// Template position. Admin API and template errors only.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub posisi: Option<Posisi>,
+    /// Name of the parameter or secret the template referenced and that does
+    /// not exist (AC-13, U-46). Echoed so the UI can offer to create it; it is a
+    /// name the operator typed, never a value. Absent for every other error.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub nama: Option<String>,
 }
 
 /// Count of failing names that are withheld instead of echoed (D6). A count of
