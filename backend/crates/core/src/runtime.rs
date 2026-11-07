@@ -1,5 +1,11 @@
 //! Process bootstrap shared by every binary: logging and graceful shutdown.
 
+use axum::Router;
+use axum::http::{HeaderValue, header};
+use axum::response::IntoResponse;
+use axum::routing::get;
+use metrics_exporter_prometheus::PrometheusBuilder;
+use tokio::net::TcpListener;
 use tokio_util::sync::CancellationToken;
 use tracing_subscriber::EnvFilter;
 
@@ -62,6 +68,11 @@ pub async fn start(
 pub async fn healthcheck() -> std::process::ExitCode {
     let addr = std::env::var("POOLROUTER_ADMIN_ADDR")
         .unwrap_or_else(|_| "127.0.0.1:9090".to_owned());
+    healthcheck_at(&addr).await
+}
+
+/// Probe `/readyz` on `addr` (used by tests with an explicit address).
+pub async fn healthcheck_at(addr: &str) -> std::process::ExitCode {
     let url = format!("http://{addr}/readyz");
     let result = tokio::time::timeout(
         std::time::Duration::from_secs(2),
@@ -78,9 +89,33 @@ pub async fn healthcheck() -> std::process::ExitCode {
 pub fn spawn_ready_server() {
     let addr = std::env::var("POOLROUTER_ADMIN_ADDR")
         .unwrap_or_else(|_| "0.0.0.0:9090".to_owned());
+    spawn_ready_server_on(&addr);
+}
+
+/// Bind the probe/metrics listener on `addr` (used by tests with an explicit address).
+pub fn spawn_ready_server_on(addr: &str) {
+    let addr = addr.to_owned();
     tokio::spawn(async move {
-        let Ok(listener) = tokio::net::TcpListener::bind(&addr).await else { return };
-        let app = axum::Router::new().route("/readyz", axum::routing::get(|| async { "ok" }));
+        let Ok(listener) = TcpListener::bind(&addr).await else { return };
+        let metrics = PrometheusBuilder::new().build_recorder().handle();
+        let metrics_handle = metrics.clone();
+        let app = Router::new()
+            .route("/healthz", get(|| async { "ok" }))
+            .route("/readyz", get(|| async { "ok" }))
+            .route(
+                "/metrics",
+                get(move || {
+                    let m = metrics_handle.clone();
+                    async move {
+                        let mut res = m.render().into_response();
+                        res.headers_mut().insert(
+                            header::CONTENT_TYPE,
+                            HeaderValue::from_static("text/plain; version=0.0.4; charset=utf-8"),
+                        );
+                        res
+                    }
+                }),
+            );
         let _ = axum::serve(listener, app).await;
     });
 }
@@ -105,6 +140,23 @@ pub async fn run_skeleton(name: &'static str, args: &[String]) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::process::ExitCode;
+    use std::time::Duration;
+
+    #[tokio::test]
+    async fn healthcheck_at_fails_without_listener() {
+        let code = healthcheck_at("127.0.0.1:19191").await;
+        assert_eq!(code, ExitCode::FAILURE);
+    }
+
+    #[tokio::test]
+    async fn healthcheck_at_succeeds_when_readyz_serves_ok() {
+        let addr = "127.0.0.1:19192";
+        spawn_ready_server_on(addr);
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        let code = healthcheck_at(addr).await;
+        assert_eq!(code, ExitCode::SUCCESS);
+    }
 
     #[tokio::test]
     async fn check_flag_returns_immediately() {
