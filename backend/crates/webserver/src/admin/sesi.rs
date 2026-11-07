@@ -22,7 +22,9 @@ use axum::http::{HeaderMap, HeaderValue, Method, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post, put};
 use chrono::{DateTime, Utc};
+use poolrouter_core::admin::mfa::MfaStore;
 use poolrouter_core::admin::origin;
+use poolrouter_core::admin::pra_sesi::PraSesiStore;
 use poolrouter_core::admin::sesi_store::{SesiDitolak, SesiStore};
 use poolrouter_core::admin::token::HashToken;
 use poolrouter_core::admin::{AsalUi, TokenSesi};
@@ -32,7 +34,7 @@ use tower_http::limit::RequestBodyLimitLayer;
 use tower_http::set_header::SetResponseHeaderLayer;
 
 use super::pembatas::PembatasLogin;
-use super::{allowlist, klien, kredensial, log, login, me, secret, webhook};
+use super::{allowlist, klien, kredensial, log, login, me, mfa, secret, webhook};
 
 use crate::api::problem::{ProblemKodeAdmin, ValidasiErrorAdmin};
 use crate::api::problem_admin::ProblemAdmin;
@@ -54,17 +56,33 @@ pub struct AdminState {
     pub pembatas: Arc<PembatasLogin>,
     /// The KEK-backed envelope for `provider_secret` (AC-8, AC-11).
     pub brankas: Arc<Brankas>,
+    /// TOTP enrollment and verification (ADR-0006 §9).
+    pub mfa: MfaStore,
+    /// The one-time token between the password step and the code step (MF2).
+    pub pra_sesi: PraSesiStore,
+    /// Whether `auditor`/`platform_admin` must pass the TOTP step.
+    pub mfa_wajib: bool,
 }
 
 impl AdminState {
-    pub fn baru(pool: PgPool, asal: AsalUi, pembatas: PembatasLogin, brankas: Brankas) -> Self {
+    pub fn baru(
+        pool: PgPool,
+        asal: AsalUi,
+        pembatas: PembatasLogin,
+        brankas: Brankas,
+        redis: redis::Client,
+        mfa_wajib: bool,
+    ) -> Self {
         Self {
             sesi: SesiStore::baru(pool.clone()),
+            mfa: MfaStore::baru(pool.clone(), brankas.clone()),
             pool,
             asal,
             jam: Arc::new(Utc::now),
             pembatas: Arc::new(pembatas),
             brankas: Arc::new(brankas),
+            pra_sesi: PraSesiStore::baru(redis),
+            mfa_wajib,
         }
     }
 
@@ -80,6 +98,12 @@ pub fn router(state: AdminState) -> Router {
         .route("/admin/v1/auth/sesi/perpanjang", post(perpanjang_sesi))
         .route("/admin/v1/auth/logout", post(logout))
         .route("/admin/v1/auth/login", post(login::login))
+        .route("/admin/v1/auth/mfa", post(mfa::mfa))
+        .route("/admin/v1/auth/mfa/daftar", post(mfa::daftar))
+        .route(
+            "/admin/v1/auth/mfa/daftar/konfirmasi",
+            post(mfa::konfirmasi),
+        )
         .route("/admin/v1/auth/me", get(me::get_me))
         .route(
             "/admin/v1/auth/me/preferensi",

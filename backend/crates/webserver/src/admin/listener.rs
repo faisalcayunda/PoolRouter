@@ -105,7 +105,7 @@ pub fn state_admin(cfg: &Config, pool: PgPool, redis: redis::Client) -> Result<A
         .secrets
         .get("POOLROUTER_IDEMPOTENCY_HMAC_KEY")
         .ok_or("POOLROUTER_IDEMPOTENCY_HMAC_KEY_FILE missing")?;
-    let pembatas = PembatasLogin::baru(redis, kunci.expose_secret().as_bytes());
+    let pembatas = PembatasLogin::baru(redis.clone(), kunci.expose_secret().as_bytes());
     // The KEK seals provider secrets (AC-8). It is a startup failure, not a
     // request failure: without it `putSecret` could not keep its promise.
     let kek = cfg
@@ -113,7 +113,14 @@ pub fn state_admin(cfg: &Config, pool: PgPool, redis: redis::Client) -> Result<A
         .get("POOLROUTER_KEK")
         .ok_or("POOLROUTER_KEK_FILE missing")?;
     let brankas = Brankas::dari_isi_kek(kek.expose_secret()).map_err(|e| e.to_string())?;
-    Ok(AdminState::baru(pool, asal, pembatas, brankas))
+    Ok(AdminState::baru(
+        pool,
+        asal,
+        pembatas,
+        brankas,
+        redis,
+        cfg.mfa_wajib,
+    ))
 }
 
 #[cfg(test)]
