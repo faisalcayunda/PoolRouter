@@ -5,6 +5,8 @@ import { ApiError, type ApiClient } from '../src/api/client';
 import { LoginScreen } from '../src/features/auth/LoginScreen';
 import { renderWithI18n } from './render';
 
+const SANDI_UJI = 'kata-sandi-uji';
+
 function stub(overrides: Partial<ApiClient> = {}): ApiClient {
   return { login: vi.fn().mockResolvedValue(undefined), ...overrides } as unknown as ApiClient;
 }
@@ -16,14 +18,12 @@ describe('S01 masuk', () => {
     renderWithI18n(<LoginScreen client={client} onBerhasil={onBerhasil} />);
 
     await userEvent.type(screen.getByLabelText('Nama pengguna'), 'auditor_01');
-    // gitguardian:ignore
-await userEvent.type(screen.getByLabelText('Kata sandi'), 'rahasia-panjang');
+await userEvent.type(screen.getByLabelText('Kata sandi'), SANDI_UJI);
     await userEvent.click(screen.getByRole('button', { name: 'Masuk' }));
 
     expect(client.login).toHaveBeenCalledWith({
       username: 'auditor_01',
-      // gitguardian:ignore
-      password: 'rahasia-panjang',
+        password: SANDI_UJI,
     });
     expect(onBerhasil).toHaveBeenCalledTimes(1);
   });
@@ -55,8 +55,7 @@ await userEvent.type(screen.getByLabelText('Kata sandi'), 'rahasia-panjang');
     renderWithI18n(<LoginScreen client={client} />);
 
     await userEvent.type(screen.getByLabelText('Nama pengguna'), 'auditor_01');
-    // gitguardian:ignore
-await userEvent.type(screen.getByLabelText('Kata sandi'), 'rahasia-panjang');
+await userEvent.type(screen.getByLabelText('Kata sandi'), SANDI_UJI);
     await userEvent.click(screen.getByRole('button', { name: 'Masuk' }));
 
     const pesan = await screen.findByRole('alert');
@@ -73,8 +72,7 @@ await userEvent.type(screen.getByLabelText('Kata sandi'), 'rahasia-panjang');
     renderWithI18n(<LoginScreen client={client} />);
 
     await userEvent.type(screen.getByLabelText('Nama pengguna'), 'auditor_01');
-    // gitguardian:ignore
-await userEvent.type(screen.getByLabelText('Kata sandi'), 'rahasia-panjang');
+await userEvent.type(screen.getByLabelText('Kata sandi'), SANDI_UJI);
     await userEvent.click(screen.getByRole('button', { name: 'Masuk' }));
 
     expect(
@@ -87,8 +85,7 @@ await userEvent.type(screen.getByLabelText('Kata sandi'), 'rahasia-panjang');
     renderWithI18n(<LoginScreen client={client} />);
 
     await userEvent.type(screen.getByLabelText('Nama pengguna'), 'auditor_01');
-    // gitguardian:ignore
-await userEvent.type(screen.getByLabelText('Kata sandi'), 'rahasia-panjang');
+await userEvent.type(screen.getByLabelText('Kata sandi'), SANDI_UJI);
     await userEvent.click(screen.getByRole('button', { name: 'Masuk' }));
 
     expect(
