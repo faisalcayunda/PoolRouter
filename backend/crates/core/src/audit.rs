@@ -46,6 +46,13 @@ impl Peran {
         }
     }
 
+    /// Whether holding this role makes the TOTP step compulsory
+    /// (ADR-0006 §9, AC-9): `auditor` and `platform_admin`.
+    #[must_use]
+    pub const fn wajib_mfa(self) -> bool {
+        matches!(self, Self::PlatformAdmin | Self::Auditor)
+    }
+
     /// Every role, in contract order. Used by the CLI to validate `--peran`
     /// and by tests to prove the list matches the database check constraint.
     pub const SEMUA: [Self; 4] = [
@@ -113,6 +120,8 @@ pub enum Aksi {
     UbahPeran,
     AksesDitolak,
     PakaiKodePemulihan,
+    /// Enrollment started or confirmed (AC-12, AC-13).
+    DaftarMfa,
 }
 
 impl Aksi {
@@ -128,10 +137,11 @@ impl Aksi {
             Self::UbahPeran => "ubah_peran",
             Self::AksesDitolak => "akses_ditolak",
             Self::PakaiKodePemulihan => "pakai_kode_pemulihan",
+            Self::DaftarMfa => "daftar_mfa",
         }
     }
 
-    pub const SEMUA: [Self; 10] = [
+    pub const SEMUA: [Self; 11] = [
         Self::LihatLog,
         Self::CariLog,
         Self::CariNik,
@@ -142,6 +152,7 @@ impl Aksi {
         Self::UbahPeran,
         Self::AksesDitolak,
         Self::PakaiKodePemulihan,
+        Self::DaftarMfa,
     ];
 }
 
@@ -742,7 +753,8 @@ mod tests {
                 "restore_arsip",
                 "ubah_peran",
                 "akses_ditolak",
-                "pakai_kode_pemulihan"
+                "pakai_kode_pemulihan",
+                "daftar_mfa"
             ]
         );
     }
