@@ -78,6 +78,12 @@ impl ApiError {
         self.retry_after
     }
 
+    /// For tests only: get inner problem for serialization check.
+    #[cfg(test)]
+    pub fn problem(&self) -> &Problem {
+        &self.problem
+    }
+
     /// Field-level validation detail for the two 422 validation codes. Both are
     /// omitted when empty, so a bare 400 never grows an `errors` member.
     pub fn errors(

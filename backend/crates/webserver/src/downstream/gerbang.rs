@@ -419,10 +419,11 @@ mod tests {
         assert_eq!(j.status(), StatusCode::TOO_MANY_REQUESTS);
         assert_eq!(j.retry_after_secs(), Some(3));
         // Verify body only contains type, title, status, kode
-        let body_str = serde_json::to_string(&j).unwrap_or_default();
+        // Serialize problem via accessor
+        let body_str = serde_json::to_string(&j.problem()).unwrap_or_default();
         let body: serde_json::Map<String, serde_json::Value> =
             serde_json::from_str(&body_str).unwrap_or_default();
-        let kunci_diizinkan = vec!["type", "title", "status", "kode"];
+        let kunci_diizinkan = ["type", "title", "status", "kode"];
         for kunci in body.keys() {
             assert!(
                 kunci_diizinkan.contains(&kunci.as_str()),
