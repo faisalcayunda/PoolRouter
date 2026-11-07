@@ -28,6 +28,10 @@ use tower::ServiceExt;
 use uuid::Uuid;
 
 const ASAL: &str = "https://admin.poolrouter.test";
+/// The payload the fixture writes. It has to be recognisable on its own: the
+/// tracing test looks for this exact string in the logs, and `transaction_log`
+/// freezes a complete row (R-03), so the payload cannot be updated afterwards.
+const PAYLOAD_SINTETIS: &str = "payload-sintetis-rahasia";
 const KEK_HEX: &str = "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff";
 const KUNCI_HMAC: &[u8] = b"kunci-hmac-sintetis-untuk-uji";
 
@@ -284,7 +288,7 @@ impl Uji {
             .bind(t0())
             .bind(if berpayload { "full_payload" } else { "metadata_only" })
             .bind(if berpayload {
-                Some(json!({"input": "sintetis"}))
+                Some(json!({"input": PAYLOAD_SINTETIS}))
             } else {
                 None
             })
@@ -483,14 +487,10 @@ async fn nik_dan_payload_sintetis_tidak_muncul_di_log() {
     let _guard = tracing::subscriber::set_default(subscriber);
     let u = siapkan().await;
     let (_, au) = u.pengguna(&["auditor"]).await;
-    let (kode, req_id, nik) = u.siapkan_log().await;
-    let payload = "payload-sintetis-rahasia";
-    sqlx::query("UPDATE transaction_log SET request_payload = $1 WHERE request_id = $2")
-        .bind(serde_json::json!({"isi": payload}))
-        .bind(req_id)
-        .execute(&u.su)
-        .await
-        .unwrap();
+    let (kode, _req_id, nik) = u.siapkan_log().await;
+    // The fixture already carries the payload; a complete `transaction_log` row is
+    // frozen by `tg_log_update` (R-03), so it cannot be patched in afterwards.
+    let payload = PAYLOAD_SINTETIS;
     let (st, _, response) = u
         .json(
             Method::POST,
@@ -545,17 +545,19 @@ async fn cari_log_dengan_potongan_nik_403_dan_akses_ditolak() {
 async fn origin_asing_ditolak_pada_pencarian_log() {
     let u = siapkan().await;
     let (_uid, op) = u.pengguna(&["operator"]).await;
-    let (st, _, j) = u
-        .json(
+    let (st, _, badan) = u
+        .kirim(
             Method::POST,
             "/admin/v1/log/cari",
             Some(&op),
+            Some("https://jahat.example"),
             Some(json!({
                 "dari": t0() - chrono::Duration::hours(1),
                 "sampai": t0() + chrono::Duration::hours(1),
             })),
         )
         .await;
+    let j: Value = serde_json::from_slice(&badan).unwrap_or(Value::Null);
     assert_eq!(st, StatusCode::FORBIDDEN);
     assert_eq!(j["kode"], "origin_tidak_valid");
 }
