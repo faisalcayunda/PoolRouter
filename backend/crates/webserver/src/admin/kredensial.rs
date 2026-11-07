@@ -58,7 +58,7 @@ pub(super) async fn list_credentials(
     .await
     .map_err(|e| galat_db(&e))?;
 
-    let sekarang = Utc::now();
+    let sekarang = (s.jam)();
     let daftar: Vec<Credential> = rows
         .into_iter()
         .map(
@@ -86,7 +86,7 @@ pub(super) async fn create_credential(
     pastikan_milik(&peminta, client_id)?;
     ada_client(&s, client_id).await?;
 
-    let sekarang = Utc::now();
+    let sekarang = (s.jam)();
     let kedaluwarsa_at = body
         .kedaluwarsa_at
         .unwrap_or(sekarang + Duration::days(KEDALUWARSA_MAKS_HARI));
