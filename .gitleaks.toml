@@ -20,7 +20,7 @@ regexes = [
   '''^eyJhbGciOiJFUzI1NiJ9\.eyJzdWIiOiJjbGllbnQifQ\.c2lnbmF0dXJl$''',
 ]
 # 2) Fixture pelanggaran lint compose (sengaja salah; berisi digest, bukan kredensial). Satu berkas saja.
-# 3) File test login dengan password sintetis 'rahasia-panjang' (bukan kredensial nyata).
+# 3) File test login dengan password sintetis (bukan kredensial nyata).
 paths = [
   '''^deploy/compose/lint/fixtures/render-bad-prod-mock\.yaml$''',
   '''^frontend/tests/login\.test\.tsx$''',

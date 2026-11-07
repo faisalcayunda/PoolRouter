@@ -3,3 +3,5 @@ ignore_paths:
   - "frontend/tests/login.test.tsx"
 ignore_sha:
   - "c255a169c2c461a4045fd1e03566402dd97e2f87"
+  - "c29cc806b2ede29ba05a2752c77b42de5642d86b"
+  - "711e2430445a5e21ff3099ac3ef71d09fe43b708"
