@@ -495,7 +495,7 @@ impl Reader<'_> {
                 return true;
             }
         };
-        let produksi = env == Some(Environment::Prod);
+        let produksi = matches!(env, Some(Environment::Poc) | Some(Environment::Prod));
         if !nilai && produksi && matches!(component, Component::Webserver | Component::Cli) {
             self.problems.push(Problem::NotAllowed(MFA_WAJIB.into()));
         }

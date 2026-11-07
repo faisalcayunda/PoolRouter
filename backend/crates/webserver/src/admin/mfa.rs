@@ -182,7 +182,7 @@ pub(super) async fn mfa(
     let ip = sumber_ip(&headers, peer);
     let ua = super::login::user_agent(&headers);
     let sekarang: DateTime<Utc> = (s.jam)();
-    let (token, pra) = pra_sesi_dari(&s, &headers, JenisPraSesi::Mfa, true).await?;
+    let (token, pra) = pra_sesi_dari(&s, &headers, JenisPraSesi::Mfa, false).await?;
     let pengguna_id = pra.pengguna_id;
 
     // AC-11: the code step shares the password limiter's bucket, so guessing
@@ -249,6 +249,8 @@ pub(super) async fn mfa(
             if s.pembatas.berhasil(&username).await.is_err() {
                 tracing::warn!("admin: hitungan gagal tidak terhapus setelah MFA berhasil");
             }
+            // Consume the pre-session now that the code was accepted (AC-10).
+            s.pra_sesi.buang(&token).await.ok();
             terbitkan_sesi_mfa(&s, pengguna_id, &headers, &ip).await
         }
         Err(()) => {
@@ -455,6 +457,8 @@ pub(super) async fn konfirmasi(
     }
     // AC-13: the successful enrollment is on record before the session exists.
     catat_daftar_mfa(&s, pengguna_id, true, &ip).await;
+    // Consume the pre-session now that enrollment succeeded (AC-13).
+    s.pra_sesi.buang(&token).await.ok();
     // AC-13: the session is issued with `mfa_terverifikasi_at`, and the codes
     // travel in this one body only.
     let res = terbitkan_sesi_mfa(&s, pengguna_id, &headers, &ip).await?;
