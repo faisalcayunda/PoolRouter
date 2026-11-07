@@ -1,7 +1,7 @@
 /* M3 baseline tokens (typescale, shape, elevation, state, motion). Display styles intentionally omitted. */
 :root {
-  --md-ref-typeface-brand: 'Inter', system-ui, sans-serif;
-  --md-ref-typeface-plain: 'Inter', system-ui, sans-serif;
+  --md-ref-typeface-brand: 'Inter Variable', system-ui, sans-serif;
+  --md-ref-typeface-plain: 'Inter Variable', system-ui, sans-serif;
   --md-ref-typeface-code: 'JetBrains Mono', ui-monospace, monospace;
   --md-sys-typescale-headline-large-font: var(--md-ref-typeface-plain);
   --md-sys-typescale-headline-large-size: 32px;

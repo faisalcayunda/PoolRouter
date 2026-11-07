@@ -9,8 +9,8 @@ describe('M3 UI v2 typeface tokens', () => {
     const tailwind = readFileSync(`${root}/src/styles/m3/tailwind.css`, 'utf8');
     const packageJson = readFileSync(`${root}/package.json`, 'utf8');
 
-    expect(tokens).toContain("--md-ref-typeface-brand: 'Inter'");
-    expect(tokens).toContain("--md-ref-typeface-plain: 'Inter'");
+    expect(tokens).toContain("--md-ref-typeface-brand: 'Inter Variable'");
+    expect(tokens).toContain("--md-ref-typeface-plain: 'Inter Variable'");
     expect(tokens).toContain("--md-ref-typeface-code: 'JetBrains Mono'");
     expect(tailwind).toContain("@import '@fontsource-variable/inter'");
     expect(tailwind).toContain("@import '@fontsource/jetbrains-mono/400.css'");
