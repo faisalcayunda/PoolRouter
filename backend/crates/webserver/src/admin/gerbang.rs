@@ -38,6 +38,8 @@ pub(super) struct Peminta {
     /// only when the operation accepts `client_owner`; `None` for every other
     /// role.
     pub client_id: Option<Uuid>,
+    /// MFA verification timestamp, if the session has passed the MFA step (AC-15).
+    pub mfa_terverifikasi_at: Option<DateTime<Utc>>,
 }
 
 /// Check `Origin` (write methods only), the session, and the role, in that
@@ -93,6 +95,7 @@ pub(super) async fn masuk(
         sesi_id: sesi.sesi_id,
         sumber_ip: ip,
         client_id: None,
+        mfa_terverifikasi_at: sesi.mfa_terverifikasi_at,
     };
     let peminta = if diterima.contains(&Peran::ClientOwner) {
         let client_id = sqlx::query_scalar::<_, Option<Uuid>>(

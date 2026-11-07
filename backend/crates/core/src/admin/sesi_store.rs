@@ -35,6 +35,7 @@ pub struct SesiTersimpan {
     pub sesi_id: Uuid,
     pub pengguna_id: Uuid,
     pub keadaan: KeadaanSesi,
+    pub mfa_terverifikasi_at: Option<DateTime<Utc>>,
 }
 
 /// Why a token does not identify a usable session. All variants answer 401; they
@@ -162,8 +163,8 @@ impl SesiStore {
     /// invisible, so deactivating a user ends their sessions even before the
     /// explicit revocation runs.
     pub async fn baca(&self, hash: &HashToken) -> Result<Option<SesiTersimpan>, GalatSesi> {
-        let baris: Option<(Uuid, Uuid, DateTime<Utc>, DateTime<Utc>)> = sqlx::query_as(
-            "SELECT s.sesi_id, s.pengguna_id, s.dibuat_at, s.terakhir_aktif_at \
+        let baris: Option<(Uuid, Uuid, DateTime<Utc>, DateTime<Utc>, Option<DateTime<Utc>>)> = sqlx::query_as(
+            "SELECT s.sesi_id, s.pengguna_id, s.dibuat_at, s.terakhir_aktif_at, s.mfa_terverifikasi_at \
              FROM admin_session s JOIN admin_user u USING (pengguna_id) \
              WHERE s.token_sha256 = decode($1, 'hex') AND u.aktif",
         )
@@ -171,10 +172,11 @@ impl SesiStore {
         .fetch_optional(&self.pool)
         .await?;
         Ok(
-            baris.map(|(sesi_id, pengguna_id, dibuat, aktif)| SesiTersimpan {
+            baris.map(|(sesi_id, pengguna_id, dibuat, aktif, mfa_terverifikasi_at)| SesiTersimpan {
                 sesi_id,
                 pengguna_id,
                 keadaan: KeadaanSesi::baru(dibuat, aktif),
+                mfa_terverifikasi_at,
             }),
         )
     }

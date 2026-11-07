@@ -206,6 +206,7 @@ pub(super) async fn search_log_by_nik(
     body: Result<Json<NikCariRequest>, axum::extract::rejection::JsonRejection>,
 ) -> Result<Response, Galat> {
     let peminta = masuk(&s, &method, &headers, peer, PERAN_AU, "searchLogByNik").await?;
+    super::sesi::periksa_guard_mfa(&s, &peminta).await?;
 
     // The body is extracted before the handler runs, so a malformed one
     // must not shadow the 401/403 the gate just decided: unwrap it only now.

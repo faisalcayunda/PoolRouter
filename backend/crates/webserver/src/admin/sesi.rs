@@ -375,3 +375,35 @@ mod tests {
         assert!(token_dari_cookie(&h).is_none());
     }
 }
+
+/// Guard for role + MFA: if `mfa_wajib` and role is AU/PA, check
+/// `mfa_terverifikasi_at` is set (AC-15, AC-16). Called after `masuk()` passes.
+pub async fn periksa_guard_mfa(
+    s: &AdminState,
+    peminta: &super::gerbang::Peminta,
+) -> Result<(), Galat> {
+    use poolrouter_core::audit::Peran as PeranAudit;
+    let butuh_mfa = s.mfa_wajib && peminta.peran.wajib_mfa();
+    if butuh_mfa && peminta.mfa_terverifikasi_at.is_none() {
+        // AC-3: operasi ditolak tidak tercatat di log aplikasi; dicatat hanya di audit_akses.
+        use poolrouter_core::audit::{AksesBaru, Pelaku};
+        let pelaku = Pelaku::baru(peminta.pengguna_id, peminta.peran);
+        let baris = AksesBaru::ditolak(pelaku).dengan_sumber_ip(&peminta.sumber_ip);
+        let mut conn = match s.pool.acquire().await {
+            Ok(c) => c,
+            Err(e) => {
+                tracing::error!(error = %e, "admin: koneksi pool gagal");
+                return Err(Galat::layanan());
+            }
+        };
+        if let Err(e) = poolrouter_core::audit::catat_akses(&mut conn, &baris).await {
+            tracing::error!(error = %e, "admin: audit_akses gagal ditulis");
+            // Non-fatal: continue to deny anyway
+        }
+        return Err(Galat::baru(
+            StatusCode::FORBIDDEN,
+            ProblemKodeAdmin::AksesDitolak,
+        ));
+    }
+    Ok(())
+}
