@@ -128,6 +128,30 @@ pub fn router(state: AdminState) -> Router {
             get(kredensial::list_credentials).post(kredensial::create_credential),
         )
         .route(
+            "/admin/v1/clients/{id}/pratinjau-nonaktif",
+            get(klien::pratinjau_nonaktifkan_client),
+        )
+        .route(
+            "/admin/v1/clients/{id}/nonaktifkan",
+            post(klien::nonaktifkan_client),
+        )
+        .route(
+            "/admin/v1/clients/{id}/aktifkan",
+            post(klien::aktifkan_client),
+        )
+        .route(
+            "/admin/v1/credentials/{id}/pratinjau-cabut",
+            get(kredensial::pratinjau_cabut_credential),
+        )
+        .route(
+            "/admin/v1/credentials/{id}/cabut",
+            post(kredensial::cabut_credential),
+        )
+        .route(
+            "/admin/v1/credentials/{id}/aktifkan",
+            post(kredensial::aktifkan_credential),
+        )
+        .route(
             "/admin/v1/clients/{id}/webhook",
             get(webhook::get_webhook_config).put(webhook::put_webhook_config),
         )
