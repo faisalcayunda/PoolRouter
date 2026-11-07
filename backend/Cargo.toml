@@ -104,3 +104,4 @@ wiremock = "0.6.5"
 
 # Internal crates
 poolrouter-core = { path = "crates/core" }
+poolrouter-queue-apalis = { path = "crates/queue-apalis" }
