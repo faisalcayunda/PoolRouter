@@ -411,7 +411,7 @@ async fn ac26_klaim_cas_satu_kali_kirim() {
     let request_id = f.request("menunggu", 0, None).await;
 
     // Set webhook_batas_percobaan=1 so first failure marks status as 'gagal', not 'menunggu'.
-    sqlx::query("UPDATE config_int SET value = 1 WHERE key = 'webhook_batas_percobaan'")
+    sqlx::query("UPDATE konfigurasi_platform SET nilai = '1'::jsonb WHERE kunci = 'webhook_batas_percobaan'")
         .execute(&su)
         .await
         .expect("set webhook_batas_percobaan=1");
