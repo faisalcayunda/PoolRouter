@@ -75,6 +75,8 @@ $ENGINE exec -e POOLROUTER_SECRETS_DIR=/tmp/sec -e PGUSER=postgres -e PGHOST=127
 
 PW=$($ENGINE exec "$NAME" cat /tmp/sec/pr_admin_api)
 export POOLROUTER_TEST_DATABASE_URL="postgres://pr_admin_api:$PW@127.0.0.1:$PORT/poolrouter_test"
+API_PW=$($ENGINE exec "$NAME" cat /tmp/sec/pr_api)
+export POOLROUTER_TEST_DATABASE_URL_API="postgres://pr_api:$API_PW@127.0.0.1:$PORT/poolrouter_test"
 export POOLROUTER_TEST_REDIS="redis://127.0.0.1:$RPORT"
 export POOLROUTER_TEST_DATABASE_URL_SU="postgres://postgres:$SU_PW@127.0.0.1:$PORT/poolrouter_test"
 # The controller tests run as the role the controller itself uses (ARC-69): the
