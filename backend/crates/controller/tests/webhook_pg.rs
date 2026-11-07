@@ -410,6 +410,12 @@ async fn ac26_klaim_cas_satu_kali_kirim() {
     f.izinkan(DOMAIN).await;
     let request_id = f.request("menunggu", 0, None).await;
 
+    // Set webhook_batas_percobaan=1 so first failure marks status as 'gagal', not 'menunggu'.
+    sqlx::query("UPDATE config_int SET value = 1 WHERE key = 'webhook_batas_percobaan'")
+        .execute(&su)
+        .await
+        .expect("set webhook_batas_percobaan=1");
+
     let webhook_pool =
         pool(&url("POOLROUTER_TEST_DATABASE_URL_WEBHOOK").expect("url webhook")).await;
     // TEST-NET-3 tidak bisa dirutekan: jalur kirim berakhir `gagal_jaringan`,
@@ -662,7 +668,7 @@ async fn ac27_body_dari_baris_nyata() {
 
     let baris: Baris = sqlx::query_as(
         "SELECT v.request_id, r.client_id, v.status, v.attempt_count, v.cancel_reason,
-                v.failure_reason, v.output_payload, v.webhook_attempt_count
+                v.failure_reason, v.output_payload, v.webhook_attempt_count, v.webhook_not_before
            FROM v_request_webhook v JOIN request r ON r.request_id = v.request_id
           WHERE v.request_id = $1",
     )
