@@ -168,6 +168,8 @@ async fn siapkan() -> Uji {
         AsalUi::baru(ASAL).unwrap(),
         PembatasLogin::baru(redis::Client::open(redis_ujian()).unwrap(), KUNCI_HMAC),
         Brankas::dari_isi_kek(KEK_HEX).unwrap(),
+        redis::Client::open(redis_ujian()).unwrap(),
+        false,
     )
     .dengan_jam(Arc::new(t0));
     let app = router(state).layer(MockConnectInfo(SocketAddr::from(([203, 0, 113, 9], 4000))));
@@ -421,7 +423,7 @@ async fn kredensial_sekali_dan_batas_aktif() {
     assert_eq!(j["kode"], "batas_kredensial");
 
     // Expiry beyond 365 days → 422.
-    let jauh = (Utc::now() + Duration::days(366)).to_rfc3339();
+    let jauh = (t0() + Duration::days(366)).to_rfc3339();
     let cid2 = u.klien(&unik("KlienKred2")).await;
     let (st, _, j) = u
         .kirim(

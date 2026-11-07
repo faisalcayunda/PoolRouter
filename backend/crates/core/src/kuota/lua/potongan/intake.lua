@@ -21,6 +21,9 @@
 -- Pemakaian `o`:
 -- `o.a`          hasil `bersama.periksa` (mode, kuota_efektif, jumlah_ember, no_ember)
 -- `o.sync`       '0' | '1'
+-- `o.saring`     opsional; `function(terpakai, antre)` yang mengembalikan
+--                tabel penolakan atau nil. Dipanggil sesudah cek F0 dan
+--                sebelum `INCR antre` (dipakai `potongan/intake_alokasi.lua`)
 --
 -- Cek antrean memakai `terpakai + antre`, bukan `antre` saja: yang perlu
 -- dijaga adalah jumlah percobaan yang akan terjadi, bukan panjang antrean.
@@ -51,6 +54,16 @@ local function gerbang_intake(KEYS, o)
   end
   if terpakai + antre >= o.a.kuota_efektif then
     return { 'antrean_penuh', terpakai, antre }
+  end
+
+  -- Kait F1 (PA4, AC-8): syarat tambahan sesudah cek F0 dan SEBELUM
+  -- `INCR antre`, supaya penolakan tidak menaikkan antrean. `potongan/
+  -- intake_alokasi.lua` yang mengisi kait ini; skrip F0 tidak.
+  if o.saring then
+    local tolak = o.saring(terpakai, antre)
+    if tolak then
+      return tolak
+    end
   end
 
   if o.sync == '0' then
