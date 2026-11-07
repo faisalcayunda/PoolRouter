@@ -106,6 +106,33 @@ services:
       retries: 20
       start_period: 30s
 
+  db-bootstrap:
+    image: docker.io/library/postgres:17-alpine@sha256:266d3c257594e195b309ae9d1805e54c788f1d7b375f56bf6c367aac6c917e7b
+    profiles: ["migrate"]
+    command: ["sh", "-c", "export PGPASSWORD=$$(cat /run/secrets/db_password); exec sh /db/bootstrap.sh $$POSTGRES_DB"]
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:?isi POSTGRES_DB di file env}
+      POSTGRES_USER: ${POSTGRES_USER:?isi POSTGRES_USER di file env}
+      POOLROUTER_DB_HOST: ${POOLROUTER_DB_HOST:-postgres}
+      POOLROUTER_DB_PORT: ${POOLROUTER_DB_PORT:-5432}
+      POOLROUTER_SECRETS_DIR: /run/secrets
+      PGHOST: ${POOLROUTER_DB_HOST:-postgres}
+      PGPORT: ${POOLROUTER_DB_PORT:-5432}
+      PGUSER: ${POSTGRES_USER:?isi POSTGRES_USER di file env}
+      PGPASSWORD_FILE: /run/secrets/db_password
+    secrets: [db_password, poolrouter_owner, pr_api, pr_admin_api, pr_controller, pr_worker, pr_webhook]
+    volumes:
+      - ./../db:/db:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+        required: false
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    restart: "no"
+
   migrate:
     image: ${POOLROUTER_BACKEND_IMAGE:?isi POOLROUTER_BACKEND_IMAGE di file env}
     profiles: ["migrate"]
@@ -126,7 +153,6 @@ services:
   # Satu role database per komponen (ADR-0001 rev 11 §7.2, kontrak §3).
   backend-webserver:
     image: ${POOLROUTER_BACKEND_IMAGE:?isi POOLROUTER_BACKEND_IMAGE di file env}
-    profiles: ["app"]
     command: ["webserver"]
     environment:
       <<: *backend-env
@@ -172,7 +198,6 @@ services:
 
   backend-controller:
     image: ${POOLROUTER_BACKEND_IMAGE:?isi POOLROUTER_BACKEND_IMAGE di file env}
-    profiles: ["app"]
     command: ["controller"]
     environment:
       <<: *backend-env
@@ -180,6 +205,12 @@ services:
       POOLROUTER_DB_WEBHOOK_PASSWORD_FILE: /run/secrets/pr_webhook
       POOLROUTER_KEK_FILE: /run/secrets/poolrouter_kek
     secrets: [pr_controller, pr_webhook, redis_password, rabbitmq_password, poolrouter_kek]
+    healthcheck:
+      test: ["CMD", "controller", "healthcheck"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 15s
     read_only: true
     tmpfs: [/tmp]
     cap_drop: [ALL]
@@ -187,13 +218,18 @@ services:
 
   backend-worker:
     image: ${POOLROUTER_BACKEND_IMAGE:?isi POOLROUTER_BACKEND_IMAGE di file env}
-    profiles: ["app"]
     command: ["worker"]
     environment:
       <<: *backend-env
       POOLROUTER_DB_WORKER_PASSWORD_FILE: /run/secrets/pr_worker
       POOLROUTER_KEK_FILE: /run/secrets/poolrouter_kek
     secrets: [pr_worker, redis_password, rabbitmq_password, poolrouter_kek]
+    healthcheck:
+      test: ["CMD", "worker", "healthcheck"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 15s
     read_only: true
     tmpfs: [/tmp]
     cap_drop: [ALL]
@@ -201,7 +237,6 @@ services:
 
   frontend:
     image: ${POOLROUTER_FRONTEND_IMAGE:?isi POOLROUTER_FRONTEND_IMAGE di file env}
-    profiles: ["app"]
     # Satu origin (ADR-0003 §3.9): nginx mem-proxy /admin/v1/ ke listener admin API webserver
     # (POOLROUTER_ADMIN_API_ADDR, SHAA-196). Allowlist IP hanya dibaca bila POOLROUTER_ENV=poc.
     environment:
