@@ -550,7 +550,8 @@ async fn catat(
     } else if hasil.hasil == "terkirim" {
         ("terkirim", None)
     } else if keputusan == kebijakan_retry::Keputusan::Retry && attempt < batas {
-        let jeda_dur = kebijakan_retry::jeda(attempt as u32, base as u32, cap as u32, jitter as u32, 0, hasil.retry_after);
+        let acak = poolrouter_core::retry::AcakAwsLc::baru();
+        let jeda_dur = kebijakan_retry::jeda(attempt as u32, base as u32, cap as u32, jitter as u32, &acak, hasil.retry_after);
         ("menunggu", Some(sekarang + jeda_dur))
     } else {
         ("gagal", None)
