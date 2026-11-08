@@ -194,7 +194,7 @@ pub fn build_provider_client_with_config(
 }
 
 fn builder(
-    provider: Arc<dyn rustls::crypto::CryptoProvider>,
+    provider: Arc<rustls::crypto::CryptoProvider>,
 ) -> Result<rustls::ConfigBuilder<rustls::ClientConfig, rustls::WantsVerifier>, GalatKlien> {
     rustls::ClientConfig::builder_with_provider(provider)
         .with_safe_default_protocol_versions()
@@ -206,11 +206,11 @@ fn builder(
 #[derive(Debug)]
 struct PinSpkiVerifier {
     pins: Vec<[u8; 32]>,
-    provider: Arc<dyn rustls::crypto::CryptoProvider>,
+    provider: Arc<rustls::crypto::CryptoProvider>,
 }
 
 impl PinSpkiVerifier {
-    fn new(pins: Vec<[u8; 32]>, provider: Arc<dyn rustls::crypto::CryptoProvider>) -> Self {
+    fn new(pins: Vec<[u8; 32]>, provider: Arc<rustls::crypto::CryptoProvider>) -> Self {
         Self { pins, provider }
     }
 }
