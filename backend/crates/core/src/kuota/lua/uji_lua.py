@@ -660,6 +660,16 @@ class Uji:
         self.periksa("antre tidak bisa negatif",
                      self.klaim(member="tidak-ada")[0] == "slot_tidak_ada")
 
+    def uji_tahap_anggaran_ac6(self) -> None:
+        print("AC-6: tahap anggaran pilih sumber, tulis slot, beban anggaran (T2b)")
+        # skrip F1 kuota_ambil_token_alokasi.lua belum disisipkan ke rakitan di T2b.
+        # Potongan alokasi_anggaran.lua ada (commit 311623a), tapi dipanggil melalui skrip
+        # yang menyisipkannya saat EVAL, bukan langsung. Tes ini di-skip sampai skrip
+        # F1 ter-assemble dan di-load ke `NAMA_SKRIP` atas.
+        #
+        # Placeholder: AC-6 test akan ditambah T2b saat integrasikan store.rs
+        # Acceptance: slot_sumber ditulis, anggaran dibebankan, urutan sumber ditaati
+
     def uji_kalender_periode(self) -> None:
         print("mode kalender: terpakai dari counter periode, bukan ember")
         self.reset()
