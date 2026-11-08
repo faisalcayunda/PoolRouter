@@ -28,7 +28,7 @@ POSTGRES_DB=${POSTGRES_DB:-poolrouter}
 PGBACKREST_STANZA=${PGBACKREST_STANZA:-poolrouter}
 # REPO_PATH: path repo di dalam volume (repo baru setelah rotasi memakai subdirektori). CIPHER_SECRET: nama secret passphrase repo itu.
 REPO_PATH=${REPO_PATH:-/var/lib/pgbackrest}
-CIPHER_SECRET=${CIPHER_SECRET:-pgbackrest_repo1_cipher_pass}
+CIPHER_SECRET=${CIPHER_SECRET:-pgbackrest_repo_passphrase}
 PSQL="psql -X -q -v ON_ERROR_STOP=1 -U $POSTGRES_USER -d $POSTGRES_DB"
 
 die() { echo "pr-drill: $*" >&2; exit 1; }

@@ -25,7 +25,7 @@ read_secret() {
 : "${PGBACKREST_REPO1_CIPHER_TYPE:=aes-256-cbc}"
 export PGBACKREST_REPO1_CIPHER_TYPE
 if [ "$PGBACKREST_REPO1_CIPHER_TYPE" != none ]; then
-	read_secret pgbackrest_repo1_cipher_pass PGBACKREST_REPO1_CIPHER_PASS 1
+	read_secret pgbackrest_repo_passphrase PGBACKREST_REPO1_CIPHER_PASS 1
 fi
 
 # Sertifikat TLS: secret pg_server_crt dan pg_server_key (staging dan prod) dipakai bila ada.
