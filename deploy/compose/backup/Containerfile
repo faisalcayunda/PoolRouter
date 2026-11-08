@@ -1,0 +1,39 @@
+# Image PostgreSQL 17 + pgBackRest untuk profile `bundled-infra` (ADR-0005 rev 4 §4.5, SHAA-381).
+# Dibangun dari image resmi yang di-pin tag dan digest. Tidak ada secret di image: secret dibaca
+# saat start oleh pr-pg-entrypoint.sh dari /run/secrets (pola KD-1).
+# Build (dari akar repo): docker build -f deploy/compose/backup/Containerfile deploy/compose/backup
+# Tanpa fitur khusus BuildKit: tanpa `# syntax=`, tanpa HEALTHCHECK (healthcheck di Compose), tanpa SHELL/ONBUILD.
+
+FROM docker.io/library/postgres:17-bookworm@sha256:839fbb5a4942a7758dd93e18b42ea5649807491a0545b5eeeb8f0b8bb11857a5
+
+ARG VERSION=0.1.0
+ARG REVISION=unknown
+ARG CREATED=unknown
+LABEL org.opencontainers.image.source="https://github.com/faisalcayunda/PoolRouter" \
+      org.opencontainers.image.revision="${REVISION}" \
+      org.opencontainers.image.version="${VERSION}" \
+      org.opencontainers.image.created="${CREATED}" \
+      org.opencontainers.image.title="poolrouter-postgres-pgbackrest" \
+      org.opencontainers.image.licenses="UNLICENSED"
+
+# pgBackRest dari repositori PGDG (paket yang sama dengan PostgreSQL 17 di image dasar), versi dikunci.
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends pgbackrest=2.60.0-1.pgdg12+1 \
+ && rm -rf /var/lib/apt/lists/*
+
+# Paket Debian memasang /etc/pgbackrest.conf milik postgres mode 0640, tidak terbaca oleh user 10001.
+# Konfigurasi memakai variabel PGBACKREST_* dari Compose; berkas ini hanya kerangka kosong yang bisa dibaca.
+RUN mkdir -p /etc/pgbackrest \
+ && printf '[global]\n' > /etc/pgbackrest/pgbackrest.conf \
+ && chmod 0644 /etc/pgbackrest/pgbackrest.conf
+ENV PGBACKREST_CONFIG=/etc/pgbackrest/pgbackrest.conf
+
+COPY pr-pg-entrypoint.sh pr-backup-scheduler.sh /usr/local/bin/
+RUN chmod 0755 /usr/local/bin/pr-pg-entrypoint.sh /usr/local/bin/pr-backup-scheduler.sh \
+ && mkdir -p /var/lib/postgresql/data /var/lib/postgresql/tls /var/lib/pgbackrest /var/spool/pgbackrest /var/log/pgbackrest /var/run/postgresql \
+ && chown -R 10001:10001 /var/lib/postgresql/data /var/lib/postgresql/tls /var/lib/pgbackrest /var/spool/pgbackrest /var/log/pgbackrest /var/run/postgresql
+
+# User numerik non-root (ADR-0001 Addendum A §6, D5). Entrypoint resmi berjalan tanpa root lalu memanggil postgres langsung.
+USER 10001:10001
+ENTRYPOINT ["/usr/local/bin/pr-pg-entrypoint.sh"]
+CMD ["postgres"]
