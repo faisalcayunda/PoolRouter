@@ -897,7 +897,8 @@ where
             "ok" => Ok(HasilKlaim::Diperpanjang {
                 skor_lama: angka(j.get(1))?,
                 antre: angka(j.get(2))?,
-                sumber: j.get(3)
+                sumber: j
+                    .get(3)
                     .and_then(|v| teks(v).ok())
                     .and_then(|s| dari_teks_sumber(pool_id, &s)),
             }),
