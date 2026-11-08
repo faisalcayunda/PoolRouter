@@ -171,7 +171,7 @@ pub fn build_provider_client(trust: TlsTrust) -> Result<Client, GalatKlien> {
 }
 
 fn builder(
-    provider: Arc<dyn rustls::crypto::CryptoProvider>,
+    provider: Arc<rustls::crypto::CryptoProvider>,
 ) -> Result<rustls::ConfigBuilder<ClientConfig, rustls::WantsVerifier>, GalatKlien> {
     ClientConfig::builder_with_provider(provider)
         .with_safe_default_protocol_versions()
@@ -183,11 +183,11 @@ fn builder(
 #[derive(Debug)]
 struct PinSpkiVerifier {
     pins: Vec<[u8; 32]>,
-    provider: Arc<dyn rustls::crypto::CryptoProvider>,
+    provider: Arc<rustls::crypto::CryptoProvider>,
 }
 
 impl PinSpkiVerifier {
-    fn new(pins: Vec<[u8; 32]>, provider: Arc<dyn rustls::crypto::CryptoProvider>) -> Self {
+    fn new(pins: Vec<[u8; 32]>, provider: Arc<rustls::crypto::CryptoProvider>) -> Self {
         Self { pins, provider }
     }
 }
@@ -222,9 +222,12 @@ impl ServerCertVerifier for PinSpkiVerifier {
         cert: &CertificateDer<'_>,
         dss: &rustls::DigitallySignedStruct,
     ) -> Result<HandshakeSignatureValid, rustls::Error> {
-        self.provider
-            .signature_verification_algorithms()
-            .verify_tls12_signature(message, cert, dss)
+        rustls::crypto::verify_tls12_signature(
+            message,
+            cert,
+            dss,
+            &self.provider.signature_verification_algorithms,
+        )
     }
 
     fn verify_tls13_signature(
@@ -233,14 +236,17 @@ impl ServerCertVerifier for PinSpkiVerifier {
         cert: &CertificateDer<'_>,
         dss: &rustls::DigitallySignedStruct,
     ) -> Result<HandshakeSignatureValid, rustls::Error> {
-        self.provider
-            .signature_verification_algorithms()
-            .verify_tls13_signature(message, cert, dss)
+        rustls::crypto::verify_tls13_signature(
+            message,
+            cert,
+            dss,
+            &self.provider.signature_verification_algorithms,
+        )
     }
 
     fn supported_verify_schemes(&self) -> Vec<rustls::SignatureScheme> {
         self.provider
-            .signature_verification_algorithms()
+            .signature_verification_algorithms
             .supported_schemes()
     }
 }

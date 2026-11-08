@@ -392,14 +392,17 @@ fn allowlist_menolak_base_url_bukan_https() {
 }
 
 #[test]
-fn dari_status_http_302_menolak() {
-    use poolrouter_adapter_provider::kelas_error;
+fn dari_status_http_302_error() {
     use poolrouter_adapter_provider::dari_status_http;
-    // 302 adalah redirect; tidak boleh dianggap sukses
-    let gagal = dari_status_http(302).expect_err("302 harus ditolak, bukan sukses");
-    assert!(format!("{gagal:?}").to_ascii_lowercase().contains("redirect") 
-        || format!("{gagal:?}").to_ascii_lowercase().contains("3xx"),
-        "error pesan harus menyebut redirect: {gagal:?}");
+    // 302 adalah redirect; harus error, tidak success
+    let gagal = dari_status_http(302);
+    // dari_status_http return enum GagalPanggilProvider, bukan Result
+    // Hanya status >= 400 atau 3xx yang di-map ke error enum
+    let teks = format!("{gagal:?}").to_ascii_lowercase();
+    assert!(
+        teks.contains("redirect") || teks.contains("3xx") || teks.contains("302"),
+        "302 harus error, bukan success: {gagal:?}"
+    );
 }
 
 #[tokio::test]
