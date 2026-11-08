@@ -18,7 +18,6 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use reqwest::{Client, Url};
-use rustls::ClientConfig;
 use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};
 
 use rustls::pki_types::pem::PemObject;

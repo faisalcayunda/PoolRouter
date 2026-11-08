@@ -9,10 +9,11 @@ use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 
 use poolrouter_adapter_provider::client::{
-    Allowlist, BATAS_CONNECT, BATAS_TOTAL, ClientConfig, GalatKlien, TlsTrust,
+    Allowlist, BATAS_CONNECT, BATAS_TOTAL, ProviderClientConfig, GalatKlien, TlsTrust,
     build_provider_client, build_provider_client_with_config,
 };
-use rcgen::{BasicConstraints, CertificateParams, DnType, IsCa, Issuer, KeyPair};
+use rcgen::{BasicConstraints, CertificateParams, DnType, IsCa, KeyPair};
+use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified};
 use rustls::pki_types::pem::PemObject;
 use rustls::pki_types::{CertificateDer, PrivateKeyDer};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -45,8 +46,8 @@ fn sertifikat(nama: &str) -> Sertifikat {
         .distinguished_name
         .push(DnType::CommonName, format!("uji-server-{nama}"));
     let key = KeyPair::generate().unwrap();
-    let issuer = Issuer::new(ca_params, ca_key);
-    let cert = params.signed_by(&key, &issuer).unwrap();
+    // signed_by signature: pub fn signed_by(self, signing_key: &KeyPair, issuer_cert: &Certificate, issuer_key: &KeyPair) -> Result<Certificate, RcgenError>
+    let cert = params.signed_by(&key, &ca_cert, &ca_key).unwrap();
 
     Sertifikat {
         ca_pem,
@@ -268,7 +269,10 @@ async fn pin_salah_nol_byte_data_aplikasi() {
 }
 
 /// Custom verifier: cert accepted (simulate pin match), signature always rejected (key mismatch).
-struct MismatchKeyVerifier;
+#[derive(Debug)]
+struct MismatchKeyVerifier {
+    pin_cocok: [u8; 32],
+}
 
 impl rustls::client::danger::ServerCertVerifier for MismatchKeyVerifier {
     fn verify_server_cert(
@@ -504,7 +508,7 @@ async fn timeout_dengan_config_total_pendek() {
     });
 
     let s = sertifikat("a");
-    let cfg = ClientConfig {
+    let cfg = ProviderClientConfig {
         connect_timeout: std::time::Duration::from_millis(100),
         total_timeout: std::time::Duration::from_millis(200),
     };
