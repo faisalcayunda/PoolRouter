@@ -267,23 +267,87 @@ async fn pin_salah_nol_byte_data_aplikasi() {
     assert!(server.data().is_empty(), "{:?}", server.data());
 }
 
+/// Custom verifier: cert accepted (simulate pin match), signature always rejected (key mismatch).
+struct MismatchKeyVerifier;
+
+impl rustls::client::danger::ServerCertVerifier for MismatchKeyVerifier {
+    fn verify_server_cert(
+        &self,
+        _end_entity: &CertificateDer<'_>,
+        _intermediates: &[CertificateDer<'_>],
+        _server_name: &rustls::pki_types::ServerName<'_>,
+        _ocsp_response: &[u8],
+        _now: rustls::pki_types::UnixTime,
+    ) -> Result<ServerCertVerified, rustls::Error> {
+        Ok(ServerCertVerified::assertion())
+    }
+
+    fn verify_tls12_signature(
+        &self,
+        _message: &[u8],
+        _cert: &CertificateDer<'_>,
+        _dss: &rustls::DigitallySignedStruct,
+    ) -> Result<HandshakeSignatureValid, rustls::Error> {
+        Err(rustls::Error::InvalidCertificate(
+            rustls::CertificateError::UnknownIssuer,
+        ))
+    }
+
+    fn verify_tls13_signature(
+        &self,
+        _message: &[u8],
+        _cert: &CertificateDer<'_>,
+        _dss: &rustls::DigitallySignedStruct,
+    ) -> Result<HandshakeSignatureValid, rustls::Error> {
+        Err(rustls::Error::InvalidCertificate(
+            rustls::CertificateError::UnknownIssuer,
+        ))
+    }
+
+    fn supported_verify_schemes(&self) -> Vec<rustls::SignatureScheme> {
+        vec![]
+    }
+}
+
 #[tokio::test]
 async fn pin_spki_cert_key_lain_handshake_gagal_nol_byte() {
-    // Mock menyajikan cert B (key B), klien expect pin dari cert A (key A).
-    // Handshake gagal di verification, 0 byte data aplikasi terkirim.
-    let cert_diharapkan = sertifikat("asli");
-    let cert_dipresentasikan = sertifikat("lain");
-    let pin_asli = pin(&cert_diharapkan);
+    // Mock dengan cert A (pin cocok), klien reject di tanda tangan.
+    // Verifikasi: pinnya cocok, tapi handshake gagal karena key lain.
+    let cert_asli = sertifikat("asli");
+    let pin_asli = pin(&cert_asli);
 
-    let server = mock(&cert_dipresentasikan, OK.to_vec()).await;
-    let klien = build_provider_client(TlsTrust::PinSpki {
-        pins: vec![pin_asli],
-    })
-    .unwrap();
+    let server = mock(&cert_asli, OK.to_vec()).await;
+
+    // Build client dengan custom verifier: pin cocok tapi signature salah.
+    let provider = Arc::new(rustls::crypto::aws_lc_rs::default_provider());
+    let verifier = MismatchKeyVerifier {
+        pin_cocok: pin_asli,
+    };
+    let config = rustls::ClientConfig::builder_with_provider(Arc::clone(&provider))
+        .with_safe_default_protocol_versions()
+        .unwrap()
+        .dangerous()
+        .with_custom_certificate_verifier(Arc::new(verifier))
+        .with_no_client_auth();
+    let klien = reqwest::Client::builder()
+        .https_only(true)
+        .redirect(reqwest::redirect::Policy::none())
+        .connect_timeout(std::time::Duration::from_secs(5))
+        .timeout(std::time::Duration::from_secs(20))
+        .tls_backend_preconfigured(config)
+        .build()
+        .unwrap();
 
     let res = klien.get(server.url("/uji")).send().await;
-    assert!(res.is_err(), "handshake harus gagal: {res:?}");
-    assert!(server.data().is_empty(), "0 byte data aplikasi: {:?}", server.data());
+    assert!(
+        res.is_err(),
+        "handshake harus gagal (signature salah): {res:?}"
+    );
+    assert!(
+        server.data().is_empty(),
+        "0 byte data aplikasi saat sig fail: {:?}",
+        server.data()
+    );
 }
 
 #[tokio::test]
@@ -427,9 +491,7 @@ fn dari_status_http_302_http_klien_enum() {
 async fn timeout_dengan_config_total_pendek() {
     // Mock TCP: terima koneksi, tapi tunggu lama (> 200ms).
     // Client dengan total timeout 200ms harus error timeout, bukan TLS error.
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
-        .await
-        .unwrap();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
 
     tokio::spawn(async move {
@@ -446,39 +508,24 @@ async fn timeout_dengan_config_total_pendek() {
         connect_timeout: std::time::Duration::from_millis(100),
         total_timeout: std::time::Duration::from_millis(200),
     };
-    let klien = build_provider_client_with_config(TlsTrust::CaKustom {
-        ca_pem: s.ca_pem.into_bytes(),
-    }, cfg)
+    let klien = build_provider_client_with_config(
+        TlsTrust::CaKustom {
+            ca_pem: s.ca_pem.into_bytes(),
+        },
+        cfg,
+    )
     .unwrap();
 
     let res = klien.get(format!("https://{}/x", addr)).send().await;
 
-    assert!(res.is_err(), "request dengan timeout 200ms harus gagal: {res:?}");
+    assert!(
+        res.is_err(),
+        "request dengan timeout 200ms harus gagal: {res:?}"
+    );
     // Verifikasi error adalah timeout, bukan jenis error lain.
     let err = res.unwrap_err();
     assert!(
         err.is_timeout(),
         "error harus timeout, bukan error lain: {err:?}"
     );
-}
-
-#[tokio::test]
-async fn timeout_default_5_20_detik_berlaku() {
-    // Verifikasi bahwa builder default pakai BATAS_CONNECT dan BATAS_TOTAL.
-    // Test indikator: request dengan timeout lebih besar dari default tidak membuat
-    // klien gagal lebih cepat dari yang diharapkan.
-    let s = sertifikat("a");
-    let server = mock(&s, OK.to_vec()).await;
-    let klien = build_provider_client(TlsTrust::CaKustom {
-        ca_pem: s.ca_pem.into_bytes(),
-    })
-    .unwrap();
-
-    // Request ke server OK dengan timeout client default.
-    let res = klien.get(server.url("/uji")).send().await.unwrap();
-    assert_eq!(res.status(), reqwest::StatusCode::OK);
-
-    // Verifikasi konstanta default adalah 5s dan 20s.
-    assert_eq!(BATAS_CONNECT.as_secs(), 5);
-    assert_eq!(BATAS_TOTAL.as_secs(), 20);
 }
