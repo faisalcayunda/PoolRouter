@@ -31,10 +31,12 @@ use super::credential::{CachedStore, PgCredentialStore};
 use super::jwt::JwtKeys;
 use super::layers::{ApiError, no_store};
 use super::probe::{self, ADMIN_ADDR_VAR, DEFAULT_ADMIN_ADDR, Readiness};
-use super::token::{LocalThrottle, TokenThrottle, issue_token};
+pub use super::token::LocalThrottle;
+use super::token::{TokenThrottle, issue_token};
 use crate::admin::listener;
 use crate::admin::sesi::router as admin_router;
 use crate::api::problem::ProblemKodeDown;
+use crate::downstream::downstream_sesi::{PgSessionDownstream, SessionDownstream};
 
 pub const API_ADDR_VAR: &str = "POOLROUTER_API_ADDR";
 pub const DEFAULT_API_ADDR: &str = "127.0.0.1:8081";
@@ -48,6 +50,8 @@ const REDIS_TIMEOUT: Duration = Duration::from_millis(250);
 pub struct AppState {
     pub auth: Arc<Authenticator>,
     pub throttle: Arc<dyn TokenThrottle>,
+    /// Request store behind the five downstream operations (ARC-158).
+    pub sesi: Arc<dyn SessionDownstream>,
 }
 
 async fn tidak_ditemukan() -> ApiError {
@@ -76,11 +80,23 @@ async fn http_metrics(req: Request<axum::body::Body>, next: Next) -> Response {
 }
 
 /// The API router. Endpoints added by later parts of SHAA-198 join here.
+/// The public API listener: the token endpoint plus the five downstream
+/// operations (ARC-158). `/v1/oauth/token` and the operations share one state,
+/// because a caller may use either credential on any of them (AC-3).
 pub fn api_router(state: AppState) -> Router {
-    Router::new()
+    let downstream = crate::api::downstream_sesi::router(Arc::new(
+        crate::api::downstream_sesi::DownstreamState {
+            pengenal: crate::downstream::pengenal::PengenalNyata::baru(state.auth.clone()),
+            sesi: state.sesi.clone(),
+        },
+    ))
+    .with_state::<()>(());
+    let token = Router::new()
         .route("/v1/oauth/token", post(issue_token))
+        .with_state(state);
+    token
+        .merge(downstream)
         .fallback(tidak_ditemukan)
-        .with_state(state)
         .layer(RequestBodyLimitLayer::new(MAX_BODY_BYTES))
         .layer(middleware::from_fn(http_metrics))
         .layer(no_store())
@@ -226,9 +242,13 @@ async fn start(cfg: Config) -> Result<(), String> {
     let store = Arc::new(CachedStore::new(Arc::new(PgCredentialStore::new(
         pg.clone(),
     ))));
+    // The downstream operations read and write through the same `pr_api` pool
+    // the credential store uses; the admin pool never reaches this router.
+    let sesi: Arc<dyn SessionDownstream> = PgSessionDownstream::baru(pg.clone());
     let state = AppState {
         auth: Arc::new(Authenticator::new(store, keys)),
         throttle: Arc::new(LocalThrottle::new()),
+        sesi,
     };
     let api = api_router(state);
     let redis_admin = redis.clone();
@@ -323,6 +343,7 @@ mod tests {
         let state = AppState {
             auth: Arc::new(Authenticator::new(fake.clone(), keys())),
             throttle,
+            sesi: crate::downstream::downstream_sesi::fake::FakeSession::baru(),
         };
         let app =
             api_router(state).layer(MockConnectInfo(SocketAddr::from(([203, 0, 113, 7], 5555))));
@@ -606,6 +627,7 @@ mod tests {
         let state = AppState {
             auth: Arc::new(Authenticator::new(h.fake.clone(), keys())),
             throttle: Arc::new(LocalThrottle::new()),
+            sesi: crate::downstream::downstream_sesi::fake::FakeSession::baru(),
         };
         // Different signing key => bearer from `h` must be refused here.
         let protected = Router::new()
