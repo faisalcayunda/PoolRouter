@@ -114,12 +114,12 @@ end
 -- alokasi; pool tanpa alokasi tetap jalur F0 tanpa kunci ini.
 if KEYS[5] ~= nil then
   local sumber = redis.call('HGET', KEYS[6], member)
-  if sumber ~= nil then
+  if sumber then  -- redis HGET missing → false, not nil
     redis.call('HDEL', KEYS[6], member)
   else
     sumber = ARGV[7]
   end
-  if sumber ~= nil and sumber ~= '' then
+  if sumber and sumber ~= '' then  -- guard both false and empty string
     redis.call('HINCRBY', KEYS[5], sumber .. ':' .. a.no_ember, 1)
     local beban = redis.call('HKEYS', KEYS[5])
     for i = 1, #beban do
