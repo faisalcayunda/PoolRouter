@@ -769,5 +769,6 @@ local am = alokasi_anggaran.buat(
 return kerangka.jalankan(KEYS, ARGV, {
   pilih_sumber = am.pilih_sumber,
   kunci_slot_sumber = am.kunci_slot_sumber,
+  ambil_sumber = am.ambil_sumber,
   jumlah_kunci_tambahan = 2
 })

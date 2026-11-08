@@ -164,28 +164,57 @@ async fn intake_alokasi_menegakkan_antre_dp() {
     }
 }
 
-// T2e AC-10: Metrik pinjaman hanya dihitung saat sumber ≠ sendiri.
-// Uji ini cukup verifikasi bahwa panggilan ambil_token_alokasi menerima
-// downstream_pool_id; full E2E lewat Lua integration test.
+// T2e AC-10: Metrik pinjaman naik saat sumber ≠ sendiri melalui ambil_token_alokasi Lua.
 #[tokio::test]
 #[ignore = "butuh Redis: make -C backend uji-redis"]
-async fn pinjaman_total_naikkan_counter() {
+async fn pinjaman_total_naikkan_counter_via_lua() {
     let (_c, store) = siap().await;
-    let k = ctx("pool-a", 100);
-
-    // Minimal: verifikasi metrik tersedia di eksporter.
+    use poolrouter_core::kuota::store::{PermintaanToken, HasilToken};
+    use poolrouter_core::kuota::rencana::Sumber;
     use metrics_exporter_prometheus::PrometheusBuilder;
+
     let recorder = PrometheusBuilder::new().build_recorder();
     let handle = recorder.handle();
 
+    // Record metrics in the local recorder context while calling Lua.
     metrics::with_local_recorder(&recorder, || {
-        // Counter naik bila sumber ≠ pool_id: "sisa" atau downstream pool id.
-        poolrouter_core::kuota::metrik::pinjaman_total("pool-a", "sisa", 2);
+        let k = ctx("pool-a", 100);
+        let permintaan = PermintaanToken {
+            request_id: "test-002".into(),
+            nomor_percobaan: 1,
+            sinkron: false,
+        };
+        let urutan = vec![
+            poolrouter_core::kuota::rencana::SumberDana {
+                sumber: Sumber::Sisa,
+                ruang: 10,
+            },
+        ];
+        let downstream_id = 7i64;
+
+        // Synchronous block: spawn a task to run the async call.
+        // In tests, it's safe to use block_on on the current runtime.
+        let result = tokio::task::block_in_place(|| {
+            tokio::runtime::Handle::current().block_on(async {
+                store
+                    .ambil_token_alokasi(&k, &permintaan, &urutan, downstream_id)
+                    .await
+            })
+        });
+
+        // Should succeed: token granted from "sisa" source.
+        assert!(
+            matches!(result, Ok(HasilToken::Diberikan(_))),
+            "ambil_token_alokasi failed: {result:?}"
+        );
     });
 
     let out = handle.render();
+    // Counter should show 1 increment with labels pool-a, downstream=7, source=sisa.
     assert!(
-        out.contains(r#"poolrouter_pinjaman_total{downstream_pool_id="2",sumber_anggaran="sisa",upstream_pool_id="pool-a"} 1"#),
-        "counter naik: {out}"
+        out.contains(
+            r#"poolrouter_pinjaman_total{downstream_pool_id="7",sumber_anggaran="sisa",upstream_pool_id="pool-a"} 1"#
+        ),
+        "counter did not increment via Lua; rendered:\n{out}"
     );
 }
