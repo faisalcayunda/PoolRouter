@@ -54,10 +54,10 @@ impl std::error::Error for GalatPenyusun {}
 ///   status `disusun`, jadi item bisa dipilih kedua handler. Mitigasi:
 ///   `UPDATE data_balikan_item SET batch_id = $1 WHERE batch_id IS NULL AND ...`
 ///   atomik dengan INSERT batch. Lihat test `concurrency_idempotensi`.
-pub async fn jalankan_job_balikan(
+pub async fn jalankan_job_balikan<P: PengirimDataBalikan>(
     pool: &PgPool,
     provider_id: Uuid,
-    pengirim: &dyn PengirimDataBalikan,
+    pengirim: &P,
     sekarang: DateTime<Utc>,
 ) -> Result<(), GalatPenyusun> {
     // Baca konfigurasi.
@@ -94,7 +94,7 @@ pub async fn jalankan_job_balikan(
     }
 
     // Buat batch: batch_id unik, status disusun.
-    let batch_id = Uuid::new_v4();
+    let batch_id = Uuid::now_v7();
     let pemicu = "jumlah_n"; // ponytail: hardcode pemicu untuk AC-24; upgrade ke pemicu_batch saat evaluasi_pemicu integrated.
     let periode_mulai = sekarang;
     let periode_selesai = sekarang;
