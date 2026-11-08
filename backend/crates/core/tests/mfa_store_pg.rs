@@ -72,7 +72,7 @@ async fn pengguna(pool: &PgPool) -> Uuid {
 #[tokio::test]
 #[ignore]
 async fn ac4_tolerance_window_accepts_minus_zero_plus_one() {
-    const SECRET: &str = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
+    const SECRET: &str = "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ";
     let detik = 1_111_111_111_i64;
     let langkah = detik / totp::LANGKAH_DETIK;
 
