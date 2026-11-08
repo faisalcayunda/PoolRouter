@@ -47,7 +47,6 @@ async fn main() -> std::process::ExitCode {
         return poolrouter_core::runtime::start("controller", Component::Controller, &args).await;
     }
     poolrouter_core::runtime::init_tracing();
-    poolrouter_core::runtime::spawn_ready_server();
 
     let cfg = match Config::from_env(Component::Controller) {
         Ok(cfg) => cfg,
@@ -56,6 +55,18 @@ async fn main() -> std::process::ExitCode {
             return std::process::ExitCode::from(2);
         }
     };
+
+    let readiness = match poolrouter_core::runtime::DependencyReadiness::from_config(
+        Component::Controller,
+        &cfg,
+    ) {
+        Ok(readiness) => readiness,
+        Err(err) => {
+            tracing::error!(component = "controller", error = %err, "readiness setup failed");
+            return std::process::ExitCode::from(2);
+        }
+    };
+    poolrouter_core::runtime::spawn_ready_server(std::sync::Arc::new(readiness));
 
     match jalankan(&cfg).await {
         Ok(()) => std::process::ExitCode::SUCCESS,

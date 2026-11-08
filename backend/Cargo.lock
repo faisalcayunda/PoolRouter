@@ -3055,6 +3055,7 @@ dependencies = [
  "futures",
  "getrandom 0.4.3",
  "jsonwebtoken",
+ "lapin",
  "metrics",
  "metrics-exporter-prometheus",
  "object_store",
