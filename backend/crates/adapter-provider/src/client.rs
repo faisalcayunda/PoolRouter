@@ -70,6 +70,21 @@ pub enum GalatKlien {
 pub const BATAS_CONNECT: Duration = Duration::from_secs(5);
 pub const BATAS_TOTAL: Duration = Duration::from_secs(20);
 
+/// Konfigurasi optional untuk klien adapter provider.
+pub struct ClientConfig {
+    pub connect_timeout: Duration,
+    pub total_timeout: Duration,
+}
+
+impl Default for ClientConfig {
+    fn default() -> Self {
+        Self {
+            connect_timeout: BATAS_CONNECT,
+            total_timeout: BATAS_TOTAL,
+        }
+    }
+}
+
 /// Allowlist host:port untuk egress provider (ADR-0002 D4).
 ///
 /// Hanya `https` yang diterima, karena admin API menolak skema lain dan
@@ -109,8 +124,16 @@ impl Allowlist {
     }
 }
 
-/// Rakit `reqwest::Client` dengan trust TLS per provider.
+/// Rakit `reqwest::Client` dengan trust TLS per provider (timeout default).
 pub fn build_provider_client(trust: TlsTrust) -> Result<Client, GalatKlien> {
+    build_provider_client_with_config(trust, ClientConfig::default())
+}
+
+/// Rakit `reqwest::Client` dengan trust TLS per provider dan konfigurasi custom.
+pub fn build_provider_client_with_config(
+    trust: TlsTrust,
+    cfg: ClientConfig,
+) -> Result<Client, GalatKlien> {
     let provider = Arc::new(rustls::crypto::aws_lc_rs::default_provider());
     let config = match trust {
         TlsTrust::System => {
@@ -163,8 +186,8 @@ pub fn build_provider_client(trust: TlsTrust) -> Result<Client, GalatKlien> {
     Client::builder()
         .https_only(true)
         .redirect(reqwest::redirect::Policy::none())
-        .connect_timeout(BATAS_CONNECT)
-        .timeout(BATAS_TOTAL)
+        .connect_timeout(cfg.connect_timeout)
+        .timeout(cfg.total_timeout)
         .tls_backend_preconfigured(config)
         .build()
         .map_err(|e| GalatKlien::Klien(e.to_string()))
