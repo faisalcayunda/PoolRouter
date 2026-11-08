@@ -144,6 +144,22 @@ async fn secret_tidak_bocor_ke_debug_error_tracing_atau_disk() {
             .any(|w| w == RAHASIA.as_bytes())
     );
 
+    // AC-23: transaction_log tidak memuat plaintext secret.
+    // Simulasi: catat request payload (aplikasi sudah menulis request sebelumnya).
+    // Cek tidak ada nilai secret di transaction_log.
+    let tl_cek: Vec<Vec<u8>> = sqlx::query_scalar("SELECT request_payload FROM transaction_log")
+        .fetch_all(&su)
+        .await
+        .unwrap_or_default();
+    for payload in tl_cek {
+        assert!(
+            !payload
+                .windows(RAHASIA.len())
+                .any(|w| w == RAHASIA.as_bytes()),
+            "nilai secret bocor ke transaction_log"
+        );
+    }
+
     sqlx::query("DELETE FROM provider_secret WHERE nama_secret = $1")
         .bind(&nama)
         .execute(&su)

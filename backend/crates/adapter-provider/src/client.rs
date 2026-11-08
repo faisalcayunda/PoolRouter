@@ -20,6 +20,7 @@ use std::time::Duration;
 use reqwest::{Client, Url};
 use rustls::ClientConfig;
 use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};
+
 use rustls::pki_types::pem::PemObject;
 use rustls::pki_types::{CertificateDer, ServerName, UnixTime};
 use rustls_native_certs::load_native_certs;
@@ -110,6 +111,7 @@ impl Allowlist {
 
 /// Rakit `reqwest::Client` dengan trust TLS per provider.
 pub fn build_provider_client(trust: TlsTrust) -> Result<Client, GalatKlien> {
+    let provider = Arc::new(rustls::crypto::aws_lc_rs::default_provider());
     let config = match trust {
         TlsTrust::System => {
             let hasil = load_native_certs();
@@ -123,7 +125,7 @@ pub fn build_provider_client(trust: TlsTrust) -> Result<Client, GalatKlien> {
                     hasil.errors.len()
                 )));
             }
-            builder()?
+            builder(Arc::clone(&provider))?
                 .with_root_certificates(roots)
                 .with_no_client_auth()
         }
@@ -142,7 +144,7 @@ pub fn build_provider_client(trust: TlsTrust) -> Result<Client, GalatKlien> {
                     .add(c)
                     .map_err(|e| GalatKlien::CaTidakValid(e.to_string()))?;
             }
-            builder()?
+            builder(Arc::clone(&provider))?
                 .with_root_certificates(roots)
                 .with_no_client_auth()
         }
@@ -150,8 +152,8 @@ pub fn build_provider_client(trust: TlsTrust) -> Result<Client, GalatKlien> {
             if pins.is_empty() {
                 return Err(GalatKlien::PinTidakValid);
             }
-            let verifier = PinSpkiVerifier::new(pins);
-            builder()?
+            let verifier = PinSpkiVerifier::new(pins, Arc::clone(&provider));
+            builder(Arc::clone(&provider))?
                 .dangerous()
                 .with_custom_certificate_verifier(Arc::new(verifier))
                 .with_no_client_auth()
@@ -168,21 +170,25 @@ pub fn build_provider_client(trust: TlsTrust) -> Result<Client, GalatKlien> {
         .map_err(|e| GalatKlien::Klien(e.to_string()))
 }
 
-fn builder() -> Result<rustls::ConfigBuilder<ClientConfig, rustls::WantsVerifier>, GalatKlien> {
-    ClientConfig::builder_with_provider(Arc::new(rustls::crypto::aws_lc_rs::default_provider()))
+fn builder(
+    provider: Arc<dyn rustls::crypto::CryptoProvider>,
+) -> Result<rustls::ConfigBuilder<ClientConfig, rustls::WantsVerifier>, GalatKlien> {
+    ClientConfig::builder_with_provider(provider)
         .with_safe_default_protocol_versions()
         .map_err(|e| GalatKlien::Config(e.to_string()))
 }
 
 /// Verifier pin SPKI SHA-256. Masa berlaku sertifikat tidak memblokir (D5).
+/// Handshake ditandatangani dengan verifikasi nyata, bukan diam-diam.
 #[derive(Debug)]
 struct PinSpkiVerifier {
     pins: Vec<[u8; 32]>,
+    provider: Arc<dyn rustls::crypto::CryptoProvider>,
 }
 
 impl PinSpkiVerifier {
-    fn new(pins: Vec<[u8; 32]>) -> Self {
-        Self { pins }
+    fn new(pins: Vec<[u8; 32]>, provider: Arc<dyn rustls::crypto::CryptoProvider>) -> Self {
+        Self { pins, provider }
     }
 }
 
@@ -212,34 +218,30 @@ impl ServerCertVerifier for PinSpkiVerifier {
 
     fn verify_tls12_signature(
         &self,
-        _message: &[u8],
-        _cert: &CertificateDer<'_>,
-        _dss: &rustls::DigitallySignedStruct,
+        message: &[u8],
+        cert: &CertificateDer<'_>,
+        dss: &rustls::DigitallySignedStruct,
     ) -> Result<HandshakeSignatureValid, rustls::Error> {
-        Ok(HandshakeSignatureValid::assertion())
+        self.provider
+            .signature_verification_algorithms()
+            .verify_tls12_signature(message, cert, dss)
     }
 
     fn verify_tls13_signature(
         &self,
-        _message: &[u8],
-        _cert: &CertificateDer<'_>,
-        _dss: &rustls::DigitallySignedStruct,
+        message: &[u8],
+        cert: &CertificateDer<'_>,
+        dss: &rustls::DigitallySignedStruct,
     ) -> Result<HandshakeSignatureValid, rustls::Error> {
-        Ok(HandshakeSignatureValid::assertion())
+        self.provider
+            .signature_verification_algorithms()
+            .verify_tls13_signature(message, cert, dss)
     }
 
     fn supported_verify_schemes(&self) -> Vec<rustls::SignatureScheme> {
-        vec![
-            rustls::SignatureScheme::RSA_PKCS1_SHA256,
-            rustls::SignatureScheme::RSA_PKCS1_SHA384,
-            rustls::SignatureScheme::RSA_PKCS1_SHA512,
-            rustls::SignatureScheme::ECDSA_NISTP256_SHA256,
-            rustls::SignatureScheme::ECDSA_NISTP384_SHA384,
-            rustls::SignatureScheme::RSA_PSS_SHA256,
-            rustls::SignatureScheme::RSA_PSS_SHA384,
-            rustls::SignatureScheme::RSA_PSS_SHA512,
-            rustls::SignatureScheme::ED25519,
-        ]
+        self.provider
+            .signature_verification_algorithms()
+            .supported_schemes()
     }
 }
 

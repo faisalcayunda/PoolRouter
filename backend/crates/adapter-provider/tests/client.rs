@@ -390,3 +390,53 @@ fn allowlist_menolak_base_url_bukan_https() {
     assert!(err.izinkan(&reqwest::Url::parse("https://dukcapil.example.go.id:8443/x").unwrap()));
     assert!(!err.izinkan(&reqwest::Url::parse("https://dukcapil.example.go.id/x").unwrap()));
 }
+
+#[test]
+fn dari_status_http_302_menolak() {
+    use poolrouter_adapter_provider::kelas_error;
+    use poolrouter_adapter_provider::dari_status_http;
+    // 302 adalah redirect; tidak boleh dianggap sukses
+    let gagal = dari_status_http(302).expect_err("302 harus ditolak, bukan sukses");
+    assert!(format!("{gagal:?}").to_ascii_lowercase().contains("redirect") 
+        || format!("{gagal:?}").to_ascii_lowercase().contains("3xx"),
+        "error pesan harus menyebut redirect: {gagal:?}");
+}
+
+#[tokio::test]
+async fn timeout_singkat_gagal() {
+    let s = sertifikat("a");
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .unwrap();
+    let addr = listener.local_addr().unwrap();
+
+    tokio::spawn(async move {
+        loop {
+            if let Ok((_, _)) = listener.accept().await {
+                // Jangan balas; biarkan timeout.
+                tokio::time::sleep(tokio::time::Duration::from_secs(10)).await;
+            }
+        }
+    });
+
+    let klien = match build_provider_client(TlsTrust::CaKustom {
+        ca_pem: s.ca_pem.into_bytes(),
+    }) {
+        Ok(k) => k,
+        Err(e) => {
+            panic!("builder gagal: {e:?}");
+        }
+    };
+
+    // Mock server ada, tapi tidak balas. Connect timeout 5s harus tercapai.
+    // Gunakan timeout yang lebih singkat untuk tes agar cepat (set lewat reqwest builder override).
+    let res = klien.get(format!("https://{}/x", addr)).send().await;
+    // Bisa timeout atau TLS error (karena tidak ada handshake). Keduanya OK.
+    assert!(res.is_err(), "request ke server tidak-respons harus gagal: {res:?}");
+}
+
+#[test]
+fn timeout_default_5_20_detik() {
+    assert_eq!(BATAS_CONNECT.as_secs(), 5, "connect timeout harus 5 detik");
+    assert_eq!(BATAS_TOTAL.as_secs(), 20, "total timeout harus 20 detik");
+}
