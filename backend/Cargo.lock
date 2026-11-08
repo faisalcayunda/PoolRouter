@@ -3137,10 +3137,17 @@ name = "poolrouter-worker"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "bytes",
+ "chrono",
+ "poolrouter-adapter-provider",
  "poolrouter-core",
+ "poolrouter-queue-apalis",
+ "secrecy",
+ "sqlx",
  "tokio",
  "tokio-util",
  "tracing",
+ "uuid",
 ]
 
 [[package]]
