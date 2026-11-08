@@ -239,21 +239,16 @@ pub async fn jalankan_job_balikan(
     );
 
     use crate::data_balikan::PemicuBatch;
-    // Spec (c) langkah 6: evaluasi hasil, return TidakAdaPemicu jika Tidak.
-    // shortcut: AC-24–28 hanya JumlahN; Periode (T-27/AC-27) deferred to ARC-197.
-    match hasil_pemicu {
+    // Spec (c) langkah 6: evaluasi hasil, set pemicu & jadwal_kirim_at per WB18.
+    let (pemicu, jadwal_kirim_at) = match hasil_pemicu {
         PemicuBatch::Tidak => {
             tx.rollback().await.map_err(db)?;
             metrics::gauge!("poolrouter_data_balikan_tertunda").set(tertunda as f64);
             return Ok(HasilPenyusun::TidakAdaPemicu);
         }
-        PemicuBatch::JumlahN | PemicuBatch::Periode(_) => {
-            // Lanjut ke Q7 INSERT batch
-        }
-    }
-
-    let pemicu = "jumlah_n"; // shortcut: hingga AC-27 implemented
-    let jadwal_kirim_at = sekarang; // shortcut: JumlahN = sekarang; Periode 00:00 WIB added saat AC-27
+        PemicuBatch::JumlahN => ("jumlah_n", sekarang),
+        PemicuBatch::Periode(batas) => ("periode", batas),
+    };
 
     // Q7 INSERT batch (WB18).
     let batch_id = Uuid::now_v7();
