@@ -760,7 +760,7 @@ return { hasil.kode, table.concat(dipanggil, ','), redis.call('ZCARD', KEYS[4]),
         return self.panggil("klaim", keys, argv)
 
     def lepas(self, *, member="req-1:1", pool="p1", run="run-1", asal="kas"):
-        keys = ["pr:siap", self.k_slot(pool)]
+        keys = ["pr:siap", self.k_slot(pool), self.k_slot_sumber(pool)]
         return self.panggil("lepas", keys, [run, member, asal])
 
     def baca(self, *, pool="p1", run="run-1", mode="bergulir", kuota=100,
