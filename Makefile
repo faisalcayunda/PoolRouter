@@ -32,7 +32,7 @@ COMPOSE := $(COMPOSE_ENV) $(CONTAINER_ENGINE) compose -p $(PROJECT) $(COMPOSE_FI
 LINT_ENV_FILES := $(COMPOSE_DIR)/env/dev.env.example
 IMAGE_TAG ?= dev
 
-.PHONY: check-env compose-up compose-down compose-ps compose-logs compose-config compose-migrate compose-lint compose-test-dind image image-frontend
+.PHONY: check-env compose-up compose-down compose-ps compose-logs compose-config compose-migrate compose-lint compose-test-dind image image-frontend image-postgres-backup
 
 check-env:
 	@case "$(ENV)" in dev|staging|prod) ;; *) echo "ENV harus dev, staging, atau prod" >&2; exit 2 ;; esac
@@ -81,6 +81,10 @@ image:
 image-frontend:
 	@test -f frontend/Containerfile || { echo "frontend/Containerfile tidak ada" >&2; exit 2; }
 	$(CONTAINER_ENGINE) build -f frontend/Containerfile -t localhost/poolrouter-frontend:$(IMAGE_TAG) frontend
+
+# image-postgres-backup: PostgreSQL 17 + pgBackRest (ADR-0005 rev 4 §4.5, AC-15).
+image-postgres-backup:
+	$(CONTAINER_ENGINE) build -f $(COMPOSE_DIR)/backup/Containerfile -t localhost/poolrouter-postgres-pgbackrest:$(IMAGE_TAG) $(COMPOSE_DIR)/backup
 
 # Repo gate (ADR-0003 section 5): `make setup test lint` from the repo root.
 # Each stack keeps its own Makefile; these targets only delegate. frontend/ is
