@@ -64,6 +64,11 @@ pub type Fut<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 pub trait SessionDownstream: Send + Sync + 'static {
     /// Contract of an endpoint assigned to `klien`, or 404.
     fn kontrak(&self, klien: SesiKlien, endpoint: Uuid) -> Fut<'_, Hasil<KontrakEndpoint>>;
+
+    /// Whether the endpoint is assigned to `klien` and every object in its chain
+    /// is on. `None` means not assigned (404, never 403); `Some(false)` means
+    /// assigned but switched off (403). The contract still answers for both.
+    fn status_rantai(&self, klien: SesiKlien, endpoint: Uuid) -> Fut<'_, Hasil<Option<bool>>>;
 }
 
 /// PostgreSQL implementation. The `pr_api` role owns every statement here.
@@ -79,7 +84,7 @@ impl PgSessionDownstream {
 
     /// Whether the endpoint is assigned to the client and every object in its
     /// chain is on. `None` means it is not assigned at all (404, never 403).
-    async fn status_rantai(&self, klien: SesiKlien, endpoint: Uuid) -> Hasil<Option<bool>> {
+    async fn status_rantai_dalam(&self, klien: SesiKlien, endpoint: Uuid) -> Hasil<Option<bool>> {
         let hidup = sqlx::query_scalar::<_, bool>(
             "SELECT c.aktif AND e.aktif AND p.aktif AND pr.aktif \
                FROM downstream_endpoint e \
@@ -103,7 +108,7 @@ impl PgSessionDownstream {
         // prepare a request before the endpoint is switched back on. Only an
         // unknown endpoint, or one not assigned to this client, is 404 — and both
         // produce the same body.
-        if self.status_rantai(klien, endpoint).await?.is_none() {
+        if self.status_rantai_dalam(klien, endpoint).await?.is_none() {
             return Err(GalatDownstream::EndpointTidakDikenal);
         }
         let baris = sqlx::query(
@@ -161,6 +166,10 @@ impl PgSessionDownstream {
 impl SessionDownstream for PgSessionDownstream {
     fn kontrak(&self, klien: SesiKlien, endpoint: Uuid) -> Fut<'_, Hasil<KontrakEndpoint>> {
         Box::pin(async move { self.kontrak_dalam(klien, endpoint).await })
+    }
+
+    fn status_rantai(&self, klien: SesiKlien, endpoint: Uuid) -> Fut<'_, Hasil<Option<bool>>> {
+        Box::pin(async move { self.status_rantai_dalam(klien, endpoint).await })
     }
 }
 
@@ -225,13 +234,8 @@ pub mod fake {
         fn kontrak(&self, _klien: SesiKlien, endpoint: Uuid) -> Fut<'_, Hasil<KontrakEndpoint>> {
             Box::pin(async move {
                 self.galat()?;
-                        // AC-9 / GW3: inactive still answers, only unknown is 404.
+                // AC-9 / GW3: inactive still answers, only unknown is 404.
                 if self.status(endpoint).is_none() {
-                    return Err(GalatDownstream::EndpointTidakDikenal);
-                }
-                // objek_nonaktif 403: endpoint exists but is switched off.
-                if !self.aktif {
-                    return Err(GalatDownstream::ObjekNonaktif);
                     return Err(GalatDownstream::EndpointTidakDikenal);
                 }
                 Ok(KontrakEndpoint {
@@ -239,6 +243,13 @@ pub mod fake {
                     config_versi_aktif: 3,
                     input: self.bidang_set.clone(),
                 })
+            })
+        }
+
+        fn status_rantai(&self, _klien: SesiKlien, endpoint: Uuid) -> Fut<'_, Hasil<Option<bool>>> {
+            Box::pin(async move {
+                self.galat()?;
+                Ok(self.status(endpoint))
             })
         }
     }

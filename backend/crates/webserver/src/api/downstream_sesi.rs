@@ -208,6 +208,23 @@ pub(crate) async fn get_endpoint_kontrak(
 // submitSync / enqueueAsync / getRequest / cancelRequest
 // ---------------------------------------------------------------------------
 
+/// Checks the chain status the stub owns: unknown endpoint is 404, an endpoint
+/// (or its pool/provider) switched off is 403, and anything else is the 503 the
+/// next slice replaces.
+#[allow(clippy::result_large_err)]
+async fn stub_status(
+    state: &Arc<DownstreamState>,
+    klien: SesiKlien,
+    endpoint: Uuid,
+) -> Result<(), Response> {
+    match state.sesi.status_rantai(klien, endpoint).await {
+        Err(e) => Err(galat(e)),
+        Ok(None) => Err(galat(GalatDownstream::EndpointTidakDikenal)),
+        Ok(Some(false)) => Err(galat(GalatDownstream::ObjekNonaktif)),
+        Ok(Some(true)) => Ok(()),
+    }
+}
+
 /// Stub until the dispatch slice wires the provider round trip. Validates the
 /// headers this slice owns and answers the documented 503 instead of inventing
 /// a result.
@@ -232,10 +249,8 @@ pub(crate) async fn submit_sync(
             StatusCode::BAD_REQUEST,
         );
     }
-    // Only the endpoint's existence matters here; its `aktif` flag is reported
-    // by the submit slice together with the 403.
-    if let Err(e) = state.sesi.kontrak(klien, endpoint).await {
-        return galat(e);
+    if let Err(r) = stub_status(&state, klien, endpoint).await {
+        return r;
     }
     let mut res = problem(
         ProblemKodeDown::LayananTidakTersedia,
@@ -266,12 +281,8 @@ pub(crate) async fn enqueue_async(
     if let Err(r) = referensi_client(&headers) {
         return r;
     }
-    // Stub: enqueue dispatch wired in the enqueue slice.
-    match state.sesi.kontrak(klien, endpoint).await {
-        Err(GalatDownstream::EndpointTidakDikenal | GalatDownstream::RequestTidakDikenal) => return galat(GalatDownstream::EndpointTidakDikenal),
-        Err(GalatDownstream::ObjekNonaktif) => return galat(GalatDownstream::ObjekNonaktif),
-        Err(GalatDownstream::Layanan) => return galat(GalatDownstream::Layanan),
-        Ok(_) => {}
+    if let Err(r) = stub_status(&state, klien, endpoint).await {
+        return r;
     }
     problem(
         ProblemKodeDown::LayananTidakTersedia,

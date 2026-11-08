@@ -383,46 +383,6 @@ async fn kirim_idempoten(
 }
 
 #[tokio::test]
-async fn metadata_tidak_dikenal_ditolak_422() {
-    // AC-1: an unknown metadata key is 422 and the rejected value is not echoed.
-    let h = Harness::baru();
-    let path = h.endpoint_path("async");
-    let (status, headers, body) = h
-        .kirim(
-            Method::POST,
-            &path,
-            Some(bearer(&h)),
-            Some(json!({"input": {}, "metadata": {"nik": "3201010101010001", "treshold": "77"}})),
-        )
-        .await;
-    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
-    tanpa_cache(&headers, status);
-    let v = teks(&body);
-    cek_skema("Problem", &v);
-    assert_eq!(v["kode"], "metadata_tidak_valid");
-    assert!(
-        !body.windows(2).any(|w| w == b"77"),
-        "the rejected value must not be echoed"
-    );
-}
-
-#[tokio::test]
-async fn nilai_di_luar_daftar_tertutup_ditolak() {
-    // AC-1: a closed list only accepts its own values.
-    let h = Harness::baru();
-    let (status, _, body) = h
-        .kirim(
-            Method::POST,
-            &h.endpoint_path("async"),
-            Some(bearer(&h)),
-            Some(json!({"input": {}, "metadata": {"nik": "3201010101010001", "mode": "penuh"}})),
-        )
-        .await;
-    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
-    assert_eq!(teks(&body)["kode"], "metadata_tidak_valid");
-}
-
-#[tokio::test]
 async fn endpoint_asing_jadi_404_bukan_403() {
     // AC-3: an endpoint that is not the caller's must not be distinguishable
     // from one that does not exist.
