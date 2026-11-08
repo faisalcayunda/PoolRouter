@@ -155,9 +155,14 @@ pub struct ProviderConfig {
     /// is deliberately no "verify off" mode, not even in dev.
     pub tls_trust: TlsTrust,
     pub log_mode: LogMode,
-    /// Fixed 1 in F0; any other value is 422.
-    #[schema(minimum = 1, maximum = 1, example = 1)]
+    /// 1 in F0; 2 in F1. Other values are 422.
+    #[schema(minimum = 1, maximum = 2, example = 1)]
     pub config_schema_version: i64,
+    /// Data balikan configuration block; only valid when config_schema_version = 2 (AC-20).
+    /// Ignored for version 1; required and validated for version 2.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[schema(value_type = Object)]
+    pub data_balikan: Option<serde_json::Value>,
     /// Reason; required on update (written to the config audit).
     #[serde(skip_serializing_if = "Option::is_none")]
     #[schema(min_length = 10, max_length = 500)]
