@@ -75,16 +75,16 @@ pub enum HasilAck {
 /// selama provider belum meng-ack.
 pub trait PengirimDataBalikan: Send + Sync {
     fn kirim(
-        &self,
+        self: std::sync::Arc<Self>,
         batch: BatchKeluar,
-        body: impl Stream<Item = Bytes> + Send,
-    ) -> impl std::future::Future<Output = HasilKirimBatch> + Send;
+        body: Box<dyn Stream<Item = Bytes> + Send + Unpin>,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = HasilKirimBatch> + Send>>;
 
     fn periksa_ack(
-        &self,
+        self: std::sync::Arc<Self>,
         batch_id: Uuid,
         r#ref: &str,
-    ) -> impl std::future::Future<Output = HasilAck> + Send;
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = HasilAck> + Send>>;
 }
 
 /// Satu pengiriman yang tercatat adapter tiruan. Tidak membawa body, hanya
@@ -196,48 +196,56 @@ impl PengirimTiruan {
 }
 
 impl PengirimDataBalikan for PengirimTiruan {
-    async fn kirim(
-        &self,
+    fn kirim(
+        self: std::sync::Arc<Self>,
         batch: BatchKeluar,
-        body: impl Stream<Item = Bytes> + Send,
-    ) -> HasilKirimBatch {
+        body: Box<dyn Stream<Item = Bytes> + Send + Unpin>,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = HasilKirimBatch> + Send>> {
         use futures::StreamExt;
-        let mut buf = Vec::new();
-        let mut body = std::pin::pin!(body);
-        while let Some(chunk) = body.next().await {
-            buf.extend_from_slice(&chunk);
-        }
-        self.catat(batch.batch_id, batch.jumlah_item, &buf);
-        match self.ambil_hasil() {
-            HasilDiprogam::Diterima => HasilKirimBatch::Diterima {
-                ack_ref: format!("ack-{}", batch.batch_id),
-            },
-            HasilDiprogam::Dikirim => HasilKirimBatch::Dikirim {
-                r#ref: format!("ref-{}", batch.batch_id),
-            },
-            HasilDiprogam::GagalSementara => HasilKirimBatch::GagalSementara {
-                kelas: KelasGagal::Sementara,
-            },
-            HasilDiprogam::Ditolak => HasilKirimBatch::Ditolak {
-                kelas: KelasGagal::Permanen,
-            },
-            HasilDiprogam::PanikSetelahKirim => {
-                panic!(
-                    "pengirim tiruan panik setelah kirim (batch {})",
-                    batch.batch_id
-                )
+        Box::pin(async move {
+            let mut buf = Vec::new();
+            let mut body = body;
+            while let Some(chunk) = body.next().await {
+                buf.extend_from_slice(&chunk);
             }
-        }
+            self.catat(batch.batch_id, batch.jumlah_item, &buf);
+            match self.ambil_hasil() {
+                HasilDiprogam::Diterima => HasilKirimBatch::Diterima {
+                    ack_ref: format!("ack-{}", batch.batch_id),
+                },
+                HasilDiprogam::Dikirim => HasilKirimBatch::Dikirim {
+                    r#ref: format!("ref-{}", batch.batch_id),
+                },
+                HasilDiprogam::GagalSementara => HasilKirimBatch::GagalSementara {
+                    kelas: KelasGagal::Sementara,
+                },
+                HasilDiprogam::Ditolak => HasilKirimBatch::Ditolak {
+                    kelas: KelasGagal::Permanen,
+                },
+                HasilDiprogam::PanikSetelahKirim => {
+                    panic!(
+                        "pengirim tiruan panik setelah kirim (batch {})",
+                        batch.batch_id
+                    )
+                }
+            }
+        })
     }
 
-    async fn periksa_ack(&self, batch_id: Uuid, r#ref: &str) -> HasilAck {
-        self.ack
-            .lock()
-            .unwrap()
-            .iter()
-            .find(|(b, r, _)| *b == batch_id && r == r#ref)
-            .map(|(_, _, h)| h.clone())
-            .unwrap_or(HasilAck::BelumAda)
+    fn periksa_ack(
+        self: std::sync::Arc<Self>,
+        batch_id: Uuid,
+        r#ref: &str,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = HasilAck> + Send>> {
+        let r_owned = r#ref.to_owned();
+        let ack_list = self.ack.lock().unwrap().clone();
+        Box::pin(async move {
+            ack_list
+                .iter()
+                .find(|(b, r, _)| *b == batch_id && r == &r_owned)
+                .map(|(_, _, h)| h.clone())
+                .unwrap_or(HasilAck::BelumAda)
+        })
     }
 }
 
