@@ -671,16 +671,29 @@ async fn ac31_panik_tengah_kirim_dipulihkan() {
     let (batch_id, _, _, _) = f.batch().await.expect("batch");
 
     // Pengiriman pertama: panik setelah kirim, batch tercatat tapi tanpa ack ref.
-    let pengirim_crash = PengirimTiruan::dengan_program(vec![HasilDiprogam::PanikSetelahKirim]);
-    let crash_result = panic::catch_unwind(panic::AssertUnwindSafe(|| {
-        tokio::runtime::Handle::current().block_on(jalankan_job_pengirim(
-            &f.worker,
-            f.provider_id,
-            &pengirim_crash,
-            &poolrouter_core::retry::AcakBatasAtas,
-            sekarang(),
-        ))
-    }));
+    let pengirim_crash = std::sync::Arc::new(
+        PengirimTiruan::dengan_program(vec![HasilDiprogam::PanikSetelahKirim]),
+    );
+    let worker_clone = f.worker.clone();
+    let provider_id_val = f.provider_id;
+    let pengirim_val = pengirim_crash.clone();
+    let crash_result = std::thread::spawn(move || {
+        let rt = tokio::runtime::Runtime::new().expect("new runtime");
+        panic::catch_unwind(panic::AssertUnwindSafe(|| {
+            rt.block_on(async {
+                jalankan_job_pengirim(
+                    &worker_clone,
+                    provider_id_val,
+                    &pengirim_val,
+                    &poolrouter_core::retry::AcakBatasAtas,
+                    sekarang(),
+                )
+                .await
+            })
+        }))
+    })
+    .join()
+    .expect("spawn join");
     assert!(crash_result.is_err(), "panik harus terpicu");
 
     // Verifikasi sisa crash: klaim tercatat, tapi tidak ada ack_ref.
