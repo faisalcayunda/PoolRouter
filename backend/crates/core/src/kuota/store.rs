@@ -935,7 +935,11 @@ where
     ) -> Result<bool, GalatStore> {
         periksa_id("pool_id", pool_id)?;
         let member = periksa_member(request_id, nomor_percobaan)?;
-        let kunci = vec![KUNCI_SIAP.to_owned(), kunci_slot(pool_id)];
+        let kunci = vec![
+            KUNCI_SIAP.to_owned(),
+            kunci_slot(pool_id),
+            kunci_slot_sumber(pool_id),
+        ];
         let arg = vec![member, asal.sebagai_arg().to_owned()];
         let j = self.jalankan(&self.skrip.lepas, kunci, arg).await?;
         match teks(&j[0])?.as_str() {
