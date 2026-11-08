@@ -408,9 +408,7 @@ fn dari_status_http_302_error() {
 #[tokio::test]
 async fn timeout_singkat_gagal() {
     let s = sertifikat("a");
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
-        .await
-        .unwrap();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
 
     tokio::spawn(async move {
@@ -435,7 +433,10 @@ async fn timeout_singkat_gagal() {
     // Gunakan timeout yang lebih singkat untuk tes agar cepat (set lewat reqwest builder override).
     let res = klien.get(format!("https://{}/x", addr)).send().await;
     // Bisa timeout atau TLS error (karena tidak ada handshake). Keduanya OK.
-    assert!(res.is_err(), "request ke server tidak-respons harus gagal: {res:?}");
+    assert!(
+        res.is_err(),
+        "request ke server tidak-respons harus gagal: {res:?}"
+    );
 }
 
 #[test]
