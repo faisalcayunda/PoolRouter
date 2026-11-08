@@ -19,10 +19,10 @@ thiserror = { workspace = true }
 reqwest = { workspace = true }
 rustls = { workspace = true }
 rustls-pki-types = { workspace = true }
-rustls-native-certs = "0.8"
+rustls-native-certs = { workspace = true }
 sha2 = { workspace = true }
-x509-parser = "0.18"
-webpki-roots = "0.26"
+x509-parser = { workspace = true }
+sqlx = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
 
@@ -30,3 +30,6 @@ tracing = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
 tracing-subscriber = { workspace = true }
 wiremock = { workspace = true }
+rcgen = { workspace = true }
+tokio-rustls = { workspace = true }
+uuid = { workspace = true }

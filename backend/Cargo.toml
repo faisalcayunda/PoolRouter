@@ -54,6 +54,12 @@ redis = { version = "1.8", features = ["tokio-rustls-comp", "connection-manager"
 reqwest = { version = "0.13.5", default-features = false, features = ["rustls", "json", "http2"] }
 rustls = { version = "0.23.46", default-features = false, features = ["aws_lc_rs", "std", "tls12", "logging"] }
 rustls-pki-types = "1.15"
+# Provider TLS trust per mode (ADR-0002 D5, ADR-0004 section 4.2).
+rustls-native-certs = "0.8"
+x509-parser = "0.18"
+# Test-only: a local HTTPS mock with a synthetic certificate (GW14, AC-22).
+rcgen = "0.14"
+tokio-rustls = "0.26"
 # Archive format and object storage (ADR-0006 section 8 butir 3, ADR-0004 section 4.2).
 # `encryption` is deliberately off: DA10 seals `nik` and payload cells in the
 # application, so the column layout does not depend on the Parquet modular
