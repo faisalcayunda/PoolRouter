@@ -161,7 +161,10 @@
     },
     "error": {
       "invalid": "Nama pengguna atau kata sandi tidak cocok.",
-      "throttled": "Terlalu banyak percobaan. Coba lagi dalam 15 menit."
+      "throttled": "Terlalu banyak percobaan. Coba lagi dalam 15 menit.",
+      "throttled_retry": "Terlalu banyak percobaan. Coba lagi dalam <b>{{detik}} detik</b>.",
+      "network": "Belum bisa terhubung. Periksa jaringan, lalu coba lagi.",
+      "throttled_menit": "Terlalu banyak percobaan. Coba lagi dalam <b>{{menit}} menit</b>."
     }
   },
   "provider": {
@@ -734,6 +737,24 @@
       "body": "Hasil ekspor belum bisa dibuat. Coba lagi.",
       "action": "Coba lagi",
       "too_large": "Hasil terlalu besar. Persempit rentang waktu hingga paling banyak 10.000 record."
+    }
+  },
+  "sesi": {
+    "idle_dialog": {
+      "title": "Sesi akan berakhir",
+      "body": "Anda sedang tidak aktif selama {{jam}} jam. Sesi Anda akan berakhir dalam {{detik}} detik dan dapat diperpanjang dengan menekan tombol Perpanjang sesi di bawah ini.",
+      "btn_extend": "Perpanjang sesi",
+      "btn_exit": "Keluar",
+      "extend_success": "Sesi diperpanjang",
+      "extend_error": "Sesi belum bisa diperpanjang. Periksa koneksi, lalu perpanjang lagi."
+    },
+    "absolute_dialog": {
+      "title": "Sesi telah berakhir",
+      "body": "Anda tidak bisa memperpanjang sesi lagi. Sesi Anda berakhir pada {{waktu}} WIB dan tidak dapat diperbarui. Simpan pekerjaan Anda sekarang.",
+      "btn_ok": "Mengerti"
+    },
+    "banner_absolute": {
+      "message": "Sesi Anda telah berakhir sejak {{waktu}} WIB"
     }
   },
   "auth": {
