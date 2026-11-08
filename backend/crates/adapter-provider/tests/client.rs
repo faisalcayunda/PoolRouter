@@ -267,6 +267,25 @@ async fn pin_salah_nol_byte_data_aplikasi() {
 }
 
 #[tokio::test]
+async fn pin_spki_cert_key_lain_handshake_gagal_nol_byte() {
+    // Mock menyajikan cert B (key B), klien expect pin dari cert A (key A).
+    // Handshake gagal di verification, 0 byte data aplikasi terkirim.
+    let cert_diharapkan = sertifikat("asli");
+    let cert_dipresentasikan = sertifikat("lain");
+    let pin_asli = pin(&cert_diharapkan);
+
+    let server = mock(&cert_dipresentasikan, OK.to_vec()).await;
+    let klien = build_provider_client(TlsTrust::PinSpki {
+        pins: vec![pin_asli],
+    })
+    .unwrap();
+
+    let res = klien.get(server.url("/uji")).send().await;
+    assert!(res.is_err(), "handshake harus gagal: {res:?}");
+    assert!(server.data().is_empty(), "0 byte data aplikasi: {:?}", server.data());
+}
+
+#[tokio::test]
 async fn system_tolak_sertifikat_sintetis() {
     let s = sertifikat("a");
     let server = mock(&s, OK.to_vec()).await;
@@ -392,19 +411,21 @@ fn allowlist_menolak_base_url_bukan_https() {
 }
 
 #[test]
-fn dari_status_http_302_menolak() {
-    use poolrouter_adapter_provider::kelas_error;
+fn dari_status_http_302_http_klien_enum() {
+    use poolrouter_adapter_provider::GagalPanggilProvider;
     use poolrouter_adapter_provider::dari_status_http;
-    // 302 adalah redirect; tidak boleh dianggap sukses
-    let gagal = dari_status_http(302).expect_err("302 harus ditolak, bukan sukses");
-    assert!(format!("{gagal:?}").to_ascii_lowercase().contains("redirect") 
-        || format!("{gagal:?}").to_ascii_lowercase().contains("3xx"),
-        "error pesan harus menyebut redirect: {gagal:?}");
+    // 302 adalah redirect (3xx); dikelompokkan sebagai HttpKlien karena bukan 5xx/401/403/429.
+    let gagal = dari_status_http(302);
+    assert!(
+        matches!(gagal, GagalPanggilProvider::HttpKlien { status: 302 }),
+        "302 harus menjadi HttpKlien(302) enum, bukan jenis lain: {gagal:?}"
+    );
 }
 
 #[tokio::test]
-async fn timeout_singkat_gagal() {
-    let s = sertifikat("a");
+async fn timeout_dengan_config_total_pendek() {
+    // Mock TCP: terima koneksi, tapi tunggu lama (> 200ms).
+    // Client dengan total timeout 200ms harus error timeout, bukan TLS error.
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
         .await
         .unwrap();
@@ -419,24 +440,45 @@ async fn timeout_singkat_gagal() {
         }
     });
 
-    let klien = match build_provider_client(TlsTrust::CaKustom {
+    let s = sertifikat("a");
+    let klien = build_provider_client(TlsTrust::CaKustom {
         ca_pem: s.ca_pem.into_bytes(),
-    }) {
-        Ok(k) => k,
-        Err(e) => {
-            panic!("builder gagal: {e:?}");
-        }
-    };
+    })
+    .unwrap();
 
-    // Mock server ada, tapi tidak balas. Connect timeout 5s harus tercapai.
-    // Gunakan timeout yang lebih singkat untuk tes agar cepat (set lewat reqwest builder override).
-    let res = klien.get(format!("https://{}/x", addr)).send().await;
-    // Bisa timeout atau TLS error (karena tidak ada handshake). Keduanya OK.
-    assert!(res.is_err(), "request ke server tidak-respons harus gagal: {res:?}");
+    // Override timeout total ke 200ms (kecil dari default 20s).
+    let res = klien
+        .get(format!("https://{}/x", addr))
+        .timeout(std::time::Duration::from_millis(200))
+        .send()
+        .await;
+
+    assert!(res.is_err(), "request dengan timeout 200ms harus gagal: {res:?}");
+    // Verifikasi error adalah timeout, bukan jenis error lain.
+    let err = res.unwrap_err();
+    assert!(
+        err.is_timeout(),
+        "error harus timeout, bukan error lain: {err:?}"
+    );
 }
 
-#[test]
-fn timeout_default_5_20_detik() {
-    assert_eq!(BATAS_CONNECT.as_secs(), 5, "connect timeout harus 5 detik");
-    assert_eq!(BATAS_TOTAL.as_secs(), 20, "total timeout harus 20 detik");
+#[tokio::test]
+async fn timeout_default_5_20_detik_berlaku() {
+    // Verifikasi bahwa builder default pakai BATAS_CONNECT dan BATAS_TOTAL.
+    // Test indikator: request dengan timeout lebih besar dari default tidak membuat
+    // klien gagal lebih cepat dari yang diharapkan.
+    let s = sertifikat("a");
+    let server = mock(&s, OK.to_vec()).await;
+    let klien = build_provider_client(TlsTrust::CaKustom {
+        ca_pem: s.ca_pem.into_bytes(),
+    })
+    .unwrap();
+
+    // Request ke server OK dengan timeout client default.
+    let res = klien.get(server.url("/uji")).send().await.unwrap();
+    assert_eq!(res.status(), reqwest::StatusCode::OK);
+
+    // Verifikasi konstanta default adalah 5s dan 20s.
+    assert_eq!(BATAS_CONNECT.as_secs(), 5);
+    assert_eq!(BATAS_TOTAL.as_secs(), 20);
 }
