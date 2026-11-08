@@ -3240,31 +3240,6 @@ components:
           example: string
         wajib:
           type: boolean
-    MfaDaftar:
-      type: object
-      description: '`POST /auth/mfa/daftar` response: shown once, never logged (AC-12).'
-      required:
-      - otpauth_uri
-      - rahasia_base32
-      properties:
-        otpauth_uri:
-          type: string
-          description: '`otpauth://totp/...` for the authenticator app (issuer `PoolRouter`).'
-          example: otpauth://totp/PoolRouter:auditor_01?secret=JBSWY3DPEHPK3PXP&issuer=PoolRouter
-        rahasia_base32:
-          type: string
-          description: The same secret in base32, for manual entry.
-    MfaKonfirmasi:
-      type: object
-      description: '`POST /auth/mfa/daftar/konfirmasi` response: the recovery codes, once (AC-13).'
-      required:
-      - kode_pemulihan
-      properties:
-        kode_pemulihan:
-          type: array
-          items:
-            type: string
-          description: 10 codes; each works once.
     MetodeProvider:
       type: string
       description: |-
