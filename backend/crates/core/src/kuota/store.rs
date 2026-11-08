@@ -214,6 +214,7 @@ pub enum HasilKlaim {
     Diperpanjang {
         skor_lama: i64,
         antre: i64,
+        sumber: Option<Sumber>,
     },
     /// The slot was never reserved.
     SlotTidakAda,
@@ -701,6 +702,21 @@ fn teks_sumber(pool_id: &str, sumber: Sumber) -> String {
     }
 }
 
+fn dari_teks_sumber(pool_id: &str, teks: &str) -> Option<Sumber> {
+    if teks.is_empty() {
+        return None;
+    }
+    if teks == "sisa" {
+        return Some(Sumber::Sisa);
+    }
+    if teks == pool_id {
+        return Some(Sumber::Sendiri);
+    }
+    teks.parse::<i64>()
+        .ok()
+        .map(|downstream_pool_id| Sumber::Pinjam { downstream_pool_id })
+}
+
 /// The error a script reports for bad arguments (any code that is not a
 /// decision).
 fn galat_skrip(kode: &str) -> GalatStore {
@@ -869,6 +885,7 @@ where
             KUNCI_SIAP.to_owned(),
             kunci_slot(pool_id),
             kunci_antre(pool_id),
+            kunci_slot_sumber(pool_id),
         ];
         let arg = vec![
             member,
@@ -880,6 +897,9 @@ where
             "ok" => Ok(HasilKlaim::Diperpanjang {
                 skor_lama: angka(j.get(1))?,
                 antre: angka(j.get(2))?,
+                sumber: teks(j.get(3))
+                    .ok()
+                    .and_then(|s| dari_teks_sumber(pool_id, &s)),
             }),
             "slot_tidak_ada" => Ok(HasilKlaim::SlotTidakAda),
             "slot_kedaluwarsa" => Ok(HasilKlaim::SlotKedaluwarsa),
