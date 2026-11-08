@@ -26,8 +26,10 @@ use axum::response::{IntoResponse, Response};
 use poolrouter_core::audit::{
     AksiKonfigurasi, Alasan, EntitasKonfigurasi, KonfigurasiBaru, Penulis, Peran,
 };
+use poolrouter_core::data_balikan::GalatDataBalikan;
 use poolrouter_core::template::{
     ParameterTemplate, TemplateError, validasi_config_schema_version, validasi_template,
+    CONFIG_SCHEMA_VERSION_F1,
 };
 use serde_json::json;
 use uuid::Uuid;
@@ -329,7 +331,7 @@ impl BarisProvider {
 /// The stored document: everything in `ProviderConfig` except the fields that
 /// live on columns of their own (`nama` on `provider`, `log_mode` and
 /// `config_schema_version` on the version row) and except `alasan`, which is an
-/// audit field and never part of the configuration.
+/// audit field and never part of the configuration. For v2, also includes `data_balikan`.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 struct DokumenProvider {
     metode: crate::api::enums::MetodeProvider,
@@ -339,6 +341,8 @@ struct DokumenProvider {
     respons_skema: serde_json::Value,
     tls_trust: crate::api::enums::TlsTrust,
     log_mode: crate::api::enums::LogMode,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    data_balikan: Option<serde_json::Value>,
 }
 
 fn dokumen_provider(body: &ProviderConfig) -> DokumenProvider {
@@ -350,6 +354,7 @@ fn dokumen_provider(body: &ProviderConfig) -> DokumenProvider {
         respons_skema: body.respons_skema.clone(),
         tls_trust: body.tls_trust,
         log_mode: body.log_mode,
+        data_balikan: body.data_balikan.clone(),
     }
 }
 
@@ -375,7 +380,7 @@ async fn nama_secret(
 }
 
 /// Every check that can answer 422, in the order AC-13 lists them, all collected
-/// so the UI can show them at once.
+/// so the UI can show them at once (AC-20: data_balikan validation for v2).
 fn periksa_body(
     body: &ProviderConfig,
     parameter: &[ParameterTemplate],
@@ -392,12 +397,54 @@ fn periksa_body(
     galat.extend(validasi_rule(&body.parameters));
     galat.extend(validasi_base_url(&body.base_url));
 
+    // v2: data_balikan required and validated; v1: ignored
+    if body.config_schema_version == CONFIG_SCHEMA_VERSION_F1 {
+        if let Some(blok) = &body.data_balikan {
+            if let Err(e) = validasi_data_balikan(blok) {
+                galat.push(e);
+            }
+        } else {
+            galat.push(TemplateError {
+                field: "/data_balikan".to_owned(),
+                kode: "required_untuk_versi_2",
+                posisi: None,
+                nama: None,
+            });
+        }
+    }
+
     if galat.is_empty() {
         Ok(())
     } else {
         Err(Galat::validasi(
             galat.into_iter().map(ke_validasi_admin).collect(),
         ))
+    }
+}
+
+/// Parse and validate data_balikan block (AC-20, AC-15). Convert GalatDataBalikan to TemplateError.
+fn validasi_data_balikan(blok: &serde_json::Value) -> Result<(), TemplateError> {
+    use poolrouter_core::data_balikan::KonfigurasiDataBalikan;
+    match KonfigurasiDataBalikan::parse(2, blok) {
+        Ok(_) => Ok(()),
+        Err(GalatDataBalikan::TidakSah(field, pesan)) => Err(TemplateError {
+            field: format!("/data_balikan/{}", field),
+            kode: "data_balikan_tidak_sah",
+            posisi: None,
+            nama: Some(pesan.to_owned()),
+        }),
+        Err(GalatDataBalikan::SkemaTerlaluTua(_)) => Err(TemplateError {
+            field: "/data_balikan".to_owned(),
+            kode: "data_balikan_skema_terlalu_tua",
+            posisi: None,
+            nama: None,
+        }),
+        Err(GalatDataBalikan::SkemaTerlaluBaru(_)) => Err(TemplateError {
+            field: "/data_balikan".to_owned(),
+            kode: "data_balikan_skema_terlalu_baru",
+            posisi: None,
+            nama: None,
+        }),
     }
 }
 
