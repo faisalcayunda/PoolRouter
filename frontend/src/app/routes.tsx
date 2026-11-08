@@ -20,6 +20,12 @@ const AuditScreen = lazy(() =>
 const QuotaScreen = lazy(() =>
   import('../features/quota/QuotaScreen').then((m) => ({ default: m.QuotaScreen })),
 );
+const ProviderListScreen = lazy(() =>
+  import('../features/provider/ProviderListScreen').then((m) => ({ default: m.ProviderListScreen })),
+);
+const SecretListScreen = lazy(() =>
+  import('../features/secret/SecretListScreen').then((m) => ({ default: m.SecretListScreen })),
+);
 
 function NotFound(): ReactNode {
   const { t } = useTranslation();
@@ -52,6 +58,10 @@ export function ScreenForPath({ pathname }: { pathname: string }): ReactNode {
       return <AuditScreen />;
     case '/kuota':
       return <QuotaScreen />;
+    case '/provider':
+      return <ProviderListScreen />;
+    case '/secret':
+      return <SecretListScreen />;
     default:
       return <NotFound />;
   }
