@@ -670,13 +670,23 @@ local function buat(anggota, kunci_anggaran, kunci_slot_sumber_hash, ember_detik
       end
     end
 
+    -- Hanya sumber pada `urutan_sumber` tiket ini yang boleh menentukan
+    -- retry_after: hash anggaran dipakai bersama semua downstream pool di
+    -- upstream pool yang sama, jadi ember tua milik pool lain tidak boleh
+    -- memengaruhi pemulihan permintaan ini (AC-6).
+    local sumber_set = {}
+    for i = 1, #anggota do
+      sumber_set[anggota[i].sumber] = true
+    end
     local tertua = nil
     local semua = redis.call('HGETALL', kunci_anggaran)
     for i = 1, #semua, 2 do
-      local _, n = string.match(semua[i], '^(.-):(%d+)$')
-      n = tonumber(n)
-      if n ~= nil and bersama.di_jendela(o.a, n) and (tertua == nil or n < tertua) then
-        tertua = n
+      local s, n = string.match(semua[i], '^(.-):(%d+)$')
+      if s ~= nil and sumber_set[s] then
+        n = tonumber(n)
+        if n ~= nil and bersama.di_jendela(o.a, n) and (tertua == nil or n < tertua) then
+          tertua = n
+        end
       end
     end
     local tunggu = 0
