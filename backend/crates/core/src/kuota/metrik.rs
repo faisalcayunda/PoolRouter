@@ -21,6 +21,7 @@ pub const SLOT_KEDALUWARSA_TOTAL: &str = "poolrouter_slot_kedaluwarsa_total";
 pub const REDIS_FAILCLOSED_TOTAL: &str = "poolrouter_redis_failclosed_total";
 pub const REDIS_REBUILD_TOTAL: &str = "poolrouter_redis_rebuild_total";
 pub const LIMITER_PENOLAKAN_TOKEN: &str = "poolrouter_limiter_penolakan_token";
+pub const PINJAMAN_TOTAL: &str = "poolrouter_pinjaman_total";
 
 /// Which process reports (`komponen` label).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -91,6 +92,18 @@ pub fn limiter_token(client_id: &str, sisa: i64) {
     gauge!(LIMITER_PENOLAKAN_TOKEN, "client_id" => client_id.to_owned()).set(sisa as f64);
 }
 
+/// Token granted from a non-self source (AC-10, T2e). `sumber_txt` is the pool id
+/// for own allocation, "sisa" for shareable, or the downstream pool id for loan.
+pub fn pinjaman_total(upstream_pool_id: &str, sumber_txt: &str, downstream_pool_id: i64) {
+    counter!(
+        PINJAMAN_TOTAL,
+        "upstream_pool_id" => upstream_pool_id.to_owned(),
+        "downstream_pool_id" => downstream_pool_id.to_string(),
+        "sumber_anggaran" => sumber_txt.to_owned()
+    )
+    .increment(1);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -112,6 +125,8 @@ mod tests {
             redis_failclosed(Komponen::Webserver);
             redis_rebuild(Komponen::Controller);
             limiter_token("client-1", 7);
+            pinjaman_total("pool-1", "sisa", 2);
+            pinjaman_total("pool-1", "3", 2);
         });
         for harap in [
             r#"poolrouter_kuota_terpakai{upstream_pool_id="pool-1"} 30"#,
@@ -121,6 +136,8 @@ mod tests {
             r#"poolrouter_redis_failclosed_total{komponen="webserver"} 1"#,
             r#"poolrouter_redis_rebuild_total{komponen="controller"} 1"#,
             r#"poolrouter_limiter_penolakan_token{client_id="client-1"} 7"#,
+            r#"poolrouter_pinjaman_total{downstream_pool_id="2",sumber_anggaran="sisa",upstream_pool_id="pool-1"} 1"#,
+            r#"poolrouter_pinjaman_total{downstream_pool_id="2",sumber_anggaran="3",upstream_pool_id="pool-1"} 1"#,
         ] {
             assert!(out.contains(harap), "tidak ada: {harap}\n{out}");
         }

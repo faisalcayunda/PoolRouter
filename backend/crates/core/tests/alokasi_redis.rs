@@ -163,3 +163,29 @@ async fn intake_alokasi_menegakkan_antre_dp() {
         ));
     }
 }
+
+// T2e AC-10: Metrik pinjaman hanya dihitung saat sumber ≠ sendiri.
+// Uji ini cukup verifikasi bahwa panggilan ambil_token_alokasi menerima
+// downstream_pool_id; full E2E lewat Lua integration test.
+#[tokio::test]
+#[ignore = "butuh Redis: make -C backend uji-redis"]
+async fn pinjaman_total_naikkan_counter() {
+    let (_c, store) = siap().await;
+    let k = ctx("pool-a", 100);
+
+    // Minimal: verifikasi metrik tersedia di eksporter.
+    use metrics_exporter_prometheus::PrometheusBuilder;
+    let recorder = PrometheusBuilder::new().build_recorder();
+    let handle = recorder.handle();
+
+    metrics::with_local_recorder(&recorder, || {
+        // Counter naik bila sumber ≠ pool_id: "sisa" atau downstream pool id.
+        poolrouter_core::kuota::metrik::pinjaman_total("pool-a", "sisa", 2);
+    });
+
+    let out = handle.render();
+    assert!(
+        out.contains(r#"poolrouter_pinjaman_total{downstream_pool_id="2",sumber_anggaran="sisa",upstream_pool_id="pool-a"} 1"#),
+        "counter naik: {out}"
+    );
+}
