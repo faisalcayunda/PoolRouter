@@ -111,6 +111,50 @@ async fn t24c_kunci_sesi_pengirim() {
     }
 }
 
+// T-25a: Filter eligible: hanya yang status='done', sumber='provider', no item.
+#[tokio::test]
+#[ignore]
+async fn t25a_filter_eligible() {
+    let db_w = pool_worker().await;
+    let db_s = pool_su().await;
+    let pid = Uuid::now_v7();
+    fixture_provider(&db_s, pid, 100).await;
+
+    // 1 eligible
+    fixture_eligible(&db_s, pid, 1).await;
+    // 1 failed (status != done)
+    let rid_failed = Uuid::from_u128(100001);
+    let kt_failed = Uuid::from_u128(200001);
+    sqlx::query(
+        "INSERT INTO transaction_log (kode_transaksi, nik, requested_at)
+         VALUES ($1, '0012345678901234', $2)"
+    )
+    .bind(kt_failed)
+    .bind(Utc::now())
+    .execute(&db_s)
+    .await
+    .expect("insert log failed");
+    sqlx::query(
+        "INSERT INTO request (request_id, provider_id, status, sumber_hasil, completed_at, 
+                final_kode_transaksi, input_payload, downstream_endpoint_id)
+         VALUES ($1, $2, 'failed', 'provider', $3, $4, '{}'::jsonb, 
+                'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'::uuid)"
+    )
+    .bind(rid_failed)
+    .bind(pid)
+    .bind(Utc::now())
+    .bind(kt_failed)
+    .execute(&db_s)
+    .await
+    .expect("insert request failed");
+
+    let result = jalankan_job_balikan(&db_w, pid, Utc::now()).await.expect("handler");
+    match result {
+        HasilPenyusun::Disusun { jumlah_item, .. } => assert_eq!(jumlah_item, 1),
+        _ => panic!("expected Disusun 1"),
+    }
+}
+
 // T-25b: 10.001 eligible, N=10.000; ambil 10.000 terlama.
 #[tokio::test]
 #[ignore]
@@ -128,6 +172,72 @@ async fn t25b_limit_n() {
     match result {
         HasilPenyusun::Disusun { jumlah_item, .. } => assert_eq!(jumlah_item, 10000),
         _ => panic!("expected Disusun 10000"),
+    }
+}
+
+// T-25c: Multi-attempt; tepat 1 item, use final kode_transaksi.
+#[tokio::test]
+#[ignore]
+async fn t25c_multi_attempt() {
+    let db_s = pool_su().await;
+    let rid = Uuid::now_v7();
+    let kt1 = Uuid::now_v7();
+    let kt2 = Uuid::now_v7();
+    let kt_final = Uuid::now_v7();
+    let now = Utc::now();
+
+    // 3 logs: attempt 1, 2, final
+    sqlx::query(
+        "INSERT INTO transaction_log (kode_transaksi, nik, requested_at)
+         VALUES ($1, '0012345678901234', $2),
+                ($3, '0012345678901234', $4),
+                ($5, '0012345678901234', $6)"
+    )
+    .bind(kt1)
+    .bind(now - chrono::Duration::hours(2))
+    .bind(kt2)
+    .bind(now - chrono::Duration::hours(1))
+    .bind(kt_final)
+    .bind(now)
+    .execute(&db_s)
+    .await
+    .expect("insert logs");
+
+    let pid = Uuid::now_v7();
+    fixture_provider(&db_s, pid, 100).await;
+
+    // Request with final_kode_transaksi = kt_final
+    sqlx::query(
+        "INSERT INTO request (request_id, provider_id, status, sumber_hasil, completed_at, 
+                final_kode_transaksi, input_payload, downstream_endpoint_id)
+         VALUES ($1, $2, 'done', 'provider', $3, $4, '{}'::jsonb, 
+                'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'::uuid)"
+    )
+    .bind(rid)
+    .bind(pid)
+    .bind(now)
+    .bind(kt_final)
+    .execute(&db_s)
+    .await
+    .expect("insert request");
+
+    let db_w = pool_worker().await;
+    let result = jalankan_job_balikan(&db_w, pid, now).await.expect("handler");
+    match result {
+        HasilPenyusun::Disusun { batch_id, jumlah_item } => {
+            assert_eq!(jumlah_item, 1);
+            // Item should use kt_final, not kt1 or kt2
+            let item_kt: String = sqlx::query_scalar(
+                "SELECT kode_transaksi::text FROM data_balikan_item WHERE batch_id = $1 AND request_id = $2"
+            )
+            .bind(batch_id)
+            .bind(rid)
+            .fetch_one(&db_s)
+            .await
+            .expect("item kt");
+            assert_eq!(item_kt, kt_final.to_string());
+        }
+        _ => panic!("expected Disusun"),
     }
 }
 

@@ -503,7 +503,7 @@ mod uji {
         .bind(provider_id)
         .execute(db)
         .await
-        .ok();
+        .expect("insert provider");
 
         sqlx::query(
             "INSERT INTO provider_config_versi (provider_id, versi, config_schema_version, dokumen)
