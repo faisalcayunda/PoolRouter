@@ -70,9 +70,7 @@ pub async fn jalankan_job_balikan(
     .map_err(|e| GalatPenyusun::Database(e.to_string()))?
     .and_then(|v: Option<serde_json::Value>| {
         v.and_then(|cfg| {
-            KonfigurasiDataBalikan::parse(2, &cfg)
-                .map_err(|_| None)
-                .ok()
+            KonfigurasiDataBalikan::parse(2, &cfg).ok()
         })
     })
     .ok_or(GalatPenyusun::KonfigTidakAda)?;
