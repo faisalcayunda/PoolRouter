@@ -602,6 +602,15 @@ return { hasil.kode, table.concat(dipanggil, ','), redis.call('ZCARD', KEYS[4]),
         self.periksa("pool tanpa alokasi tidak menyentuh slot_sumber",
                      self.r.cmd("HLEN", self.k_slot_sumber()) == 1)
 
+        # HGET slot_sumber tanpa entri → false; harus jatuh ke ARGV[7] (pool).
+        self.reset()
+        self.token(skrip="token_alokasi", request_id="r9", urutan=[("A", 2)])
+        self.r.cmd("HDEL", self.k_slot_sumber(), "r9:1")
+        h = self.tambah(member="r9:1", alokasi=True)
+        self.periksa("tanpa slot_sumber: ok", h[0] == "ok", str(h))
+        self.periksa("tanpa slot_sumber: beban ke sumber cadangan p1:1000",
+                     self.r.cmd("HGET", self.k_anggaran(), "p1:1000") == "1")
+
     def uji_properti_anggaran(self, iterasi: int) -> None:
         """AC-7: u_x <= a_x, satu beban per percobaan, sumber pertama beruang."""
         print(f"properti anggaran: {iterasi} urutan acak (AC-7)")
