@@ -1226,7 +1226,7 @@ components:
       additionalProperties: false
     ValidasiErrorDown:
       type: object
-      description: |-
+      description: |
         Satu field input yang gagal validasi pada API downstream. `kode` adalah kode
         validasi per field; `batas` hanya membawa parameter angka dari aturan yang
         dilanggar (tidak pernah nilai yang ditolak). Tidak ada `posisi`: error
