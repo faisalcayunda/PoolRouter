@@ -69,6 +69,10 @@ pub enum Jawaban {
     PorsiSyncHabis {
         retry_after: u64,
     },
+    ObjekNonaktif {
+        status: u16,
+    },
+    LayananTidakTersedia,
 }
 
 impl Jawaban {
@@ -123,6 +127,15 @@ impl Jawaban {
                 ProblemKodeDown::PorsiSyncHabis,
             )
             .retry_after(retry_after),
+            Self::ObjekNonaktif { status } => {
+                let st = StatusCode::from_u16(status).unwrap_or(StatusCode::SERVICE_UNAVAILABLE);
+                ApiError::new(st, ProblemKodeDown::ObjekNonaktif)
+            }
+            Self::LayananTidakTersedia => ApiError::new(
+                StatusCode::SERVICE_UNAVAILABLE,
+                ProblemKodeDown::LayananTidakTersedia,
+            )
+            .retry_after(5),
         }
     }
 }
@@ -440,5 +453,62 @@ mod tests {
             !body.contains_key("errors"),
             "body tidak boleh punya key 'errors'"
         );
+    }
+
+    #[test]
+    fn penolakan_berlebih_429_dengan_retry_after() {
+        let j = Jawaban::PenolakanBerlebih { retry_after: 3 };
+        let err = j.into_api_error();
+        assert_eq!(err.status(), StatusCode::TOO_MANY_REQUESTS);
+        assert_eq!(err.retry_after_secs(), Some(3));
+    }
+
+    #[test]
+    fn objek_nonaktif_403_endpoint_tanpa_retry_after() {
+        let j = Jawaban::ObjekNonaktif { status: 403 };
+        let err = j.into_api_error();
+        assert_eq!(err.status(), StatusCode::FORBIDDEN);
+        assert_eq!(err.retry_after_secs(), None);
+    }
+
+    #[test]
+    fn objek_nonaktif_503_pool_tanpa_retry_after() {
+        let j = Jawaban::ObjekNonaktif { status: 503 };
+        let err = j.into_api_error();
+        assert_eq!(err.status(), StatusCode::SERVICE_UNAVAILABLE);
+        assert_eq!(err.retry_after_secs(), None);
+    }
+
+    #[test]
+    fn layanan_tidak_tersedia_503_dengan_retry_after_5() {
+        let j = Jawaban::LayananTidakTersedia;
+        let err = j.into_api_error();
+        assert_eq!(err.status(), StatusCode::SERVICE_UNAVAILABLE);
+        assert_eq!(err.retry_after_secs(), Some(5));
+    }
+
+    #[test]
+    fn limiter_penolakan_dievaluasi_sebelum_kuota() {
+        // When the rejection limiter is exhausted, the gate returns
+        // TolakTanpaBaris(PenolakanBerlebih) even when validation passed.
+        let k = putuskan(
+            None, // validation passed
+            HasilPenolakan::Dibatasi {
+                tunggu_mikro: 2_000_000,
+            },
+        );
+        // Accepted request must always return CekKuota, regardless of limiter state.
+        assert_eq!(k, Keputusan::CekKuota);
+
+        // When validation failed but limiter is exhausted, limiter wins.
+        let k = putuskan(
+            Some(tolak_input()),
+            HasilPenolakan::Dibatasi {
+                tunggu_mikro: 2_000_000,
+            },
+        );
+        let Keputusan::TolakTanpaBaris(Jawaban::PenolakanBerlebih { .. }) = k else {
+            panic!("harus penolakan berlebih ketika limiter dibatasi");
+        };
     }
 }
