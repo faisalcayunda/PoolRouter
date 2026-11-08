@@ -154,14 +154,14 @@ mod tests {
 
     #[test]
     fn kode_bukan_enam_digit_ditolak() {
-        let secret = "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ";
+        let secret = "AAAABBBBCCCCDDDD"; // RFC 4648 base32, test fixture, not a real secret
         assert_eq!(cocok(secret, "12345", saat(120)), None);
         assert_eq!(cocok(secret, "abcdef", saat(120)), None);
     }
 
     #[test]
     fn toleransi_ditolak_minus_2_plus_2() {
-        let secret = "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ";
+        let secret = "AAAABBBBCCCCDDDD"; // RFC 4648 base32, test fixture, not a real secret
         let acuan = saat(120); // step 4
         assert_eq!(cocok(secret, &hitung(secret, 2), acuan), None);
         assert_eq!(cocok(secret, &hitung(secret, 6), acuan), None);
