@@ -528,7 +528,9 @@ local kerangka = (function()
 --     `{ kode = '...', tabel = { ... } }`, dipanggil di
 --     `potongan/ambil_token.lua` sesudah semua gates F0 dan sebelum tulis;
 --   * `kunci_slot_sumber(KEYS, o, member)` → mencatat sumber slot yang baru
---     ditulis.
+--     ditulis;
+--   * `jumlah_kunci_tambahan` → kunci di luar bentuk F0 yang sudah dideklarasikan
+--     pemanggil (0 bila tidak ada).
 -- `opsi` nil berarti perilaku F0 apa adanya (AC-5).
 
 local function kerangka(KEYS, ARGV, opsi)
@@ -594,7 +596,13 @@ local function kerangka(KEYS, ARGV, opsi)
   if n == nil or n < 1 then
     return { 'jumlah_jendela_tidak_sah' }
   end
-  if #KEYS ~= 5 + 2 * n then
+  -- Skrip F0 tidak punya kunci tambahan; skrip alokasi menambahkan kunci
+  -- tahap anggaran dan menyebut jumlahnya di `opsi` (AC-6).
+  local tambahan = 0
+  if opsi ~= nil and opsi.jumlah_kunci_tambahan ~= nil then
+    tambahan = opsi.jumlah_kunci_tambahan
+  end
+  if #KEYS ~= 5 + 2 * n + tambahan then
     return { 'kunci_tidak_sah' }
   end
   if not bersama.kunci_sah(KEYS[1], KEYS[2], KEYS[3], KEYS[4], KEYS[5]) then

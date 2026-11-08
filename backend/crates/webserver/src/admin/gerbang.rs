@@ -181,6 +181,7 @@ pub(super) fn galat_validasi(errors: Vec<FieldError>) -> Galat {
             kode: e.kode.to_owned(),
             batas: e.batas,
             posisi: None,
+            nama: None,
         })
         .collect();
     Galat::validasi(errors)

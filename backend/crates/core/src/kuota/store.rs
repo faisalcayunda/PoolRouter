@@ -39,14 +39,17 @@ use redis::{Script, Value};
 
 use super::metrik::{self, Komponen};
 use super::pemulihan::{
-    JendelaRate, KUNCI_SIAP, baca_run_id, kunci_antre, kunci_antre_dp, kunci_attempts, kunci_ember,
-    kunci_retry, kunci_rl, kunci_slot, kunci_tolak, member_slot, nomor_ember_absolut, periksa_pool,
+    JendelaRate, KUNCI_SIAP, baca_run_id, kunci_anggaran, kunci_antre, kunci_antre_dp,
+    kunci_attempts, kunci_ember, kunci_retry, kunci_rl, kunci_slot, kunci_slot_sumber, kunci_tolak,
+    member_slot, nomor_ember_absolut, periksa_pool,
 };
-use super::periode::JUMLAH_EMBER_HARIAN;
+use super::periode::{DETIK_EMBER, JUMLAH_EMBER_HARIAN};
+use super::rencana::{Sumber, SumberDana};
 
 const SKRIP_INTAKE: &str = include_str!("lua/rakitan/kuota_intake.lua");
 const SKRIP_INTAKE_ALOKASI: &str = include_str!("lua/rakitan/kuota_intake_alokasi.lua");
 const SKRIP_TOKEN: &str = include_str!("lua/rakitan/kuota_ambil_token.lua");
+const SKRIP_TOKEN_ALOKASI: &str = include_str!("lua/rakitan/kuota_ambil_token_alokasi.lua");
 const SKRIP_KLAIM: &str = include_str!("lua/rakitan/slot_klaim.lua");
 const SKRIP_LEPAS: &str = include_str!("lua/rakitan/slot_lepas.lua");
 const SKRIP_TAMBAH: &str = include_str!("lua/rakitan/attempts_tambah.lua");
@@ -182,6 +185,9 @@ pub enum HasilToken {
     RateLimit(StatusToken),
     /// The member already holds a slot: a caller bug, refused (fail-closed).
     SlotGanda(StatusToken),
+    /// Every source of `urutan_sumber` is out of room (AC-6). `tunggu_mikro`
+    /// is the budget's own recovery time.
+    AnggaranHabis(StatusToken),
 }
 
 impl HasilToken {
@@ -194,7 +200,9 @@ impl HasilToken {
     /// section 5a.7). `None` for refusals whose recovery time is not known.
     pub fn retry_after_detik(&self) -> Option<u64> {
         match self {
-            Self::RateLimit(s) | Self::PorsiSyncHabis(s) => Some(detik_naik(s.tunggu_mikro)),
+            Self::RateLimit(s) | Self::PorsiSyncHabis(s) | Self::AnggaranHabis(s) => {
+                Some(detik_naik(s.tunggu_mikro))
+            }
             _ => None,
         }
     }
@@ -329,6 +337,18 @@ pub trait KuotaStore: Send + Sync {
         permintaan: &PermintaanToken,
     ) -> impl Future<Output = Result<HasilToken, GalatStore>> + Send;
 
+    /// Token of a route that has an allocation: the F0 gates exactly as
+    /// [`Self::ambil_token`], then the budget stage (AC-6). `urutan` is
+    /// [`super::rencana::urutan_sumber`]: the first source whose
+    /// `u_x < a_x` wins, the slot records that source, and the reply is
+    /// `anggaran_habis` when none has room.
+    fn ambil_token_alokasi(
+        &self,
+        ctx: &KonteksKuota,
+        permintaan: &PermintaanToken,
+        urutan: &[SumberDana],
+    ) -> impl Future<Output = Result<HasilToken, GalatStore>> + Send;
+
     fn klaim_slot(
         &self,
         pool_id: &str,
@@ -339,6 +359,15 @@ pub trait KuotaStore: Send + Sync {
     ) -> impl Future<Output = Result<HasilKlaim, GalatStore>> + Send;
 
     fn tambah_attempts(
+        &self,
+        ctx: &KonteksKuota,
+        request_id: &str,
+        nomor_percobaan: i64,
+    ) -> impl Future<Output = Result<HasilTambah, GalatStore>> + Send;
+
+    /// [`Self::tambah_attempts`] for a route with an allocation: the committed
+    /// attempt is also charged to the slot's budget source (AC-6).
+    fn tambah_attempts_alokasi(
         &self,
         ctx: &KonteksKuota,
         request_id: &str,
@@ -368,6 +397,7 @@ struct KumpulanSkrip {
     intake: Script,
     intake_alokasi: Script,
     token: Script,
+    token_alokasi: Script,
     klaim: Script,
     lepas: Script,
     tambah: Script,
@@ -381,6 +411,7 @@ impl KumpulanSkrip {
             intake: Script::new(SKRIP_INTAKE),
             intake_alokasi: Script::new(SKRIP_INTAKE_ALOKASI),
             token: Script::new(SKRIP_TOKEN),
+            token_alokasi: Script::new(SKRIP_TOKEN_ALOKASI),
             klaim: Script::new(SKRIP_KLAIM),
             lepas: Script::new(SKRIP_LEPAS),
             tambah: Script::new(SKRIP_TAMBAH),
@@ -487,6 +518,68 @@ where
             None => Err(GalatStore::JawabanTakTerduga("jawaban kosong".into())),
         }
     }
+
+    /// Shared body of both attempt counters; `alokasi` adds the budget keys
+    /// (AC-6).
+    async fn catat_attempts(
+        &self,
+        ctx: &KonteksKuota,
+        request_id: &str,
+        nomor_percobaan: i64,
+        alokasi: bool,
+    ) -> Result<HasilTambah, GalatStore> {
+        periksa_ctx(ctx)?;
+        let member = periksa_member(request_id, nomor_percobaan)?;
+        let mut kunci = vec![
+            KUNCI_SIAP.to_owned(),
+            kunci_attempts(&ctx.pool_id, ctx.periode_mulai),
+            kunci_ember(&ctx.pool_id),
+            kunci_slot(&ctx.pool_id),
+        ];
+        let mut arg = vec![
+            member,
+            ctx.mode.sebagai_arg().to_owned(),
+            ctx.kuota_efektif.to_string(),
+            JUMLAH_EMBER_HARIAN.to_string(),
+            no_ember(ctx).to_string(),
+        ];
+        if alokasi {
+            kunci.push(kunci_anggaran(&ctx.pool_id));
+            kunci.push(kunci_slot_sumber(&ctx.pool_id));
+            // Route without a `slot_sumber` entry charges its own source.
+            arg.push(ctx.pool_id.clone());
+        }
+        let j = self.jalankan(&self.skrip.tambah, kunci, arg).await?;
+        let kode = teks(&j[0])?;
+        let tiga = || -> Result<(i64, i64, i64), GalatStore> {
+            Ok((angka(j.get(1))?, angka(j.get(2))?, angka(j.get(3))?))
+        };
+        match kode.as_str() {
+            "ok" => {
+                let (attempts, terpakai, kuota) = tiga()?;
+                Ok(HasilTambah::Dicatat {
+                    attempts,
+                    terpakai,
+                    kuota,
+                })
+            }
+            "ok_terlampaui" => {
+                let (attempts, terpakai, kuota) = tiga()?;
+                Ok(HasilTambah::DicatatTerlampaui {
+                    attempts,
+                    terpakai,
+                    kuota,
+                })
+            }
+            "slot_kedaluwarsa" => {
+                metrik::slot_kedaluwarsa(&ctx.pool_id, 1);
+                Ok(HasilTambah::SlotKedaluwarsa {
+                    attempts: angka(j.get(1))?,
+                })
+            }
+            lain => Err(galat_skrip(lain)),
+        }
+    }
 }
 
 fn galat_pemulihan(g: super::pemulihan::GalatPemulihan) -> GalatStore {
@@ -515,6 +608,96 @@ fn angka(v: Option<&Value>) -> Result<i64, GalatStore> {
         lain => Err(GalatStore::JawabanTakTerduga(format!(
             "bukan angka: {lain:?}"
         ))),
+    }
+}
+
+/// KEYS and ARGV of the F0 token shape, shared by both token scripts. The
+/// alokasi script appends the budget keys and `urutan_sumber` (AC-6).
+fn bentuk_token(
+    ctx: &KonteksKuota,
+    p: &PermintaanToken,
+) -> Result<(Vec<String>, Vec<String>), GalatStore> {
+    periksa_ctx(ctx)?;
+    periksa_member(&p.request_id, p.nomor_percobaan)?;
+    if p.jendela_rate.is_empty() {
+        return Err(GalatStore::ArgumenTidakSah(
+            "paling sedikit satu jendela rate".into(),
+        ));
+    }
+    let mut kunci = vec![
+        KUNCI_SIAP.to_owned(),
+        kunci_attempts(&ctx.pool_id, ctx.periode_mulai),
+        kunci_ember(&ctx.pool_id),
+        kunci_slot(&ctx.pool_id),
+        kunci_retry(&ctx.pool_id),
+    ];
+    for j in &p.jendela_rate {
+        kunci.push(kunci_rl(&ctx.pool_id, &j.jenis, false));
+        kunci.push(kunci_rl(&ctx.pool_id, &j.jenis, true));
+    }
+    let mut arg = vec![
+        p.request_id.clone(),
+        p.nomor_percobaan.to_string(),
+        ctx.mode.sebagai_arg().to_owned(),
+        if p.sync { "1" } else { "0" }.to_owned(),
+        ctx.kuota_efektif.to_string(),
+        JUMLAH_EMBER_HARIAN.to_string(),
+        no_ember(ctx).to_string(),
+        p.maks_konkurensi.to_string(),
+        p.ttl_slot_mikro.to_string(),
+        p.rasio_retry.to_string(),
+        p.retry_min.to_string(),
+        p.porsi_sync.to_string(),
+        p.jendela_rate.len().to_string(),
+    ];
+    for j in &p.jendela_rate {
+        arg.push(j.t_mikro.to_string());
+        arg.push(j.burst.to_string());
+    }
+    Ok((kunci, arg))
+}
+
+/// Reply shape shared by both token scripts (F0 and allocated).
+fn hasil_token(j: &[Value], pool_id: &str) -> Result<HasilToken, GalatStore> {
+    let kode = teks(&j[0])?;
+    let status = || -> Result<StatusToken, GalatStore> {
+        Ok(StatusToken {
+            terpakai: angka(j.get(1))?,
+            slot_aktif: angka(j.get(2))?,
+            kedaluwarsa: angka(j.get(3))?,
+            tunggu_mikro: angka(j.get(4))?,
+            isi: angka(j.get(5))?,
+            isi_porsi: angka(j.get(6))?,
+        })
+    };
+    // Slots the script cleaned by TTL, whatever the decision was.
+    if let Ok(st) = status() {
+        metrik::slot_kedaluwarsa(pool_id, st.kedaluwarsa.max(0) as u64);
+    }
+    if kode == "retry_budget_habis" {
+        metrik::retry_budget_habis(pool_id);
+    }
+    match kode.as_str() {
+        "ok" => Ok(HasilToken::Diberikan(status()?)),
+        "kuota_habis" => Ok(HasilToken::KuotaHabis(status()?)),
+        "konkurensi_penuh" => Ok(HasilToken::KonkurensiPenuh(status()?)),
+        "retry_budget_habis" => Ok(HasilToken::RetryBudgetHabis(status()?)),
+        "porsi_sync_habis" => Ok(HasilToken::PorsiSyncHabis(status()?)),
+        "rate_limit" => Ok(HasilToken::RateLimit(status()?)),
+        "slot_ganda" => Ok(HasilToken::SlotGanda(status()?)),
+        "anggaran_habis" => Ok(HasilToken::AnggaranHabis(status()?)),
+        lain => Err(galat_skrip(lain)),
+    }
+}
+
+/// Text form of a budget source, the same one `transaction_log.sumber_anggaran`
+/// stores: own reservation is the pool's id, unallocated is `sisa`, a loan is
+/// the donor's id (AC-6, DQ-42).
+fn teks_sumber(pool_id: &str, sumber: Sumber) -> String {
+    match sumber {
+        Sumber::Sendiri => pool_id.to_owned(),
+        Sumber::Sisa => "sisa".to_owned(),
+        Sumber::Pinjam { downstream_pool_id } => downstream_pool_id.to_string(),
     }
 }
 
@@ -645,72 +828,31 @@ where
         ctx: &KonteksKuota,
         p: &PermintaanToken,
     ) -> Result<HasilToken, GalatStore> {
-        periksa_ctx(ctx)?;
-        periksa_member(&p.request_id, p.nomor_percobaan)?;
-        if p.jendela_rate.is_empty() {
-            return Err(GalatStore::ArgumenTidakSah(
-                "paling sedikit satu jendela rate".into(),
-            ));
-        }
-        let mut kunci = vec![
-            KUNCI_SIAP.to_owned(),
-            kunci_attempts(&ctx.pool_id, ctx.periode_mulai),
-            kunci_ember(&ctx.pool_id),
-            kunci_slot(&ctx.pool_id),
-            kunci_retry(&ctx.pool_id),
-        ];
-        for j in &p.jendela_rate {
-            kunci.push(kunci_rl(&ctx.pool_id, &j.jenis, false));
-            kunci.push(kunci_rl(&ctx.pool_id, &j.jenis, true));
-        }
-        let mut arg = vec![
-            p.request_id.clone(),
-            p.nomor_percobaan.to_string(),
-            ctx.mode.sebagai_arg().to_owned(),
-            if p.sync { "1" } else { "0" }.to_owned(),
-            ctx.kuota_efektif.to_string(),
-            JUMLAH_EMBER_HARIAN.to_string(),
-            no_ember(ctx).to_string(),
-            p.maks_konkurensi.to_string(),
-            p.ttl_slot_mikro.to_string(),
-            p.rasio_retry.to_string(),
-            p.retry_min.to_string(),
-            p.porsi_sync.to_string(),
-            p.jendela_rate.len().to_string(),
-        ];
-        for j in &p.jendela_rate {
-            arg.push(j.t_mikro.to_string());
-            arg.push(j.burst.to_string());
-        }
+        let (kunci, arg) = bentuk_token(ctx, p)?;
         let j = self.jalankan(&self.skrip.token, kunci, arg).await?;
-        let kode = teks(&j[0])?;
-        let status = || -> Result<StatusToken, GalatStore> {
-            Ok(StatusToken {
-                terpakai: angka(j.get(1))?,
-                slot_aktif: angka(j.get(2))?,
-                kedaluwarsa: angka(j.get(3))?,
-                tunggu_mikro: angka(j.get(4))?,
-                isi: angka(j.get(5))?,
-                isi_porsi: angka(j.get(6))?,
-            })
-        };
-        // Slots the script cleaned by TTL, whatever the decision was.
-        if let Ok(st) = status() {
-            metrik::slot_kedaluwarsa(&ctx.pool_id, st.kedaluwarsa.max(0) as u64);
+        hasil_token(&j, &ctx.pool_id)
+    }
+
+    async fn ambil_token_alokasi(
+        &self,
+        ctx: &KonteksKuota,
+        p: &PermintaanToken,
+        urutan: &[SumberDana],
+    ) -> Result<HasilToken, GalatStore> {
+        if urutan.is_empty() {
+            return Err(GalatStore::ArgumenTidakSah("urutan sumber kosong".into()));
         }
-        if kode == "retry_budget_habis" {
-            metrik::retry_budget_habis(&ctx.pool_id);
+        let (mut kunci, mut arg) = bentuk_token(ctx, p)?;
+        kunci.push(kunci_anggaran(&ctx.pool_id));
+        kunci.push(kunci_slot_sumber(&ctx.pool_id));
+        arg.push(urutan.len().to_string());
+        for s in urutan {
+            arg.push(teks_sumber(&ctx.pool_id, s.sumber));
+            arg.push(s.ruang.to_string());
         }
-        match kode.as_str() {
-            "ok" => Ok(HasilToken::Diberikan(status()?)),
-            "kuota_habis" => Ok(HasilToken::KuotaHabis(status()?)),
-            "konkurensi_penuh" => Ok(HasilToken::KonkurensiPenuh(status()?)),
-            "retry_budget_habis" => Ok(HasilToken::RetryBudgetHabis(status()?)),
-            "porsi_sync_habis" => Ok(HasilToken::PorsiSyncHabis(status()?)),
-            "rate_limit" => Ok(HasilToken::RateLimit(status()?)),
-            "slot_ganda" => Ok(HasilToken::SlotGanda(status()?)),
-            lain => Err(galat_skrip(lain)),
-        }
+        arg.push(DETIK_EMBER.to_string());
+        let j = self.jalankan(&self.skrip.token_alokasi, kunci, arg).await?;
+        hasil_token(&j, &ctx.pool_id)
     }
 
     async fn klaim_slot(
@@ -751,53 +893,19 @@ where
         request_id: &str,
         nomor_percobaan: i64,
     ) -> Result<HasilTambah, GalatStore> {
-        periksa_ctx(ctx)?;
-        let member = periksa_member(request_id, nomor_percobaan)?;
-        let kunci = vec![
-            KUNCI_SIAP.to_owned(),
-            kunci_attempts(&ctx.pool_id, ctx.periode_mulai),
-            kunci_ember(&ctx.pool_id),
-            kunci_slot(&ctx.pool_id),
-        ];
-        let arg = vec![
-            member,
-            ctx.mode.sebagai_arg().to_owned(),
-            ctx.kuota_efektif.to_string(),
-            JUMLAH_EMBER_HARIAN.to_string(),
-            no_ember(ctx).to_string(),
-        ];
-        let j = self.jalankan(&self.skrip.tambah, kunci, arg).await?;
-        let kode = teks(&j[0])?;
-        let tiga = || -> Result<(i64, i64, i64), GalatStore> {
-            Ok((angka(j.get(1))?, angka(j.get(2))?, angka(j.get(3))?))
-        };
-        match kode.as_str() {
-            "ok" => {
-                let (attempts, terpakai, kuota) = tiga()?;
-                Ok(HasilTambah::Dicatat {
-                    attempts,
-                    terpakai,
-                    kuota,
-                })
-            }
-            "ok_terlampaui" => {
-                let (attempts, terpakai, kuota) = tiga()?;
-                Ok(HasilTambah::DicatatTerlampaui {
-                    attempts,
-                    terpakai,
-                    kuota,
-                })
-            }
-            "slot_kedaluwarsa" => {
-                metrik::slot_kedaluwarsa(&ctx.pool_id, 1);
-                Ok(HasilTambah::SlotKedaluwarsa {
-                    attempts: angka(j.get(1))?,
-                })
-            }
-            lain => Err(galat_skrip(lain)),
-        }
+        self.catat_attempts(ctx, request_id, nomor_percobaan, false)
+            .await
     }
 
+    async fn tambah_attempts_alokasi(
+        &self,
+        ctx: &KonteksKuota,
+        request_id: &str,
+        nomor_percobaan: i64,
+    ) -> Result<HasilTambah, GalatStore> {
+        self.catat_attempts(ctx, request_id, nomor_percobaan, true)
+            .await
+    }
     async fn lepas_slot(
         &self,
         pool_id: &str,
