@@ -203,9 +203,8 @@ pub async fn jalankan_job_balikan(
         return Ok(HasilPenyusun::TidakAdaPemicu);
     }
 
-    // Q6 periode terakhir (untuk evaluasi_pemicu). Implementasi: shortcut ke jumlah_n (AC-24–28 tidak ada pemicu periode).
-    // shortcut: evaluasi_pemicu tidak implemented; hardcode jumlah_n trigger, add when AC-27/T-27 run.
-    let _periode_terakhir: Option<DateTime<Utc>> = sqlx::query_scalar(
+    // Q6 periode terakhir (untuk evaluasi_pemicu). WB18: ambil max(disusun_at) dari batch periode terakhir.
+    let periode_terakhir: Option<DateTime<Utc>> = sqlx::query_scalar(
         "SELECT max(disusun_at) FROM data_balikan_batch WHERE provider_id = $1 AND pemicu = 'periode'"
     )
     .bind(provider_id)
@@ -213,15 +212,54 @@ pub async fn jalankan_job_balikan(
     .await
     .map_err(db)?;
 
-    let _jumlah_eligible = eligible[0].jumlah_eligible as u32;
-    let pemicu = "jumlah_n"; // shortcut: Q6 ditafsir sebagai jumlah_n; upgrade saat evaluasi_pemicu integrated.
+    // Q9 tertunda (AC-28 gauge) — hitung sebelum keputusan untuk consistency.
+    let tertunda: i64 = sqlx::query_scalar(
+        "SELECT count(*)
+           FROM request r
+          WHERE r.provider_id = $1
+            AND r.status = 'done'
+            AND r.sumber_hasil = 'provider'
+            AND NOT EXISTS (SELECT 1 FROM data_balikan_item i WHERE i.request_id = r.request_id)"
+    )
+    .bind(provider_id)
+    .fetch_one(&mut *tx)
+    .await
+    .map_err(db)?;
+
+    let jumlah_eligible = eligible[0].jumlah_eligible as u32;
+    let completed_at_tertua = eligible[0].completed_at;
+    
+    // Evaluasi pemicu sesuai spec (c) langkah 6.
+    let hasil_pemicu = crate::data_balikan::evaluasi_pemicu(
+        jumlah_eligible,
+        Some(completed_at_tertua),
+        sekarang,
+        &konfigurasi,
+        periode_terakhir,
+    );
+
+    use crate::data_balikan::PemicuBatch;
+    // Spec (c) langkah 6: evaluasi hasil, return TidakAdaPemicu jika Tidak.
+    // shortcut: AC-24–28 hanya JumlahN; Periode (T-27/AC-27) deferred to ARC-197.
+    match hasil_pemicu {
+        PemicuBatch::Tidak => {
+            tx.rollback().await.map_err(db)?;
+            metrics::gauge!("poolrouter_data_balikan_tertunda").set(tertunda as f64);
+            return Ok(HasilPenyusun::TidakAdaPemicu);
+        }
+        PemicuBatch::JumlahN | PemicuBatch::Periode(_) => {
+            // Lanjut ke Q7 INSERT batch
+        }
+    }
+
+    let pemicu = "jumlah_n"; // shortcut: hingga AC-27 implemented
+    let jadwal_kirim_at = sekarang; // shortcut: JumlahN = sekarang; Periode 00:00 WIB added saat AC-27
 
     // Q7 INSERT batch (WB18).
     let batch_id = Uuid::now_v7();
     let periode_mulai_at = eligible.iter().map(|r| r.requested_at).min().unwrap_or(sekarang);
     let periode_selesai_at = eligible.iter().map(|r| r.requested_at).max().unwrap_or(sekarang);
     let jumlah_item = eligible.len() as i32;
-    let jadwal_kirim_at = sekarang; // shortcut: pemicu jumlah_n, jadwal_kirim_at = sekarang; add saat periode implemented.
 
     sqlx::query(
         "INSERT INTO data_balikan_batch
@@ -273,20 +311,6 @@ pub async fn jalankan_job_balikan(
             tertulis: rows_affected,
         });
     }
-
-    // Q9 tertunda (AC-28 gauge).
-    let tertunda: i64 = sqlx::query_scalar(
-        "SELECT count(*)
-           FROM request r
-          WHERE r.provider_id = $1
-            AND r.status = 'done'
-            AND r.sumber_hasil = 'provider'
-            AND NOT EXISTS (SELECT 1 FROM data_balikan_item i WHERE i.request_id = r.request_id)"
-    )
-    .bind(provider_id)
-    .fetch_one(&mut *tx)
-    .await
-    .map_err(db)?;
 
     tx.commit().await.map_err(db)?;
 
