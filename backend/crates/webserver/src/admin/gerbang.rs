@@ -38,6 +38,8 @@ pub(super) struct Peminta {
     /// only when the operation accepts `client_owner`; `None` for every other
     /// role.
     pub client_id: Option<Uuid>,
+    /// MFA verification timestamp, if the session has passed the MFA step (AC-15).
+    pub mfa_terverifikasi_at: Option<DateTime<Utc>>,
 }
 
 /// Check `Origin` (write methods only), the session, and the role, in that
@@ -93,6 +95,7 @@ pub(super) async fn masuk(
         sesi_id: sesi.sesi_id,
         sumber_ip: ip,
         client_id: None,
+        mfa_terverifikasi_at: sesi.mfa_terverifikasi_at,
     };
     let peminta = if diterima.contains(&Peran::ClientOwner) {
         let client_id = sqlx::query_scalar::<_, Option<Uuid>>(
@@ -104,6 +107,7 @@ pub(super) async fn masuk(
         .map_err(|e| galat_db(&e))?;
         Peminta {
             client_id,
+            mfa_terverifikasi_at: sesi.mfa_terverifikasi_at,
             ..peminta
         }
     } else {
@@ -201,4 +205,21 @@ fn galat_sesi(e: &GalatSesi) -> Galat {
 fn galat_db(e: &sqlx::Error) -> Galat {
     tracing::error!(error = %e, "admin: kueri gagal");
     Galat::layanan()
+}
+
+/// MFA verification guard for auditor and platform admin operations (AC-15).
+/// Returns 403 if the caller's session has not passed MFA verification.
+pub(super) fn periksa_guard_mfa(peminta: &Peminta) -> Result<(), Galat> {
+    if peminta.mfa_terverifikasi_at.is_none() {
+        tracing::debug!(
+            pengguna_id = %peminta.pengguna_id,
+            peran = %peminta.peran,
+            "admin: MFA guard failed"
+        );
+        return Err(Galat::baru(
+            StatusCode::FORBIDDEN,
+            crate::api::problem::ProblemKodeAdmin::AksesDitolak,
+        ));
+    }
+    Ok(())
 }

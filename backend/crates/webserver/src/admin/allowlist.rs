@@ -30,7 +30,8 @@ pub(super) async fn list_allowlist(
     headers: HeaderMap,
     ConnectInfo(peer): ConnectInfo<SocketAddr>,
 ) -> Result<Response, Galat> {
-    masuk(&s, &method, &headers, peer, &PERAN, "listWebhookAllowlist").await?;
+    let peminta = masuk(&s, &method, &headers, peer, &PERAN, "listWebhookAllowlist").await?;
+    super::gerbang::periksa_guard_mfa(&peminta)?;
 
     let rows: Vec<(String, bool)> =
         sqlx::query_as("SELECT domain, aktif FROM webhook_domain_allowlist ORDER BY domain")
@@ -66,6 +67,7 @@ pub(super) async fn put_allowlist_entry(
         "putWebhookAllowlistEntry",
     )
     .await?;
+    super::gerbang::periksa_guard_mfa(&peminta)?;
     let domain = periksa_domain(&domain)?;
 
     let mut tx = s.pool.begin().await.map_err(|e| galat_db(&e))?;
@@ -118,6 +120,7 @@ pub(super) async fn delete_allowlist_entry(
         "deleteWebhookAllowlistEntry",
     )
     .await?;
+    super::gerbang::periksa_guard_mfa(&peminta)?;
     let domain = periksa_domain(&domain)?;
 
     let mut tx = s.pool.begin().await.map_err(|e| galat_db(&e))?;

@@ -41,6 +41,7 @@ pub(super) async fn list_clients(
     ConnectInfo(peer): ConnectInfo<SocketAddr>,
 ) -> Result<Response, Galat> {
     let peminta = masuk(&s, &method, &headers, peer, &PERAN_BACA, "listClients").await?;
+    super::gerbang::periksa_guard_mfa(&peminta)?;
 
     let rows: Vec<(Uuid, String, i64, f64, bool)> = match peminta.peran {
         Peran::ClientOwner => sqlx::query_as(
@@ -74,6 +75,7 @@ pub(super) async fn get_client(
     Path(id): Path<Uuid>,
 ) -> Result<Response, Galat> {
     let peminta = masuk(&s, &method, &headers, peer, &PERAN_BACA, "getClient").await?;
+    super::gerbang::periksa_guard_mfa(&peminta)?;
     if peminta.peran == Peran::ClientOwner && peminta.client_id != Some(id) {
         return Err(Galat::tidak_ditemukan());
     }
@@ -102,6 +104,7 @@ pub(super) async fn create_client(
     axum::Json(body): axum::Json<ClientConfig>,
 ) -> Result<Response, Galat> {
     let peminta = masuk(&s, &method, &headers, peer, &PERAN_TULIS, "createClient").await?;
+    super::gerbang::periksa_guard_mfa(&peminta)?;
     let burst = body.limiter_penolakan_burst.unwrap_or(20);
     let isi_ulang = body.limiter_penolakan_isi_ulang_per_detik.unwrap_or(1.0);
     periksa_nama(&body.nama)?;
@@ -162,6 +165,7 @@ pub(super) async fn update_client(
     axum::Json(body): axum::Json<ClientConfig>,
 ) -> Result<Response, Galat> {
     let peminta = masuk(&s, &method, &headers, peer, &PERAN_TULIS, "updateClient").await?;
+    super::gerbang::periksa_guard_mfa(&peminta)?;
     periksa_nama(&body.nama)?;
 
     let lama: Option<(String, i64, f64, bool)> = sqlx::query_as(
