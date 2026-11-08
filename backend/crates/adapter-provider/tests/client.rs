@@ -9,7 +9,8 @@ use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 
 use poolrouter_adapter_provider::client::{
-    Allowlist, BATAS_CONNECT, BATAS_TOTAL, GalatKlien, TlsTrust, build_provider_client,
+    Allowlist, BATAS_CONNECT, BATAS_TOTAL, ClientConfig, GalatKlien, TlsTrust,
+    build_provider_client, build_provider_client_with_config,
 };
 use rcgen::{BasicConstraints, CertificateParams, DnType, IsCa, Issuer, KeyPair};
 use rustls::pki_types::pem::PemObject;
@@ -441,17 +442,16 @@ async fn timeout_dengan_config_total_pendek() {
     });
 
     let s = sertifikat("a");
-    let klien = build_provider_client(TlsTrust::CaKustom {
+    let cfg = ClientConfig {
+        connect_timeout: std::time::Duration::from_millis(100),
+        total_timeout: std::time::Duration::from_millis(200),
+    };
+    let klien = build_provider_client_with_config(TlsTrust::CaKustom {
         ca_pem: s.ca_pem.into_bytes(),
-    })
+    }, cfg)
     .unwrap();
 
-    // Override timeout total ke 200ms (kecil dari default 20s).
-    let res = klien
-        .get(format!("https://{}/x", addr))
-        .timeout(std::time::Duration::from_millis(200))
-        .send()
-        .await;
+    let res = klien.get(format!("https://{}/x", addr)).send().await;
 
     assert!(res.is_err(), "request dengan timeout 200ms harus gagal: {res:?}");
     // Verifikasi error adalah timeout, bukan jenis error lain.
