@@ -701,10 +701,20 @@ async fn ac31_panik_tengah_kirim_dipulihkan() {
             .fetch_one(&su)
             .await
             .unwrap();
-    assert_eq!(status, "diterima", "sisa crash dipulihkan dan diterima");
-    assert_eq!(attempt, 2, "attempt_count naik dari 1 ke 2");
+    assert_eq!(
+        status, "diterima",
+        "sisa crash dipulihkan dan diterima"
+    );
+    assert_eq!(
+        attempt, 2,
+        "attempt_count naik dari 1 ke 2"
+    );
     assert!(ack_ref.is_some(), "ack_ref sekarang tercatat");
-    assert_eq!(pengirim.jumlah_kirim(batch_id), 1, "hanya satu kirim, tidak ada dupe");
+    assert_eq!(
+        pengirim.jumlah_kirim(batch_id),
+        1,
+        "hanya satu kirim, tidak ada dupe"
+    );
 }
 
 // AC-33 juga memakai provider nonaktif: tidak ada konfigurasi → putaran diam.
