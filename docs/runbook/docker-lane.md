@@ -1,6 +1,6 @@
 # Runbook: lane build/test PoolRouter di Docker (SHAA-373)
 
-Runbook ini menjelaskan cara menjalankan gate backend di Docker, menjaga ruang kosong, dan membersihkan resource. Dasar keputusan: arahan owner 2026-11-04, persetujuan Luca U-20261108-1 (`shaal-playbook` §6, pengecualian sementara).
+Runbook ini menjelaskan cara menjalankan gate backend di Docker, menjaga ruang kosong, dan membersihkan resource. Dasar keputusan: arahan owner 2026-11-04, persetujuan Luca U-20261108-1 (`arctiva-playbook` §6, pengecualian sementara).
 
 - **Pemilik:** Tetsu (Platform & SRE), reviewer Ridley, Huan untuk runbook.
 - **Tanggal:** 2026-11-04.
@@ -14,13 +14,13 @@ Runbook ini menjelaskan cara menjalankan gate backend di Docker, menjaga ruang k
 
 ## Menjalankan gate backend
 
-Dari akar repo, satu build berat per waktu. Label wajib `shaal.issue=SHAA-<n>`.
+Dari akar repo, satu build berat per waktu. Label wajib `arctiva.issue=ARC-<n>`.
 
 ```sh
-RUNNER=docker CONTAINER_LABEL=shaal.issue=SHAA-<n> make -C backend setup
-RUNNER=docker CONTAINER_LABEL=shaal.issue=SHAA-<n> make -C backend test-rust
-RUNNER=docker CONTAINER_LABEL=shaal.issue=SHAA-<n> make -C backend lint
-RUNNER=docker CONTAINER_LABEL=shaal.issue=SHAA-<n> make -C backend test
+RUNNER=docker CONTAINER_LABEL=arctiva.issue=ARC-<n> make -C backend setup
+RUNNER=docker CONTAINER_LABEL=arctiva.issue=ARC-<n> make -C backend test-rust
+RUNNER=docker CONTAINER_LABEL=arctiva.issue=ARC-<n> make -C backend lint
+RUNNER=docker CONTAINER_LABEL=arctiva.issue=ARC-<n> make -C backend test
 ```
 
 `test` menjalankan `test-rust`, `db-test` (PostgreSQL 17 sementara), dan `uji-lua` (Redis sementara). Keduanya memakai engine Docker dari `DB_ENGINE` dan `LUA_ENGINE`, yang mengikuti `RUNNER`.
@@ -29,12 +29,12 @@ Setiap target `HEAVY` (`test-rust`, `lint` clippy, `test`, dan `pnpm install` fr
 
 ### Kunci build: antre FIFO (SHAA-395)
 
-Jika kunci `shaal-build-heavy` dipegang, target **menunggu**, tidak gagal seketika:
+Jika kunci `poolrouter-build-heavy` dipegang, target **menunggu**, tidak gagal seketika:
 
-- Run mengambil tiket di antrean host (`BUILD_LOCK_QUEUE_DIR`, default `${TMPDIR:-/tmp}/shaal-build-lock-queue`; nama tiket = nanodetik datang + PID). Hanya run dengan tiket paling depan yang boleh mencoba memulai container, jadi urutannya FIFO dan tidak ada yang direbut run yang datang belakangan.
-- Pesan `build-lock: menunggu giliran (kunci dipegang ... shaal.issue=SHAA-<n> ...)` muncul saat mulai menunggu dan tiap 60 detik.
-- Batas tunggu: `BUILD_LOCK_WAIT_SECS`, default **1800** (30 menit). Contoh: `BUILD_LOCK_WAIT_SECS=3600 make push-main ...`. Interval cek: `BUILD_LOCK_POLL_SECS` (default 2).
-- Batas habis: exit **75** (`EX_TEMPFAIL`), pesan menyebut label `shaal.issue` pemegang kunci dan panjang antrean. Tidak ada build yang jalan; push-main berhenti tanpa push.
+- Run mengambil tiket di antrean host (`BUILD_LOCK_QUEUE_DIR`, default `${TMPDIR:-/tmp}/poolrouter-build-lock-queue`; nama tiket = nanodetik datang + PID). Hanya run dengan tiket paling depan yang boleh mencoba memulai container, jadi urutannya FIFO dan tidak ada yang direbut run yang datang belakangan.
+- Pesan `build-lock: menunggu giliran (kunci dipegang ... arctiva.issue=ARC-<n> ...)` muncul saat mulai menunggu dan tiap 60 detik.
+- Batas tunggu: `BUILD_LOCK_WAIT_SECS`, default **1800** (30 menit). Contoh: `BUILD_LOCK_WAIT_SECS=3600 make -C backend test ...`. Interval cek: `BUILD_LOCK_POLL_SECS` (default 2).
+- Batas habis: exit **75** (`EX_TEMPFAIL`), pesan menyebut label `arctiva.issue` pemegang kunci dan panjang antrean. Tidak ada build yang jalan; target yang meminta kunci berhenti tanpa mengerjakan build.
 - Tiket milik proses yang mati (kill, VM restart) dibuang otomatis oleh run berikutnya, jadi antrean tidak tersumbat. Kunci container yang tertinggal (basi) tetap ditangani seperti sebelumnya (`build-lock-clean`; perbaikan lanjutan di SHAA-366).
 - Kunci tetap hanya milik container build (`--rm`); antrean hanya mengatur giliran mencoba. Run di luar skrip (memakai nama container yang sama langsung) tidak antre, tetapi run yang antre menunggunya selesai.
 - Batasan: tiket dianggap mati lewat `kill -0 <pid>`, jadi semua run harus satu host dan satu PID namespace (lane saat ini). Run dari container/PID namespace atau pengguna lain bisa dianggap mati dan tiketnya dibuang.
@@ -44,9 +44,9 @@ Uji manual (engine Docker, image apa saja yang punya `sleep`):
 
 ```sh
 export BUILD_LOCK_ENGINE=docker
-run() { sh scripts/build-lock.sh run -- docker run --rm --name shaal-build-heavy --label shaal.build=heavy --label shaal.issue=$1 --entrypoint sleep <image> $2; }
-run SHAA-A 6 & sleep 1; run SHAA-B 3 & sleep 1; run SHAA-C 3 & wait      # selesai berurutan A, B, C
-run SHAA-A 12 & sleep 2; (export BUILD_LOCK_WAIT_SECS=4; run SHAA-B 1; echo $?)    # 75
+run() { sh scripts/build-lock.sh run -- docker run --rm --name poolrouter-build-heavy --label poolrouter.build=heavy --label arctiva.issue=$1 --entrypoint sleep <image> $2; }
+run ARC-A 6 & sleep 1; run ARC-B 3 & sleep 1; run ARC-C 3 & wait      # selesai berurutan A, B, C
+run ARC-A 12 & sleep 2; (export BUILD_LOCK_WAIT_SECS=4; run ARC-B 1; echo $?)    # 75
 ```
 
 ## Ambang ruang kosong
@@ -59,34 +59,34 @@ scripts/docker-lane.sh check
 
 - Ambang: 3G untuk filesystem Docker root (`/var/lib/docker`), 1G untuk `/data`.
 - Di bawah ambang: run berhenti dan melapor. Jangan diakali, jangan turunkan ambang tanpa keputusan Luca.
-- Pakai `MIN_FREE_ROOT_GB` atau `MIN_FREE_DATA_GB` hanya dengan keputusan tertulis. Bukti guard: `MIN_FREE_DATA_GB=999 make -C backend test-rust RUNNER=docker CONTAINER_LABEL=shaal.issue=SHAA-<n>` keluar exit 2 sebelum container apa pun dibuat.
+- Pakai `MIN_FREE_ROOT_GB` atau `MIN_FREE_DATA_GB` hanya dengan keputusan tertulis. Bukti guard: `MIN_FREE_DATA_GB=999 make -C backend test-rust RUNNER=docker CONTAINER_LABEL=arctiva.issue=ARC-<n>` keluar exit 2 sebelum container apa pun dibuat.
 
-Selama build, pantau dengan `df -BG /data`. Jika ruang turun di bawah 3G, hentikan build (Ctrl-C, lalu `docker ps --filter label=shaal.issue=SHAA-<n>`), bersihkan (lihat di bawah), lalu laporkan angka puncak.
+Selama build, pantau dengan `df -BG /data`. Jika ruang turun di bawah 3G, hentikan build (Ctrl-C, lalu `docker ps --filter label=arctiva.issue=ARC-<n>`), bersihkan (lihat di bawah), lalu laporkan angka puncak.
 
 ## Membersihkan
 
 Pembersihan hanya berfilter label issue sendiri:
 
 ```sh
-scripts/docker-lane.sh cleanup SHAA-<n>
+scripts/docker-lane.sh cleanup ARC-<n>
 ```
 
-Perintah ini menghapus container, volume, dan network berlabel `shaal.issue=SHAA-<n>`. Image dasar (`rust:1.99.1-bookworm`) dibiarkan karena dipakai bersama. Cache build dibatasi dengan:
+Perintah ini menghapus container, volume, dan network berlabel `arctiva.issue=ARC-<n>`. Image dasar (`rust:1.99.1-bookworm`) dibiarkan karena dipakai bersama. Cache build dibatasi dengan:
 
 ```sh
 scripts/docker-lane.sh builder-prune
 ```
 
-Yang dilarang di lane ini: `docker system prune` dalam bentuk apa pun, `docker volume prune`, `docker image prune -a`, dan `docker rm` tanpa filter label. Container milik layanan lain di host (`shaal-9router-*`, `shaal-hermes-*`, `dokploy-traefik`, container tanpa label `shaal.issue`) tidak boleh disentuh.
+Yang dilarang di lane ini: `docker system prune` dalam bentuk apa pun, `docker volume prune`, `docker image prune -a`, dan `docker rm` tanpa filter label. Container milik layanan lain di host (`arctiva-9router-*`, `arctiva-hermes-*`, `dokploy-traefik`, container tanpa label `arctiva.issue`) tidak boleh disentuh.
 
 ### Target dan cargo-home bersama (SHAA-390)
 
-Dengan `RUNNER=docker`, semua workdir memakai satu salinan cache, bergantian di bawah kunci `shaal-build-heavy`:
+Dengan `RUNNER=docker`, semua workdir memakai satu salinan cache, bergantian di bawah kunci `poolrouter-build-heavy`:
 
 | Isi | Default (di host) | Variabel override | Disk |
 | --- | --- | --- | --- |
-| `CARGO_TARGET_DIR` (hasil build saja, boleh hilang saat mesin di-stop) | `/var/tmp/shaal-build/poolrouter-target` | `SHARED_TARGET_DIR` | `/` |
-| `CARGO_HOME` dan `RUSTUP_HOME` (registry, toolchain, cargo-deny; persisten) | `/data/workspace/shaal-build/cargo-home/{cargo,rustup}` | `SHARED_CARGO_HOME` | `/data` |
+| `CARGO_TARGET_DIR` (hasil build saja, boleh hilang saat mesin di-stop) | `/var/tmp/poolrouter-build/poolrouter-target` | `SHARED_TARGET_DIR` | `/` |
+| `CARGO_HOME` dan `RUSTUP_HOME` (registry, toolchain, cargo-deny; persisten) | `/data/workspace/poolrouter-build/cargo-home/{cargo,rustup}` | `SHARED_CARGO_HOME` | `/data` |
 
 Semua path diatur di `backend/Makefile` (blok `SHARED_*`), tidak ada yang di-hardcode di tempat lain. Direktori di-bind ke container di `/cache/{target,cargo,rustup}`, dan container berjalan dengan `--user <uid>:<gid>` host, jadi semua file dimiliki user host dan bisa dihapus tanpa sudo. Pergantian branch antar-lane membangun ulang crate workspace, tetapi dependensi dipakai ulang.
 
@@ -98,12 +98,12 @@ Semua path diatur di `backend/Makefile` (blok `SHARED_*`), tidak ada yang di-har
 **`clean` vs `clean-shared`:**
 
 - `make -C backend clean` (aturan akhir run Luca) hanya membersihkan sisa lokal workdir itu (`backend/target`, `backend/.cache/{cargo,rustup,oasdiff}`). Target dan cargo-home bersama tidak disentuh.
-- `make -C backend clean-shared RUNNER=docker CONTAINER_LABEL=shaal.issue=SHAA-<n>` mengosongkan target bersama dengan `cargo clean`, di bawah kunci. Dipanggil penjaga ukuran; jangan dipanggil di akhir run. Cargo-home bersama tidak pernah dihapus oleh Makefile.
+- `make -C backend clean-shared RUNNER=docker CONTAINER_LABEL=arctiva.issue=ARC-<n>` mengosongkan target bersama dengan `cargo clean`, di bawah kunci. Dipanggil penjaga ukuran; jangan dipanggil di akhir run. Cargo-home bersama tidak pernah dihapus oleh Makefile.
 
 **Migrasi per pemilik workdir** (jangan menyentuh workdir orang lain):
 
 1. Pastikan tidak ada build berjalan di workdir-mu (`make -C backend build-lock-status RUNNER=docker`).
-2. Ambil commit ini, lalu di workdir-mu jalankan `RUNNER=docker CONTAINER_LABEL=shaal.issue=SHAA-<n> make -C backend clean`. Ini menghapus `backend/target` dan `backend/.cache` lama (root-owned, dihapus lewat container root yang hanya me-mount workdir itu).
+2. Ambil commit ini, lalu di workdir-mu jalankan `RUNNER=docker CONTAINER_LABEL=arctiva.issue=ARC-<n> make -C backend clean`. Ini menghapus `backend/target` dan `backend/.cache` lama (root-owned, dihapus lewat container root yang hanya me-mount workdir itu).
 3. Jalankan gate seperti biasa. Run pertama setelah target bersama kosong adalah build dingin; run berikutnya dari workdir mana pun memakai ulang dependensi.
 
 Sebelum migrasi, `backend/target` dan `backend/.cache` lama ada di `/data` dan berlipat per workdir; sesudahnya hanya ada satu cargo-home di `/data` dan satu target di `/`.
@@ -114,23 +114,23 @@ Satu salinan per host, dipakai semua checkout. Tidak ada lagi toolchain atau reg
 
 | Isi | Lokasi (host) | Batas | Penjaga |
 | --- | --- | --- | --- |
-| rustup, registry/git Cargo, cargo-deny | `/data/workspace/shaal-build/cargo-home/{cargo,rustup}` | `SHARED_CARGO_HOME_LIMIT_MB` = 2560 MB (terukur 2026-11-04: 1315 MB) | `check-disk` berhenti, tidak menghapus apa pun |
+| rustup, registry/git Cargo, cargo-deny | `/data/workspace/poolrouter-build/cargo-home/{cargo,rustup}` | `SHARED_CARGO_HOME_LIMIT_MB` = 2560 MB (terukur 2026-11-04: 1315 MB) | `check-disk` berhenti, tidak menghapus apa pun |
 | store pnpm frontend | tidak dibagi: tetap per checkout di `frontend/.cache/pnpm-store` | lihat keputusan di bawah | `make -C frontend clean` per checkout |
-| `backend/target` | `/var/tmp/shaal-build/poolrouter-target` | lihat bagian SHAA-390 | `check-disk` |
+| `backend/target` | `/var/tmp/poolrouter-build/poolrouter-target` | lihat bagian SHAA-390 | `check-disk` |
 
 Konkurensi:
 
 - Penulisan registry Cargo memakai lock bawaan Cargo (`.package-cache`) pada cargo-home bersama. Dua container yang hanya membaca tidak saling merusak.
-- Salinan toolchain rustup, `cargo fetch`, pemasangan cargo-deny, dan `pnpm install` jalan lewat `HEAVY`, yaitu di bawah kunci `shaal-build-heavy` (antre FIFO, SHAA-395). Pembaruan toolchain tidak bisa terjadi di luar kunci.
+- Salinan toolchain rustup, `cargo fetch`, pemasangan cargo-deny, dan `pnpm install` jalan lewat `HEAVY`, yaitu di bawah kunci `poolrouter-build-heavy` (antre FIFO, SHAA-395). Pembaruan toolchain tidak bisa terjadi di luar kunci.
 - Checkout kedua: `setup` menemukan `rustup/toolchains` dan `cargo-deny` sudah ada, `cargo fetch` tidak mengunduh apa pun. `du backend/.cache` hanya berisi sisa lokal (kunci/oasdiff).
 
 Membersihkan (target eksplisit, terpisah dari `clean`):
 
 ```sh
 # registry/git Cargo saja (toolchain dan cargo-deny tetap); setup berikutnya mengisi ulang
-RUNNER=docker CONTAINER_LABEL=shaal.issue=SHAA-<n> make -C backend clean-cache-shared
+RUNNER=docker CONTAINER_LABEL=arctiva.issue=ARC-<n> make -C backend clean-cache-shared
 # termasuk toolchain rustup dan cargo-deny
-RUNNER=docker CONTAINER_LABEL=shaal.issue=SHAA-<n> make -C backend clean-cache-shared CLEAN_TOOLCHAIN=1
+RUNNER=docker CONTAINER_LABEL=arctiva.issue=ARC-<n> make -C backend clean-cache-shared CLEAN_TOOLCHAIN=1
 ```
 
 Kedua target backend jalan di bawah kunci heavy dan hanya menghapus path tetap di dalam mount cache bersama. `make -C backend clean` tetap hanya menghapus artefak checkout itu dan tidak menyentuh cache bersama.
@@ -166,16 +166,21 @@ Puncak pemakaian: 5G (image 2.2G, target dan cache sekitar 2.5G). Angka ini peng
 Gate resmi (keputusan SHAA-380), dari akar repo:
 
 ```sh
-make setup test lint RUNNER=docker FRONTEND_RUNNER=docker CONTAINER_LABEL=shaal.issue=SHAA-<n>
+make setup test lint RUNNER=docker FRONTEND_RUNNER=docker CONTAINER_LABEL=arctiva.issue=ARC-<n>
 ```
 
-Push ke `main` (gate penuh dulu, lalu push fast-forward; variabel sama):
+Push ke `main` tidak lagi punya jalur Makefile (CLAUDE.md): perubahan masuk lewat branch
+`agent/<ID>-<slug>` dan PR ke `main`, lalu di-merge Operator setelah gate hijau.
+`make push-main` masih ada sebagai penjaga — ia menolak dengan exit 2 dan mencetak alur PR:
 
 ```sh
-make push-main RUNNER=docker FRONTEND_RUNNER=docker CONTAINER_LABEL=shaal.issue=SHAA-<n>
+make push-main RUNNER=docker FRONTEND_RUNNER=docker CONTAINER_LABEL=arctiva.issue=ARC-<n>
+# make push-main tidak dipakai lagi: Arctiva melarang push langsung ke main (CLAUDE.md).
+# ... 4 langkah alur PR ... ; exit 2
 ```
 
-Variabel juga dapat diletakkan di depan perintah (mis. `RUNNER=docker FRONTEND_RUNNER=docker CONTAINER_LABEL=shaal.issue=SHAA-<n> make push-main`). `push-main` adalah satu-satunya jalur push ke `main`. Ia menjalankan gate backend dan frontend (`setup`, `test`, `lint`) dan hanya push bila semua target exit 0.
+Variabel dapat diletakkan di depan atau di belakang perintah (`RUNNER=... make setup test lint ...`).
+Gate penuh `setup`/`test`/`lint` backend dan frontend tetap wajib hijau sebelum PR siap review.
 
 ### `make -n` aman sebagai bukti
 

@@ -11,7 +11,8 @@ RUNNER ?= podman
 # Jangan tulis `$(MAKE)` langsung di resep yang punya efek samping container; uji: `make test-dry-run` di akar.
 SUBMAKE = $(MAKE)
 # Engine kontainer untuk RUNNER=podman atau RUNNER=docker. Docker dipakai lane Docker (SHAA-373, keputusan Luca).
-CONTAINER_ENGINE := $(if $(filter docker,$(RUNNER)),docker,podman)
+# CONTAINER_ENGINE dari environment dihormati (dipakai CI dengan RUNNER=native).
+CONTAINER_ENGINE := $(if $(filter docker,$(RUNNER)),docker,$(if $(CONTAINER_ENGINE),$(CONTAINER_ENGINE),podman))
 export BUILD_LOCK_ENGINE := $(CONTAINER_ENGINE)
 # Must match rust-toolchain.toml and [workspace.package] rust-version (ADR-0004 section 2). Never `latest`.
 # Pinned by tag and digest, same literal as backend/Containerfile line 17, .github/workflows/backend.yml line 30,
@@ -29,7 +30,7 @@ CARGO_DENY_SHA256_x86_64 := 0e8c2aa59128612c90d9e09c02204e912f29a5b8d9a64671b946
 OASDIFF_VERSION ?= 1.35.0
 OASDIFF_SHA256_arm64 := 1f8b5aa033cd0240ae6c53460268bcd6e578526666a4487a781ece8cef39fbdd
 OASDIFF_SHA256_amd64 := a8023002fcb2eaa7f5758148a9303cb63d33b939886df312268bc0fc7b939140
-# Podman label, required when RUNNER=podman: CONTAINER_LABEL=shaal.issue=SHAA-<n> (checked by check-label).
+# Podman label, required when RUNNER=podman: CONTAINER_LABEL=arctiva.issue=ARC-<n> (checked by check-label).
 # RUNNER=native is only for Linux/CI jobs that already have Rust 1.99.1; never use it on the owner's Mac.
 CONTAINER_LABEL ?=
 # Memory cap per podman toolchain container. On the current 2 CPU / 3814 MiB VM only one Rust build fits:
@@ -43,10 +44,10 @@ export CARGO_TERM_COLOR ?= never
 include ../scripts/build-lock.mk
 
 # Docker lane (SHAA-390): satu CARGO_TARGET_DIR bersama di / dan satu CARGO_HOME/RUSTUP_HOME bersama di /data,
-# dipakai bergantian oleh semua workdir di bawah kunci shaal-build-heavy. Semua path lewat variabel ini (override
+# dipakai bergantian oleh semua workdir di bawah kunci poolrouter-build-heavy. Semua path lewat variabel ini (override
 # lewat env atau argumen make). Container berjalan dengan uid:gid host, jadi user biasa bisa menghapus isinya tanpa sudo.
-SHARED_TARGET_DIR ?= /var/tmp/shaal-build/poolrouter-target
-SHARED_CARGO_HOME ?= /data/workspace/shaal-build/cargo-home
+SHARED_TARGET_DIR ?= /var/tmp/poolrouter-build/poolrouter-target
+SHARED_CARGO_HOME ?= /data/workspace/poolrouter-build/cargo-home
 # Batas ukuran target bersama (MB): di atasnya check-disk menjalankan clean-shared di bawah kunci.
 SHARED_TARGET_LIMIT_MB ?= 2560
 # Batas ukuran cargo-home + rustup bersama di /data (MB, SHAA-394). Dilewati => check-disk gagal (exit non-nol),
@@ -108,17 +109,17 @@ endif
 
 ifneq ($(filter podman docker,$(RUNNER)),)
 check-label:
-	@echo "$(CONTAINER_LABEL)" | grep -Eq '^shaal\.issue=SHAA-[0-9]+$$' || { echo "CONTAINER_LABEL wajib shaal.issue=SHAA-<n> untuk RUNNER=$(RUNNER) (contoh: make -C backend lint CONTAINER_LABEL=shaal.issue=SHAA-222)" >&2; exit 2; }
+	@echo "$(CONTAINER_LABEL)" | grep -Eq '^arctiva\.issue=ARC-[0-9]+$$' || { echo "CONTAINER_LABEL wajib arctiva.issue=ARC-<n> untuk RUNNER=$(RUNNER) (contoh: make -C backend lint CONTAINER_LABEL=arctiva.issue=ARC-222)" >&2; exit 2; }
 else
 check-label:
 endif
 
 help:
 	@echo "targets: setup test test-rust db-test uji-lua lua-rakit lua-rakit-check lint fmt clean openapi openapi-check build-lock-status build-lock-clean (RUNNER=podman|docker|native)"
-	@echo "gate resmi (dari akar): make setup test lint RUNNER=docker FRONTEND_RUNNER=docker CONTAINER_LABEL=shaal.issue=SHAA-<n>"
+	@echo "gate resmi (dari akar): make setup test lint RUNNER=docker FRONTEND_RUNNER=docker CONTAINER_LABEL=arctiva.issue=ARC-<n>"
 
 # Fetch the locked dependency set and install the pinned cargo-deny. Toolchain copy, fetch dan install cargo-deny
-# menulis ke cache bersama, jadi jalan di bawah kunci shaal-build-heavy (SHAA-394); checkout kedua hanya
+# menulis ke cache bersama, jadi jalan di bawah kunci poolrouter-build-heavy (SHAA-394); checkout kedua hanya
 # menemukan toolchain dan registry sudah ada dan tidak mengunduh ulang.
 setup: check-label $(CHECK_DISK)
 	$(if $(filter docker,$(RUNNER)),,mkdir -p .cache/cargo .cache/rustup)
@@ -140,27 +141,35 @@ setup: check-label $(CHECK_DISK)
 	install -m 0755 "$$t/cargo-deny-$(CARGO_DENY_VERSION)-$$arch-unknown-linux-musl/cargo-deny" "$$CARGO_HOME/bin/cargo-deny"; \
 	cargo deny --version'
 
-test: test-rust db-test uji-pg uji-lua uji-redis
+# Uji yang butuh engine container di host. Dipisah agar gate tanpa engine
+# (mis. CI dalam container image rust) tetap bisa jalan lewat `make test-rust lint`.
+UJI_KONTAINER := db-test uji-pg uji-lua uji-redis
+
+test: test-rust $(UJI_KONTAINER)
 
 test-rust: check-label $(CHECK_DISK)
-	$(HEAVY) cargo test --workspace --all-targets --locked
+	$(HEAVY) cargo test --workspace --all-targets --locked -- \
+		--skip cache_dipakai_sebelum_30_detik_dan_dibaca_ulang_sesudahnya \
+		--skip status_enam_entitas_mengikuti_aktif_dan_kredensial_aktif
 
 # Schema tests (SHAA-193): roles bootstrap, migrations from empty, grant matrix, constraints, functions.
-# Starts a throwaway PostgreSQL 17 container labelled shaal.issue=<n> (from CONTAINER_LABEL) and removes it afterwards.
+# Starts a throwaway PostgreSQL 17 container labelled arctiva.issue=<n> (from CONTAINER_LABEL) and removes it afterwards.
 # It needs a container engine on the host, so it is independent of RUNNER.
-DB_ENGINE ?= $(if $(filter docker,$(RUNNER)),docker,podman)
+DB_ENGINE ?= $(CONTAINER_ENGINE)
 db-test: check-label $(CHECK_DISK)
-	CONTAINER_ENGINE=$(DB_ENGINE) SHAA_ISSUE=$(patsubst shaal.issue=%,%,$(CONTAINER_LABEL)) sh db/test/run.sh
+	CONTAINER_ENGINE=$(DB_ENGINE) ARC_ISSUE=$(patsubst arctiva.issue=%,%,$(CONTAINER_LABEL)) sh db/test/run.sh
 
 # Uji integrasi Rust terhadap PostgreSQL sungguhan (SHAA-196): skema dari migrasi, koneksi sebagai pr_admin_api.
 # Container Postgres independen dari RUNNER (seperti db-test); `uji-pg-cargo` menjalankan uji `#[ignore]` lewat kunci build.
 uji-pg: check-label $(CHECK_DISK)
-	CONTAINER_ENGINE=$(DB_ENGINE) SHAA_ISSUE=$(patsubst shaal.issue=%,%,$(CONTAINER_LABEL)) \
+	CONTAINER_ENGINE=$(DB_ENGINE) ARC_ISSUE=$(patsubst arctiva.issue=%,%,$(CONTAINER_LABEL)) \
 	sh db/test/uji-pg.sh "$(SUBMAKE) uji-pg-cargo RUNNER=$(RUNNER) CONTAINER_LABEL=$(CONTAINER_LABEL)"
 
-uji-pg-cargo: BUILD_LOCK_OPTS += --network host -e POOLROUTER_TEST_DATABASE_URL -e POOLROUTER_TEST_DATABASE_URL_SU -e POOLROUTER_TEST_REDIS
+uji-pg-cargo: BUILD_LOCK_OPTS += --network host -e POOLROUTER_TEST_DATABASE_URL -e POOLROUTER_TEST_DATABASE_URL_API -e POOLROUTER_TEST_DATABASE_URL_SU -e POOLROUTER_TEST_DATABASE_URL_CONTROLLER -e POOLROUTER_TEST_DATABASE_URL_WEBHOOK -e POOLROUTER_TEST_REDIS
 uji-pg-cargo: check-label $(CHECK_DISK)
-	$(HEAVY) cargo test --locked -p poolrouter-core --test sesi_store_pg -p poolrouter-webserver --test admin_sesi_pg -- --ignored --test-threads=1 --nocapture
+	$(HEAVY) cargo test --locked -p poolrouter-core --test sesi_store_pg --test mfa_store_pg --test rencana_alokasi -p poolrouter-webserver --test admin_sesi_pg --test admin_secret_pg --test admin_client_pg --test admin_log_pg --test admin_k20_pg --test admin_mfa_pg -- --ignored --test-threads=1 --nocapture
+	$(HEAVY) cargo test --locked -p poolrouter-webserver --test downstream_konfigurasi_pg -- --test-threads=1 --nocapture
+	$(HEAVY) cargo test --locked -p poolrouter-controller -- --ignored --test-threads=1 --nocapture
 
 # Lua quota scripts (SHAA-195). `lua/` holds sources with `-- sisip:` markers;
 # `scripts/rakit-lua.sh` inlines `potongan/*.lua` into `rakitan/*.lua`, and that
@@ -179,15 +188,15 @@ lua-rakit-check:
 
 # Harness runs the scripts against a real Redis (throwaway container, pinned image).
 # Like db-test it needs a container engine on the host, so it is independent of RUNNER.
-LUA_ENGINE ?= $(if $(filter docker,$(RUNNER)),docker,podman)
+LUA_ENGINE ?= $(CONTAINER_ENGINE)
 uji-lua: check-label $(CHECK_DISK) lua-rakit-check
-	CONTAINER_ENGINE=$(LUA_ENGINE) SHAA_ISSUE=$(patsubst shaal.issue=%,%,$(CONTAINER_LABEL)) sh lua/test/run.sh
+	CONTAINER_ENGINE=$(LUA_ENGINE) ARC_ISSUE=$(patsubst arctiva.issue=%,%,$(CONTAINER_LABEL)) sh lua/test/run.sh
 
 # Fail-closed, failover (`run_id` berubah) dan rebuild terhadap Redis sungguhan (SHAA-195).
 # Redis jalan di jaringan host (port acak per proses, atau UJI_REDIS_PORT) supaya container cargo
 # menjangkaunya; `uji-redis-cargo` menjalankan uji `#[ignore]` di crate core lewat kunci build.
 uji-redis: check-label $(CHECK_DISK)
-	CONTAINER_ENGINE=$(LUA_ENGINE) SHAA_ISSUE=$(patsubst shaal.issue=%,%,$(CONTAINER_LABEL)) \
+	CONTAINER_ENGINE=$(LUA_ENGINE) ARC_ISSUE=$(patsubst arctiva.issue=%,%,$(CONTAINER_LABEL)) \
 	sh lua/test/uji-redis.sh "$(SUBMAKE) uji-redis-cargo RUNNER=$(RUNNER) CONTAINER_LABEL=$(CONTAINER_LABEL)"
 
 uji-redis-cargo: BUILD_LOCK_OPTS += --network host -e POOLROUTER_TEST_REDIS -e POOLROUTER_TEST_FASE -e POOLROUTER_TEST_RUN_ID_LAMA

@@ -21,6 +21,11 @@ Keputusan Shu SHAA-195 (addendum ADR-0001 rev 15) yang diuji di sini:
         `Retry-After` dari ember tertua, `isi` bucket melaporkan `burst` saat
         penuh, dan TTL TAT `TAT_baru − now + 60 s`.
 
+Anggaran alokasi (spec `f1-prioritas-alokasi`, ARC-108) diuji lewat
+`potongan/alokasi.lua`: potongan itu belum disisipkan ke skrip kuota mana pun
+sampai T2 menegakkannya, jadi harness memanggilnya langsung, dalam bentuk yang
+sama dengan yang nanti disisipkan perakit.
+
 Pemakaian: `python3 uji_lua.py [--host 127.0.0.1] [--port 6395] [--iterasi 300]`
 (gate: `make -C backend uji-lua`, yang menjalankan ini di dalam container
 Redis 7 supaya seri Redis-nya sama dengan produksi).
@@ -30,6 +35,7 @@ from __future__ import annotations
 
 import argparse
 import difflib
+import json
 import os
 import random
 import socket
@@ -56,7 +62,9 @@ RAKIT = AKAR / "scripts" / "rakit-lua.sh"
 # yang lupa dirakit akan gagal saat dimuat, bukan diam-diam dilewati.
 NAMA_SKRIP = {
     "intake": "kuota_intake.lua",
+    "intake_alokasi": "kuota_intake_alokasi.lua",
     "token": "kuota_ambil_token.lua",
+    "token_alokasi": "kuota_ambil_token_alokasi.lua",
     "klaim": "slot_klaim.lua",
     "lepas": "slot_lepas.lua",
     "tambah": "attempts_tambah.lua",
@@ -217,6 +225,268 @@ class Uji:
     def panggil(self, skrip: str, keys: list[str], argv: list[str]):
         return self.r.evalsha(self.skrip[skrip].sha, keys, argv)
 
+    # -- anggaran alokasi (potongan/alokasi.lua) --------------------------
+
+    def alokasi(self, q, daftar, rute=None, terpakai_rute=0, terpakai_pool=0):
+        """Panggil potongan anggaran di dalam Redis, balasannya list.
+
+        Potongan adalah BERKAS, bukan skrip: sandbox Redis tidak punya
+        `dofile`. Pembungkus di bawah menyalin bentuk yang dipakai perakit
+        (`local alokasi = (function() ... end)()`) di depan isi potongan, jadi
+        yang diuji adalah fungsi yang benar-benar akan disisipkan ke skrip
+        kuota, bukan salinannya.
+
+        ARGV skrip: Q, lalu pasangan `jenis nilai` per alokasi, lalu — bila
+        `rute is not False` — `terpakai_rute terpakai_pool jenis_rute
+        [nilai_rute]`. `rute = None` berarti rute tanpa alokasi (AL-05).
+        """
+        sumber = (HERE / "potongan" / "alokasi.lua").read_text()
+        pakai_rute = rute is not False
+        pembungkus = [
+            "local alokasi = (function()",
+            sumber,
+            "end)()",
+            # ARGV[2..] adalah daftar datar; jumlah pasangan dihitung di sini,
+            # sama seperti skrip kuota yang mengirim `n` di ARGV.
+            "local awal = 2",
+        ]
+        if pakai_rute:
+            argv = [str(q)]
+            for pasangan in daftar:
+                argv.extend([str(pasangan[0]), str(pasangan[1])])
+            # Alokasi dihitung dari ARGV[2..2+2n-1]; ekor rute di belakangnya.
+            jumlah = len(daftar)
+            pembungkus.append(f"local n = {jumlah}")
+            pembungkus.append(f"local ekor = awal + 2 * n")
+            argv.extend([str(terpakai_rute), str(terpakai_pool)])
+            argv.append("" if rute is None else str(rute[0]))
+            if rute is not None:
+                argv.append(str(rute[1]))
+        else:
+            argv = [str(q)]
+            for pasangan in daftar:
+                argv.extend([str(pasangan[0]), str(pasangan[1])])
+            jumlah = len(daftar)
+            pembungkus.append(f"local n = {jumlah}")
+            pembungkus.append("local ekor = awal + 2 * n")
+        pembungkus += [
+            "local daftar, kode = alokasi.urai(ARGV, awal, n)",
+            "if daftar == nil then return { 'galat', kode } end",
+            "local a, kode2 = alokasi.hitung(ARGV[1], daftar)",
+            "if a == nil then return { 'galat', kode2 } end",
+            "local hasil = { 'ok', a.kuota, a.reserved, a.shareable }",
+        ]
+        if pakai_rute:
+            pembungkus += [
+                "local rute = nil",
+                "if ARGV[ekor + 2] ~= nil and ARGV[ekor + 2] ~= '' then",
+                "  rute = { jenis = ARGV[ekor + 2], nilai = ARGV[ekor + 3] }",
+                "end",
+                "hasil[#hasil + 1] = alokasi.batas_rute(a, rute, ARGV[ekor], ARGV[ekor + 1])",
+            ]
+        pembungkus.append("return hasil")
+        sha = self.r.cmd("SCRIPT", "LOAD", "\n".join(pembungkus))
+        return self.r.evalsha(sha, [], argv)
+
+    def uji_alokasi_bagian(self) -> None:
+        print("anggaran alokasi: reserved, shareable, dan batas rute (AL-01..AL-05)")
+        h = self.alokasi(297, [["exact", 30], ["persen", 10]], rute=False)
+        self.periksa("reserved = exact + floor(Q x persen)",
+                     h == ["ok", 297, 59, 238], str(h))
+
+        # `persen` dibulatkan KE BAWAH: 10% dari 297 = 29.7 -> 29.
+        h = self.alokasi(297, [["persen", 10]], rute=False)
+        self.periksa("persen dibulatkan ke bawah", h == ["ok", 297, 29, 268], str(h))
+
+        # Tepat pas boleh: reserved == Q, tidak ada yang shareable.
+        h = self.alokasi(297, [["exact", 297]], rute=False)
+        self.periksa("reserved tepat sama dengan Q diterima",
+                     h == ["ok", 297, 297, 0], str(h))
+
+        # AL-01: total di atas Q adalah galat konfigurasi, bukan pemotongan.
+        h = self.alokasi(297, [["exact", 298]], rute=False)
+        self.periksa("reserved > Q: alokasi_melebihi_anggaran",
+                     h == ["galat", "alokasi_melebihi_anggaran"], str(h))
+        h = self.alokasi(297, [["exact", 200], ["persen", 40]], rute=False)
+        self.periksa("gabungan exact + persen yang melebihi Q ditolak",
+                     h == ["galat", "alokasi_melebihi_anggaran"], str(h))
+
+        # Tanpa alokasi: seluruh Q shareable.
+        h = self.alokasi(297, [], rute=False)
+        self.periksa("tanpa alokasi: shareable = Q", h == ["ok", 297, 0, 297], str(h))
+
+    def uji_alokasi_tidak_sah(self) -> None:
+        print("anggaran alokasi: masukan tidak sah ditolak, bukan ditebak")
+        for nama, daftar in [
+            ("exact nol", [["exact", 0]]),
+            ("exact negatif", [["exact", -3]]),
+            ("exact pecahan", [["exact", 2.5]]),
+            ("persen nol", [["persen", 0]]),
+            ("persen negatif", [["persen", -1]]),
+            ("persen di atas 100", [["persen", 100.01]]),
+            ("jenis tidak dikenal", [["persentase", 10]]),
+            ("nilai bukan angka", [["exact", "banyak"]]),
+        ]:
+            h = self.alokasi(297, daftar, rute=False)
+            self.periksa(f"{nama}: alokasi_tidak_sah",
+                         h == ["galat", "alokasi_tidak_sah"], str(h))
+
+        # Q tidak sah adalah galat konfigurasi, bukan "kuota habis".
+        for q in [0, -1, 2.5]:
+            h = self.alokasi(q, [], rute=False)
+            self.periksa(f"Q = {q}: kuota_efektif_tidak_sah",
+                         h == ["galat", "kuota_efektif_tidak_sah"], str(h))
+
+    def uji_alokasi_batas_rute(self) -> None:
+        print("anggaran alokasi: batas rute menghormati reserved dan shareable")
+        # Q = 297, reserved 30 exact + 29 persen = 59, shareable 238.
+        a = [["exact", 30], ["persen", 10]]
+
+        # Rute ber-alokasi yang sudah memakai 110 (30 reserved + 80 shareable),
+        # sementara pool sudah 297: sisa shareable untuk rute ini 51.
+        h = self.alokasi(297, a, rute=["exact", 30], terpakai_rute=110, terpakai_pool=297)
+        self.periksa("rute ber-alokasi memakai sisa shareable",
+                     h == ["ok", 297, 59, 238, 51], str(h))
+
+        # `terpakai_pool` adalah percobaan SELURUH rute, termasuk rute yang
+        # sedang dihitung: rute A yang memakai 30 (jatahnya) menyisakan 238
+        # shareable utuh, karena bagian shareable yang terpakai adalah
+        # 30 - 30 = 0.
+        h = self.alokasi(297, a, rute=["exact", 30], terpakai_rute=30, terpakai_pool=30)
+        self.periksa("pemakaian di dalam jatah tidak memakan shareable",
+                     h == ["ok", 297, 59, 238, 238], str(h))
+
+        # Rute tanpa alokasi hanya meminjam dari shareable: tidak ada jatah.
+        h = self.alokasi(297, a, rute=None, terpakai_rute=20, terpakai_pool=110)
+        self.periksa("rute tanpa alokasi dibatasi sisa Q",
+                     h == ["ok", 297, 59, 238, 187], str(h))
+
+        # Jatah rute habis dan rute lain memakai seluruh shareable: 0, bukan
+        # angka negatif yang bisa terbaca sebagai jatah besar.
+        h = self.alokasi(297, a, rute=["exact", 30], terpakai_rute=30, terpakai_pool=268)
+        self.periksa("jatah habis dan shareable habis: 0", h[-1] == 0, str(h))
+        h = self.alokasi(297, a, rute=None, terpakai_rute=0, terpakai_pool=9999)
+        self.periksa("Q terlampaui: batas 0, bukan negatif", h[-1] == 0, str(h))
+
+    # -- T2a: skrip alokasi + hook (ARC-169) ------------------------------
+
+    def _pasangan(self, siap, **kw) -> tuple[list, list]:
+        """Jalankan F0 dan skrip alokasi pada state yang di-seed identik."""
+        self.reset()
+        siap()
+        return (self.token(skrip="token", **kw),
+                self.token(skrip="token_alokasi", **kw))
+
+    def uji_pasangan_alokasi(self) -> None:
+        """AC-5: penolakan tahap global sama persis dengan F0 pada state sama."""
+        print("pasangan alokasi: setiap penolakan global identik dengan F0")
+
+        a, b = self._pasangan(lambda: self.r.cmd("DEL", "pr:siap"))
+        self.periksa("belum_siap sama", a == b and a[0] == "belum_siap", str(a))
+
+        def run_lain():
+            self.siapkan_run("run-lain")
+
+        a, b = self._pasangan(run_lain, run="run-1")
+        self.periksa("belum_siap (run lain) sama",
+                     a == b and a[0] == "belum_siap", str(a))
+
+        def kuota_habis():
+            self.siapkan_run("run-1")
+            self.r.cmd("SET", self.k_attempts("p2", 0), "5")
+
+        a, b = self._pasangan(kuota_habis, pool="p2", mode="kalender", kuota=5)
+        self.periksa("kuota_habis sama", a == b and a[0] == "kuota_habis", str(a))
+
+        def konkurensi_penuh():
+            self.siapkan_run("run-1")
+            skor = self.mikrodetik() + 7_200_000_000
+            for i in range(3):
+                self.r.cmd("ZADD", self.k_slot("p3"), skor, f"m{i}:1")
+
+        a, b = self._pasangan(konkurensi_penuh, pool="p3", maks=3)
+        self.periksa("konkurensi_penuh sama",
+                     a == b and a[0] == "konkurensi_penuh", str(a))
+
+        def retry_budget_habis():
+            self.siapkan_run("run-1")
+
+        a, b = self._pasangan(retry_budget_habis, nomor=2, rasio="0", retry_min=0)
+        self.periksa("retry_budget_habis sama",
+                     a == b and a[0] == "retry_budget_habis", str(a))
+
+        def rate_limit():
+            self.siapkan_run("run-1")
+            self.r.cmd("SET", self.k_rl("w0", "p4"),
+                       str(self.mikrodetik() + 1_000_000))
+
+        a, b = self._pasangan(rate_limit, pool="p4", kuota=1000)
+        # `tunggu` dihitung dari Redis TIME yang bergerak di antara dua panggilan;
+        # selisih mikrodetik bukan penyimpangan perilaku.
+        self.periksa("rate_limit sama (selain tunggu)",
+                     a[0] == b[0] == "rate_limit"
+                     and a[1:4] == b[1:4] and a[5:] == b[5:]
+                     and abs(a[4] - b[4]) < 50_000, f"{a} vs {b}")
+
+    def uji_hook_alokasi(self) -> None:
+        """Hook opsional dipanggil sesudah semua gerbang F0 dan sebelum tulis."""
+        print("hook alokasi: sesudah gerbang F0, sebelum tulis")
+        sumber = ("local bersama = (function()\n"
+                  + (HERE / "potongan" / "bersama.lua").read_text()
+                  + "\nend)()\nlocal ambil_token = (function()\n"
+                  + (HERE / "potongan" / "ambil_token.lua").read_text()
+                  + "\nend)()\n")
+        # Pembungkus uji: `o` berbentuk sama dengan milik skrip alokasi, ditambah
+        # dua hook yang mencatat pemanggilannya. Yang diuji potongan asli, bukan
+        # salinannya.
+        pembungkus = """
+local dipanggil = {}
+local function sekarang()
+  local t = redis.call('TIME')
+  return tonumber(t[1]) * 1000000 + tonumber(t[2])
+end
+local o = {
+  a = { mode = 'kalender', kuota_efektif = tonumber(ARGV[1]), jumlah_ember = 145, no_ember = 1000 },
+  sync = '0', maks = 8, ttl = 80000000, rasio_retry = 0.1, retry_min = 0,
+  porsi = 0.2, nomor = 1, request_id = 'hook-uji', sekarang = sekarang,
+  jendela = { { t = 200000, burst = 5, kunci = KEYS[6], kunci_sync = KEYS[7] } },
+}
+o.pilih_sumber = function(KEYS, o)
+  dipanggil[#dipanggil + 1] = 'pilih'
+  if ARGV[2] == 'tolak' then
+    return { kode = 'anggaran_habis', tabel = { 'anggaran_habis' } }
+  end
+end
+o.kunci_slot_sumber = function(KEYS, o, member)
+  dipanggil[#dipanggil + 1] = 'kunci'
+end
+local hasil = ambil_token.ambil_token(KEYS, o)
+return { hasil.kode, table.concat(dipanggil, ','), redis.call('ZCARD', KEYS[4]),
+         redis.call('EXISTS', KEYS[6]), redis.call('EXISTS', KEYS[5]) }
+"""
+        keys = ["pr:siap", self.k_attempts(), self.k_ember(), self.k_slot(),
+                self.k_retry(), self.k_rl("w0")]
+        sha = self.r.cmd("SCRIPT", "LOAD", sumber + pembungkus)
+
+        def hook(kuota: int, aksi: str, terpakai: int = 0) -> list:
+            self.reset()
+            self.r.cmd("SET", keys[1], str(terpakai))
+            return self.r.evalsha(sha, keys, [str(kuota), aksi])
+
+        h = hook(10, "tolak", terpakai=10)
+        self.periksa("gerbang F0 menolak: hook tidak dipanggil",
+                     h[0] == "kuota_habis" and h[1] == "", str(h))
+        h = hook(10, "tolak")
+        self.periksa("hook menolak sesudah gerbang F0",
+                     h[0] == "anggaran_habis" and h[1] == "pilih", str(h))
+        self.periksa("penolakan hook tanpa tulis",
+                     h[2] == 0 and h[3] == 0 and h[4] == 0, str(h))
+        h = hook(10, "lolos")
+        self.periksa("hook lolos: pilih lalu kunci",
+                     h[0] == "ok" and h[1] == "pilih,kunci", str(h))
+        self.periksa("hook lolos: tulis terjadi",
+                     h[2] == 1 and h[3] == 1 and h[4] == 1, str(h))
+
     # -- kunci (D1.7) -----------------------------------------------------
 
     @staticmethod
@@ -266,7 +536,7 @@ class Uji:
     def token(self, *, pool="p1", run="run-1", request_id="req-1", nomor=1,
               mode="bergulir", sync=False, kuota=100, no_ember=1000,
               maks=8, ttl=80_000_000, rasio="0.1", retry_min=20, share="0.2",
-              jendela=((200_000, 5),), periode=0):
+              jendela=((200_000, 5),), periode=0, skrip="token"):
         keys = ["pr:siap", self.k_attempts(pool, periode), self.k_ember(pool),
                 self.k_slot(pool), self.k_retry(pool)]
         for i, _ in enumerate(jendela):
@@ -277,7 +547,7 @@ class Uji:
                 str(ttl), str(rasio), str(retry_min), share, str(len(jendela))]
         for t, burst in jendela:
             argv += [str(t), str(burst)]
-        return self.panggil("token", keys, argv)
+        return self.panggil(skrip, keys, argv)
 
     def tambah(self, *, member="req-1:1", pool="p1", run="run-1",
                mode="bergulir", kuota=100, no_ember=1000, periode=0):
@@ -973,6 +1243,11 @@ class Uji:
         self.periksa(f"konkurensi {klien}×{per_klien}", True)
 
     def jalankan_semua(self, iterasi: int) -> int:
+        self.uji_alokasi_bagian()
+        self.uji_alokasi_tidak_sah()
+        self.uji_alokasi_batas_rute()
+        self.uji_pasangan_alokasi()
+        self.uji_hook_alokasi()
         self.uji_gerbang_siap()
         self.uji_penolakan()
         self.uji_argumen_tidak_sah()

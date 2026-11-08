@@ -30,7 +30,7 @@ export function SnackbarRegion({
   return (
     <Snackbar
       queue={queue}
-      closeLabel={t('common.action.close')}
+      closeLabel={t('common.close')}
       renderContent={(content: { message: string }) => <span>{content.message}</span>}
     />
   );

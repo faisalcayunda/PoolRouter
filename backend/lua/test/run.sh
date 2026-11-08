@@ -7,12 +7,15 @@
 #
 # Tanpa LUA_REDIS_ADDR skrip ini menyalakan Redis dari image yang sama dengan
 # deploy/compose/compose.yaml (pin digest, tidak pernah `latest`), memberi label
-# shaal.issue=<SHAA_ISSUE>, memetakan port acak di loopback, lalu mematikannya
+# arctiva.issue=<ARC_ISSUE>, memetakan port acak di loopback, lalu mematikannya
 # kembali. Persistence dimatikan: harness butuh keadaan kosong, bukan data lama.
 set -eu
 
 ENGINE=${CONTAINER_ENGINE:-podman}
-ISSUE=${SHAA_ISSUE:-SHAA-195}
+ISSUE=$ARC_ISSUE
+: "${ARC_ISSUE:?isi ARC_ISSUE, mis. ARC-123}"
+# Gagal di awal dengan pesan jelas, bukan nanti saat `podman`/`docker` dipanggil.
+command -v "$ENGINE" >/dev/null 2>&1 || { echo "run.sh: '$ENGINE' tidak ada di PATH; set CONTAINER_ENGINE=docker atau pasang engine-nya" >&2; exit 127; }
 PYTHON=${PYTHON:-python3}
 # Sama dengan deploy/compose/compose.yaml (baris redis).
 IMAGE=${REDIS_IMAGE:-docker.io/library/redis:7-alpine@sha256:8da19c7399dca900c6822a1cf30f9d2285585e2c4b457ff4095b0f4500054d3f}
@@ -33,7 +36,7 @@ if [ -n "${LUA_REDIS_ADDR:-}" ]; then
   host=${LUA_REDIS_ADDR%:*}
   port=${LUA_REDIS_ADDR##*:}
 else
-  $ENGINE run -d --name "$NAME" --label "shaal.issue=$ISSUE" \
+  $ENGINE run -d --name "$NAME" --label "arctiva.issue=$ISSUE" \
     -p 127.0.0.1::6379 "$IMAGE" \
     redis-server --save '' --appendonly no >/dev/null
   NAME_AKTIF=1

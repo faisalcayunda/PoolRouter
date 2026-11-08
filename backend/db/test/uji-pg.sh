@@ -1,7 +1,7 @@
 #!/bin/sh
 # Uji integrasi Rust terhadap PostgreSQL sungguhan (SHAA-196). Dipanggil oleh `make uji-pg`.
 #
-# PostgreSQL jalan sebagai container sekali pakai berlabel shaal.issue=<SHAA_ISSUE>, skema dari
+# PostgreSQL jalan sebagai container sekali pakai berlabel arctiva.issue=<ARC_ISSUE>, skema dari
 # migrasi, peran dari bootstrap. Port dipublikasikan ke 127.0.0.1 supaya container toolchain cargo
 # (jaringan host) menjangkaunya. Uji berjalan sebagai `pr_admin_api`, bukan superuser, jadi
 # grant yang dipakai kode sungguhan ikut teruji. Password acak hanya hidup di container dan proses ini.
@@ -10,7 +10,10 @@
 set -eu
 
 ENGINE=${CONTAINER_ENGINE:-podman}
-ISSUE=${SHAA_ISSUE:-SHAA-196}
+ISSUE=$ARC_ISSUE
+: "${ARC_ISSUE:?isi ARC_ISSUE, mis. ARC-123}"
+# Gagal di awal dengan pesan jelas, bukan nanti saat `podman`/`docker` dipanggil.
+command -v "$ENGINE" >/dev/null 2>&1 || { echo "uji-pg.sh: '$ENGINE' tidak ada di PATH; set CONTAINER_ENGINE=docker atau pasang engine-nya" >&2; exit 127; }
 PORT=${UJI_PG_PORT:-$((20000 + $$ % 20000))}
 MAKE_CMD=${1:?target make untuk cargo test belum diberikan}
 IMAGE=${PG_IMAGE:-docker.io/library/postgres:17-alpine@sha256:266d3c257594e195b309ae9d1805e54c788f1d7b375f56bf6c367aac6c917e7b}
@@ -30,11 +33,11 @@ bersihkan() {
 trap bersihkan EXIT INT TERM
 
 # Redis for the login limiter (SHAA-196): throwaway, labelled, no persistence.
-$ENGINE run -d --name "$RNAME" --label "shaal.issue=$ISSUE" -p "127.0.0.1:$RPORT:6379" "$RIMAGE" \
+$ENGINE run -d --name "$RNAME" --label "arctiva.issue=$ISSUE" -p "127.0.0.1:$RPORT:6379" "$RIMAGE" \
   redis-server --save '' --appendonly no >/dev/null
 
 SU_PW=$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')
-$ENGINE run -d --name "$NAME" --label "shaal.issue=$ISSUE" -p "127.0.0.1:$PORT:5432" \
+$ENGINE run -d --name "$NAME" --label "arctiva.issue=$ISSUE" -p "127.0.0.1:$PORT:5432" \
   -e POSTGRES_PASSWORD="$SU_PW" -e POSTGRES_DB=postgres \
   --tmpfs /var/lib/postgresql/data:rw "$IMAGE" >/dev/null
 
@@ -72,8 +75,18 @@ $ENGINE exec -e POOLROUTER_SECRETS_DIR=/tmp/sec -e PGUSER=postgres -e PGHOST=127
 
 PW=$($ENGINE exec "$NAME" cat /tmp/sec/pr_admin_api)
 export POOLROUTER_TEST_DATABASE_URL="postgres://pr_admin_api:$PW@127.0.0.1:$PORT/poolrouter_test"
+API_PW=$($ENGINE exec "$NAME" cat /tmp/sec/pr_api)
+export POOLROUTER_TEST_DATABASE_URL_API="postgres://pr_api:$API_PW@127.0.0.1:$PORT/poolrouter_test"
 export POOLROUTER_TEST_REDIS="redis://127.0.0.1:$RPORT"
 export POOLROUTER_TEST_DATABASE_URL_SU="postgres://postgres:$SU_PW@127.0.0.1:$PORT/poolrouter_test"
-echo "uji-pg: PostgreSQL 127.0.0.1:$PORT sebagai pr_admin_api"
+# The controller tests run as the role the controller itself uses (ARC-69): the
+# snapshot and rebuild must work under pr_controller's column grants, not the
+# stricter pr_admin_api ones, and not as superuser.
+PW_C=$($ENGINE exec "$NAME" cat /tmp/sec/pr_controller)
+export POOLROUTER_TEST_DATABASE_URL_CONTROLLER="postgres://pr_controller:$PW_C@127.0.0.1:$PORT/poolrouter_test"
+# AC-73: webhook job runs as pr_webhook, which needs its own pool and role grants.
+PW_W=$($ENGINE exec "$NAME" cat /tmp/sec/pr_webhook)
+export POOLROUTER_TEST_DATABASE_URL_WEBHOOK="postgres://pr_webhook:$PW_W@127.0.0.1:$PORT/poolrouter_test"
+echo "uji-pg: PostgreSQL 127.0.0.1:$PORT sebagai pr_admin_api (dan pr_webhook untuk uji ARC-73)"
 $MAKE_CMD
 echo "uji-pg: lulus"

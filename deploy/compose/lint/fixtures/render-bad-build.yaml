@@ -1,0 +1,6 @@
+# expect: build-di-prod
+services:
+  backend-webserver:
+    image: ghcr.io/faisalcayunda/poolrouter-backend@sha256:0000000000000000000000000000000000000000000000000000000000000000
+    build:
+      context: .

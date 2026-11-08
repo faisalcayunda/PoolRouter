@@ -143,7 +143,8 @@ Gerbang T-01 menambah satu predikat `EXISTS` ke transaksi compare-and-set `dispa
 ## Lingkungan dan keterbatasan
 
 - Semua dependensi runtime (gateway, PostgreSQL, Redis, RabbitMQ, mock, k6) jalan sebagai container Podman di VM lokal yang sama (2 vCPU, 3,7 GiB). Konkurensi antar-container saling mengambil CPU. Angka absolut tidak bisa dipakai sebagai kapasitas produksi, dan tidak bisa dipakai sebagai bukti M-08.
-- PRD M-08 mensyaratkan lingkungan PoC BGN dengan spesifikasi setara produksi. Lingkungan itu belum ada (PRD Q-05: target deploy PoC/produksi BGN masih terbuka). Ini eskalasi ke Huan (`shaal-playbook` bagian 2): lingkungan lokal tidak representatif untuk M-08.
+- Staging F0 adalah lane CI efemeral `staging-smoke` (ADR-0009 §2.2): runner `ubuntu-latest` dengan Docker Engine, image berdigest dari GHCR, dan mock Dukcapil aktif. Hasil dari lane ini berlabel relatif, bukan angka absolut, karena spesifikasi runner tidak setara lingkungan PoC BGN. Kewajiban tiga ulangan dan run kontrol K0 di "Metode dan kebenaran angka" tetap berlaku di lane.
+- PRD M-08 mensyaratkan lingkungan PoC BGN dengan spesifikasi setara produksi. Lingkungan itu belum ada (PRD Q-05: target deploy PoC/produksi BGN masih terbuka). Ini eskalasi ke Huan (`shaal-playbook` bagian 2): lingkungan lokal tidak representatif untuk M-08. M-08 tetap dinilai di Gerbang PoC (ADR-0009 §2.4 P-4), bukan dari lane staging atau mesin lokal.
 - Latensi dan envelope asli Dukcapil belum diketahui (T-4). Default timeout ADR-0001 rev 15 §5a.4 (connect 5 s, total 20 s) ditetapkan ulang setelah PoC.
 - Data: NIK sintetis yang dibangkitkan di k6 (berawalan 3201, dibuat acak). Tidak ada data penduduk nyata.
 - Kredensial: `POOLROUTER_API_KEY` dan `ENDPOINT_ID` dibaca dari environment, tidak ditulis di repo atau log.

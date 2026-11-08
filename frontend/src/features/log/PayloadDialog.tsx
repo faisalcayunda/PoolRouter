@@ -41,7 +41,7 @@ function JsonBlock({
         <p className="typescale-body-medium text-on-surface-variant">{emptyLabel}</p>
       ) : (
         <ScrollArea label={label} className="max-h-64 overflow-auto">
-          <pre className="typescale-body-small m3-focus rounded-small bg-surface-container p-3 text-on-surface">
+          <pre className="font-code typescale-body-small m3-focus rounded-small bg-surface-container p-3 text-on-surface">
             {JSON.stringify(value, null, 2)}
           </pre>
         </ScrollArea>
@@ -194,7 +194,7 @@ export function PayloadDialog({
           }
         }}
         title={t('log.payload.dialog_title')}
-        closeLabel={t('common.action.close')}
+        closeLabel={t('common.close')}
         footer={
           <Button
             variant="text"
@@ -203,7 +203,7 @@ export function PayloadDialog({
               onClose();
             }}
           >
-            {t('common.action.close')}
+            {t('common.close')}
           </Button>
         }
       >
@@ -225,7 +225,7 @@ export function PayloadDialog({
             </div>
           ) : (
             <InlineAlert tone="error" live="polite">
-              {errorKode === 'jaringan' ? t('error.network.load') : t('risk.common.action_failed')}
+              {errorKode === 'jaringan' ? t('error.network') : t('risk.common.action_failed')}
             </InlineAlert>
           )
         ) : null}

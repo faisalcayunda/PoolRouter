@@ -91,7 +91,7 @@ jobs:
         if: steps.gate.outputs.present == 'true'
         run: |
           set -eu
-          docker buildx create --name shaal --driver docker-container --use
+          docker buildx create --name arctiva --driver docker-container --use
           docker buildx build --platform linux/amd64 \
             -f backend/Containerfile backend \
             --build-arg JOBS=2 --build-arg VERSION=0.1.0 \
@@ -144,7 +144,7 @@ jobs:
         if: steps.gate.outputs.present == 'true'
         run: |
           set -eu
-          docker buildx create --name shaal --driver docker-container --use
+          docker buildx create --name arctiva --driver docker-container --use
           docker buildx build --platform linux/arm64 \
             -f backend/Containerfile backend \
             --build-arg JOBS=2 --build-arg VERSION=0.1.0 \
@@ -181,7 +181,7 @@ jobs:
         run: |
           set -eu
           tag="sha-${GITHUB_SHA:0:12}"
-          docker buildx create --name shaal --driver docker-container --use
+          docker buildx create --name arctiva --driver docker-container --use
           sources="${IMAGE}@${AMD64_DIGEST}"
           if [ -n "${ARM64_DIGEST}" ]; then
             sources="${sources} ${IMAGE}@${ARM64_DIGEST}"

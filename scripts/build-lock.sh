@@ -1,24 +1,24 @@
 #!/bin/sh
 # Kunci build berat per host untuk toolchain Podman (SHAA-194, K-41).
 #
-# Kunci = nama container tetap (BUILD_LOCK_NAME, default shaal-build-heavy). Podman menolak nama
+# Kunci = nama container tetap (BUILD_LOCK_NAME, default poolrouter-build-heavy). Podman menolak nama
 # container ganda secara atomik, jadi hanya satu build berat yang jalan di VM. Container dibuat
 # dengan --rm, sehingga kunci lepas sendiri saat container selesai. Tidak ada file kunci.
 #
 # Pemakaian (dipanggil dari Makefile, lihat scripts/build-lock.mk):
-#   sh scripts/build-lock.sh run -- podman run ... --name shaal-build-heavy --label shaal.build=heavy ...
+#   sh scripts/build-lock.sh run -- podman run ... --name poolrouter-build-heavy --label poolrouter.build=heavy ...
 #   sh scripts/build-lock.sh status
 #   sh scripts/build-lock.sh clean    # hapus kunci basi saja (container berhenti, belum terhapus)
 #
 # Exit code:
 #   - run: exit code perintah yang dibungkus. Bila kunci dipegang, run mengantre (FIFO) dan menunggu
 #     sampai BUILD_LOCK_WAIT_SECS (default 1800 = 30 menit); habis waktu: exit 75 (EX_TEMPFAIL)
-#     dengan pesan yang menyebut shaal.issue pemegang. Env: BUILD_LOCK_WAIT_SECS, BUILD_LOCK_POLL_SECS,
+#     dengan pesan yang menyebut arctiva.issue pemegang. Env: BUILD_LOCK_WAIT_SECS, BUILD_LOCK_POLL_SECS,
 #     BUILD_LOCK_QUEUE_DIR.
 #   - clean: 0 bila tidak ada kunci basi atau sudah dihapus; 1 bila kunci masih dipegang container jalan.
 set -u
 
-NAME="${BUILD_LOCK_NAME:-shaal-build-heavy}"
+NAME="${BUILD_LOCK_NAME:-poolrouter-build-heavy}"
 ENGINE="${BUILD_LOCK_ENGINE:-podman}"
 EX_TEMPFAIL=75
 
@@ -29,16 +29,16 @@ inspect_field() {
 
 # holder_text: ringkasan pemegang kunci untuk pesan ke pengguna.
 holder_text() {
-	issue=$(inspect_field '{{index .Config.Labels "shaal.issue"}}')
+	issue=$(inspect_field '{{index .Config.Labels "arctiva.issue"}}')
 	state=$(inspect_field '{{.State.Status}}')
 	case "$issue" in ""|"<no value>") issue="tidak berlabel" ;; esac
-	printf 'container %s (shaal.issue=%s, status=%s)' "$NAME" "$issue" "${state:-?}"
+	printf 'container %s (arctiva.issue=%s, status=%s)' "$NAME" "$issue" "${state:-?}"
 }
 
-# remove_stale: hapus kunci basi. Hanya container berlabel shaal.build=heavy yang sudah berhenti.
+# remove_stale: hapus kunci basi. Hanya container berlabel poolrouter.build=heavy yang sudah berhenti.
 # Tanpa -f, jadi container yang masih jalan (termasuk build yang baru mulai) tidak pernah disentuh.
 remove_stale() {
-	label=$(inspect_field '{{index .Config.Labels "shaal.build"}}')
+	label=$(inspect_field '{{index .Config.Labels "poolrouter.build"}}')
 	state=$(inspect_field '{{.State.Status}}')
 	[ "$label" = "heavy" ] || return 1
 	case "$state" in
@@ -67,7 +67,7 @@ attempt() {
 # dibuang otomatis, jadi run yang di-kill tidak menyumbat antrean. Kunci container tetap dipegang
 # hanya oleh container build (--rm), seperti sebelumnya; antrean hanya mengatur siapa yang boleh
 # mencoba berikutnya. Kunci basi tetap dibersihkan oleh remove_stale (tidak diubah, lihat SHAA-366).
-QUEUE="${BUILD_LOCK_QUEUE_DIR:-${TMPDIR:-/tmp}/shaal-build-lock-queue}"
+QUEUE="${BUILD_LOCK_QUEUE_DIR:-${TMPDIR:-/tmp}/poolrouter-build-lock-queue}"
 WAIT_SECS="${BUILD_LOCK_WAIT_SECS:-1800}"
 POLL_SECS="${BUILD_LOCK_POLL_SECS:-2}"
 

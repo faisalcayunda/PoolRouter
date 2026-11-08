@@ -1,0 +1,135 @@
+# Image aplikasi F0 di CI (ARC-76, f0-ops T1): frontend dan mock Dukcapil.
+# Dibangun dari Containerfile di commit yang sama (linux/amd64), lalu didorong ke GHCR
+# dengan tag sha-<12 hex>. Tanpa tag latest. Tidak memakai secret repo: login GHCR
+# memakai GITHUB_TOKEN dengan izin packages: write yang hanya ada di job push ini.
+#
+# Pemeriksaan image frontend (non-root, root filesystem read-only, healthcheck Compose)
+# berjalan di job yang sama sebelum push, memakai `docker run` pada image hasil build.
+name: app-images
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "frontend/**"
+      - "perf/mock-dukcapil/**"
+      - ".github/workflows/app-images.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: app-images-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  frontend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      packages: write
+    env:
+      IMAGE: ghcr.io/faisalcayunda/poolrouter-frontend
+      LOCAL_IMAGE: localhost/poolrouter-frontend:ci
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Build image linux/amd64
+        run: |
+          set -eu
+          docker buildx build --platform linux/amd64 --load \
+            --build-arg VERSION=0.1.0 \
+            --build-arg REVISION="${GITHUB_SHA}" \
+            --build-arg CREATED="$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            -f frontend/Containerfile -t "${LOCAL_IMAGE}" frontend
+
+      - name: Uji non-root, read-only, healthcheck Compose
+        # Sama dengan deploy/compose/compose.yaml: user 10001, root filesystem read-only,
+        # tmpfs di /tmp, /var/cache/nginx, /var/run, dan healthcheck memakai wget.
+        run: |
+          set -eu
+          test "$(docker run --rm --entrypoint id "${LOCAL_IMAGE}" -u)" = "10001"
+          # nginx me-resolve upstream saat start; tanpa stack, arahkan ke loopback
+          # (nilai default compose: backend-webserver:8082).
+          docker run -d --name frontend-smoke --read-only \
+            --tmpfs /tmp --tmpfs /var/cache/nginx --tmpfs /var/run \
+            -e POOLROUTER_ADMIN_API_UPSTREAM=127.0.0.1:8082 \
+            "${LOCAL_IMAGE}"
+          trap 'docker rm -f frontend-smoke >/dev/null 2>&1 || true' EXIT
+          ok=0
+          for _ in $(seq 1 30); do
+            if docker exec frontend-smoke wget -q -O /dev/null http://127.0.0.1:8080/; then
+              ok=1
+              break
+            fi
+            sleep 2
+          done
+          test "$ok" = "1"
+
+      - name: Login GHCR
+        env:
+          REGISTRY_USER: ${{ github.actor }}
+          REGISTRY_TOKEN: ${{ github.token }}
+        run: printf '%s' "$REGISTRY_TOKEN" | docker login ghcr.io -u "$REGISTRY_USER" --password-stdin
+
+      - name: Push sha-<12 hex> dan catat digest
+        run: |
+          set -eu
+          tag="sha-${GITHUB_SHA:0:12}"
+          docker tag "${LOCAL_IMAGE}" "${IMAGE}:${tag}"
+          docker push "${IMAGE}:${tag}"
+          digest="$(docker buildx imagetools inspect --format '{{.Manifest.Digest}}' "${IMAGE}:${tag}")"
+          printf '%s' "$digest" | grep -Eq '^sha256:[0-9a-f]{64}$' || { echo "digest tidak valid: ${digest}" >&2; exit 1; }
+          {
+            echo "### Image frontend"
+            echo "- image: ${IMAGE}:${tag}"
+            echo "- commit: ${GITHUB_SHA}"
+            echo "- digest: ${digest}"
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+
+  mock-dukcapil:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: write
+    env:
+      IMAGE: ghcr.io/faisalcayunda/poolrouter-mock-dukcapil
+      LOCAL_IMAGE: localhost/poolrouter-mock-dukcapil:ci
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Build image linux/amd64
+        run: |
+          set -eu
+          docker buildx build --platform linux/amd64 --load \
+            -f perf/mock-dukcapil/Containerfile -t "${LOCAL_IMAGE}" perf/mock-dukcapil
+
+      - name: Login GHCR
+        env:
+          REGISTRY_USER: ${{ github.actor }}
+          REGISTRY_TOKEN: ${{ github.token }}
+        run: printf '%s' "$REGISTRY_TOKEN" | docker login ghcr.io -u "$REGISTRY_USER" --password-stdin
+
+      - name: Push sha-<12 hex> dan catat digest
+        run: |
+          set -eu
+          tag="sha-${GITHUB_SHA:0:12}"
+          docker tag "${LOCAL_IMAGE}" "${IMAGE}:${tag}"
+          docker push "${IMAGE}:${tag}"
+          digest="$(docker buildx imagetools inspect --format '{{.Manifest.Digest}}' "${IMAGE}:${tag}")"
+          printf '%s' "$digest" | grep -Eq '^sha256:[0-9a-f]{64}$' || { echo "digest tidak valid: ${digest}" >&2; exit 1; }
+          {
+            echo "### Image mock Dukcapil"
+            echo "- image: ${IMAGE}:${tag}"
+            echo "- commit: ${GITHUB_SHA}"
+            echo "- digest: ${digest}"
+          } | tee -a "$GITHUB_STEP_SUMMARY"

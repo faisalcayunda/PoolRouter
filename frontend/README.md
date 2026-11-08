@@ -1,8 +1,8 @@
-# Frontend (PoolRouter F0)
+# Frontend (PoolRouter)
 
-Kerangka SPA M3 untuk F0: React + React Aria Components (RAC) di atas Vite, TypeScript, i18next,
-Tailwind, dan Vitest/Playwright. Kontrak acuan: ADR-0003 rev 4. Token M3 di repo ini **sementara**
-(DV-2) dan diganti di SHAA-187 dengan keluaran `material-color-utilities`.
+Kerangka SPA M3 PoolRouter: React + React Aria Components (RAC) di atas Vite, TypeScript, i18next,
+Tailwind, dan Vitest/Playwright. Kontrak acuan: ADR-0003 dan ADR-0008. Token warna berasal dari seed
+UI v2 ARC-11; typeface Inter dan JetBrains Mono di-host lokal.
 
 ## Gate
 
@@ -10,7 +10,7 @@ Semua target dijalankan lewat container image Node yang di-pin, jadi tidak ada t
 dipasang di host:
 
 ```sh
-make -C frontend setup test lint build e2e CONTAINER_LABEL=shaal.issue=SHAA-197
+make -C frontend setup test lint build e2e CONTAINER_LABEL=arctiva.issue=ARC-197
 ```
 
 `CONTAINER_LABEL` wajib untuk `FRONTEND_RUNNER=podman` (playbook bagian 6); tanpa itu `check-label`

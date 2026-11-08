@@ -20,20 +20,23 @@ use axum::Router;
 use axum::extract::State;
 use axum::http::{HeaderMap, HeaderValue, Method, StatusCode, header};
 use axum::response::{IntoResponse, Response};
-use axum::routing::{get, post};
+use axum::routing::{get, post, put};
 use chrono::{DateTime, Utc};
+use poolrouter_core::admin::mfa::MfaStore;
 use poolrouter_core::admin::origin;
+use poolrouter_core::admin::pra_sesi::PraSesiStore;
 use poolrouter_core::admin::sesi_store::{SesiDitolak, SesiStore};
 use poolrouter_core::admin::token::HashToken;
 use poolrouter_core::admin::{AsalUi, TokenSesi};
+use poolrouter_core::secret::Brankas;
 use sqlx::PgPool;
 use tower_http::limit::RequestBodyLimitLayer;
 use tower_http::set_header::SetResponseHeaderLayer;
 
 use super::pembatas::PembatasLogin;
-use super::{login, me};
+use super::{allowlist, k20, klien, kredensial, log, login, me, mfa, secret, webhook};
 
-use crate::api::problem::ProblemKodeAdmin;
+use crate::api::problem::{ProblemKodeAdmin, ValidasiErrorAdmin};
 use crate::api::problem_admin::ProblemAdmin;
 
 /// Cookie name (`__Host-` prefix: Secure, Path=/, no Domain).
@@ -48,19 +51,41 @@ pub struct AdminState {
     /// The `pr_admin_api` pool. It is the only pool admin handlers can reach;
     /// the downstream router never receives it (ADR-0001 §7.2).
     pub pool: PgPool,
+    pub k20: k20::K20Service,
     pub asal: AsalUi,
     pub jam: Jam,
     pub pembatas: Arc<PembatasLogin>,
+    /// The KEK-backed envelope for `provider_secret` (AC-8, AC-11).
+    pub brankas: Arc<Brankas>,
+    /// TOTP enrollment and verification (ADR-0006 §9).
+    pub mfa: MfaStore,
+    /// The one-time token between the password step and the code step (MF2).
+    pub pra_sesi: PraSesiStore,
+    /// Whether `auditor`/`platform_admin` must pass the TOTP step.
+    pub mfa_wajib: bool,
 }
 
 impl AdminState {
-    pub fn baru(pool: PgPool, asal: AsalUi, pembatas: PembatasLogin) -> Self {
+    pub fn baru(
+        pool: PgPool,
+        asal: AsalUi,
+        pembatas: PembatasLogin,
+        brankas: Brankas,
+        redis: redis::Client,
+        mfa_wajib: bool,
+    ) -> Self {
+        let k20 = k20::K20Service::baru(pool.clone());
         Self {
             sesi: SesiStore::baru(pool.clone()),
+            mfa: MfaStore::baru(pool.clone(), brankas.clone()),
             pool,
+            k20,
             asal,
             jam: Arc::new(Utc::now),
             pembatas: Arc::new(pembatas),
+            brankas: Arc::new(brankas),
+            pra_sesi: PraSesiStore::baru(redis),
+            mfa_wajib,
         }
     }
 
@@ -76,10 +101,75 @@ pub fn router(state: AdminState) -> Router {
         .route("/admin/v1/auth/sesi/perpanjang", post(perpanjang_sesi))
         .route("/admin/v1/auth/logout", post(logout))
         .route("/admin/v1/auth/login", post(login::login))
+        .route("/admin/v1/auth/mfa", post(mfa::mfa))
+        .route("/admin/v1/auth/mfa/daftar", post(mfa::daftar))
+        .route(
+            "/admin/v1/auth/mfa/daftar/konfirmasi",
+            post(mfa::konfirmasi),
+        )
         .route("/admin/v1/auth/me", get(me::get_me))
         .route(
             "/admin/v1/auth/me/preferensi",
             axum::routing::patch(me::update_preferensi),
+        )
+        .route("/admin/v1/secrets", get(secret::list_secrets))
+        // T7: request log, auditor search, payload opening, export, audit read.
+        .route("/admin/v1/log/cari", post(log::search_log))
+        .route("/admin/v1/log/{kode_transaksi}", get(log::get_log_entry))
+        .route(
+            "/admin/v1/auditor/log/cari-nik",
+            post(log::search_log_by_nik),
+        )
+        .route("/admin/v1/auditor/payload", post(log::open_payload))
+        .route(
+            "/admin/v1/auditor/log/ekspor",
+            post(log::export_log_auditor),
+        )
+        .route(
+            "/admin/v1/auditor/audit-akses/cari",
+            post(log::search_audit_akses),
+        )
+        .route(
+            "/admin/v1/secrets/{nama}",
+            put(secret::put_secret).delete(secret::delete_secret),
+        )
+        // An empty name arrives as a path with no segment. It is a validation
+        // failure (AC-7), not an unrouted path, so it reaches the same handlers.
+        .route(
+            "/admin/v1/secrets/",
+            put(secret::put_secret_kosong).delete(secret::delete_secret_kosong),
+        )
+        .route(
+            "/admin/v1/clients",
+            get(klien::list_clients).post(klien::create_client),
+        )
+        .route(
+            "/admin/v1/clients/{id}",
+            get(klien::get_client).put(klien::update_client),
+        )
+        .route(
+            "/admin/v1/clients/{id}/credentials",
+            get(kredensial::list_credentials).post(kredensial::create_credential),
+        )
+        .route(
+            "/admin/v1/clients/{id}/webhook",
+            get(webhook::get_webhook_config).put(webhook::put_webhook_config),
+        )
+        .route(
+            "/admin/v1/clients/{id}/webhook/rotasi-secret",
+            post(webhook::rotate_webhook_secret),
+        )
+        .route(
+            "/admin/v1/clients/{id}/webhook/log",
+            get(webhook::list_webhook_log),
+        )
+        .route(
+            "/admin/v1/webhook-allowlist",
+            get(allowlist::list_allowlist),
+        )
+        .route(
+            "/admin/v1/webhook-allowlist/{domain}",
+            put(allowlist::put_allowlist_entry).delete(allowlist::delete_allowlist_entry),
         )
         .with_state(state)
         .layer(RequestBodyLimitLayer::new(16 * 1024))
@@ -98,11 +188,31 @@ impl Galat {
         Self(Box::new(ProblemAdmin::new(kode, status.as_u16())), None)
     }
 
-    fn tidak_terautentikasi() -> Self {
+    pub(super) fn tidak_terautentikasi() -> Self {
         Self::baru(
             StatusCode::UNAUTHORIZED,
             ProblemKodeAdmin::TidakTerautentikasi,
         )
+    }
+
+    /// 422 `validasi_gagal` per failing field (AC-7).
+    pub(super) fn validasi(errors: Vec<ValidasiErrorAdmin>) -> Self {
+        let mut problem = ProblemAdmin::new(ProblemKodeAdmin::ValidasiGagal, 422);
+        problem.errors = Some(errors);
+        Self(Box::new(problem), None)
+    }
+
+    /// 409 with a `detail` that describes the conflict without echoing a value
+    /// (the provider names that still use a secret, the credential that is still
+    /// in use).
+    pub(super) fn konflik(kode: ProblemKodeAdmin, detail: impl Into<String>) -> Self {
+        let mut problem = ProblemAdmin::new(kode, 409);
+        problem.detail = Some(detail.into());
+        Self(Box::new(problem), None)
+    }
+
+    pub(super) fn tidak_ditemukan() -> Self {
+        Self::baru(StatusCode::NOT_FOUND, ProblemKodeAdmin::TidakDitemukan)
     }
 
     fn origin() -> Self {

@@ -18,13 +18,13 @@ export function errorMessage(
 ): { message: string; kode: string } {
   const kode = error instanceof ApiError ? error.kode : 'jaringan';
   // A transport failure always reads as "check the connection".
-  if (kode === 'jaringan') return { message: t('error.network.load'), kode };
+  if (kode === 'jaringan') return { message: t('error.network'), kode };
   // A 403 is the one HTTP status the catalog words per se.
   if (error instanceof ApiError && error.status === 403) {
     return { message: t('error.http.403.title'), kode };
   }
   // A catalogued `error.<kode>` line wins when one exists; otherwise the generic load line.
-  const message = labelOr(instance, `error.${kode}`, t('error.network.load'));
+  const message = labelOr(instance, `error.${kode}`, t('error.network'));
   return { message, kode };
 }
 

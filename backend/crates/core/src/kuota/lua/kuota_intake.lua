@@ -48,6 +48,7 @@
 
 -- sisip: potongan/siap.lua sebagai siap
 -- sisip: potongan/bersama.lua sebagai bersama
+-- sisip: potongan/intake.lua sebagai intake
 
 local run_id = ARGV[1]
 if not siap(KEYS[1], run_id) then
@@ -73,24 +74,6 @@ if sync ~= '0' and sync ~= '1' then
   return { 'sync_tidak_sah' }
 end
 
-local terpakai = bersama.terpakai(KEYS[2], KEYS[3], a)
-local antre = tonumber(redis.call('GET', KEYS[4]) or '0')
-if antre < 0 then
-  antre = 0
-end
-
-if terpakai >= a.kuota_efektif then
-  return { 'kuota_habis', terpakai, antre }
-end
-if sync == '1' and terpakai + antre >= a.kuota_efektif then
-  return { 'kuota_habis', terpakai, antre }
-end
-if terpakai + antre >= a.kuota_efektif then
-  return { 'antrean_penuh', terpakai, antre }
-end
-
-if sync == '0' then
-  antre = redis.call('INCR', KEYS[4])
-end
-
-return { 'lolos', terpakai, antre }
+-- Keputusan penerimaan ada di `potongan/intake.lua`, tempat F1 menambah
+-- `ruang_intake()` dan peminjaman (PA4, AC-3). Skrip ini hanya bentuk panggilan.
+return intake.gerbang_intake(KEYS, { sync = sync, a = a })

@@ -314,3 +314,32 @@ SELECT t.ok(t.hitung($q$SELECT count(*) FROM information_schema.columns WHERE ta
   AND column_name IN ('password', 'password_hash', 'username', 'kata_sandi', 'nama_pengguna')$q$) = 0,
   'audit_login stores neither a password nor the typed username');
 ROLLBACK;
+
+-- ============ provider_secret (ARC-48, AD1): one row per global name, envelope shape pinned
+BEGIN;
+-- The fixture already holds 'PASSWORD'; a second row with the same name is rejected although a second
+-- provider exists, which is the whole point of the global namespace.
+SELECT t.gagal($$INSERT INTO provider_secret (nama_secret, secret_ciphertext, secret_dek_terbungkus, secret_nonce, kek_id, diubah_oleh)
+  VALUES ('PASSWORD', '\xaa', decode(repeat('bb', 60), 'hex'), decode(repeat('cc', 12), 'hex'), 'kek-1',
+          '00000000-0000-7000-8000-000000000001')$$, '23505',
+  'provider_secret: nama is unique across providers');
+SELECT t.gagal($$INSERT INTO provider_secret (nama_secret, secret_ciphertext, secret_dek_terbungkus, secret_nonce, kek_id, diubah_oleh)
+  VALUES ('nama salah', '\xaa', decode(repeat('bb', 60), 'hex'), decode(repeat('cc', 12), 'hex'), 'kek-1',
+          '00000000-0000-7000-8000-000000000001')$$, '23514',
+  'provider_secret: nama must match the contract regex (AC-9)');
+SELECT t.gagal($$INSERT INTO provider_secret (nama_secret, secret_ciphertext, secret_dek_terbungkus, secret_nonce, kek_id, diubah_oleh)
+  VALUES ('NONCE_SALAH', '\xaa', decode(repeat('bb', 60), 'hex'), decode(repeat('cc', 11), 'hex'), 'kek-1',
+          '00000000-0000-7000-8000-000000000001')$$, '23514',
+  'provider_secret: nonce is 12 bytes (AES-GCM)');
+SELECT t.gagal($$INSERT INTO provider_secret (nama_secret, secret_ciphertext, secret_dek_terbungkus, secret_nonce, kek_id, diubah_oleh)
+  VALUES ('DEK_SALAH', '\xaa', decode(repeat('bb', 59), 'hex'), decode(repeat('cc', 12), 'hex'), 'kek-1',
+          '00000000-0000-7000-8000-000000000001')$$, '23514',
+  'provider_secret: wrapped DEK is 12 + 32 + 16 bytes (AC-11)');
+SELECT t.gagal($$INSERT INTO provider_secret (nama_secret, secret_ciphertext, secret_dek_terbungkus, secret_nonce, kek_id, diubah_oleh)
+  VALUES ('KEK_KOSONG', '\xaa', decode(repeat('bb', 60), 'hex'), decode(repeat('cc', 12), 'hex'), ' ',
+          '00000000-0000-7000-8000-000000000001')$$, '23514',
+  'provider_secret: kek_id is recorded and non-empty (AC-8)');
+SELECT t.gagal($$INSERT INTO provider_secret (nama_secret, secret_ciphertext, secret_dek_terbungkus, secret_nonce, kek_id)
+  VALUES ('TANPA_PELAKU', '\xaa', decode(repeat('bb', 60), 'hex'), decode(repeat('cc', 12), 'hex'), 'kek-1')$$, '23502',
+  'provider_secret: every write names its actor (AC-5)');
+ROLLBACK;

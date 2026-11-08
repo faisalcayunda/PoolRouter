@@ -34,6 +34,51 @@ pub struct LoginRequest {
     pub password: String,
 }
 
+/// Body of `POST /auth/mfa` (AC-10): exactly one of the two code kinds.
+#[derive(Debug, Clone, Deserialize, ToSchema)]
+pub struct KodeMfaRequest {
+    /// Six-digit TOTP code.
+    #[schema(example = "123456")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kode: Option<String>,
+    /// One of the 10 recovery codes issued at enrollment.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kode_pemulihan: Option<String>,
+}
+
+/// Body of `POST /auth/mfa/daftar` (AC-12): the registration code.
+#[derive(Debug, Clone, Deserialize, ToSchema)]
+pub struct DaftarMfaRequest {
+    /// The one-time code issued to this user; required, never reusable.
+    pub kode_pendaftaran: String,
+}
+
+/// Body of `POST /auth/mfa/daftar/konfirmasi` (AC-13).
+#[derive(Debug, Clone, Deserialize, ToSchema)]
+pub struct KonfirmasiMfaRequest {
+    #[schema(example = "123456")]
+    pub kode_totp: String,
+}
+
+/// `POST /auth/mfa/daftar` response: shown once, never logged (AC-12).
+#[derive(Debug, Clone, Serialize, ToSchema)]
+pub struct MfaDaftar {
+    /// `otpauth://totp/...` for the authenticator app (issuer `PoolRouter`).
+    #[schema(
+        example = "otpauth://totp/PoolRouter:auditor_01?secret=JBSWY3DPEHPK3PXP&issuer=PoolRouter"
+    )]
+    pub otpauth_uri: String,
+    /// The same secret in base32, for manual entry.
+    pub rahasia_base32: String,
+}
+
+/// `POST /auth/mfa/daftar/konfirmasi` response: the recovery codes, once (AC-13).
+#[derive(Debug, Clone, Serialize, ToSchema)]
+pub struct MfaKonfirmasi {
+    /// 10 codes; each works once.
+    pub kode_pemulihan: Vec<String>,
+}
+
 /// Current identity (U-1: "identitas, peran, client_id").
 #[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct Me {
@@ -47,6 +92,22 @@ pub struct Me {
     pub client_id: Option<Uuid>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub bahasa_ui: Option<BahasaUi>,
+    /// MFA state for this account (AC-14, MF3).
+    pub mfa: MeMfa,
+}
+
+/// `Me.mfa` (AC-14): whether the step is required, whether it is enrolled, and
+/// how many recovery codes remain.
+#[derive(Debug, Clone, Serialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct MeMfa {
+    /// `true` when `POOLROUTER_MFA_WAJIB` is on and the caller's role is one
+    /// the policy covers.
+    pub wajib: bool,
+    /// `true` once a TOTP secret is confirmed (`pengguna_mfa.status = 'aktif'`).
+    pub aktif: bool,
+    /// Unused recovery codes: 10 right after enrollment, 9 after one login.
+    pub sisa_kode_pemulihan: i64,
 }
 
 /// Preference update (Addendum A section 7.2). No user id is accepted.
@@ -278,25 +339,33 @@ pub struct UpstreamPoolConfig {
     pub alasan: Option<String>,
 }
 
-/// One rejected field of [`UpstreamPoolConfig`], as the pure validator reports
-/// it (SHAA-280 AC 3). The handler layer (SHAA-175) maps a list of these onto a
-/// 422 problem document; until then the function is exercised by unit tests only,
-/// so the promised 422 has a tested single source of truth.
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// One rejected field of a pure validator, in the shape the admin 422 body needs
+/// (Addendum A §6.1, AC-7): the field, the validation code, and the numeric
+/// rule parameter when the rule has one. Never the input value.
+#[derive(Debug, Clone, PartialEq)]
 pub struct FieldError {
     /// Field name exactly as it appears in the JSON body and the OpenAPI schema,
     /// so a client can point at the offending member.
     pub field: &'static str,
-    /// Human-readable reason, English like the rest of the code.
-    pub message: String,
+    /// Validation code, e.g. `rentang`, `wajib`, `format`.
+    pub kode: &'static str,
+    /// Numeric parameter of the violated rule, if any (always a number, never
+    /// the rejected input).
+    pub batas: Option<f64>,
 }
 
 impl FieldError {
-    fn new(field: &'static str, message: impl Into<String>) -> Self {
+    fn new(field: &'static str, kode: &'static str) -> Self {
         Self {
             field,
-            message: message.into(),
+            kode,
+            batas: None,
         }
+    }
+
+    fn dengan_batas(mut self, batas: f64) -> Self {
+        self.batas = Some(batas);
+        self
     }
 }
 
@@ -372,45 +441,25 @@ impl UpstreamPoolConfig {
 
         // Cross-field: the retry cap never undershoots the base.
         if self.retry_backoff_cap_detik < self.retry_backoff_base_detik {
-            errors.push(FieldError::new(
-                "retry_backoff_cap_detik",
-                format!(
-                    "must be >= retry_backoff_base_detik ({}), got {}",
-                    self.retry_backoff_base_detik, self.retry_backoff_cap_detik
-                ),
-            ));
+            errors.push(
+                FieldError::new("retry_backoff_cap_detik", "rentang")
+                    .dengan_batas(self.retry_backoff_base_detik as f64),
+            );
         }
 
         // Cross-field: the maximum delay never undershoots the minimum delay.
         if self.jeda_maks < self.jeda_min {
-            errors.push(FieldError::new(
-                "jeda_maks",
-                format!(
-                    "must be >= jeda_min ({}), got {}",
-                    self.jeda_min, self.jeda_maks
-                ),
-            ));
+            errors.push(FieldError::new("jeda_maks", "rentang").dengan_batas(self.jeda_min as f64));
         }
 
         // Cross-field: both delays respect the interval the hourly rate limit
         // leaves between requests.
         if let Some(batas) = self.batas_jeda_dari_rate_limit() {
-            let penjelasan = format!(
-                "must be <= floor(3600000 / rate_limit_per_jam) = {batas} ms \
-                 for rate_limit_per_jam = {}",
-                self.rate_limit_per_jam
-            );
             if self.jeda_min > batas {
-                errors.push(FieldError::new(
-                    "jeda_min",
-                    format!("{penjelasan}, got {}", self.jeda_min),
-                ));
+                errors.push(FieldError::new("jeda_min", "rentang").dengan_batas(batas as f64));
             }
             if self.jeda_maks > batas {
-                errors.push(FieldError::new(
-                    "jeda_maks",
-                    format!("{penjelasan}, got {}", self.jeda_maks),
-                ));
+                errors.push(FieldError::new("jeda_maks", "rentang").dengan_batas(batas as f64));
             }
         }
 
@@ -435,21 +484,19 @@ impl UpstreamPoolConfig {
     }
 }
 
+/// `batas` carries the bound the value broke, so the 422 says which rule
+/// parameter failed without repeating the rejected value (AC-7).
 fn rentang(errors: &mut Vec<FieldError>, field: &'static str, nilai: i64, min: i64, max: i64) {
-    if nilai < min || nilai > max {
-        errors.push(FieldError::new(
-            field,
-            format!("must be between {min} and {max}, got {nilai}"),
-        ));
+    if nilai < min {
+        errors.push(FieldError::new(field, "rentang").dengan_batas(min as f64));
+    } else if nilai > max {
+        errors.push(FieldError::new(field, "rentang").dengan_batas(max as f64));
     }
 }
 
 fn rentang_min(errors: &mut Vec<FieldError>, field: &'static str, nilai: i64, min: i64) {
     if nilai < min {
-        errors.push(FieldError::new(
-            field,
-            format!("must be at least {min}, got {nilai}"),
-        ));
+        errors.push(FieldError::new(field, "rentang").dengan_batas(min as f64));
     }
 }
 
@@ -462,11 +509,10 @@ fn rentang_pecahan(
 ) {
     // NaN is not expressible in JSON, but it is in Rust: reject it rather than
     // letting a comparison that is always false slip through.
-    if !nilai.is_finite() || nilai < min || nilai > max {
-        errors.push(FieldError::new(
-            field,
-            format!("must be between {min} and {max}, got {nilai}"),
-        ));
+    if !nilai.is_finite() || nilai < min {
+        errors.push(FieldError::new(field, "rentang").dengan_batas(min));
+    } else if nilai > max {
+        errors.push(FieldError::new(field, "rentang").dengan_batas(max));
     }
 }
 
@@ -1099,6 +1145,82 @@ fn stub() -> (StatusCode, Json<Problem>) {
     security(())
 )]
 async fn login(axum::Json(_body): axum::Json<LoginRequest>) -> (StatusCode, Json<Problem>) {
+    stub()
+}
+
+/// Second login step: TOTP or a recovery code (ADR-0006 §9, AC-10).
+///
+/// Reads the `__Host-pr_mfa` pre-session cookie; on success sets
+/// `__Host-pr_session` and clears the pre-session cookie.
+#[utoipa::path(
+    post,
+    path = "/admin/v1/auth/mfa",
+    operation_id = "mfaVerifikasi",
+    tag = "admin",
+    request_body(content = KodeMfaRequest, content_type = "application/json"),
+    responses(
+        (status = 204, description = "Kode diterima; cookie sesi diterbitkan", headers(
+            ("Set-Cookie" = String, description = "__Host-pr_session=...; HttpOnly; Secure; SameSite=Strict; Path=/"),
+            ("Cache-Control" = String, description = "Selalu no-store (R-16)")
+        )
+        ),
+        (status = 401, response = Problem401Admin),
+        (status = 429, response = Problem429Admin),
+        (status = 422, response = Problem422Admin)
+    ),
+    security(())
+)]
+async fn mfa_verifikasi(
+    axum::Json(_body): axum::Json<KodeMfaRequest>,
+) -> (StatusCode, Json<Problem>) {
+    stub()
+}
+
+/// Start MFA enrollment: returns the `otpauth://` URI once (AC-12).
+#[utoipa::path(
+    post,
+    path = "/admin/v1/auth/mfa/daftar",
+    operation_id = "mfaDaftar",
+    tag = "admin",
+    request_body(content = DaftarMfaRequest, content_type = "application/json"),
+    responses(
+        (status = 200, description = "URI otpauth dan secret base32; ditampilkan sekali", body = MfaDaftar, headers(
+            ("Cache-Control" = String, description = "Selalu no-store (R-16)")
+        )
+        ),
+        (status = 401, response = Problem401Admin),
+        (status = 403, response = Problem403Admin)
+    ),
+    security(())
+)]
+async fn mfa_daftar(
+    axum::Json(_body): axum::Json<DaftarMfaRequest>,
+) -> (StatusCode, Json<Problem>) {
+    stub()
+}
+
+/// Confirm enrollment with one TOTP code; returns the 10 recovery codes (AC-13).
+#[utoipa::path(
+    post,
+    path = "/admin/v1/auth/mfa/daftar/konfirmasi",
+    operation_id = "mfaKonfirmasi",
+    tag = "admin",
+    request_body(content = KonfirmasiMfaRequest, content_type = "application/json"),
+    responses(
+        (status = 200, description = "MFA aktif; kode pemulihan dan cookie sesi diterbitkan", body = MfaKonfirmasi, headers(
+            ("Set-Cookie" = String, description = "__Host-pr_session=...; HttpOnly; Secure; SameSite=Strict; Path=/"),
+            ("Cache-Control" = String, description = "Selalu no-store (R-16)")
+        )
+        ),
+        (status = 401, response = Problem401Admin),
+        (status = 403, response = Problem403Admin),
+        (status = 422, response = Problem422Admin)
+    ),
+    security(())
+)]
+async fn mfa_konfirmasi(
+    axum::Json(_body): axum::Json<KonfirmasiMfaRequest>,
+) -> (StatusCode, Json<Problem>) {
     stub()
 }
 
@@ -2697,6 +2819,7 @@ impl utoipa::Modify for SecurityAddon {
     info(title = "PoolRouter Admin API", description = "Kontrak admin PoolRouter F0 (SHAA-175): sesi cookie, konfigurasi, K-20, kuota, log/audit. Error memakai RFC 9457 problem+json dengan kode tertutup (Addendum A); rincian tiap kode ada di docs/masalah.md. Tulis hanya dari Origin yang sah; setiap tulis tercatat di audit konfigurasi."),
     paths(
         login, logout, get_me, update_preferensi, get_sesi, perpanjang_sesi,
+        mfa_verifikasi, mfa_daftar, mfa_konfirmasi,
         list_providers, get_provider, create_provider, update_provider,
         list_secrets, put_secret, delete_secret,
         list_upstream_pools, get_upstream_pool, create_upstream_pool, update_upstream_pool,
@@ -2717,6 +2840,7 @@ impl utoipa::Modify for SecurityAddon {
     ),
     components(schemas(
         LoginRequest, Me, PreferensiUpdate, SesiStatus,
+        KodeMfaRequest, DaftarMfaRequest, KonfirmasiMfaRequest, MfaDaftar, MfaKonfirmasi, MeMfa,
         ProviderConfig, ParameterRule, RuleValidasi, Provider,
         SecretRingkas, SecretNilai,
         UpstreamPoolConfig, UpstreamPool,
@@ -2756,6 +2880,9 @@ pub fn yaml() -> Result<String, Box<dyn std::error::Error>> {
 pub fn router() -> OpenApiRouter {
     OpenApiRouter::new()
         .routes(routes!(login))
+        .routes(routes!(mfa_verifikasi))
+        .routes(routes!(mfa_daftar))
+        .routes(routes!(mfa_konfirmasi))
         .routes(routes!(logout))
         .routes(routes!(get_me))
         .routes(routes!(update_preferensi))

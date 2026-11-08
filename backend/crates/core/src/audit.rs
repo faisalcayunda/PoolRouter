@@ -46,6 +46,13 @@ impl Peran {
         }
     }
 
+    /// Whether holding this role makes the TOTP step compulsory
+    /// (ADR-0006 §9, AC-9): `auditor` and `platform_admin`.
+    #[must_use]
+    pub const fn wajib_mfa(self) -> bool {
+        matches!(self, Self::PlatformAdmin | Self::Auditor)
+    }
+
     /// Every role, in contract order. Used by the CLI to validate `--peran`
     /// and by tests to prove the list matches the database check constraint.
     pub const SEMUA: [Self; 4] = [
@@ -112,6 +119,9 @@ pub enum Aksi {
     RestoreArsip,
     UbahPeran,
     AksesDitolak,
+    PakaiKodePemulihan,
+    /// Enrollment started or confirmed (AC-12, AC-13).
+    DaftarMfa,
 }
 
 impl Aksi {
@@ -126,10 +136,12 @@ impl Aksi {
             Self::RestoreArsip => "restore_arsip",
             Self::UbahPeran => "ubah_peran",
             Self::AksesDitolak => "akses_ditolak",
+            Self::PakaiKodePemulihan => "pakai_kode_pemulihan",
+            Self::DaftarMfa => "daftar_mfa",
         }
     }
 
-    pub const SEMUA: [Self; 9] = [
+    pub const SEMUA: [Self; 11] = [
         Self::LihatLog,
         Self::CariLog,
         Self::CariNik,
@@ -139,6 +151,8 @@ impl Aksi {
         Self::RestoreArsip,
         Self::UbahPeran,
         Self::AksesDitolak,
+        Self::PakaiKodePemulihan,
+        Self::DaftarMfa,
     ];
 }
 
@@ -184,8 +198,10 @@ pub enum Hasil {
 
 impl Hasil {
     pub const fn as_str(self) -> &'static str {
+        // The audit_akses CHECK (migrations/20261103000002_request_log.sql) and the
+        // F0 SQL functions use `diizinkan` for a carried-out action.
         match self {
-            Self::Berhasil => "berhasil",
+            Self::Berhasil => "diizinkan",
             Self::Ditolak => "ditolak",
         }
     }
@@ -310,6 +326,9 @@ pub struct AksesBaru {
     pub alasan: Option<Alasan>,
     pub sumber_ip: Option<String>,
     pub sesi_id: Option<String>,
+    /// Required by the `chk_audit_target_pengguna` constraint for the account
+    /// actions (`daftar_mfa`, `terbit_kode_daftar`, `reset_mfa*`, ...).
+    pub target_pengguna_id: Option<Uuid>,
 }
 
 impl AksesBaru {
@@ -327,6 +346,7 @@ impl AksesBaru {
             alasan: None,
             sumber_ip: None,
             sesi_id: None,
+            target_pengguna_id: None,
         }
     }
 
@@ -341,6 +361,13 @@ impl AksesBaru {
             hasil: Hasil::Ditolak,
             ..Self::berhasil(pelaku, Aksi::AksesDitolak)
         }
+    }
+
+    /// Point the row at the account the action was taken on, which the
+    /// `chk_audit_target_pengguna` constraint requires for `daftar_mfa`.
+    pub const fn dengan_target_pengguna(mut self, target: Uuid) -> Self {
+        self.target_pengguna_id = Some(target);
+        self
     }
 
     pub fn dengan_tampilan_nik(mut self, tampilan: TampilanNik) -> Self {
@@ -428,6 +455,85 @@ impl From<sqlx::Error> for GalatAudit {
     }
 }
 
+/// Which kind of object a configuration change touched. Mirrors the
+/// `entitas_jenis` CHECK of `audit_konfigurasi`; a new variant needs a migration,
+/// not a string at the call site.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum EntitasKonfigurasi {
+    Client,
+    Kredensial,
+    DownstreamEndpoint,
+    DownstreamPool,
+    UpstreamPool,
+    Provider,
+    ClientWebhook,
+    WebhookDomainAllowlist,
+    ProviderConfig,
+    EndpointConfig,
+    EndpointMetadataField,
+    KonfigurasiPlatform,
+    AdminUser,
+    /// One entry of the global provider secret store (ARC-48, AD1).
+    ProviderSecret,
+}
+
+impl EntitasKonfigurasi {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Client => "client",
+            Self::Kredensial => "kredensial",
+            Self::DownstreamEndpoint => "downstream_endpoint",
+            Self::DownstreamPool => "downstream_pool",
+            Self::UpstreamPool => "upstream_pool",
+            Self::Provider => "provider",
+            Self::ClientWebhook => "client_webhook",
+            Self::WebhookDomainAllowlist => "webhook_domain_allowlist",
+            Self::ProviderConfig => "provider_config",
+            Self::EndpointConfig => "endpoint_config",
+            Self::EndpointMetadataField => "endpoint_metadata_field",
+            Self::KonfigurasiPlatform => "konfigurasi_platform",
+            Self::AdminUser => "admin_user",
+            Self::ProviderSecret => "provider_secret",
+        }
+    }
+}
+
+/// What happened to the object. `Cabut` is the closest the contract has to a
+/// delete, so removing a secret value is a revocation, not a new verb.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum AksiKonfigurasi {
+    Buat,
+    Ubah,
+    Nonaktifkan,
+    Aktifkan,
+    Cabut,
+}
+
+impl AksiKonfigurasi {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Buat => "buat",
+            Self::Ubah => "ubah",
+            Self::Nonaktifkan => "nonaktifkan",
+            Self::Aktifkan => "aktifkan",
+            Self::Cabut => "cabut",
+        }
+    }
+}
+
+/// One `audit_konfigurasi` row, before it is written. `nilai_lama`/`nilai_baru`
+/// are JSON descriptions of the change, never secret material.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct KonfigurasiBaru {
+    pub pelaku: Uuid,
+    pub entitas: EntitasKonfigurasi,
+    pub entitas_id: Option<Uuid>,
+    pub aksi: AksiKonfigurasi,
+    pub nilai_lama: Option<serde_json::Value>,
+    pub nilai_baru: Option<serde_json::Value>,
+    pub alasan: Alasan,
+}
+
 /// Writes audit rows inside the caller's transaction.
 ///
 /// The `&mut Transaction` is the whole point: it makes "audit and effect commit
@@ -458,8 +564,8 @@ impl<'tx> Penulis<'tx> {
         sqlx::query(
             "INSERT INTO audit_akses \
              (audit_id, pengguna_id, peran, aksi, tampilan_nik, filter_kueri, nik_hmac, nik_tersamar, \
-              jumlah_record, alasan, hasil, sumber_ip, sesi_id) \
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)",
+              jumlah_record, alasan, hasil, sumber_ip, sesi_id, target_pengguna_id) \
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)",
         )
         .bind(audit_id)
         .bind(baris.pelaku.pengguna_id)
@@ -469,11 +575,40 @@ impl<'tx> Penulis<'tx> {
         .bind(baris.filter_kueri)
         .bind(baris.nik_hmac.as_ref().map(NikHmac::as_str))
         .bind(baris.nik_tersamar)
-        .bind(baris.jumlah_record)
+        .bind(baris.jumlah_record.unwrap_or(0))
         .bind(baris.alasan.as_ref().map(Alasan::as_str))
         .bind(baris.hasil.as_str())
         .bind(baris.sumber_ip)
         .bind(baris.sesi_id)
+        .bind(baris.target_pengguna_id)
+        .execute(&mut **self.tx)
+        .await?;
+
+        Ok(audit_id)
+    }
+
+    /// Write one `audit_konfigurasi` row and return its id (EN-07/EN-08, AC-5).
+    ///
+    /// `nilai_lama` and `nilai_baru` never carry a secret value, a credential, a
+    /// webhook secret, or a NIK: they describe the change (name, version,
+    /// status), not the material. The caller builds them, and the tests of the
+    /// calling module assert it.
+    pub async fn catat_konfigurasi(&mut self, baris: &KonfigurasiBaru) -> Result<Uuid, GalatAudit> {
+        let audit_id = Uuid::now_v7();
+        sqlx::query(
+            "INSERT INTO audit_konfigurasi \
+             (audit_konfigurasi_id, pengguna_id, entitas_jenis, entitas_id, aksi, nilai_lama, \
+              nilai_baru, alasan) \
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
+        )
+        .bind(audit_id)
+        .bind(baris.pelaku)
+        .bind(baris.entitas.as_str())
+        .bind(baris.entitas_id)
+        .bind(baris.aksi.as_str())
+        .bind(baris.nilai_lama.as_ref())
+        .bind(baris.nilai_baru.as_ref())
+        .bind(baris.alasan.as_str())
         .execute(&mut **self.tx)
         .await?;
 
@@ -614,9 +749,10 @@ mod tests {
 
     #[test]
     fn aksi_values_are_the_column_check_constraint() {
-        // Mirrors migrations/20261103000002_request_log.sql. If this list and
-        // the constraint drift, every write of the new value fails at runtime
-        // in production only, so pin it here.
+        // Mirrors migrations/20261103000002_request_log.sql and the F1 additions
+        // in 20261104000002_f1_audit_balikan_arsip.sql. If this list and the
+        // constraint drift, every write of the new value fails at runtime in
+        // production only, so pin it here.
         assert_eq!(
             Aksi::SEMUA.map(Aksi::as_str),
             [
@@ -628,7 +764,9 @@ mod tests {
                 "lihat_audit",
                 "restore_arsip",
                 "ubah_peran",
-                "akses_ditolak"
+                "akses_ditolak",
+                "pakai_kode_pemulihan",
+                "daftar_mfa"
             ]
         );
     }
@@ -740,7 +878,7 @@ mod tests {
 
     #[test]
     fn hasil_and_tampilan_display_match_column_values() {
-        assert_eq!(Hasil::Berhasil.to_string(), "berhasil");
+        assert_eq!(Hasil::Berhasil.to_string(), "diizinkan");
         assert_eq!(Hasil::Ditolak.to_string(), "ditolak");
         assert_eq!(TampilanNik::Utuh.to_string(), "utuh");
         assert_eq!(TampilanNik::Tersamar.to_string(), "tersamar");

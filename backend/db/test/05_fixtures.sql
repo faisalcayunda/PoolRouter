@@ -23,8 +23,8 @@ INSERT INTO provider (provider_id, nama, data_balikan_aktif) VALUES
   ('20000000-0000-7000-8000-000000000002', 'provider-lain', false);
 INSERT INTO provider_config_versi (provider_id, versi, config_schema_version, log_mode, dokumen, dibuat_oleh) VALUES
   ('20000000-0000-7000-8000-000000000001', 1, 1, 'metadata_only', '{}', '00000000-0000-7000-8000-000000000001');
-INSERT INTO provider_secret (provider_id, nama_secret, secret_ciphertext, secret_dek_terbungkus, secret_nonce, kek_id, diubah_oleh) VALUES
-  ('20000000-0000-7000-8000-000000000001', 'PASSWORD', '\xaa', '\xbb', '\xcc', 'kek-1', '00000000-0000-7000-8000-000000000001');
+INSERT INTO provider_secret (nama_secret, secret_ciphertext, secret_dek_terbungkus, secret_nonce, kek_id, diubah_oleh) VALUES
+  ('PASSWORD', '\xaa', decode(repeat('bb', 60), 'hex'), decode(repeat('cc', 12), 'hex'), 'kek-1', '00000000-0000-7000-8000-000000000001');
 INSERT INTO upstream_pool (upstream_pool_id, provider_id, nama, kuota_harian) VALUES
   ('30000000-0000-7000-8000-000000000001', '20000000-0000-7000-8000-000000000001', 'up-1', 1000);
 INSERT INTO downstream_pool (downstream_pool_id, nama, prioritas) VALUES

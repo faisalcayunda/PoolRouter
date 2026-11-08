@@ -25,6 +25,7 @@ use poolrouter_core::admin::password::{
     KebijakanPassword, PANJANG_MAKSIMUM, ParameterArgon2, hash_password, verifikasi_password,
 };
 use poolrouter_core::admin::pengguna::cari_login;
+use poolrouter_core::admin::pra_sesi::JenisPraSesi;
 use poolrouter_core::audit::{AksiLogin, HasilLogin, LoginBaru, catat_login};
 use uuid::Uuid;
 
@@ -32,6 +33,9 @@ use super::pembatas::HasilPeriksa;
 use super::sesi::{AdminState, COOKIE_SESI, Galat, periksa_origin};
 use crate::api::admin::LoginRequest;
 use crate::api::problem::ProblemKodeAdmin;
+
+/// The pre-session cookie name (AC-9, MF2).
+pub(super) const COOKIE_PRA_SESI: &str = "__Host-pr_mfa";
 
 const PANJANG_USERNAME: std::ops::RangeInclusive<usize> = 3..=100;
 
@@ -50,10 +54,11 @@ fn hash_palsu() -> &'static str {
     })
 }
 
-/// The address recorded in `audit_login`. Behind the reverse proxy the peer is
-/// the proxy, so `X-Real-IP` wins when it is a well-formed address; the admin
-/// listener is internal-only, so only the proxy can set it.
-fn sumber_ip(headers: &HeaderMap, peer: SocketAddr) -> String {
+/// The address recorded in `audit_login` and in the denial row
+/// (`gerbang::masuk`). Behind the reverse proxy the peer is the proxy, so
+/// `X-Real-IP` wins when it is a well-formed address; the admin listener is
+/// internal-only, so only the proxy can set it.
+pub(super) fn sumber_ip(headers: &HeaderMap, peer: SocketAddr) -> String {
     headers
         .get("x-real-ip")
         .and_then(|v| v.to_str().ok())
@@ -62,7 +67,7 @@ fn sumber_ip(headers: &HeaderMap, peer: SocketAddr) -> String {
         .to_string()
 }
 
-fn user_agent(headers: &HeaderMap) -> Option<String> {
+pub(super) fn user_agent(headers: &HeaderMap) -> Option<String> {
     headers
         .get(header::USER_AGENT)
         .and_then(|v| v.to_str().ok())
@@ -75,6 +80,106 @@ fn cookie_sesi(token: &TokenSesi) -> HeaderValue {
         token.sebagai_b64()
     ))
     .expect("token base64url selalu ASCII")
+}
+
+/// The step the client must take next. Serialised as `{langkah: "..."}` (AC-9).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum Langkah {
+    Mfa,
+    DaftarMfa,
+}
+
+impl Langkah {
+    const fn as_str(self) -> &'static str {
+        match self {
+            Self::Mfa => "mfa",
+            Self::DaftarMfa => "daftar_mfa",
+        }
+    }
+}
+
+impl serde::Serialize for Langkah {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(self.as_str())
+    }
+}
+
+#[derive(Debug, serde::Serialize)]
+pub(super) struct LangkahBody {
+    pub langkah: Langkah,
+}
+
+/// `__Host-pr_mfa` (AC-9): same hardening as the session cookie, but 5 minutes.
+/// The `__Host-` prefix itself forbids `Domain` and forces `Path=/`.
+fn cookie_pra_sesi(token: &str) -> HeaderValue {
+    HeaderValue::from_str(&format!(
+        "{COOKIE_PRA_SESI}={token}; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age={}",
+        poolrouter_core::admin::UMUR_DETIK
+    ))
+    .expect("token base64url selalu ASCII")
+}
+
+/// Does this user still need a step after the password? `None` means the
+/// password is the whole login (operator, client_owner).
+async fn langkah_mfa(
+    s: &AdminState,
+    pengguna_id: Uuid,
+    sekarang: chrono::DateTime<chrono::Utc>,
+) -> Result<Option<Langkah>, Galat> {
+    if !s.mfa_wajib {
+        return Ok(None);
+    }
+    let peran = s
+        .mfa
+        .peran_aktif(pengguna_id, sekarang)
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "admin: pembacaan peran gagal");
+            Galat::layanan()
+        })?;
+    if !peran.iter().any(|p| p.wajib_mfa()) {
+        return Ok(None);
+    }
+    let aktif = s.mfa.aktif(pengguna_id).await.map_err(|e| {
+        tracing::error!(error = %e, "admin: pembacaan status MFA gagal");
+        Galat::layanan()
+    })?;
+    Ok(Some(if aktif {
+        Langkah::Mfa
+    } else {
+        Langkah::DaftarMfa
+    }))
+}
+
+/// The username for a user id, used to share the limiter bucket between the
+/// password step and the code step (AC-11).
+pub(super) async fn username_dari(
+    pool: &sqlx::PgPool,
+    pengguna_id: Uuid,
+) -> Result<String, sqlx::Error> {
+    sqlx::query_scalar("SELECT username FROM admin_user WHERE pengguna_id = $1")
+        .bind(pengguna_id)
+        .fetch_one(pool)
+        .await
+}
+
+/// Record the `login`/`berhasil` row for a session issued after the second step.
+pub(super) async fn catat_login_berhasil(
+    s: &AdminState,
+    pengguna_id: Uuid,
+    sesi_id: Uuid,
+    ip: &str,
+    ua: &Option<String>,
+) -> bool {
+    audit(
+        s,
+        Some(pengguna_id),
+        HasilLogin::Berhasil,
+        Some(sesi_id),
+        ip,
+        ua,
+    )
+    .await
 }
 
 /// Verify on a blocking thread: argon2id is deliberately slow and must not
@@ -132,6 +237,40 @@ pub(super) async fn login(
 
     match pengguna {
         Some(p) if benar && p.aktif => {
+            // AC-9: a user who must pass the TOTP step never gets a session
+            // from the password alone. They get a short-lived pre-session
+            // cookie and a `langkah` body instead.
+            if let Some(langkah) = langkah_mfa(&s, p.pengguna_id, sekarang).await? {
+                audit(
+                    &s,
+                    Some(p.pengguna_id),
+                    HasilLogin::Berhasil,
+                    None,
+                    &ip,
+                    &ua,
+                )
+                .await;
+                if s.pembatas.berhasil(&username).await.is_err() {
+                    tracing::warn!("admin: hitungan gagal tidak terhapus setelah kata sandi benar");
+                }
+                let jenis = match langkah {
+                    Langkah::Mfa => JenisPraSesi::Mfa,
+                    Langkah::DaftarMfa => JenisPraSesi::DaftarMfa,
+                };
+                let token = s
+                    .pra_sesi
+                    .terbitkan(p.pengguna_id, jenis, sekarang)
+                    .await
+                    .map_err(|e| {
+                        tracing::error!(error = %e, "admin: token pra-sesi gagal disimpan");
+                        Galat::layanan()
+                    })?;
+                let mut res = (StatusCode::OK, axum::Json(LangkahBody { langkah })).into_response();
+                res.headers_mut()
+                    .insert(header::SET_COOKIE, cookie_pra_sesi(&token));
+                return Ok(res);
+            }
+
             let token = TokenSesi::baru();
             let sesi = s
                 .sesi
@@ -185,7 +324,7 @@ pub(super) async fn login(
 }
 
 /// Write one `audit_login` row. Returns whether it was written.
-async fn audit(
+pub(super) async fn audit(
     s: &AdminState,
     pengguna_id: Option<Uuid>,
     hasil: HasilLogin,

@@ -2,7 +2,7 @@
 # Uji fail-closed, deteksi failover, dan rebuild terhadap Redis sungguhan
 # (SHAA-195, ADR-0001 rev 15 §5 dan §5a.2). Dipanggil oleh `make uji-redis`.
 #
-# Redis jalan sebagai container sekali pakai berlabel shaal.issue=<SHAA_ISSUE>
+# Redis jalan sebagai container sekali pakai berlabel arctiva.issue=<ARC_ISSUE>
 # dengan jaringan host dan port tetap, supaya container toolchain cargo bisa
 # menjangkaunya. Container di-restart di tengah (persistence mati, jadi state
 # hilang dan `run_id` baru) untuk membuktikan dispatch berhenti lalu rebuild
@@ -12,7 +12,10 @@
 set -eu
 
 ENGINE=${CONTAINER_ENGINE:-podman}
-ISSUE=${SHAA_ISSUE:-SHAA-195}
+ISSUE=$ARC_ISSUE
+: "${ARC_ISSUE:?isi ARC_ISSUE, mis. ARC-123}"
+# Gagal di awal dengan pesan jelas, bukan nanti saat `podman`/`docker` dipanggil.
+command -v "$ENGINE" >/dev/null 2>&1 || { echo "uji-redis.sh: '$ENGINE' tidak ada di PATH; set CONTAINER_ENGINE=docker atau pasang engine-nya" >&2; exit 127; }
 # Port acak per proses supaya dua lane paralel di VM yang sama tidak bertabrakan
 # (review 225be8d, non-blocking 4); UJI_REDIS_PORT menimpanya.
 PORT=${UJI_REDIS_PORT:-$((20000 + $$ % 20000))}
@@ -34,7 +37,7 @@ tunggu_siap() {
   done
 }
 
-$ENGINE run -d --name "$NAME" --label "shaal.issue=$ISSUE" --network host "$IMAGE" \
+$ENGINE run -d --name "$NAME" --label "arctiva.issue=$ISSUE" --network host "$IMAGE" \
   redis-server --port "$PORT" --bind 127.0.0.1 --save '' --appendonly no >/dev/null
 tunggu_siap
 

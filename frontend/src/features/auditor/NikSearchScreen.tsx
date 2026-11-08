@@ -271,7 +271,7 @@ export function NikSearchScreen({ client = api }: NikSearchScreenProps): ReactNo
       ) : null}
       {exportNotice === 'error' ? (
         <InlineAlert tone="error" live="assertive" heading={t('risk.common.action_failed')}>
-          {t('error.network.load')}
+          {t('error.network')}
         </InlineAlert>
       ) : null}
 

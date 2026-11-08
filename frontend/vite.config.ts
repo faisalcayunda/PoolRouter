@@ -15,6 +15,10 @@ import { cspPlugin } from './vite.csp';
  */
 export default defineConfig(({ mode }) => ({
   plugins: [react(), tailwindcss(), svgr({ include: '**/*.svg?react' }), cspPlugin()],
+  // Vite inlines assets under 4 KiB as `data:` URIs by default; some JetBrains Mono/Inter subset
+  // files fall below that, and `data:` violates `font-src 'self'` (AC-9). Disable inlining so every
+  // font ships as a real file the CSP allows.
+  build: { assetsInlineLimit: 0 },
   define: {
     // `import.meta.env` keys are substituted like `process.env`; Vite folds the resulting literal
     // into the bundle, so the production build has no `?peran=` read at all.

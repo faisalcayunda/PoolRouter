@@ -55,6 +55,50 @@ export default interface Resources {
         "title": "Audit akses"
       }
     },
+    "auth": {
+      "mfa": {
+        "code": {
+          "back_to_login": "Kembali ke login",
+          "field_label": "Kode authenticator",
+          "recovery_field_label": "Kode pemulihan",
+          "recovery_subtitle": "Pakai salah satu kode pemulihan 10 karakter yang Anda simpan saat mendaftar. Setiap kode hanya berlaku sekali.",
+          "recovery_title": "Masukkan kode pemulihan",
+          "submit": "Verifikasi",
+          "subtitle": "Halo, {{username}}. Masukkan kode dari aplikasi authenticator.",
+          "title": "Verifikasi dua langkah",
+          "use_recovery": "Pakai kode pemulihan",
+          "use_totp": "Pakai kode authenticator",
+          "verifying": "Memverifikasi…"
+        },
+        "qr": {
+          "account": "Akun: {{account}} · Penerbit: {{issuer}}",
+          "code_label": "Kode dari authenticator",
+          "confirm": "Konfirmasi",
+          "copied_setup": "Kunci setup disalin",
+          "copy_failed": "Gagal menyalin. Pilih teks secara manual.",
+          "manual_hint": "Tidak bisa memindai? Masukkan kunci setup.",
+          "qr_aria": "Kode QR pendaftaran PoolRouter untuk aplikasi authenticator. Bila tidak bisa memindai, pakai kunci setup di bawahnya.",
+          "step": "Langkah 2 dari 3",
+          "title": "Pindai kode QR"
+        },
+        "recovery": {
+          "acknowledge": "Sudah saya simpan",
+          "copied_all": "10 kode pemulihan disalin",
+          "copy_all": "Salin semua",
+          "copy_failed": "Gagal menyalin. Pilih teks secara manual.",
+          "list_aria": "{{count}} kode pemulihan",
+          "subtitle": "Simpan kode ini di tempat aman. Kode hanya ditampilkan sekali.",
+          "title": "Simpan kode pemulihan"
+        },
+        "registration": {
+          "field_label": "Kode pendaftaran",
+          "step": "Langkah 1 dari 3",
+          "submit": "Lanjut",
+          "subtitle": "Masukkan kode pendaftaran dari platform admin.",
+          "title": "Daftarkan authenticator"
+        }
+      }
+    },
     "client": {
       "col": {
         "actions": "Aksi",
@@ -101,7 +145,6 @@ export default interface Resources {
         "all": "Semua",
         "cancel": "Batal",
         "clear_filters": "Hapus filter",
-        "close": "Tutup",
         "copy": "Salin",
         "delete": "Hapus",
         "details": "Detail",
@@ -115,6 +158,7 @@ export default interface Resources {
       "app": {
         "name": "PoolRouter"
       },
+      "close": "Tutup",
       "date": {
         "format_error": "Tanggal belum sah. Tulis dengan format 03/11/2026.",
         "format_hint": "Format: 03/11/2026",
@@ -219,9 +263,9 @@ export default interface Resources {
           "title": "Anda tidak punya akses ke halaman ini"
         }
       },
-      "network": {
-        "load": "Data belum bisa dimuat. Periksa koneksi, lalu coba lagi."
-      }
+      "network": "Data belum bisa dimuat. Periksa koneksi, lalu coba lagi.",
+      "throttled_menit": "Terlalu banyak percobaan. Coba lagi dalam {{menit}} menit.",
+      "throttled_retry": "Terlalu banyak percobaan. Coba lagi nanti."
     },
     "export": {
       "error": {

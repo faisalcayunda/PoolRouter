@@ -2,6 +2,7 @@
 resolver = "3"
 members = [
     "crates/core",
+    "crates/adapter-provider",
     "crates/webserver",
     "crates/controller",
     "crates/worker",
@@ -33,6 +34,9 @@ tower = { version = "0.5.3", features = ["timeout", "limit"] }
 tower-http = { version = "0.7.1", features = ["trace", "timeout", "request-id", "limit", "sensitive-headers", "set-header"] }
 utoipa = { version = "6.0", features = ["axum_extras", "uuid", "chrono", "yaml"] }
 utoipa-axum = "0.3"
+# Dev-only: membaca `openapi/*.yaml` hasil generate di test. Sudah masuk lock
+# lewat utoipa, jadi tidak menambah crate baru.
+yaml_serde = "0.10"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
 # `application/x-www-form-urlencoded` in the token endpoint (SHAA-198).
@@ -50,6 +54,17 @@ redis = { version = "1.8", features = ["tokio-rustls-comp", "connection-manager"
 reqwest = { version = "0.13.5", default-features = false, features = ["rustls", "json", "http2"] }
 rustls = { version = "0.23.46", default-features = false, features = ["aws_lc_rs", "std", "tls12", "logging"] }
 rustls-pki-types = "1.15"
+# Archive format and object storage (ADR-0006 section 8 butir 3, ADR-0004 section 4.2).
+# `encryption` is deliberately off: DA10 seals `nik` and payload cells in the
+# application, so the column layout does not depend on the Parquet modular
+# encryption version the pinned `parquet` supports.
+parquet = { version = "60.1.0", default-features = false, features = ["arrow", "async", "zstd", "snap", "brotli", "lz4", "flate2-zlib-rs", "simdutf8"] }
+# No `prettyprint`: the archive module reads and writes columns only and never
+# prints a table, so the feature would only widen the graph.
+arrow = { version = "60.1.0", default-features = false }
+object_store = { version = "0.14.2", features = ["aws"] }
+bytes = "1.12"
+futures = "0.3"
 
 # 4.3 Queue (adapter queue-apalis only)
 apalis = { version = "1.0.0", default-features = false, features = ["tracing"] }
@@ -90,3 +105,4 @@ wiremock = "0.6.5"
 
 # Internal crates
 poolrouter-core = { path = "crates/core" }
+poolrouter-queue-apalis = { path = "crates/queue-apalis" }
