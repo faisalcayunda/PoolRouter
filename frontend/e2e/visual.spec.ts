@@ -94,6 +94,14 @@ async function stub(page: Page, logPage: unknown = LOG_PAGE) {
         headers,
       });
 
+    // Auth endpoints are stubbed globally.
+    if (url.includes('/auth/me')) {
+      return json({ username: 'test', peran: ['operator'] });
+    }
+    if (url.includes('/auth/sesi')) {
+      return json({ batas_idle_detik: 3600, batas_absolut_detik: 28800 });
+    }
+
     if (url.includes('/payload')) return json(PAYLOAD, { 'cache-control': 'no-store' });
     if (url.includes('/audit')) return json(AUDIT_PAGE);
     if (url.includes('/kuota')) return json(QUOTA);

@@ -55,6 +55,24 @@ async function stubS11(page: Page): Promise<Recorded[]> {
       body: request.postDataJSON?.() ?? null,
     });
 
+    // Auth endpoints are stubbed globally; let them through.
+    if (url.includes('/auth/me')) {
+      await route.fulfill({
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ username: 'test', peran: ['auditor'] }),
+      });
+      return;
+    }
+    if (url.includes('/auth/sesi')) {
+      await route.fulfill({
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ batas_idle_detik: 3600, batas_absolut_detik: 28800 }),
+      });
+      return;
+    }
+
     if (url.includes('/auditor/payload')) {
       await route.fulfill({
         status: 200,

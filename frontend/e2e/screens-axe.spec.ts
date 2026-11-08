@@ -78,6 +78,8 @@ async function stubScreens(page: Page): Promise<void> {
         body: JSON.stringify(body),
       });
 
+    // Auth endpoints are stubbed globally by fixtures; skip them here to avoid double-routing.
+    if (url.includes('/auth/')) return route.continue();
     if (url.includes('/audit-akses')) return json(AUDIT_PAGE);
     if (url.includes('/kuota')) return json(KUOTA);
     if (url.includes('/upstream-pools')) return json(UPSTREAM_POOLS);

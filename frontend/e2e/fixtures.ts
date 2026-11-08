@@ -23,6 +23,24 @@ declare global {
 }
 
 export const test = base.extend<{ cspViolations: CspViolation[] }>({
+  page: async ({ page }, use) => {
+    // Stub auth endpoints so e2e tests load the shell without a real backend.
+    await page.route('**/admin/v1/auth/me', (route) =>
+      route.fulfill({
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ username: 'test', peran: ['auditor'] }),
+      }),
+    );
+    await page.route('**/admin/v1/auth/sesi', (route) =>
+      route.fulfill({
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ batas_idle_detik: 3600, batas_absolut_detik: 28800 }),
+      }),
+    );
+    await use(page);
+  },
   cspViolations: async ({ page }, use) => {
     await page.addInitScript(() => {
       window.__cspViolations = [];
