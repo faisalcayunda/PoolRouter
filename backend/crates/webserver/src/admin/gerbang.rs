@@ -74,7 +74,7 @@ pub(super) async fn masuk(
             .copied()
             .or_else(|| diterima.first().copied())
             .unwrap_or(Peran::PlatformAdmin);
-        catat_penolakan(s, sesi, tercatat, operasi, &ip).await?;
+        catat_penolakan(s, sesi.clone(), tercatat, operasi, &ip).await?;
         tracing::debug!(
             pengguna_id = %sesi.pengguna_id,
             ditemukan = ?ditemukan,
