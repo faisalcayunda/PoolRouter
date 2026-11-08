@@ -61,6 +61,7 @@ jobs:
           OASDIFF_BASE_SOURCE: ${{ github.event_name == 'workflow_dispatch' && 'dispatch' || 'push.before' }}
         run: |
           set -o pipefail
+          git config --global --add safe.directory "$(pwd)"
           rc=0
           make -C backend openapi-check 2>&1 | tee openapi-check.log || rc=$?
           if [ "$rc" -ne 0 ]; then
