@@ -20,8 +20,10 @@
 
 mod item;
 mod konfigurasi;
+mod metrik;
 mod pemicu;
 mod pengirim;
+mod pengirim_handler;
 mod penyusun;
 
 pub use item::ItemDataBalikan;
@@ -30,9 +32,11 @@ pub use konfigurasi::{
     GalatDataBalikan, KIRIM_BATAS_PERCOBAAN_DEFAULT, KonfigurasiDataBalikan,
     PEMICU_JUMLAH_N_DEFAULT, Periode, TOLERANSI_DETIK_DEFAULT, UKURAN_BATCH_MAKS_DEFAULT,
 };
+pub use metrik::{BATCH_TOTAL, HasilBatch};
 pub use pemicu::{PemicuBatch, evaluasi_pemicu, jeda_batch, kebijakan_batch, zona_dari_nama};
 pub use pengirim::{
     BatchKeluar, HasilAck, HasilDiprogam, HasilKirimBatch, KelasGagal, PengirimDataBalikan,
     PengirimTiruan, RekamanKirim,
 };
-pub use penyusun::{jalankan_job_balikan, GalatPenyusun};
+pub use pengirim_handler::{BATAS_KLAIM_DETIK, GalatPengirim, jalankan_job_pengirim};
+pub use penyusun::{GalatPenyusun, jalankan_job_balikan};
