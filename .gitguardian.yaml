@@ -1,0 +1,15 @@
+# GitGuardian configuration (ADR-0001 §5, KD-1).
+# Ignore patterns for test fixtures and low-risk patterns.
+
+paths-to-ignore:
+  - "backend/crates/core/src/admin/mfa/totp.rs"  # TOTP test fixtures (no real secrets)
+  - "**/tests/**"  # Test files
+  - "**/*_test.rs"  # Rust test files
+
+# Policies
+policies:
+  - name: "ignore-test-fixtures"
+    matches:
+      - path: "backend/crates/core/src/admin/mfa/totp.rs"
+    status: IGNORED
+    reason: "Test fixtures only, no real secrets"
