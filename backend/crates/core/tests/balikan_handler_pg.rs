@@ -692,7 +692,10 @@ async fn ac31_panik_tengah_kirim_dipulihkan() {
             .unwrap();
     assert_eq!(status, "dikirim", "status tetap dikirim setelah crash");
     assert_eq!(attempt, 1, "attempt_count tercatat");
-    assert_eq!(ack_ref, None, "provider_ack_ref kosong (crash sebelum record)");
+    assert_eq!(
+        ack_ref, None,
+        "provider_ack_ref kosong (crash sebelum record)"
+    );
 
     // Pengiriman kedua: pulihkan dari sisa, verifikasi state berubah dan tidak ada dupe.
     let pengirim_recovery = PengirimTiruan::baru();
@@ -714,7 +717,11 @@ async fn ac31_panik_tengah_kirim_dipulihkan() {
             .unwrap();
     assert_eq!(status, "diterima", "sisa crash dipulihkan dan diterima");
     assert_eq!(attempt, 2, "attempt_count naik");
-    assert_eq!(pengirim_recovery.jumlah_kirim(batch_id), 1, "hanya satu kirim baru, tidak ada dupe");
+    assert_eq!(
+        pengirim_recovery.jumlah_kirim(batch_id),
+        1,
+        "hanya satu kirim baru, tidak ada dupe"
+    );
 }
 
 // AC-33 juga memakai provider nonaktif: tidak ada konfigurasi → putaran diam.
