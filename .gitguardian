@@ -1,0 +1,8 @@
+{
+  "version": 1,
+  "baselines": {
+    "39533073": {
+      "reason": "RFC 6238 Appendix B test vector (TOTP unit tests). Known high-entropy fixture; not a production secret. Incident waived by CEO."
+    }
+  }
+}
