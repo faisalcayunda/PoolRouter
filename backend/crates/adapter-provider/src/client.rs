@@ -195,8 +195,8 @@ pub fn build_provider_client_with_config(
 
 fn builder(
     provider: Arc<dyn rustls::crypto::CryptoProvider>,
-) -> Result<rustls::ConfigBuilder<ClientConfig, rustls::WantsVerifier>, GalatKlien> {
-    ClientConfig::builder_with_provider(provider)
+) -> Result<rustls::ConfigBuilder<rustls::ClientConfig, rustls::WantsVerifier>, GalatKlien> {
+    rustls::ClientConfig::builder_with_provider(provider)
         .with_safe_default_protocol_versions()
         .map_err(|e| GalatKlien::Config(e.to_string()))
 }
