@@ -137,7 +137,7 @@ BEGIN
       'credential_id', '11000000-0000-7000-8000-000000000001', 'downstream_endpoint_id', '50000000-0000-7000-8000-000000000001',
       'downstream_pool_id', '40000000-0000-7000-8000-000000000001', 'provider_id', '20000000-0000-7000-8000-000000000001',
       'provider_config_version', 1, 'endpoint_config_version', 1, 'mode', 'async', 'prioritas', 1, 'prioritas_efektif', 1, 'status', 'queued',
-      'metadata', '{}'::jsonb, 'received_at', now(), 'ttl_expires_at', now() + interval '1 day', 'attempt_count', 0, 'webhook_attempt_count', 0))).*;
+      'metadata', '{}'::jsonb, 'received_at', now(), 'ttl_expires_at', now() + interval '1 day', 'attempt_count', 0, 'webhook_attempt_count', 0, 'data_balikan_tersusun', false))).*;
     SET CONSTRAINTS request_history_wajib IMMEDIATE;
     RAISE EXCEPTION 'FAIL: request without history row accepted (T-04)';
   EXCEPTION WHEN integrity_constraint_violation THEN
