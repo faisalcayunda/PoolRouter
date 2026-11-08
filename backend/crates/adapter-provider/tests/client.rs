@@ -9,7 +9,7 @@ use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 
 use poolrouter_adapter_provider::client::{
-    Allowlist, BATAS_CONNECT, BATAS_TOTAL, ProviderClientConfig, GalatKlien, TlsTrust,
+    Allowlist, BATAS_CONNECT, BATAS_TOTAL, GalatKlien, ProviderClientConfig, TlsTrust,
     build_provider_client, build_provider_client_with_config,
 };
 use rcgen::{BasicConstraints, CertificateParams, DnType, IsCa, KeyPair};
