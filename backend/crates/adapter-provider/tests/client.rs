@@ -271,6 +271,8 @@ async fn pin_salah_nol_byte_data_aplikasi() {
 /// Custom verifier: cert accepted (simulate pin match), signature always rejected (key mismatch).
 #[derive(Debug)]
 struct MismatchKeyVerifier {
+    // Hanya didokumentasikan di test caller; verifier ini selalu reject signature.
+    #[allow(dead_code)]
     pin_cocok: [u8; 32],
 }
 

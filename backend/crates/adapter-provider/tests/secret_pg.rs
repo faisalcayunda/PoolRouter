@@ -9,13 +9,15 @@ use poolrouter_core::admin::NilaiAman;
 use poolrouter_core::secret::{Amplop, Brankas};
 use sqlx::PgPool;
 
+type BarisSecret = (Vec<u8>, Vec<u8>, Vec<u8>, String);
+
 /// Resolve a provider secret from `provider_secret` table and decrypt it.
 async fn ambil_secret(
     pool: &PgPool,
     nama: &str,
     brankas: &Brankas,
 ) -> Result<NilaiAman<String>, String> {
-    let baris: Option<(Vec<u8>, Vec<u8>, Vec<u8>, String)> = sqlx::query_as(
+    let baris: Option<BarisSecret> = sqlx::query_as(
         "SELECT secret_ciphertext, secret_dek_terbungkus, secret_nonce, kek_id FROM provider_secret WHERE nama_secret = $1",
     )
     .bind(nama)
@@ -93,7 +95,7 @@ async fn nilai_tidak_bocor_ke_debug() {
         .enkripsi("test", &NilaiAman::baru(nilai.to_owned()))
         .expect("enkripsi");
 
-    let debug_str = format!("{:?}", &amplop);
+    let debug_str = format!("{amplop:?}");
     // Amplop debug should not contain plaintext value
     assert!(!debug_str.contains(nilai), "secret bocor ke Debug amplop");
 }
@@ -107,7 +109,7 @@ async fn nilai_tidak_bocor_ke_debug_ciphertext() {
         .enkripsi("api", &NilaiAman::baru(nilai.to_owned()))
         .expect("enkripsi");
 
-    let debug_str = format!("{:?}", &amplop.ciphertext);
+    let debug_str = format!("{:?}", amplop.ciphertext);
     // Ciphertext should be binary, not plaintext
     assert!(
         !debug_str.contains("secret_api_key"),
