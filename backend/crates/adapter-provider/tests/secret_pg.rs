@@ -23,7 +23,8 @@ async fn ambil_secret(
     .await
     .map_err(|e| format!("database error: {e}"))?;
 
-    let (ciphertext, dek_terbungkus, nonce_bytes, kek_id) = baris.ok_or("secret tidak ditemukan")?;
+    let (ciphertext, dek_terbungkus, nonce_bytes, kek_id) =
+        baris.ok_or("secret tidak ditemukan")?;
 
     let mut nonce = [0u8; 12];
     if nonce_bytes.len() != 12 {
@@ -51,7 +52,8 @@ async fn ambil_secret_berhasil() {
     // Insert test secret
     let nama = "test_secret";
     let nilai = "dukcapil_api_key_sintetis_12345";
-    let amplop = brankas.enkripsi(nama, &NilaiAman::baru(nilai.to_owned()))
+    let amplop = brankas
+        .enkripsi(nama, &NilaiAman::baru(nilai.to_owned()))
         .expect("enkripsi");
 
     sqlx::query(
@@ -87,7 +89,8 @@ async fn ambil_secret_tidak_ada() {
 async fn nilai_tidak_bocor_ke_debug() {
     let brankas = test_brankas();
     let nilai = "secret_credential_sensitif";
-    let amplop = brankas.enkripsi("test", &NilaiAman::baru(nilai.to_owned()))
+    let amplop = brankas
+        .enkripsi("test", &NilaiAman::baru(nilai.to_owned()))
         .expect("enkripsi");
 
     let debug_str = format!("{:?}", &amplop);
@@ -100,12 +103,16 @@ async fn nilai_tidak_bocor_ke_debug() {
 async fn nilai_tidak_bocor_ke_debug_ciphertext() {
     let brankas = test_brankas();
     let nilai = "secret_api_key";
-    let amplop = brankas.enkripsi("api", &NilaiAman::baru(nilai.to_owned()))
+    let amplop = brankas
+        .enkripsi("api", &NilaiAman::baru(nilai.to_owned()))
         .expect("enkripsi");
 
     let debug_str = format!("{:?}", &amplop.ciphertext);
     // Ciphertext should be binary, not plaintext
-    assert!(!debug_str.contains("secret_api_key"), "plaintext bocor ke Debug");
+    assert!(
+        !debug_str.contains("secret_api_key"),
+        "plaintext bocor ke Debug"
+    );
 }
 
 fn test_brankas() -> Brankas {
