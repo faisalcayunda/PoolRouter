@@ -16,3 +16,8 @@ poolrouter-core = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
+reqwest = { workspace = true, features = ["json"] }
+rustls = { workspace = true }
+rustls-native-certs = "0.8"
+x509-parser = "0.17"
+sha2 = "=0.10.9"
