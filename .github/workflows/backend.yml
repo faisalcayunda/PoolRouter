@@ -17,6 +17,13 @@ on:
       - "backend/**"
       - ".github/workflows/backend.yml"
       - "Makefile"
+  # Gate yang sama untuk setiap PR backend (ARC-193): tanpa ini PR hanya dapat check GitGuardian.
+  pull_request:
+    branches: [main]
+    paths:
+      - "backend/**"
+      - ".github/workflows/backend.yml"
+      - "Makefile"
   workflow_dispatch:
 
 permissions:
