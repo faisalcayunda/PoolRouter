@@ -42,6 +42,9 @@ const TIMEOUT_AKUISISI: Duration = Duration::from_secs(5);
 #[tokio::main]
 async fn main() -> std::process::ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
+    if args.first().map(String::as_str) == Some("healthcheck") {
+        return poolrouter_core::runtime::healthcheck().await;
+    }
     if args.iter().any(|a| a == "--check") {
         return poolrouter_core::runtime::start("controller", Component::Controller, &args).await;
     }
@@ -54,6 +57,18 @@ async fn main() -> std::process::ExitCode {
             return std::process::ExitCode::from(2);
         }
     };
+
+    let readiness = match poolrouter_core::runtime::DependencyReadiness::from_config(
+        Component::Controller,
+        &cfg,
+    ) {
+        Ok(readiness) => readiness,
+        Err(err) => {
+            tracing::error!(component = "controller", error = %err, "readiness setup failed");
+            return std::process::ExitCode::from(2);
+        }
+    };
+    poolrouter_core::runtime::spawn_ready_server(std::sync::Arc::new(readiness));
 
     match jalankan(&cfg).await {
         Ok(()) => std::process::ExitCode::SUCCESS,
