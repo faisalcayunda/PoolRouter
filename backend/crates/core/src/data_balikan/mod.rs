@@ -35,4 +35,4 @@ pub use pengirim::{
     BatchKeluar, HasilAck, HasilDiprogam, HasilKirimBatch, KelasGagal, PengirimDataBalikan,
     PengirimTiruan, RekamanKirim,
 };
-pub use penyusun::{jalankan_job_balikan, GalatPenyusun};
+pub use penyusun::{GalatPenyusun, jalankan_job_balikan};

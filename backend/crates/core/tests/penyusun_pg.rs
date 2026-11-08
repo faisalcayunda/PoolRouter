@@ -6,9 +6,7 @@
 //! Run by `make -C backend uji-pg`; `#[ignore]` because test needs
 //! `POOLROUTER_TEST_DATABASE_URL_WORKER`.
 
-use poolrouter_core::data_balikan::{
-    jalankan_job_balikan, HasilDiprogam, PengirimTiruan,
-};
+use poolrouter_core::data_balikan::{HasilDiprogam, PengirimTiruan, jalankan_job_balikan};
 use sqlx::postgres::PgPoolOptions;
 use uuid::Uuid;
 
@@ -35,11 +33,12 @@ async fn ac24_susun_dan_kirim_batch() {
     let sekarang = chrono::Utc::now();
 
     // Query provider eligible (dari fixture atau test setup).
-    let provider_ada: bool = sqlx::query_scalar("SELECT COUNT(*) > 0 FROM provider WHERE provider_id = $1")
-        .bind(provider_id)
-        .fetch_one(&db)
-        .await
-        .expect("check provider");
+    let provider_ada: bool =
+        sqlx::query_scalar("SELECT COUNT(*) > 0 FROM provider WHERE provider_id = $1")
+            .bind(provider_id)
+            .fetch_one(&db)
+            .await
+            .expect("check provider");
 
     if !provider_ada {
         eprintln!("Provider {provider_id} tidak ada di fixture; skip test");
@@ -48,7 +47,7 @@ async fn ac24_susun_dan_kirim_batch() {
 
     // Ambil item dari fixture.
     let item_awal: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM data_balikan_item WHERE provider_id = $1 AND batch_id IS NULL"
+        "SELECT COUNT(*) FROM data_balikan_item WHERE provider_id = $1 AND batch_id IS NULL",
     )
     .bind(provider_id)
     .fetch_one(&db)
@@ -64,25 +63,27 @@ async fn ac24_susun_dan_kirim_batch() {
     assert!(hasil.is_ok(), "handler gagal: {hasil:?}");
 
     // Verifikasi: batch dibuat, item diassign.
-    let batch_count: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM data_balikan_batch WHERE provider_id = $1"
-    )
-    .bind(provider_id)
-    .fetch_one(&db)
-    .await
-    .expect("count batch");
+    let batch_count: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM data_balikan_batch WHERE provider_id = $1")
+            .bind(provider_id)
+            .fetch_one(&db)
+            .await
+            .expect("count batch");
 
     assert!(batch_count > 0, "batch harus dibuat");
 
     let item_terassign: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM data_balikan_item WHERE provider_id = $1 AND batch_id IS NOT NULL"
+        "SELECT COUNT(*) FROM data_balikan_item WHERE provider_id = $1 AND batch_id IS NOT NULL",
     )
     .bind(provider_id)
     .fetch_one(&db)
     .await
     .expect("count assigned item");
 
-    assert_eq!(item_terassign as i64, item_awal, "semua item harus terassign");
+    assert_eq!(
+        item_terassign as i64, item_awal,
+        "semua item harus terassign"
+    );
 }
 
 // AC-25: idempotensi — retry dengan batch sama tidak duplikat.
@@ -94,25 +95,23 @@ async fn ac25_idempotensi_batch_sama() {
     let pengirim = PengirimTiruan::baru();
     let sekarang = chrono::Utc::now();
 
-    let batch_awal: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM data_balikan_batch WHERE provider_id = $1"
-    )
-    .bind(provider_id)
-    .fetch_one(&db)
-    .await
-    .expect("count batch");
+    let batch_awal: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM data_balikan_batch WHERE provider_id = $1")
+            .bind(provider_id)
+            .fetch_one(&db)
+            .await
+            .expect("count batch");
 
     // Jalankan dua kali.
     let _ = jalankan_job_balikan(&db, provider_id, &pengirim, sekarang).await;
     let _ = jalankan_job_balikan(&db, provider_id, &pengirim, sekarang).await;
 
-    let batch_akhir: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM data_balikan_batch WHERE provider_id = $1"
-    )
-    .bind(provider_id)
-    .fetch_one(&db)
-    .await
-    .expect("count batch");
+    let batch_akhir: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM data_balikan_batch WHERE provider_id = $1")
+            .bind(provider_id)
+            .fetch_one(&db)
+            .await
+            .expect("count batch");
 
     assert_eq!(
         batch_akhir - batch_awal,
@@ -145,13 +144,12 @@ async fn ac27_concurrency_safety() {
 
     // Satu berhasil, satu mungkin TidakAdaItem (karena item sudah terassign).
     // Penting: tidak ada duplikat batch.
-    let batch_count: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM data_balikan_batch WHERE provider_id = $1"
-    )
-    .bind(provider_id)
-    .fetch_one(&db)
-    .await
-    .expect("count batch");
+    let batch_count: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM data_balikan_batch WHERE provider_id = $1")
+            .bind(provider_id)
+            .fetch_one(&db)
+            .await
+            .expect("count batch");
 
     // Kedua handler tidak membuat lebih dari 2 batch (best case: 1, worst case tanpa fix: 2 = race).
     // Dengan UPDATE atomik, hanya 1 batch boleh dibuat.
@@ -173,7 +171,10 @@ async fn ac28_pengirim_gagal_tercatat() {
     let sekarang = chrono::Utc::now();
 
     let hasil = jalankan_job_balikan(&db, provider_id, &pengirim, sekarang).await;
-    assert!(hasil.is_ok(), "error pengirim harus ditangani (tidak panic)");
+    assert!(
+        hasil.is_ok(),
+        "error pengirim harus ditangani (tidak panic)"
+    );
 
     // Batch tetap tersimpan dengan status gagal.
     let batch_status: Option<String> = sqlx::query_scalar(
@@ -186,7 +187,8 @@ async fn ac28_pengirim_gagal_tercatat() {
     .flatten();
 
     assert_eq!(
-        batch_status, Some("gagal".to_owned()),
+        batch_status,
+        Some("gagal".to_owned()),
         "batch harus tercatat meski pengirim gagal"
     );
 }

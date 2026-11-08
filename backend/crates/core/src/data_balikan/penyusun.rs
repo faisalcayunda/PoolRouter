@@ -61,19 +61,16 @@ pub async fn jalankan_job_balikan<P: PengirimDataBalikan>(
     sekarang: DateTime<Utc>,
 ) -> Result<(), GalatPenyusun> {
     // Baca konfigurasi.
-    let konfigurasi: KonfigurasiDataBalikan = sqlx::query_scalar(
-        "SELECT konfigurasi FROM provider WHERE provider_id = $1",
-    )
-    .bind(provider_id)
-    .fetch_optional(pool)
-    .await
-    .map_err(|e| GalatPenyusun::Database(e.to_string()))?
-    .and_then(|v: Option<serde_json::Value>| {
-        v.and_then(|cfg| {
-            KonfigurasiDataBalikan::parse(2, &cfg).ok()
-        })
-    })
-    .ok_or(GalatPenyusun::KonfigTidakAda)?;
+    let konfigurasi: KonfigurasiDataBalikan =
+        sqlx::query_scalar("SELECT konfigurasi FROM provider WHERE provider_id = $1")
+            .bind(provider_id)
+            .fetch_optional(pool)
+            .await
+            .map_err(|e| GalatPenyusun::Database(e.to_string()))?
+            .and_then(|v: Option<serde_json::Value>| {
+                v.and_then(|cfg| KonfigurasiDataBalikan::parse(2, &cfg).ok())
+            })
+            .ok_or(GalatPenyusun::KonfigTidakAda)?;
 
     // shortcut: AC-26 mengizinkan lewat batch kosong, tapi implementasi awal
     // tidak buat batch jika tidak ada item. Upgrade: D06 tentukan apakah batch
@@ -118,14 +115,12 @@ pub async fn jalankan_job_balikan<P: PengirimDataBalikan>(
     .await
     .map_err(|e| GalatPenyusun::Database(e.to_string()))?;
 
-    sqlx::query(
-        "UPDATE data_balikan_item SET batch_id = $1 WHERE request_id = ANY($2)"
-    )
-    .bind(batch_id)
-    .bind(&item_ids)
-    .execute(&mut *tx)
-    .await
-    .map_err(|e| GalatPenyusun::Database(e.to_string()))?;
+    sqlx::query("UPDATE data_balikan_item SET batch_id = $1 WHERE request_id = ANY($2)")
+        .bind(batch_id)
+        .bind(&item_ids)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| GalatPenyusun::Database(e.to_string()))?;
 
     tx.commit()
         .await
@@ -159,8 +154,8 @@ pub async fn jalankan_job_balikan<P: PengirimDataBalikan>(
         })
         .collect();
     let body_json = serde_json::json!({ "item": item_obyek });
-    let body_bytes = serde_json::to_vec(&body_json)
-        .map_err(|e| GalatPenyusun::KirimGagal(e.to_string()))?;
+    let body_bytes =
+        serde_json::to_vec(&body_json).map_err(|e| GalatPenyusun::KirimGagal(e.to_string()))?;
 
     // Kirim via port.
     let batch = BatchKeluar {
@@ -319,13 +314,12 @@ mod uji {
         let _ = jalankan_job_balikan(&db, provider_id, &pengirim, sekarang).await;
 
         // Verifikasi batch tetap satu (tidak duplikat).
-        let batch_count: i64 = sqlx::query_scalar(
-            "SELECT COUNT(*) FROM data_balikan_batch WHERE provider_id = $1"
-        )
-        .bind(provider_id)
-        .fetch_one(&db)
-        .await
-        .expect("query batch");
+        let batch_count: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM data_balikan_batch WHERE provider_id = $1")
+                .bind(provider_id)
+                .fetch_one(&db)
+                .await
+                .expect("query batch");
 
         assert_eq!(batch_count, 1, "batch tidak boleh duplikat");
     }
@@ -344,10 +338,13 @@ mod uji {
         let hasil = jalankan_job_balikan(&db, provider_id, &pengirim, sekarang).await;
 
         // Error dari pengirim, tapi batch tetap tersimpan dengan status gagal.
-        assert!(hasil.is_ok(), "error pengirim tidak boleh fatal untuk handler");
+        assert!(
+            hasil.is_ok(),
+            "error pengirim tidak boleh fatal untuk handler"
+        );
 
         let batch_status: Option<String> = sqlx::query_scalar(
-            "SELECT status FROM data_balikan_batch WHERE provider_id = $1 LIMIT 1"
+            "SELECT status FROM data_balikan_batch WHERE provider_id = $1 LIMIT 1",
         )
         .bind(provider_id)
         .fetch_optional(&db)
@@ -356,7 +353,8 @@ mod uji {
         .flatten();
 
         assert_eq!(
-            batch_status, Some("gagal".to_owned()),
+            batch_status,
+            Some("gagal".to_owned()),
             "batch harus tercatat dengan status gagal"
         );
     }
