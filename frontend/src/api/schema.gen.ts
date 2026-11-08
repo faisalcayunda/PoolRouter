@@ -1590,10 +1590,14 @@ export interface components {
             body_template: string;
             /**
              * Format: int64
-             * @description Fixed 1 in F0; any other value is 422.
-             * @example 1
+             * @description 1 for F0 (no data_balikan), 2 for F1+ with data_balikan block.
+             * @example 2
              */
             config_schema_version: number;
+            /**
+             * @description Data return block for schema version 2 (F1+); omitted for version 1.
+             */
+            data_balikan?: components["schemas"]["KonfigurasiDataBalikan"];
             /** @example ringkas */
             log_mode: string;
             /** @description Provider parameters plus their validation rules. */
@@ -1611,6 +1615,85 @@ export interface components {
          *     menyediakan rule kustom; nilai di luar enum ini ditolak 422.
          * @enum {string}
          */
+        /**
+         * @description Data return (webhook delivery) configuration for schema version 2.
+         */
+        KonfigurasiDataBalikan: {
+            /**
+             * Format: int32
+             * @description Exponential backoff base duration in seconds.
+             * @example 1
+             */
+            backoff_base_detik?: number;
+            /**
+             * Format: int32
+             * @description Exponential backoff cap duration in seconds.
+             * @example 600
+             */
+            backoff_cap_detik?: number;
+            /**
+             * @description Webhook endpoint URL (https) where delivery attempts are sent.
+             * @example https://bgn.go.id/webhook/data-balikan
+             */
+            endpoint: string;
+            /**
+             * @description Data format version string for compatibility.
+             * @example 1.0
+             */
+            format_version?: string;
+            /**
+             * Format: int32
+             * @description Maximum number of delivery attempts.
+             * @example 5
+             */
+            kirim_batas_percobaan?: number;
+            /**
+             * Format: int32
+             * @description Trigger threshold; batch is sent after N items.
+             * @example 100
+             */
+            pemicu_jumlah_n?: number;
+            /** @description Scheduled batch interval. */
+            periode?: components["schemas"]["PeriodeDataBalikan"];
+            /**
+             * @description Reference to a secret (form: {{secret.X}}) for webhook authentication.
+             *     The actual secret value is resolved by the worker (AC-21).
+             * @example {{secret.WEBHOOK_AUTH_TOKEN}}
+             */
+            rujukan_secret: string;
+            /**
+             * Format: int32
+             * @description Tolerance window in seconds before timeout.
+             * @example 30
+             */
+            toleransi_detik?: number;
+            /**
+             * Format: int32
+             * @description Maximum number of items per batch.
+             * @example 1000
+             */
+            ukuran_batch_maks?: number;
+        };
+        /**
+         * @description Scheduled batch period for data delivery.
+         */
+        PeriodeDataBalikan: {
+            /**
+             * @description Send time as [hour, minute] in 24-hour format.
+             * @example [0,0]
+             */
+            jam_kirim?: number[];
+            /**
+             * @description Period type (currently only daily).
+             * @enum {string}
+             */
+            jenis?: "harian";
+            /**
+             * @description IANA timezone identifier.
+             * @example Asia/Jakarta
+             */
+            zona?: string;
+        };
         RuleJenis: "regex" | "enum" | "panjang" | "format_tanggal";
         /**
          * @description Validation rule for a provider parameter (BRD US-03; closed `jenis`). Also
