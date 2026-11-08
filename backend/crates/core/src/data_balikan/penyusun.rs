@@ -55,7 +55,7 @@ impl std::error::Error for GalatPenyusun {}
 pub async fn jalankan_job_balikan(
     pool: &PgPool,
     provider_id: Uuid,
-    pengirim: &impl PengirimDataBalikan,
+    pengirim: std::sync::Arc<dyn PengirimDataBalikan>,
     sekarang: DateTime<Utc>,
 ) -> Result<(), GalatPenyusun> {
     // Baca konfigurasi.
@@ -163,7 +163,10 @@ pub async fn jalankan_job_balikan(
     };
 
     let body_stream = futures::stream::iter(vec![bytes::Bytes::from(body_bytes)]);
-    let hasil = pengirim.kirim(batch, body_stream).await;
+    let hasil = pengirim
+        .clone()
+        .kirim(batch, Box::new(body_stream))
+        .await;
 
     // Catat hasil di batch.
     match hasil {
