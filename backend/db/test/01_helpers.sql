@@ -44,7 +44,8 @@ DECLARE
     'downstream_pool_id', '40000000-0000-7000-8000-000000000001', 'provider_id', '20000000-0000-7000-8000-000000000001',
     'provider_config_version', 1, 'endpoint_config_version', 1, 'mode', 'async', 'prioritas', 1, 'prioritas_efektif', 1,
     'status', 'queued', 'metadata', '{}'::jsonb, 'received_at', now(), 'ttl_expires_at', now() + interval '1 day',
-    'attempt_count', 0, 'webhook_attempt_count', 0, 'dispatch_key', gen_random_uuid());
+    'attempt_count', 0, 'webhook_attempt_count', 0, 'dispatch_key', gen_random_uuid(),
+    'data_balikan_tersusun', false);
   rec request;
 BEGIN
   rec := jsonb_populate_record(NULL::request, base || p);
