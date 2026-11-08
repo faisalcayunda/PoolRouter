@@ -801,3 +801,161 @@ async fn base_url_bukan_https_422() {
     );
     u.bersihkan_secret().await;
 }
+
+// AC-20: config_schema_version 1 and 2 support in createProviderConfigVersion
+// (ARC-121 R7 T4)
+
+#[tokio::test]
+#[ignore]
+async fn create_provider_config_schema_v1_unchanged() {
+    // Schema 1 still works; no data_balikan required
+    let u = siapkan().await;
+    let (uid, pa) = u.pengguna(&["platform_admin"]).await;
+    let s = nama_unik("SECRET");
+    u.secret(&s, uid).await;
+    let nama = nama_unik("provider_v1");
+
+    let mut b = body(&nama, &s, &["NAMA_LGKP"]);
+    b["config_schema_version"] = Value::Number(1.into());
+
+    let (st, _, res) = u
+        .kirim(Method::POST, PROVIDERS, Some(&pa), Some(b))
+        .await;
+    assert_eq!(st, StatusCode::CREATED, "{res}");
+    assert_eq!(res["config_schema_version"], 1);
+    u.bersihkan_secret().await;
+}
+
+#[tokio::test]
+#[ignore]
+async fn create_provider_config_schema_v2_valid_data_balikan() {
+    // AC-20: schema 2 with valid data_balikan block → 201
+    let u = siapkan().await;
+    let (uid, pa) = u.pengguna(&["platform_admin"]).await;
+    let s = nama_unik("SECRET");
+    u.secret(&s, uid).await;
+    let nama = nama_unik("provider_v2");
+
+    let mut b = body(&nama, &s, &["NAMA_LGKP"]);
+    b["config_schema_version"] = Value::Number(2.into());
+    // AC-15: valid data_balikan (aktif, pemicu, delay_menit, format, endpoint)
+    b["data_balikan"] = serde_json::json!({
+        "aktif": true,
+        "pemicu": "berhasil",
+        "delay_menit": 0,
+        "format": "json",
+        "endpoint": "{{endpoint.BALIKAN_ENDPOINT}}"
+    });
+
+    let (st, _, res) = u
+        .kirim(Method::POST, PROVIDERS, Some(&pa), Some(b))
+        .await;
+    assert_eq!(st, StatusCode::CREATED, "{res}");
+    assert_eq!(res["config_schema_version"], 2);
+    assert_eq!(res["provider_config_version"], 1);
+    u.bersihkan_secret().await;
+}
+
+#[tokio::test]
+#[ignore]
+async fn create_provider_config_schema_v2_invalid_data_balikan_422() {
+    // AC-20: schema 2 with invalid data_balikan → 422 with field pointer
+    let u = siapkan().await;
+    let (uid, pa) = u.pengguna(&["platform_admin"]).await;
+    let s = nama_unik("SECRET");
+    u.secret(&s, uid).await;
+    let nama = nama_unik("provider_v2_bad");
+
+    let mut b = body(&nama, &s, &["NAMA_LGKP"]);
+    b["config_schema_version"] = Value::Number(2.into());
+    // Missing required "aktif" field
+    b["data_balikan"] = serde_json::json!({
+        "pemicu": "berhasil",
+        "delay_menit": 0,
+    });
+
+    let (st, _, prob) = u
+        .kirim(Method::POST, PROVIDERS, Some(&pa), Some(b))
+        .await;
+    assert_eq!(st, StatusCode::UNPROCESSABLE_ENTITY, "{prob}");
+    assert!(
+        prob["errors"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|e| e["field"]
+                .as_str()
+                .unwrap_or("")
+                .contains("data_balikan")),
+        "field pointer in errors: {prob}"
+    );
+    u.bersihkan_secret().await;
+}
+
+#[tokio::test]
+#[ignore]
+async fn update_provider_v1_to_v2_with_data_balikan() {
+    // Update v1 provider to v2 with data_balikan; verify v1 immutable (V-03)
+    let u = siapkan().await;
+    let (uid, pa) = u.pengguna(&["platform_admin"]).await;
+    let s = nama_unik("SECRET");
+    u.secret(&s, uid).await;
+    let nama = nama_unik("provider_update_v2");
+
+    // Create v1
+    let (st, _, b) = u
+        .kirim(Method::POST, PROVIDERS, Some(&pa), Some(body(&nama, &s, &["NAMA_LGKP"])))
+        .await;
+    assert_eq!(st, StatusCode::CREATED);
+    let provider_id = b["provider_id"].as_str().unwrap().to_owned();
+    let v1_versi = b["provider_config_version"].as_i64().unwrap();
+
+    // Update to v2
+    let mut b_v2 = body(&nama, &s, &["NAMA_LGKP"]);
+    b_v2["config_schema_version"] = Value::Number(2.into());
+    b_v2["data_balikan"] = serde_json::json!({
+        "aktif": true,
+        "pemicu": "berhasil",
+        "delay_menit": 0,
+        "format": "json",
+        "endpoint": "{{endpoint.BALIKAN_ENDPOINT}}"
+    });
+
+    let (st, _, b_after) = u
+        .kirim(
+            Method::PUT,
+            &format!("{PROVIDERS}/{provider_id}"),
+            Some(&pa),
+            Some(serde_json::json!({
+                "alasan": "add data_balikan",
+                "nama": b_v2["nama"],
+                "metode": b_v2["metode"],
+                "base_url": b_v2["base_url"],
+                "body_template": b_v2["body_template"],
+                "parameters": b_v2["parameters"],
+                "respons_skema": b_v2["respons_skema"],
+                "tls_trust": b_v2["tls_trust"],
+                "log_mode": b_v2["log_mode"],
+                "config_schema_version": 2,
+                "data_balikan": b_v2["data_balikan"]
+            })),
+        )
+        .await;
+    assert_eq!(st, StatusCode::OK, "{b_after}");
+    let v2_versi = b_after["provider_config_version"].as_i64().unwrap();
+    assert!(v2_versi > v1_versi);
+    assert_eq!(b_after["config_schema_version"], 2);
+
+    // Verify v1 byte-identical, no data_balikan (V-03)
+    let v1_doc: String = sqlx::query_scalar(
+        "SELECT dokumen FROM provider_config_versi \
+         WHERE provider_id = $1 AND versi = 1",
+    )
+    .bind(Uuid::parse_str(&provider_id).unwrap())
+    .fetch_one(&u.su)
+    .await
+    .unwrap();
+    assert!(!v1_doc.contains("data_balikan"), "v1 immutable: {v1_doc}");
+
+    u.bersihkan_secret().await;
+}
