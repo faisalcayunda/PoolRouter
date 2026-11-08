@@ -43,7 +43,7 @@ export function SesiDialogs({ sesi }: { sesi: SesiState }) {
         isOpen={sesi.fase === 'peringatan_idle'}
         title={t('sesi.idle_dialog.title')}
         description={t('sesi.idle_dialog.body', { jam: 0.5, detik: sesi.detikIdle })}
-        closeLabel={t('common.action.close')}
+        closeLabel={t('common.close')}
         footer={
           <>
             <Button isDisabled={mengirim} onPress={() => void perpanjang()}>
@@ -67,7 +67,7 @@ export function SesiDialogs({ sesi }: { sesi: SesiState }) {
         isOpen={sesi.fase === 'peringatan_absolut' && !absolutDibaca}
         title={t('sesi.absolute_dialog.title')}
         description={t('sesi.absolute_dialog.body', { waktu: absolutJam })}
-        closeLabel={t('common.action.close')}
+        closeLabel={t('common.close')}
         onOpenChange={(open) => {
           if (!open) setDibacaUntuk(sesi.sesi?.absolut_berakhir_pada ?? null);
         }}
@@ -90,7 +90,7 @@ export function SesiDialogs({ sesi }: { sesi: SesiState }) {
 
       <Snackbar
         queue={queue}
-        closeLabel={t('common.action.close')}
+        closeLabel={t('common.close')}
         renderContent={(toast) => <span>{toast.message}</span>}
       />
     </>
