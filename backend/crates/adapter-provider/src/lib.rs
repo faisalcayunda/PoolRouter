@@ -8,7 +8,9 @@
 //! - [`respons`]: read a provider response, delegating the `status_skor`
 //!   rules to the pilot parser in `poolrouter_core` (D3, ARC-46).
 //! - [`error`]: map a failed call onto the shared `retry.rs` table (ARC-4).
+//! - [`client`]: build and configure HTTP clients per provider trust mode (ADR-0004 section 4.2).
 
+pub mod client;
 pub mod error;
 pub mod respons;
 pub mod template;
