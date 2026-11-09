@@ -57,11 +57,11 @@ mod tests {
     use super::*;
     use crate::render::{KonfigurasiRespons, baca_respons_skema};
     use crate::upstream::ResponsMentah;
-    use poolrouter_adapter_provider::GagalPanggilProvider;
-    use std::collections::BTreeMap;
     use chrono::{Duration, TimeZone};
+    use poolrouter_adapter_provider::GagalPanggilProvider;
     use poolrouter_core::retry::AcakBatasAtas;
     use serde_json::json;
+    use std::collections::BTreeMap;
 
     fn konf() -> KonfigurasiRespons {
         baca_respons_skema(&json!({

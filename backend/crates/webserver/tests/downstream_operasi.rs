@@ -25,6 +25,7 @@ use tower::ServiceExt;
 use tracing_subscriber::fmt::MakeWriter;
 use uuid::Uuid;
 
+use poolrouter_adapter_provider::dokumen::DokumenProvider;
 use poolrouter_webserver::api::downstream::HasilElemen;
 use poolrouter_webserver::api::downstream_sesi::{
     DownstreamState, KunciIdempoten, OperasiDownstream, TUNGGU_TOKEN_SYNC, router,
@@ -32,21 +33,20 @@ use poolrouter_webserver::api::downstream_sesi::{
 use poolrouter_webserver::api::enums::{JenisObjek, StatusHasil};
 use poolrouter_webserver::downstream::downstream_sesi::SesiKlien;
 use poolrouter_webserver::downstream::downstream_sesi::fake::FakeSession;
+use poolrouter_webserver::downstream::downstream_sesi::{Fut as DFut, GalatDownstream, Hasil};
 use poolrouter_webserver::downstream::intake::{FieldInputKontrak, FieldMetadataKontrak};
 use poolrouter_webserver::downstream::kuota_gerbang::fake::{FakeKuota, status_token};
-use poolrouter_adapter_provider::dokumen::DokumenProvider;
-use poolrouter_webserver::downstream::downstream_sesi::{Fut as DFut, GalatDownstream, Hasil};
 use poolrouter_webserver::downstream::pemanggil::{
     HasilProvider, Kirim, KlienProvider, PanggilanProvider, PanggilanSiap, PemanggilHttp,
     PemanggilProvider, SumberPanggilan, Transport,
 };
-use wiremock::matchers::{method, path};
-use wiremock::{Mock, MockServer, ResponseTemplate};
 use poolrouter_webserver::downstream::pengenal::{Fut, GalatPengenal, PengenalDownstream};
 use poolrouter_webserver::downstream::permintaan::fake::{FakePermintaan, baris_kosong};
 use poolrouter_webserver::downstream::permintaan::{
     HasilPanggilan, Mode, PoolRute, RantaiEndpoint,
 };
+use wiremock::matchers::{method, path};
+use wiremock::{Mock, MockServer, ResponseTemplate};
 
 const NIK: &str = "0012345678901234";
 
@@ -897,10 +897,7 @@ fn respons_dukcapil() -> Value {
     }]})
 }
 
-fn pemanggil_http(
-    server: &MockServer,
-    secret: bool,
-) -> PemanggilHttp<SumberUji, TransportUji> {
+fn pemanggil_http(server: &MockServer, secret: bool) -> PemanggilHttp<SumberUji, TransportUji> {
     let mut peta = BTreeMap::new();
     if secret {
         peta.insert("USER_ID".to_owned(), SECRET.to_owned());
@@ -933,7 +930,10 @@ async fn sync_http_done_merender_template_dan_membaca_status_skor() {
     let (s, h, v) = u.sinkron(&body_sah(), None).await;
     assert_eq!(s, StatusCode::OK, "{v}");
     no_store(&h);
-    assert_eq!(v["hasil"]["NAMA_LGKP"], json!({"status": "sesuai", "skor": 90}));
+    assert_eq!(
+        v["hasil"]["NAMA_LGKP"],
+        json!({"status": "sesuai", "skor": 90})
+    );
     // P-1: TMPT_LHR tidak dikirim client, jadi tidak ada di output.
     assert!(v["hasil"].get("TMPT_LHR").is_none(), "{v}");
 
@@ -1019,8 +1019,10 @@ async fn sync_http_konfigurasi_rusak_503_tanpa_baris_kuota_dan_panggilan() {
     assert_eq!(s, StatusCode::SERVICE_UNAVAILABLE, "{v}");
     assert_eq!(v["kode"], "layanan_tidak_tersedia");
     assert_eq!(u.jumlah_baris(), 0);
-    let hit = u.kuota.hitung.lock().unwrap();
-    assert_eq!(hit.intake + hit.token + hit.tambah, 0);
+    {
+        let hit = u.kuota.hitung.lock().unwrap();
+        assert_eq!(hit.intake + hit.token + hit.tambah, 0);
+    }
     assert!(server.received_requests().await.unwrap().is_empty());
 }
 

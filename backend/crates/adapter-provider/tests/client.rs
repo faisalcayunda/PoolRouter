@@ -556,7 +556,10 @@ async fn kirim_pin_salah_dipetakan_tls_tanpa_data_aplikasi() {
         BATAS_TOTAL,
     )
     .await;
-    assert!(matches!(hasil, Err(GagalPanggilProvider::Tls(_))), "{hasil:?}");
+    assert!(
+        matches!(hasil, Err(GagalPanggilProvider::Tls(_))),
+        "{hasil:?}"
+    );
     assert!(server.data().is_empty(), "{:?}", server.data());
 }
 

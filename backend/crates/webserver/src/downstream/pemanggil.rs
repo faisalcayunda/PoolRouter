@@ -259,7 +259,8 @@ impl<S: SumberPanggilan, T: Transport> PemanggilHttp<S, T> {
             .literal(p.endpoint_id, p.endpoint_config_version)
             .await?;
         let input = dokumen::nilai_input(Some(&p.input));
-        let nama = dokumen::nama_secret(&[prov.dok.base_url.as_str(), prov.dok.body_template.as_str()]);
+        let nama =
+            dokumen::nama_secret(&[prov.dok.base_url.as_str(), prov.dok.body_template.as_str()]);
         let secret = self.sumber.secret(nama).await?;
         let rakitan = dokumen::rakit(&prov.dok, &input, &literal, &secret, p.kode_transaksi)
             .map_err(|e| {

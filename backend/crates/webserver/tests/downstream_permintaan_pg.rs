@@ -26,6 +26,9 @@ use sqlx::{PgPool, Row};
 use tower::ServiceExt;
 use uuid::Uuid;
 
+use poolrouter_adapter_provider::dokumen::DokumenProvider;
+use poolrouter_core::admin::NilaiAman;
+use poolrouter_core::secret::Brankas;
 use poolrouter_webserver::api::downstream::HasilElemen;
 use poolrouter_webserver::api::downstream_sesi::{
     DownstreamState, KunciIdempoten, OperasiDownstream, TUNGGU_TOKEN_SYNC, router,
@@ -33,21 +36,18 @@ use poolrouter_webserver::api::downstream_sesi::{
 use poolrouter_webserver::api::enums::StatusHasil;
 use poolrouter_webserver::downstream::downstream_sesi::SesiKlien;
 use poolrouter_webserver::downstream::downstream_sesi::fake::FakeSession;
-use poolrouter_webserver::downstream::kuota_gerbang::KuotaRedisMalas;
-use poolrouter_adapter_provider::dokumen::DokumenProvider;
-use poolrouter_core::admin::NilaiAman;
-use poolrouter_core::secret::Brankas;
 use poolrouter_webserver::downstream::downstream_sesi::{
     Fut as DFut, Hasil, PgSessionDownstream, SessionDownstream,
 };
+use poolrouter_webserver::downstream::kuota_gerbang::KuotaRedisMalas;
 use poolrouter_webserver::downstream::pemanggil::{
     HasilProvider, Kirim, KlienProvider, PanggilanProvider, PanggilanSiap, PemanggilHttp,
     PemanggilProvider, SumberPg, Transport,
 };
 use poolrouter_webserver::downstream::pengenal::{Fut, GalatPengenal, PengenalDownstream};
+use poolrouter_webserver::downstream::permintaan::{HasilPanggilan, PgPermintaan};
 use wiremock::matchers::method;
 use wiremock::{Mock, MockServer, ResponseTemplate};
-use poolrouter_webserver::downstream::permintaan::{HasilPanggilan, PgPermintaan};
 
 const NIK: &str = "0012345678901234";
 
@@ -805,7 +805,10 @@ async fn sync_http_done_menulis_payload_log_tersamar() {
     let (u, penanda) = uji_http(&server, 1000).await;
     let (s, v) = u.sinkron(&body_sah()).await;
     assert_eq!(s, StatusCode::OK, "{v}");
-    assert_eq!(v["hasil"]["NAMA_LGKP"], json!({"status": "sesuai", "skor": 90}));
+    assert_eq!(
+        v["hasil"]["NAMA_LGKP"],
+        json!({"status": "sesuai", "skor": 90})
+    );
     assert!(v["hasil"].get("TMPT_LHR").is_none(), "{v}");
     let id = uuid_dari(&v, "request_id");
 
