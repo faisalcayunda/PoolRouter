@@ -34,7 +34,10 @@ use tower_http::limit::RequestBodyLimitLayer;
 use tower_http::set_header::SetResponseHeaderLayer;
 
 use super::pembatas::PembatasLogin;
-use super::{allowlist, k20, klien, kredensial, log, login, me, mfa, provider, secret, webhook};
+use super::{
+    allowlist, endpoint, k20, klien, kredensial, log, login, me, mfa, pool, provider, secret,
+    webhook,
+};
 
 use crate::api::problem::{ProblemKodeAdmin, ValidasiErrorAdmin};
 use crate::api::problem_admin::ProblemAdmin;
@@ -199,6 +202,37 @@ pub fn router(state: AdminState) -> Router {
             "/admin/v1/webhook-allowlist",
             get(allowlist::list_allowlist),
         )
+        // ARC-53: upstream/downstream pool dan quota tracker.
+        .route(
+            "/admin/v1/upstream-pools",
+            get(pool::list_upstream_pools).post(pool::create_upstream_pool),
+        )
+        .route(
+            "/admin/v1/upstream-pools/{id}",
+            get(pool::get_upstream_pool).put(pool::update_upstream_pool),
+        )
+        .route(
+            "/admin/v1/downstream-pools",
+            get(pool::list_downstream_pools).post(pool::create_downstream_pool),
+        )
+        .route(
+            "/admin/v1/downstream-pools/{id}",
+            get(pool::get_downstream_pool).put(pool::update_downstream_pool),
+        )
+        .route("/admin/v1/kuota", get(pool::get_quota_tracker))
+        // ARC-54: endpoint berversi dan penugasan client ke endpoint.
+        .route(
+            "/admin/v1/endpoints",
+            get(endpoint::list_endpoints).post(endpoint::create_endpoint),
+        )
+        .route(
+            "/admin/v1/endpoints/{id}",
+            get(endpoint::get_endpoint).put(endpoint::update_endpoint),
+        )
+        .route(
+            "/admin/v1/clients/{id}/endpoints",
+            put(endpoint::set_client_endpoints),
+        )
         .route(
             "/admin/v1/webhook-allowlist/{domain}",
             put(allowlist::put_allowlist_entry).delete(allowlist::delete_allowlist_entry),
@@ -230,6 +264,23 @@ impl Galat {
     /// 422 `validasi_gagal` per failing field (AC-7).
     pub(super) fn validasi(errors: Vec<ValidasiErrorAdmin>) -> Self {
         let mut problem = ProblemAdmin::new(ProblemKodeAdmin::ValidasiGagal, 422);
+        problem.errors = Some(errors);
+        Self(Box::new(problem), None)
+    }
+
+    /// Isi problem, untuk unit test modul admin.
+    #[cfg(test)]
+    pub(super) fn problem(&self) -> &ProblemAdmin {
+        &self.0
+    }
+
+    /// 422 dengan kode problem selain `validasi_gagal` (mis.
+    /// `metadata_wajib_hilang`, M-R1), tetap membawa semua `errors` (AC-7).
+    pub(super) fn validasi_dengan_kode(
+        kode: ProblemKodeAdmin,
+        errors: Vec<ValidasiErrorAdmin>,
+    ) -> Self {
+        let mut problem = ProblemAdmin::new(kode, 422);
         problem.errors = Some(errors);
         Self(Box::new(problem), None)
     }

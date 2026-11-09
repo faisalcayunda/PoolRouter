@@ -1038,6 +1038,12 @@ export interface components {
         AllowlistPut: {
             aktif: boolean;
         };
+        /**
+         * @description Jenis alokasi rute downstream pool (ADR-0006 D2): jumlah tetap per
+         *     periode atau persen dari kuota efektif upstream pool.
+         * @enum {string}
+         */
+        AlokasiJenis: "exact" | "persen";
         /** @description One `audit_akses` row (no `nik_hmac`). */
         AuditAksesBaris: {
             /** @example lihat_payload */
@@ -1165,6 +1171,10 @@ export interface components {
          */
         DownstreamPool: {
             aktif: boolean;
+            alokasi_jenis?: components["schemas"]["AlokasiJenis"] | null;
+            /** Format: double */
+            alokasi_nilai?: number | null;
+            boleh_pinjam: boolean;
             /** Format: uuid */
             downstream_pool_id: string;
             nama: string;
@@ -1174,6 +1184,7 @@ export interface components {
              * @example 1
              */
             readonly prioritas: number;
+            sifat?: components["schemas"]["SifatAlokasi"] | null;
             /** Format: int64 */
             ttl_antrean_detik: number;
             upstream_pool_ids: string[];
@@ -1186,11 +1197,28 @@ export interface components {
         DownstreamPoolConfig: {
             /** @description Reason; required on update. */
             alasan?: string | null;
+            alokasi_jenis?: components["schemas"]["AlokasiJenis"] | null;
+            /**
+             * Format: double
+             * @description `exact`: whole number >= 1 per period; `persen`: 0.01..=100.00 of the
+             *     upstream pool's effective quota. The sum over the routes of one upstream
+             *     pool may not exceed its effective quota (422 `alokasi_kelebihan`, `batas`
+             *     = the excess).
+             * @example 25
+             */
+            alokasi_nilai?: number | null;
+            /**
+             * @description Whether the pool may borrow from the remainder and from shareable
+             *     budgets. Must be `true` (or absent) for a route without allocation;
+             *     absent with an allocation means `false`.
+             */
+            boleh_pinjam?: boolean | null;
             /**
              * @description Pool name; unique across downstream pools (schema `NOT NULL UNIQUE`).
              * @example BGN MPM
              */
             nama: string;
+            sifat?: components["schemas"]["SifatAlokasi"] | null;
             /**
              * Format: int64
              * @description Queue TTL in seconds; default 86_400 (24 hours). Column
@@ -1233,8 +1261,8 @@ export interface components {
             endpoint_config_version: number;
             /** Format: uuid */
             endpoint_id: string;
-            /** @example ringkas */
-            log_mode: string;
+            /** @description Never looser than the provider's `log_mode`. */
+            log_mode: components["schemas"]["LogMode"];
             /**
              * @description Metadata field definitions; Dukcapil endpoints must include
              *     `status_penerima_manfaat` (M-R1).
@@ -1259,8 +1287,11 @@ export interface components {
             config_schema_version: number;
             /** Format: uuid */
             downstream_pool_id: string;
-            /** @example ringkas */
-            log_mode: string;
+            /**
+             * @description Never looser than the provider's `log_mode` (`full_payload` on a
+             *     `metadata_only` provider is 422).
+             */
+            log_mode: components["schemas"]["LogMode"];
             /**
              * @description Metadata field definitions; Dukcapil endpoints must include
              *     `status_penerima_manfaat` (M-R1).
@@ -1315,6 +1346,12 @@ export interface components {
          * @enum {string}
          */
         KelasErrorWebhook: "timeout" | "koneksi" | "rate_limit_provider" | "respons_tidak_valid" | "tls" | "provider_sementara";
+        /**
+         * @description Klasifikasi field metadata endpoint (kontrak §4). Ejaannya sama dengan
+         *     `CHECK` kolom `endpoint_metadata_field.klasifikasi`.
+         * @enum {string}
+         */
+        KlasifikasiMetadata: "Internal" | "Terbatas" | "Rahasia";
         /** @description Body of `POST /auth/mfa` (AC-10): exactly one of the two code kinds. */
         KodeMfaRequest: {
             /**
@@ -1485,16 +1522,15 @@ export interface components {
             deskripsi: string;
             /** @description Whether the field is sent to the data-balikan callback. */
             kirim_ke_data_balikan: boolean;
+            /** @description Classification (`Rahasia` fields are never logged or sent to callbacks). */
+            klasifikasi: components["schemas"]["KlasifikasiMetadata"];
             /**
-             * @description Classification (`rahasia` fields are never logged or sent to callbacks).
-             * @example internal
+             * @description `^[a-z][a-z0-9_]*$`, at most 64 characters.
+             * @example status_penerima_manfaat
              */
-            klasifikasi: string;
-            /** @example status_penerima_manfaat */
             nama_field: string;
             nilai_diizinkan?: string[] | null;
-            /** @example string */
-            tipe: string;
+            tipe: components["schemas"]["TipeMetadata"];
             wajib: boolean;
         };
         /**
@@ -1805,10 +1841,22 @@ export interface components {
             waktu_server: string;
         };
         /**
+         * @description Sifat anggaran alokasi (ADR-0006 D2): `reserved` hanya dipakai pemiliknya,
+         *     `shareable` boleh dipinjam downstream pool lain.
+         * @enum {string}
+         */
+        SifatAlokasi: "reserved" | "shareable";
+        /**
          * @description Credential lifecycle state (contract EN-02/EN-03, schema `status`).
          * @enum {string}
          */
         StatusKredensial: "aktif" | "kedaluwarsa" | "dicabut";
+        /**
+         * @description Tipe field metadata endpoint; sama dengan `CHECK` kolom
+         *     `endpoint_metadata_field.tipe`.
+         * @enum {string}
+         */
+        TipeMetadata: "string" | "integer" | "boolean" | "date" | "enum";
         /**
          * @description TLS trust for the provider host (ADR-0002 D5). The three modes are the ones
          *     the configuration allows; disabling verification is deliberately not among
@@ -2816,6 +2864,7 @@ export interface operations {
             };
             401: components["responses"]["Problem401Admin"];
             403: components["responses"]["Problem403Admin"];
+            404: components["responses"]["Problem404Admin"];
             422: components["responses"]["Problem422Admin"];
         };
     };
