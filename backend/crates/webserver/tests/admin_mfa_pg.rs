@@ -84,17 +84,33 @@ async fn siapkan(peran: &[&str], mfa_wajib: bool) -> Uji {
     let hash = hash_password(PASSWORD, KebijakanPassword::f0(), ParameterArgon2::OWASP)
         .unwrap()
         .to_string();
-    for (id, nama, h) in [
-        (uid, username.as_str(), hash.as_str()),
-        (penerbit, nama_penerbit.as_str(), "x"),
-        (penyetuju, nama_penyetuju.as_str(), "x"),
+    // Peran `client_owner` menuntut `admin_user.client_id` terisi sebelum baris
+    // perannya ada (trigger tg_client_owner_has_client), jadi klien dibuat dulu.
+    let client_id = if peran.contains(&"client_owner") {
+        let cid = Uuid::now_v7();
+        sqlx::query("INSERT INTO client (client_id, nama) VALUES ($1, $2)")
+            .bind(cid)
+            .bind(format!("klien-mfa-{}", cid.simple()))
+            .execute(&pool)
+            .await
+            .unwrap();
+        Some(cid)
+    } else {
+        None
+    };
+    for (id, nama, h, cid) in [
+        (uid, username.as_str(), hash.as_str(), client_id),
+        (penerbit, nama_penerbit.as_str(), "x", None),
+        (penyetuju, nama_penyetuju.as_str(), "x", None),
     ] {
         sqlx::query(
-            "INSERT INTO admin_user (pengguna_id, username, password_hash) VALUES ($1, $2, $3)",
+            "INSERT INTO admin_user (pengguna_id, username, password_hash, client_id) \
+             VALUES ($1, $2, $3, $4)",
         )
         .bind(id)
         .bind(nama)
         .bind(h)
+        .bind(cid)
         .execute(&pool)
         .await
         .unwrap();
@@ -848,6 +864,176 @@ async fn me_auditor_tanpa_mfa_melaporkan_wajib_tapi_belum_aktif() {
     assert_eq!(body["mfa"]["wajib"], true);
     assert_eq!(body["mfa"]["aktif"], false);
     assert_eq!(body["mfa"]["sisa_kode_pemulihan"], 0);
+}
+
+/// Badan JSON sah untuk operasi yang extractor-nya `axum::Json<T>` polos dan T
+/// punya field wajib (`deny_unknown_fields` untuk ClientConfig dan
+/// WebhookConfigPut). Extractor itu jalan sebelum guard MFA, jadi `{}` ditolak
+/// 422 lebih dulu dan 403 tak pernah tercapai. Operasi lain cukup `{}`.
+fn badan_sah(metode: &Method, path: &str) -> &'static str {
+    if *metode == Method::POST && path == "/admin/v1/clients" {
+        r#"{"nama":"Klien Uji MFA"}"#
+    } else if *metode == Method::PUT && path.ends_with("/webhook") {
+        r#"{"webhook_url":"https://uji.example.test/webhook","aktif":false}"#
+    } else if *metode == Method::PUT && path.starts_with("/admin/v1/clients/") {
+        r#"{"nama":"Klien Uji MFA"}"#
+    } else if *metode == Method::PUT && path.starts_with("/admin/v1/webhook-allowlist/") {
+        r#"{"aktif":true}"#
+    } else {
+        "{}"
+    }
+}
+
+/// Kirim satu permintaan dengan cookie sesi dan `Origin` sah. Badannya JSON sah
+/// per operasi (lihat `badan_sah`) dengan Content-Type, karena handler yang
+/// memakai `axum::Json` menolak 415 (tanpa Content-Type) atau 422 (field wajib
+/// hilang) sebelum guard tercapai, sehingga 403 tak bisa teramati.
+async fn minta(u: &Uji, metode: Method, path: &str, cookie: &str) -> StatusCode {
+    let badan = badan_sah(&metode, path);
+    let req = Request::builder()
+        .method(metode)
+        .uri(path)
+        .header(header::ORIGIN, ASAL)
+        .header(header::COOKIE, cookie)
+        .header(header::CONTENT_TYPE, "application/json")
+        .body(Body::from(badan))
+        .unwrap();
+    u.app.clone().oneshot(req).await.unwrap().status()
+}
+
+/// AC-15: the 14 platform-admin and 4 auditor operations answer 403 for a
+/// session without `mfa_terverifikasi_at`, and not 403 once it carries one.
+async fn periksa_guard_kelas(peran: &str, operasi: &[(Method, String)]) {
+    let u = siapkan(&[peran], true).await;
+    periksa_guard_pada(&u, operasi).await;
+}
+
+async fn periksa_guard_pada(u: &Uji, operasi: &[(Method, String)]) {
+    let store = SesiStore::baru(u.pool.clone());
+
+    let tanpa = poolrouter_core::admin::TokenSesi::baru();
+    store
+        .terbitkan(u.pengguna_id, &tanpa.hash(), None, t0())
+        .await
+        .unwrap();
+    let cookie_tanpa = format!("{COOKIE_SESI}={}", tanpa.sebagai_b64());
+
+    let dengan = poolrouter_core::admin::TokenSesi::baru();
+    store
+        .terbitkan_terverifikasi_mfa(u.pengguna_id, &dengan.hash(), None, t0())
+        .await
+        .unwrap();
+    let cookie_dengan = format!("{COOKIE_SESI}={}", dengan.sebagai_b64());
+
+    for (metode, path) in operasi {
+        assert_eq!(
+            minta(u, metode.clone(), path, &cookie_tanpa).await,
+            StatusCode::FORBIDDEN,
+            "{metode} {path} tanpa MFA harus 403"
+        );
+        assert_ne!(
+            minta(u, metode.clone(), path, &cookie_dengan).await,
+            StatusCode::FORBIDDEN,
+            "{metode} {path} dengan MFA tidak boleh 403"
+        );
+    }
+}
+
+#[tokio::test]
+#[ignore = "butuh PostgreSQL dan Redis; jalankan lewat make -C backend uji-pg"]
+async fn platform_admin_tanpa_mfa_ditolak_di_empat_belas_operasi() {
+    let id = Uuid::now_v7();
+    let operasi: Vec<(Method, String)> = vec![
+        (Method::GET, "/admin/v1/secrets".into()),
+        (Method::PUT, "/admin/v1/secrets/nama-uji".into()),
+        (Method::DELETE, "/admin/v1/secrets/nama-uji".into()),
+        (Method::GET, "/admin/v1/clients".into()),
+        (Method::GET, format!("/admin/v1/clients/{id}")),
+        (Method::POST, "/admin/v1/clients".into()),
+        (Method::PUT, format!("/admin/v1/clients/{id}")),
+        (Method::GET, format!("/admin/v1/clients/{id}/webhook")),
+        (Method::PUT, format!("/admin/v1/clients/{id}/webhook")),
+        (
+            Method::POST,
+            format!("/admin/v1/clients/{id}/webhook/rotasi-secret"),
+        ),
+        (Method::GET, format!("/admin/v1/clients/{id}/webhook/log")),
+        (Method::GET, "/admin/v1/webhook-allowlist".into()),
+        (
+            Method::PUT,
+            "/admin/v1/webhook-allowlist/uji.example.test".into(),
+        ),
+        (
+            Method::DELETE,
+            "/admin/v1/webhook-allowlist/uji.example.test".into(),
+        ),
+    ];
+    periksa_guard_kelas("platform_admin", &operasi).await;
+}
+
+#[tokio::test]
+#[ignore = "butuh PostgreSQL dan Redis; jalankan lewat make -C backend uji-pg"]
+async fn auditor_tanpa_mfa_ditolak_di_empat_operasi() {
+    let operasi: Vec<(Method, String)> = vec![
+        (Method::POST, "/admin/v1/auditor/log/cari-nik".into()),
+        (Method::POST, "/admin/v1/auditor/payload".into()),
+        (Method::POST, "/admin/v1/auditor/log/ekspor".into()),
+        (Method::POST, "/admin/v1/auditor/audit-akses/cari".into()),
+    ];
+    periksa_guard_kelas("auditor", &operasi).await;
+}
+
+/// Sesi `client_owner` tanpa stempel MFA tidak diblok guard di rute klien dan
+/// webhook bersama: respons boleh 404 (bukan miliknya), tetapi tidak 403.
+#[tokio::test]
+#[ignore = "butuh PostgreSQL dan Redis; jalankan lewat make -C backend uji-pg"]
+async fn client_owner_tanpa_mfa_tidak_diblok_guard() {
+    let u = siapkan(&["client_owner"], true).await;
+    let store = SesiStore::baru(u.pool.clone());
+    let token = poolrouter_core::admin::TokenSesi::baru();
+    store
+        .terbitkan(u.pengguna_id, &token.hash(), None, t0())
+        .await
+        .unwrap();
+    let cookie = format!("{COOKIE_SESI}={}", token.sebagai_b64());
+    let id = Uuid::now_v7();
+    for (metode, path) in [
+        (Method::GET, "/admin/v1/clients".to_owned()),
+        (Method::GET, format!("/admin/v1/clients/{id}")),
+        (Method::GET, format!("/admin/v1/clients/{id}/webhook")),
+    ] {
+        assert_ne!(
+            minta(&u, metode.clone(), &path, &cookie).await,
+            StatusCode::FORBIDDEN,
+            "{metode} {path} untuk client_owner tanpa MFA tidak boleh 403"
+        );
+    }
+}
+
+/// Dengan `mfa_wajib=false` login tak pernah menerbitkan stempel MFA, jadi guard
+/// tidak boleh menolak: platform_admin tanpa stempel lolos dari 403.
+#[tokio::test]
+#[ignore = "butuh PostgreSQL dan Redis; jalankan lewat make -C backend uji-pg"]
+async fn mfa_wajib_mati_guard_tidak_menolak() {
+    let u = siapkan(&["platform_admin"], false).await;
+    let store = SesiStore::baru(u.pool.clone());
+    let token = poolrouter_core::admin::TokenSesi::baru();
+    store
+        .terbitkan(u.pengguna_id, &token.hash(), None, t0())
+        .await
+        .unwrap();
+    let cookie = format!("{COOKIE_SESI}={}", token.sebagai_b64());
+    for path in [
+        "/admin/v1/secrets",
+        "/admin/v1/clients",
+        "/admin/v1/webhook-allowlist",
+    ] {
+        assert_ne!(
+            minta(&u, Method::GET, path, &cookie).await,
+            StatusCode::FORBIDDEN,
+            "GET {path} dengan mfa_wajib=false tidak boleh 403"
+        );
+    }
 }
 
 /// The `token_sha256` value for a base64url session token, without pulling

@@ -206,6 +206,7 @@ pub(super) async fn search_log_by_nik(
     body: Result<Json<NikCariRequest>, axum::extract::rejection::JsonRejection>,
 ) -> Result<Response, Galat> {
     let peminta = masuk(&s, &method, &headers, peer, PERAN_AU, "searchLogByNik").await?;
+    super::gerbang::periksa_guard_mfa(&peminta)?;
 
     // The body is extracted before the handler runs, so a malformed one
     // must not shadow the 401/403 the gate just decided: unwrap it only now.
@@ -301,6 +302,7 @@ pub(super) async fn open_payload(
     body: Result<Json<PayloadOpenRequest>, axum::extract::rejection::JsonRejection>,
 ) -> Result<Response, Galat> {
     let peminta = masuk(&s, &method, &headers, peer, PERAN_AU, "openPayload").await?;
+    super::gerbang::periksa_guard_mfa(&peminta)?;
 
     // The body is extracted before the handler runs, so a malformed one
     // must not shadow the 401/403 the gate just decided: unwrap it only now.
@@ -400,6 +402,7 @@ pub(super) async fn export_log_auditor(
     body: Result<Json<EksporRequest>, axum::extract::rejection::JsonRejection>,
 ) -> Result<Response, Galat> {
     let peminta = masuk(&s, &method, &headers, peer, PERAN_AU, "exportLogAuditor").await?;
+    super::gerbang::periksa_guard_mfa(&peminta)?;
 
     // The body is extracted before the handler runs, so a malformed one
     // must not shadow the 401/403 the gate just decided: unwrap it only now.
@@ -525,6 +528,7 @@ pub(super) async fn search_audit_akses(
     body: Result<Json<AuditCariRequest>, axum::extract::rejection::JsonRejection>,
 ) -> Result<Response, Galat> {
     let peminta = masuk(&s, &method, &headers, peer, PERAN_AU, "searchAuditAkses").await?;
+    super::gerbang::periksa_guard_mfa(&peminta)?;
 
     // The body is extracted before the handler runs, so a malformed one
     // must not shadow the 401/403 the gate just decided: unwrap it only now.
