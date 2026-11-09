@@ -8,12 +8,12 @@ dipakai form login mana pun.
 
 Routing layar ini ke alur login (ARC-8) diserahkan ke tiket lanjutan; kontraknya sudah tetap.
 
-| Layar | Respons API yang memicunya | Props masuk | Props keluar |
-| --- | --- | --- | --- |
-| `MfaCodeScreen` (S17) | `POST /auth/login` → 200 `{langkah: "mfa"}` | `username`, `loading`, `error` | `onSubmit(kode)` → `POST /auth/mfa`; `onBack` |
-| `MfaRegistrationCodeScreen` (S17a) | 200 `{langkah: "daftar_mfa"}` | `loading`, `error` | `onSubmit(kodeDaftar)` → `POST /auth/mfa/daftar`; `onBack` |
-| `MfaQrScreen` (S17b) | 200 `POST /auth/mfa/daftar` (`otpauth_uri`, `rahasia_base32`) | `otpauthUri`, `setupKey` (dari `rahasia_base32`), `account`, `issuer`, `loading`, `error` | `onConfirm(kode)` → `POST /auth/mfa/daftar/konfirmasi` |
-| `MfaRecoveryScreen` (S17c) | 200 `POST /auth/mfa/daftar/konfirmasi` (`kode_pemulihan[]`) | `codes`, `isOpen` | `onAcknowledge()` → buang `codes`, buka shell |
+| Layar                              | Respons API yang memicunya                                    | Props masuk                                                                               | Props keluar                                               |
+| ---------------------------------- | ------------------------------------------------------------- | ----------------------------------------------------------------------------------------- | ---------------------------------------------------------- |
+| `MfaCodeScreen` (S17)              | `POST /auth/login` → 200 `{langkah: "mfa"}`                   | `username`, `loading`, `error`                                                            | `onSubmit(kode)` → `POST /auth/mfa`; `onBack`              |
+| `MfaRegistrationCodeScreen` (S17a) | 200 `{langkah: "daftar_mfa"}`                                 | `loading`, `error`                                                                        | `onSubmit(kodeDaftar)` → `POST /auth/mfa/daftar`; `onBack` |
+| `MfaQrScreen` (S17b)               | 200 `POST /auth/mfa/daftar` (`otpauth_uri`, `rahasia_base32`) | `otpauthUri`, `setupKey` (dari `rahasia_base32`), `account`, `issuer`, `loading`, `error` | `onConfirm(kode)` → `POST /auth/mfa/daftar/konfirmasi`     |
+| `MfaRecoveryScreen` (S17c)         | 200 `POST /auth/mfa/daftar/konfirmasi` (`kode_pemulihan[]`)   | `codes`, `isOpen`                                                                         | `onAcknowledge()` → buang `codes`, buka shell              |
 
 Operator dan client owner tidak pernah melihat layar ini (`langkah` hanya muncul untuk peran
 wajib-MFA). S17d (sisa kode pemulihan) adalah banner di dalam shell dan memakai `GET /auth/me`
