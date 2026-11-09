@@ -665,11 +665,7 @@ fn hasil_token(
     downstream_pool_id: i64,
 ) -> Result<HasilToken, GalatStore> {
     let kode = teks(&j[0])?;
-    let terpilih = if j.len() > 7 {
-        teks(&j[7]).ok()
-    } else {
-        None
-    };
+    let terpilih = if j.len() > 7 { teks(&j[7]).ok() } else { None };
     let status = || -> Result<StatusToken, GalatStore> {
         Ok(StatusToken {
             terpakai: angka(j.get(1))?,
