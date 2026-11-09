@@ -26,6 +26,9 @@ use sqlx::{PgPool, Row};
 use tower::ServiceExt;
 use uuid::Uuid;
 
+use poolrouter_adapter_provider::dokumen::DokumenProvider;
+use poolrouter_core::admin::NilaiAman;
+use poolrouter_core::secret::Brankas;
 use poolrouter_webserver::api::downstream::HasilElemen;
 use poolrouter_webserver::api::downstream_sesi::{
     DownstreamState, KunciIdempoten, OperasiDownstream, TUNGGU_TOKEN_SYNC, router,
@@ -33,10 +36,18 @@ use poolrouter_webserver::api::downstream_sesi::{
 use poolrouter_webserver::api::enums::StatusHasil;
 use poolrouter_webserver::downstream::downstream_sesi::SesiKlien;
 use poolrouter_webserver::downstream::downstream_sesi::fake::FakeSession;
+use poolrouter_webserver::downstream::downstream_sesi::{
+    Fut as DFut, Hasil, PgSessionDownstream, SessionDownstream,
+};
 use poolrouter_webserver::downstream::kuota_gerbang::KuotaRedisMalas;
-use poolrouter_webserver::downstream::pemanggil::{PanggilanProvider, PemanggilProvider};
+use poolrouter_webserver::downstream::pemanggil::{
+    HasilProvider, Kirim, KlienProvider, PanggilanProvider, PanggilanSiap, PemanggilHttp,
+    PemanggilProvider, SumberPg, Transport,
+};
 use poolrouter_webserver::downstream::pengenal::{Fut, GalatPengenal, PengenalDownstream};
 use poolrouter_webserver::downstream::permintaan::{HasilPanggilan, PgPermintaan};
+use wiremock::matchers::method;
+use wiremock::{Mock, MockServer, ResponseTemplate};
 
 const NIK: &str = "0012345678901234";
 
@@ -94,26 +105,51 @@ impl PengenalDownstream for PengenalTetap {
 
 struct MockProvider {
     hasil: HasilPanggilan,
-    jumlah: Mutex<u32>,
+    /// Jumlah panggilan yang benar-benar dikirim.
+    jumlah: Arc<Mutex<u32>>,
     /// Latensi tetap mock dan latensi yang terukur di dalam mock (AC-32).
     tunda: Duration,
-    latensi: Mutex<Vec<Duration>>,
+    latensi: Arc<Mutex<Vec<Duration>>>,
 }
 
 impl PemanggilProvider for MockProvider {
-    fn panggil(
-        &self,
-        _p: PanggilanProvider,
-    ) -> poolrouter_webserver::downstream::downstream_sesi::Fut<'_, HasilPanggilan> {
+    fn siapkan(&self, _p: PanggilanProvider) -> DFut<'_, Hasil<PanggilanSiap>> {
+        let hasil = self.hasil.clone();
+        let jumlah = self.jumlah.clone();
+        let latensi = self.latensi.clone();
+        let tunda = self.tunda;
         Box::pin(async move {
-            *self.jumlah.lock().unwrap() += 1;
-            if !self.tunda.is_zero() {
-                let t = Instant::now();
-                tokio::time::sleep(self.tunda).await;
-                self.latensi.lock().unwrap().push(t.elapsed());
-            }
-            self.hasil.clone()
+            let kirim: Kirim = Box::new(move |_batas| -> DFut<'static, HasilProvider> {
+                Box::pin(async move {
+                    *jumlah.lock().unwrap() += 1;
+                    if !tunda.is_zero() {
+                        let t = Instant::now();
+                        tokio::time::sleep(tunda).await;
+                        latensi.lock().unwrap().push(t.elapsed());
+                    }
+                    HasilProvider {
+                        hasil,
+                        response_payload: None,
+                    }
+                })
+            });
+            Ok(PanggilanSiap {
+                request_payload: None,
+                kirim,
+            })
         })
+    }
+}
+
+/// KEK sintetis uji dalam bentuk 32 byte mentah (bukan KEK lingkungan mana pun).
+const KEK_UJI: &str = "kek-uji-arc66-sync-jangan-dipake";
+
+/// wiremock berjalan di http biasa; produksi memakai `TransportTls`.
+struct TransportUji;
+
+impl Transport for TransportUji {
+    fn klien(&self, _dok: &DokumenProvider) -> Result<KlienProvider, String> {
+        Ok(KlienProvider::tanpa_tls_untuk_uji(reqwest::Client::new()))
     }
 }
 
@@ -135,9 +171,12 @@ fn hasil_sesuai() -> HasilPanggilan {
 struct Uji {
     app: Router,
     su: PgPool,
+    api: PgPool,
     endpoint: Uuid,
     upstream: Uuid,
     client_id: Uuid,
+    kred: Uuid,
+    admin: Uuid,
     mock: Arc<MockProvider>,
 }
 
@@ -147,6 +186,33 @@ impl Uji {
     }
 
     async fn baru_tunda(kuota_harian: i32, hasil: HasilPanggilan, tunda: Duration) -> Self {
+        let template = r#"{\"NIK\":\"{{input.NIK}}\",\"NAMA_LGKP\":\"{{input.NAMA_LGKP}}\",\"TRESHOLD\":\"{{endpoint.TRESHOLD}}\"}"#;
+        let dokumen = format!("{{\"body_template\": \"{template}\"}}");
+        let mock = Arc::new(MockProvider {
+            hasil,
+            jumlah: Arc::new(Mutex::new(0)),
+            tunda,
+            latensi: Arc::new(Mutex::new(Vec::new())),
+        });
+        let m = mock.clone();
+        Self::bangun(
+            kuota_harian,
+            "metadata_only",
+            &dokumen,
+            move |_| m as Arc<dyn PemanggilProvider>,
+            mock,
+        )
+        .await
+    }
+
+    /// Fixture rantai lengkap; `pemanggil` menerima pool `pr_api`.
+    async fn bangun(
+        kuota_harian: i32,
+        log_mode: &str,
+        dokumen: &str,
+        pemanggil: impl FnOnce(PgPool) -> Arc<dyn PemanggilProvider>,
+        mock: Arc<MockProvider>,
+    ) -> Self {
         let su = kolam(&env("POOLROUTER_TEST_DATABASE_URL_SU")).await;
         let api = kolam(&env("POOLROUTER_TEST_DATABASE_URL_API")).await;
         let uid = Uuid::now_v7().simple().to_string();
@@ -157,7 +223,7 @@ impl Uji {
         let upstream = Uuid::now_v7();
         let pool = Uuid::now_v7();
         let endpoint = Uuid::now_v7();
-        let template = r#"{\"NIK\":\"{{input.NIK}}\",\"NAMA_LGKP\":\"{{input.NAMA_LGKP}}\",\"TRESHOLD\":\"{{endpoint.TRESHOLD}}\"}"#;
+        let dokumen = dokumen.replace('\'', "''");
         sqlx::raw_sql(sqlx::AssertSqlSafe(format!(
             "INSERT INTO admin_user (pengguna_id, username, password_hash) \
                VALUES ('{admin}', 'arc63-{uid}', 'x');
@@ -166,8 +232,7 @@ impl Uji {
                VALUES ('{provider}', 'provider-{uid}', 1);
              INSERT INTO provider_config_versi \
                (provider_id, versi, config_schema_version, log_mode, dokumen, dibuat_oleh) \
-               VALUES ('{provider}', 1, 1, 'metadata_only', \
-                       '{{\"body_template\": \"{template}\"}}'::jsonb, '{admin}');
+               VALUES ('{provider}', 1, 1, '{log_mode}', '{dokumen}'::jsonb, '{admin}');
              INSERT INTO upstream_pool (upstream_pool_id, provider_id, nama, kuota_harian, \
                                         margin_kuota, parameter_dispatch) \
                VALUES ('{upstream}', '{provider}', 'upstream-{uid}', {kuota_harian}, 0.001, \
@@ -181,7 +246,8 @@ impl Uji {
                VALUES ('{endpoint}', 'endpoint-{uid}', '{provider}', '{pool}', 1);
              INSERT INTO endpoint_config_versi \
                (downstream_endpoint_id, versi, config_schema_version, dokumen, dibuat_oleh) \
-               VALUES ('{endpoint}', 1, 1, '{{}}', '{admin}');
+               VALUES ('{endpoint}', 1, 1, \
+                       '{{\"parameter_literal\": {{\"TRESHOLD\": \"80\"}}}}', '{admin}');
              INSERT INTO endpoint_metadata_field \
                (downstream_endpoint_id, nama_field, tipe, wajib, nilai_diizinkan, klasifikasi, \
                 kirim_ke_data_balikan, deskripsi, versi) \
@@ -198,18 +264,12 @@ impl Uji {
         .await
         .unwrap();
 
-        let mock = Arc::new(MockProvider {
-            hasil,
-            jumlah: Mutex::new(0),
-            tunda,
-            latensi: Mutex::new(Vec::new()),
-        });
         let operasi = Arc::new(OperasiDownstream {
-            permintaan: PgPermintaan::baru(api),
+            permintaan: PgPermintaan::baru(api.clone()),
             kuota: KuotaRedisMalas::baru(
                 redis::Client::open(env("POOLROUTER_TEST_REDIS")).unwrap(),
             ),
-            pemanggil: Some(mock.clone()),
+            pemanggil: Some(pemanggil(api.clone())),
             kunci_idempoten: KunciIdempoten::baru(b"kunci-hmac-sintetis-pg"),
             tunggu_token_sync: TUNGGU_TOKEN_SYNC,
         });
@@ -224,9 +284,12 @@ impl Uji {
         Self {
             app,
             su,
+            api,
             endpoint,
             upstream,
             client_id,
+            kred,
+            admin,
             mock,
         }
     }
@@ -647,5 +710,258 @@ async fn smoke_overhead_sync() {
         "ARC-66 AC-32 smoke/relatif: 200 sync, p95 end-to-end = {p95:.1} ms, \
          rata-rata mock = {rata:.1} ms, overhead = {:.1} ms",
         p95 - rata
+    );
+}
+
+// ------------------------------------------- ARC-66: jalur sync dengan PemanggilHttp
+
+const SECRET_PG: &str = "rahasia-provider-sintetis-pg";
+
+fn respons_dukcapil() -> Value {
+    json!({"content": [{
+        "NAMA_LGKP": "Sesuai (90)",
+        "TMPT_LHR": "Tidak Sesuai",
+        "UID": SECRET_PG
+    }]})
+}
+
+/// Fixture `full_payload` dengan pemanggil produksi (`PemanggilHttp` +
+/// `SumberPg` sebagai `pr_api`) ke wiremock, plus secret terenkripsi KEK uji.
+/// Mengembalikan penanda `{{secret.<nama>}}` yang diharapkan di payload log.
+async fn uji_http(server: &MockServer, kuota_harian: i32) -> (Uji, String) {
+    let nama = format!("USER_ID_{}", Uuid::now_v7().simple());
+    let penanda = format!("{{{{secret.{nama}}}}}");
+    let template = r#"{"NIK":"{{input.NIK}}","NAMA_LGKP":"{{input.NAMA_LGKP}}","USER_ID":"SECRET","transactionId":"{{system.kode_transaksi}}","TRESHOLD":"{{endpoint.TRESHOLD}}"}"#
+        .replace("SECRET", &penanda);
+    let dokumen = json!({
+        "metode": "POST",
+        "base_url": format!("{}/api", server.uri()),
+        "body_template": template,
+        "tls_trust": "system",
+        "respons_skema": {
+            "parser": "status_skor",
+            "literal": [
+                {"teks": "Sesuai", "status": "sesuai"},
+                {"teks": "Tidak Sesuai", "status": "tidak_sesuai"}
+            ],
+            "parameter_output": [{"nama": "NAMA_LGKP"}, {"nama": "TMPT_LHR"}]
+        },
+        "parameters": [],
+        "log_mode": "full_payload"
+    })
+    .to_string();
+    let cadangan = Arc::new(MockProvider {
+        hasil: hasil_sesuai(),
+        jumlah: Arc::new(Mutex::new(0)),
+        tunda: Duration::ZERO,
+        latensi: Arc::new(Mutex::new(Vec::new())),
+    });
+    let u = Uji::bangun(
+        kuota_harian,
+        "full_payload",
+        &dokumen,
+        |api| {
+            Arc::new(PemanggilHttp::baru(
+                SumberPg::baru(api, Brankas::dari_isi_kek(KEK_UJI).unwrap()),
+                TransportUji,
+            )) as Arc<dyn PemanggilProvider>
+        },
+        cadangan,
+    )
+    .await;
+    let amplop = Brankas::dari_isi_kek(KEK_UJI)
+        .unwrap()
+        .enkripsi(&nama, &NilaiAman::baru(SECRET_PG.to_owned()))
+        .unwrap();
+    sqlx::query(
+        "INSERT INTO provider_secret (nama_secret, secret_ciphertext, secret_dek_terbungkus, \
+                secret_nonce, kek_id, diubah_oleh) VALUES ($1, $2, $3, $4, $5, $6)",
+    )
+    .bind(&nama)
+    .bind(amplop.ciphertext.clone())
+    .bind(amplop.dek_terbungkus.clone())
+    .bind(amplop.nonce.to_vec())
+    .bind(amplop.kek_id.clone())
+    .bind(u.admin)
+    .execute(&u.su)
+    .await
+    .unwrap();
+    (u, penanda)
+}
+
+/// AC-27, AC-28 end-to-end: render dengan secret dari `provider_secret`,
+/// `request_payload`/`response_payload` mengikuti `full_payload` dengan secret
+/// sebagai penanda, `transactionId` = `kode_transaksi` log, dan kontrak
+/// endpoint memuat field input dari template (ADR-0002 D6).
+#[tokio::test]
+#[ignore]
+async fn sync_http_done_menulis_payload_log_tersamar() {
+    redis_siap().await;
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(respons_dukcapil()))
+        .mount(&server)
+        .await;
+    let (u, penanda) = uji_http(&server, 1000).await;
+    let (s, v) = u.sinkron(&body_sah()).await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    assert_eq!(
+        v["hasil"]["NAMA_LGKP"],
+        json!({"status": "sesuai", "skor": 90})
+    );
+    assert!(v["hasil"].get("TMPT_LHR").is_none(), "{v}");
+    let id = uuid_dari(&v, "request_id");
+
+    let r = sqlx::query(
+        "SELECT r.status, r.final_kode_transaksi = l.kode_transaksi AS final_cocok, \
+                l.kode_transaksi, l.log_mode, l.status_akses, l.provider_http_status, \
+                l.responded_at IS NOT NULL AS ada_respons, l.request_payload, l.response_payload \
+           FROM request r JOIN transaction_log l ON l.request_id = r.request_id \
+          WHERE r.request_id = $1",
+    )
+    .bind(id)
+    .fetch_one(&u.su)
+    .await
+    .unwrap();
+    assert_eq!(r.get::<String, _>("status"), "done");
+    assert!(r.get::<bool, _>("final_cocok"));
+    assert_eq!(r.get::<String, _>("log_mode"), "full_payload");
+    assert_eq!(r.get::<String, _>("status_akses"), "berhasil");
+    assert_eq!(r.get::<Option<i32>, _>("provider_http_status"), Some(200));
+    assert!(r.get::<bool, _>("ada_respons"));
+    let kode: Uuid = r.get("kode_transaksi");
+    assert_eq!(kode.get_version_num(), 7);
+    let rp = r
+        .get::<Option<sqlx::types::Json<Value>>, _>("request_payload")
+        .unwrap()
+        .0;
+    assert_eq!(rp["body"]["USER_ID"], penanda.as_str());
+    assert_eq!(rp["body"]["transactionId"], kode.to_string());
+    assert!(!rp.to_string().contains(SECRET_PG), "{rp}");
+    let resp = r
+        .get::<Option<sqlx::types::Json<Value>>, _>("response_payload")
+        .unwrap()
+        .0;
+    assert_eq!(resp["content"][0]["UID"], penanda.as_str());
+    assert!(!resp.to_string().contains(SECRET_PG), "{resp}");
+
+    let diterima = server.received_requests().await.unwrap();
+    assert_eq!(diterima.len(), 1);
+    let body: Value = serde_json::from_slice(&diterima[0].body).unwrap();
+    assert_eq!(body["USER_ID"], SECRET_PG);
+    assert_eq!(body["transactionId"], kode.to_string());
+    assert_eq!(body["TRESHOLD"], "80");
+
+    let k = PgSessionDownstream::baru(u.api.clone())
+        .kontrak(
+            SesiKlien {
+                client_id: u.client_id,
+                credential_id: u.kred,
+            },
+            u.endpoint,
+        )
+        .await
+        .unwrap();
+    let nama: Vec<&str> = k.field_input.iter().map(|f| f.nama.as_str()).collect();
+    assert_eq!(nama, ["NIK", "NAMA_LGKP"]);
+}
+
+/// AC-30 dengan pemanggil produksi: `kuota_efektif = N`, N + 5 sync, paling
+/// banyak N panggilan yang diterima mock dan baris log = panggilan.
+#[tokio::test]
+#[ignore]
+async fn sync_http_tidak_melewati_kuota_efektif() {
+    redis_siap().await;
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(respons_dukcapil()))
+        .mount(&server)
+        .await;
+    let n = 4;
+    let (u, _) = uji_http(&server, 5).await;
+    for _ in 0..(n + 5) {
+        let (s, v) = u.sinkron(&body_sah()).await;
+        assert!(
+            s == StatusCode::OK || s == StatusCode::TOO_MANY_REQUESTS,
+            "{s} {v}"
+        );
+    }
+    let panggilan = i64::try_from(server.received_requests().await.unwrap().len()).unwrap();
+    assert!(panggilan <= n, "{panggilan} panggilan untuk kuota {n}");
+    let log = u
+        .skalar_i64(
+            "SELECT count(*) FROM transaction_log WHERE client_id = $1",
+            u.client_id,
+        )
+        .await;
+    assert_eq!(log, panggilan, "M-03: satu baris log per panggilan");
+}
+
+/// R-07 (`chk_tls`): kegagalan TLS tanpa respons HTTP menulis `responded_at`
+/// NULL. Sebelum ARC-66 kolom itu selalu diisi, sehingga constraint menolak
+/// transaksi kedua dan sync menjawab 503 alih-alih 502.
+#[tokio::test]
+#[ignore]
+async fn sync_tls_502_responded_at_null() {
+    redis_siap().await;
+    let u = Uji::baru(
+        1000,
+        HasilPanggilan::Gagal {
+            kelas: ErrorClass::Tls,
+            http_status: None,
+        },
+    )
+    .await;
+    let (s, v) = u.sinkron(&body_sah()).await;
+    assert_eq!(s, StatusCode::BAD_GATEWAY, "{v}");
+    assert_eq!(v["kode"], "provider_error_permanen");
+    let id = uuid_dari(&v, "request_id");
+    let r = sqlx::query(
+        "SELECT r.status, l.status_akses, l.error_class, l.responded_at IS NULL AS tanpa_respons \
+           FROM request r JOIN transaction_log l ON l.request_id = r.request_id \
+          WHERE r.request_id = $1",
+    )
+    .bind(id)
+    .fetch_one(&u.su)
+    .await
+    .unwrap();
+    assert_eq!(r.get::<String, _>("status"), "failed");
+    assert_eq!(r.get::<String, _>("status_akses"), "gagal_jaringan");
+    assert_eq!(r.get::<String, _>("error_class"), "tls");
+    assert!(r.get::<bool, _>("tanpa_respons"));
+}
+
+/// AC-32 (NFR-01, smoke/relatif) dengan pemanggil produksi: overhead sync =
+/// p95 end-to-end dikurangi latensi tetap wiremock (20 ms). Dicatat, bukan
+/// target NFR.
+#[tokio::test]
+#[ignore]
+async fn smoke_overhead_sync_http() {
+    redis_siap().await;
+    let server = MockServer::start().await;
+    let tunda = Duration::from_millis(20);
+    Mock::given(method("POST"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_json(respons_dukcapil())
+                .set_delay(tunda),
+        )
+        .mount(&server)
+        .await;
+    let (u, _) = uji_http(&server, 1_000_000).await;
+    let mut durasi: Vec<Duration> = Vec::with_capacity(200);
+    for _ in 0..200 {
+        let t = Instant::now();
+        let (s, v) = u.sinkron(&body_sah()).await;
+        durasi.push(t.elapsed());
+        assert_eq!(s, StatusCode::OK, "{v}");
+    }
+    durasi.sort();
+    let p95 = durasi[189].as_secs_f64() * 1000.0;
+    let mock = tunda.as_secs_f64() * 1000.0;
+    println!(
+        "ARC-66 AC-32 smoke/relatif (PemanggilHttp + wiremock): 200 sync, \
+         p95 end-to-end = {p95:.1} ms, latensi mock = {mock:.1} ms, overhead = {:.1} ms",
+        p95 - mock
     );
 }

@@ -3128,9 +3128,11 @@ dependencies = [
  "jsonwebtoken",
  "metrics",
  "metrics-exporter-prometheus",
+ "poolrouter-adapter-provider",
  "poolrouter-core",
  "redis",
  "regex",
+ "reqwest",
  "secrecy",
  "serde",
  "serde_json",
@@ -3146,6 +3148,7 @@ dependencies = [
  "utoipa",
  "utoipa-axum",
  "uuid",
+ "wiremock",
  "yaml_serde",
 ]
 

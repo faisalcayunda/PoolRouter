@@ -19,6 +19,7 @@ use axum::routing::post;
 use metrics_exporter_prometheus::{PrometheusBuilder, PrometheusHandle};
 use poolrouter_core::config::{Config, DbRole};
 use poolrouter_core::kuota::pemulihan::{Kesiapan, periksa_kesiapan};
+use poolrouter_core::secret::Brankas;
 use redis::IntoConnectionInfo;
 use secrecy::ExposeSecret;
 use sqlx::PgPool;
@@ -39,6 +40,7 @@ use crate::api::downstream_sesi::{KunciIdempoten, OperasiDownstream, TUNGGU_TOKE
 use crate::api::problem::ProblemKodeDown;
 use crate::downstream::downstream_sesi::{PgSessionDownstream, SessionDownstream};
 use crate::downstream::kuota_gerbang::KuotaRedisMalas;
+use crate::downstream::pemanggil::{PemanggilHttp, SumberPg, TransportTls};
 use crate::downstream::permintaan::PgPermintaan;
 
 pub const API_ADDR_VAR: &str = "POOLROUTER_API_ADDR";
@@ -255,12 +257,21 @@ async fn start(cfg: Config) -> Result<(), String> {
         .secrets
         .get("POOLROUTER_IDEMPOTENCY_HMAC_KEY")
         .ok_or("POOLROUTER_IDEMPOTENCY_HMAC_KEY_FILE missing")?;
+    // KEK yang sama dengan listener admin; tanpa KEK proses gagal start (exit 2).
+    let kek = cfg
+        .secrets
+        .get("POOLROUTER_KEK")
+        .ok_or("POOLROUTER_KEK_FILE missing")?;
+    let brankas = Brankas::dari_isi_kek(kek.expose_secret()).map_err(|e| e.to_string())?;
     let operasi = Arc::new(OperasiDownstream {
         permintaan: PgPermintaan::baru(pg.clone()),
         kuota: KuotaRedisMalas::baru(redis.clone()),
-        // Klien provider HTTP adalah ARC-64; sampai terpasang, sync menjawab 503
-        // tanpa menulis apa pun.
-        pemanggil: None,
+        // Jalur sync memanggil provider lewat adapter (ARC-66): dokumen versi
+        // aktif dan secret dibaca sebagai `pr_api`, secret dibuka dengan KEK.
+        pemanggil: Some(Arc::new(PemanggilHttp::baru(
+            SumberPg::baru(pg.clone(), brankas),
+            TransportTls,
+        ))),
         kunci_idempoten: KunciIdempoten::baru(kunci.expose_secret().as_bytes()),
         tunggu_token_sync: TUNGGU_TOKEN_SYNC,
     });

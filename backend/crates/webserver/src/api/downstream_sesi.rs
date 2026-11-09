@@ -40,7 +40,7 @@ use crate::downstream::gerbang::{self, Jawaban};
 use crate::downstream::intake::{self, TolakIntake};
 use crate::downstream::kuota_gerbang::GerbangKuota;
 use crate::downstream::layers::ApiError;
-use crate::downstream::pemanggil::{PanggilanProvider, PemanggilProvider};
+use crate::downstream::pemanggil::{HasilProvider, PanggilanProvider, PemanggilProvider};
 use crate::downstream::pengenal::{GalatPengenal, PengenalDownstream};
 use crate::downstream::permintaan::{
     Antrean, BarisIdempoten, BarisStatus, HasilAntre, HasilBatal, HasilPanggilan, Mode, MulaiSync,
@@ -81,8 +81,8 @@ impl std::fmt::Debug for KunciIdempoten {
 pub struct OperasiDownstream {
     pub permintaan: Arc<dyn PenyimpanPermintaan>,
     pub kuota: Arc<dyn GerbangKuota>,
-    /// Klien provider jalur sync. `None` sampai ARC-64 dipasang: sync menjawab
-    /// 503 tanpa menulis apa pun.
+    /// Klien provider jalur sync (produksi: `PemanggilHttp`, ARC-66). `None`:
+    /// sync menjawab 503 tanpa menulis apa pun.
     pub pemanggil: Option<Arc<dyn PemanggilProvider>>,
     pub kunci_idempoten: KunciIdempoten,
     /// Batas tunggu token sync (§5a.4, default 200 ms).
@@ -214,9 +214,17 @@ pub(crate) async fn get_endpoint_kontrak(
             Json(EndpointKontrak {
                 endpoint_id: k.endpoint_id,
                 endpoint_config_version: i64::from(k.config_versi_aktif),
-                // The provider template of the active version supplies these;
-                // the metadata table does not carry them.
-                field_input: Vec::new(),
+                // ADR-0002 rev 5 D6: `{{input.*}}` template provider versi
+                // aktif, sama dengan yang divalidasi intake (ARC-66).
+                field_input: k
+                    .field_input
+                    .into_iter()
+                    .map(|f| super::downstream::FieldInput {
+                        nama: f.nama,
+                        tipe: f.tipe,
+                        wajib: f.wajib,
+                    })
+                    .collect(),
                 field_metadata: k
                     .input
                     .into_iter()
@@ -971,8 +979,8 @@ pub(crate) async fn submit_sync(
         Err(r) => return r,
     };
     let op = state.operasi.as_ref();
-    // Tanpa klien provider (ARC-64) tidak ada panggilan yang bisa dilakukan:
-    // 503 sebelum kuota disentuh dan sebelum baris apa pun ditulis.
+    // Tanpa klien provider tidak ada panggilan yang bisa dilakukan: 503 sebelum
+    // kuota disentuh dan sebelum baris apa pun ditulis.
     let Some(pemanggil) = op.pemanggil.clone() else {
         return layanan_503();
     };
@@ -1026,6 +1034,28 @@ pub(crate) async fn submit_sync(
         )
         .await;
     }
+    // Langkah yang bisa gagal karena konfigurasi (dokumen versi aktif, secret,
+    // render, klien TLS, allowlist) sebelum kuota disentuh dan sebelum baris
+    // apa pun ditulis: gagal = 503 tanpa baris, seperti worker (M-03).
+    // `kode_transaksi` UUIDv7 satu per panggilan (K-25) dirender ke template.
+    let request_id = Uuid::now_v7();
+    let kode_transaksi = Uuid::now_v7();
+    let siap = match pemanggil
+        .siapkan(PanggilanProvider {
+            request_id,
+            kode_transaksi,
+            provider_id: rantai.provider_id,
+            endpoint_id: rantai.endpoint_id,
+            provider_config_version: rantai.provider_config_version,
+            endpoint_config_version: rantai.endpoint_config_version,
+            full_payload: rantai.log_mode == "full_payload",
+            input: input.clone(),
+        })
+        .await
+    {
+        Ok(s) => s,
+        Err(_) => return layanan_503(),
+    };
     let rute = match ambil_kuota_intake(op, klien, &rantai, true, received_at).await {
         Ok(r) => r.clone(),
         Err(None) => return layanan_503(),
@@ -1035,7 +1065,6 @@ pub(crate) async fn submit_sync(
         }
     };
 
-    let request_id = Uuid::now_v7();
     let ctx = konteks(&rute, received_at);
     let Some(p) = permintaan_token(&rute, request_id) else {
         tracing::error!(pool = %rute.upstream_pool_id, "downstream: parameter_dispatch tidak sah");
@@ -1069,7 +1098,6 @@ pub(crate) async fn submit_sync(
     // Transaksi pertama: request `in_flight`, history, log `status_akses` NULL.
     // Periode dan ember dihitung dari `requested_at` yang sama dengan baris log
     // (§5a.1 butir 1d).
-    let kode_transaksi = Uuid::now_v7();
     let requested_at = Utc::now();
     let ctx = konteks(&rute, requested_at);
     let mulai = MulaiSync {
@@ -1082,6 +1110,7 @@ pub(crate) async fn submit_sync(
         metadata,
         nik: nik_dari(&input),
         referensi_client: referensi,
+        request_payload: siap.request_payload,
     };
     if let Err(e) = op.permintaan.mulai_sync(klien, rantai.clone(), mulai).await {
         // Tidak ada yang ditulis: slot dikembalikan.
@@ -1100,17 +1129,14 @@ pub(crate) async fn submit_sync(
     // memutus koneksi tidak membatalkan panggilan upstream (AC-29).
     let permintaan = op.permintaan.clone();
     let kuota = op.kuota.clone();
-    let panggilan = PanggilanProvider {
-        request_id,
-        kode_transaksi,
-        provider_id: rantai.provider_id,
-        provider_config_version: rantai.provider_config_version,
-        endpoint_config_version: rantai.endpoint_config_version,
-        input: input.clone(),
-    };
+    let batas = batas_upstream(&rute);
+    let kirim = siap.kirim;
     let tugas = tokio::spawn(async move {
         let mulai = std::time::Instant::now();
-        let hasil = pemanggil.panggil(panggilan).await;
+        let HasilProvider {
+            hasil,
+            response_payload,
+        } = kirim(batas).await;
         let durasi = i32::try_from(mulai.elapsed().as_millis()).unwrap_or(i32::MAX);
         let selesai = SelesaiSync {
             request_id,
@@ -1118,6 +1144,7 @@ pub(crate) async fn submit_sync(
             responded_at: Utc::now(),
             duration_ms: durasi,
             hasil: hasil.clone(),
+            response_payload,
         };
         let tulis = permintaan.selesai_sync(klien, selesai).await;
         // Slot dilepas setelah log dilengkapi (§5a.1 butir 5).
@@ -1152,6 +1179,19 @@ pub(crate) async fn submit_sync(
 /// `timeout_total_upstream_detik` bila `parameter_dispatch` tidak menyebutnya,
 /// sama dengan `sumber_pg`.
 const TIMEOUT_UPSTREAM_BAWAAN_DETIK: i64 = 30;
+
+/// Timeout total panggilan sync: nilai yang sama dengan TTL slot dan penyapu
+/// (`parameter_dispatch.timeout_total_upstream_detik`, bawaan `sumber_pg`),
+/// supaya reconciler tidak menutup percobaan yang masih berjalan.
+fn batas_upstream(rute: &PoolRute) -> Duration {
+    let detik = rute
+        .parameter_dispatch
+        .get("timeout_total_upstream_detik")
+        .and_then(Value::as_i64)
+        .filter(|d| *d > 0)
+        .unwrap_or(TIMEOUT_UPSTREAM_BAWAAN_DETIK);
+    Duration::from_secs(u64::try_from(detik).unwrap_or(30))
+}
 /// `maks_konkurensi` bila `parameter_dispatch` tidak menyebutnya.
 const MAKS_KONKURENSI_BAWAAN: i64 = 10;
 
