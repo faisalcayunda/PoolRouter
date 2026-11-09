@@ -1,2 +1,4 @@
 # Fixture sintetis (contoh otpauth bertuliskan CONTOH...BUKANASLI) di commit lama #54; riwayat main tidak boleh ditulis ulang.
 d24e1197cb596b36259e6f1e455b0bcd9a5af55e:frontend/tests/mfa-screens.test.tsx:generic-api-key:31
+# Fixture sintetis di branch lama #104 (ditutup, digantikan); CI memindai semua ref.
+ab09f073479e09e21bf7e72dc33ff88104113004:backend/crates/cli/src/lib.rs:generic-api-key:498
