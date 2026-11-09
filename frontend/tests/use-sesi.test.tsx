@@ -74,6 +74,9 @@ describe('useSesi (jadwal sesuai ADR-0003 3.6f)', () => {
     const { result } = renderHook(() =>
       useSesi({ client, onBerakhir: vi.fn(), onKeluar: vi.fn() }),
     );
+    // Flush muatan awal dulu: timer jadwal baru dipasang setelah me() dan getSesi() selesai dan
+    // dirender, dan di dalam satu act render itu baru terjadi di akhir, setelah jam maju.
+    await maju(0);
     await maju(28 * MENIT + 100);
     expect(getSesi).toHaveBeenCalledTimes(2);
     expect(result.current.fase).toBe('peringatan_idle');
@@ -84,6 +87,9 @@ describe('useSesi (jadwal sesuai ADR-0003 3.6f)', () => {
     const { result } = renderHook(() =>
       useSesi({ client, onBerakhir: vi.fn(), onKeluar: vi.fn() }),
     );
+    // Flush muatan awal dulu: timer jadwal baru dipasang setelah me() dan getSesi() selesai dan
+    // dirender, dan di dalam satu act render itu baru terjadi di akhir, setelah jam maju.
+    await maju(0);
     await maju(28 * MENIT + 100);
     expect(result.current.fase).toBe('peringatan_idle');
     expect(getSesi).toHaveBeenCalledTimes(2);
@@ -108,6 +114,7 @@ describe('useSesi (jadwal sesuai ADR-0003 3.6f)', () => {
     const { client, getSesi } = siapkan(T0 + 30 * MENIT);
     const onBerakhir = vi.fn();
     const { result } = renderHook(() => useSesi({ client, onBerakhir, onKeluar: vi.fn() }));
+    await maju(0); // flush muatan awal supaya timer jadwal terpasang sebelum jam maju
     await maju(28 * MENIT + 100);
     expect(result.current.fase).toBe('peringatan_idle');
     expect(onBerakhir).not.toHaveBeenCalled();
