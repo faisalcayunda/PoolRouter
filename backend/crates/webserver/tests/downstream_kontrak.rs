@@ -28,6 +28,11 @@ use poolrouter_webserver::downstream::credential::fake::FakeStore;
 use poolrouter_webserver::downstream::credential::{Jenis, Kredensial};
 use poolrouter_webserver::downstream::downstream_sesi::{BidangInput, fake::FakeSession};
 use poolrouter_webserver::downstream::server::{AppState, LocalThrottle, api_router};
+use poolrouter_webserver::api::downstream_sesi::{KunciIdempoten, OperasiDownstream, TUNGGU_TOKEN_SYNC};
+use poolrouter_webserver::downstream::intake::FieldInputKontrak;
+use poolrouter_webserver::downstream::kuota_gerbang::fake::FakeKuota;
+use poolrouter_webserver::downstream::permintaan::fake::FakePermintaan;
+use poolrouter_webserver::downstream::permintaan::{PoolRute, RantaiEndpoint};
 
 #[allow(dead_code)]
 const ASAL: &str = "203.0.113.7";
@@ -124,10 +129,19 @@ impl Harness {
             )
             .unwrap();
 
+        let permintaan = FakePermintaan::baru();
+        permintaan.atur_rantai(rantai(endpoint));
         let state = AppState {
             auth,
             throttle: Arc::new(LocalThrottle::new()),
             sesi: sesi.clone(),
+            operasi: Arc::new(OperasiDownstream {
+                permintaan,
+                kuota: FakeKuota::baru(),
+                pemanggil: None,
+                kunci_idempoten: KunciIdempoten::baru(b"kunci-hmac-sintetis"),
+                tunggu_token_sync: TUNGGU_TOKEN_SYNC,
+            }),
         };
         Self {
             app: api_router(state).layer(MockConnectInfo(std::net::SocketAddr::from((
@@ -173,6 +187,44 @@ impl Harness {
 
     fn endpoint_path(&self, akhiran: &str) -> String {
         format!("/v1/endpoints/{}/{akhiran}", self.endpoint)
+    }
+}
+
+/// Rantai endpoint minimal untuk operasi submit: satu field input `NIK`, tanpa
+/// metadata, satu upstream pool aktif.
+fn rantai(endpoint: Uuid) -> RantaiEndpoint {
+    RantaiEndpoint {
+        endpoint_id: endpoint,
+        provider_id: Uuid::now_v7(),
+        downstream_pool_id: Uuid::now_v7(),
+        prioritas: 1,
+        ttl_antrean_detik: 86_400,
+        provider_config_version: 1,
+        endpoint_config_version: 3,
+        log_mode: "metadata_only".to_owned(),
+        wajib_log_nik: false,
+        field_input: vec![FieldInputKontrak {
+            nama: "NIK".to_owned(),
+            tipe: "string".to_owned(),
+            wajib: false,
+        }],
+        field_metadata: Vec::new(),
+        metadata_rahasia: Vec::new(),
+        nonaktif: None,
+        rute: vec![PoolRute {
+            upstream_pool_id: Uuid::now_v7(),
+            kuota_harian: 100,
+            margin_kuota: 0.01,
+            kalender: false,
+            periode_mulai: chrono::Utc::now(),
+            periode_selesai: chrono::Utc::now(),
+            porsi_sync_maks: 0.2,
+            retry_rasio: 0.1,
+            retry_min_per_jam: 20,
+            parameter_dispatch: json!({}),
+        }],
+        limiter_burst: 20,
+        limiter_isi_ulang_mikro: 1_000_000,
     }
 }
 
@@ -326,39 +378,54 @@ async fn kontrak_sesuai_skema_openapi() {
 
 #[tokio::test]
 async fn async_menerima_dan_mengembalikan_queue_id() {
-    // AC-1 for enqueue: stub answers 503 (dispatch wired in ARC-61).
+    // AC-1 untuk enqueue, polling, dan replay idempoten: setiap body cocok
+    // dengan skema di dokumen hasil generate.
     let h = Harness::baru();
     let path = h.endpoint_path("async");
-    let kirim =
-        json!({"input": {"nik": "3201010101010001"}, "metadata": {"nik": "3201010101010001"}});
-    let (status, headers, body) = h
-        .kirim(Method::POST, &path, Some(bearer(&h)), Some(kirim.clone()))
-        .await;
-    assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
+    let kirim = json!({"input": {"NIK": "0012345678901234"}, "metadata": {}});
+    let (status, headers, body) = kirim_idempoten(&h, &path, &kirim, "kunci-uji-001").await;
+    assert_eq!(status, StatusCode::ACCEPTED);
     tanpa_cache(&headers, status);
     let v = teks(&body);
-    cek_skema("Problem", &v);
-    assert_eq!(v["kode"], "layanan_tidak_tersedia");
+    cek_skema("EnqueueResponse", &v);
+    assert_eq!(v["status"], "queued");
+    let queue_id = v["queue_id"].as_str().unwrap().to_owned();
 
-    // Polling the same request (non-existent) answers 404.
-    let fake_id = Uuid::now_v7();
     let (s2, h2, b2) = h
         .kirim(
             Method::GET,
-            &format!("/v1/requests/{fake_id}"),
+            &format!("/v1/requests/{queue_id}"),
             Some(bearer(&h)),
             None,
         )
         .await;
-    assert_eq!(s2, StatusCode::NOT_FOUND);
+    assert_eq!(s2, StatusCode::OK);
     tanpa_cache(&h2, s2);
     let p = teks(&b2);
+    cek_skema("RequestStatus", &p);
+    assert_eq!(p["status"], "queued");
+
+    // Kunci dan sidik sama: 200 dengan queue_id yang sama.
+    let (s3, _, b3) = kirim_idempoten(&h, &path, &kirim, "kunci-uji-001").await;
+    assert_eq!(s3, StatusCode::OK);
+    let r = teks(&b3);
+    cek_skema("EnqueueResponse", &r);
+    assert_eq!(r["queue_id"], json!(queue_id));
+
+    // Polling id yang tidak ada: 404.
+    let (s4, h4, b4) = h
+        .kirim(
+            Method::GET,
+            &format!("/v1/requests/{}", Uuid::now_v7()),
+            Some(bearer(&h)),
+            None,
+        )
+        .await;
+    assert_eq!(s4, StatusCode::NOT_FOUND);
+    tanpa_cache(&h4, s4);
+    let p = teks(&b4);
     cek_skema("Problem", &p);
     assert_eq!(p["kode"], "tidak_ditemukan");
-
-    // Idempotency-Key validation still works (header parsed even if stub answers).
-    let (s3, _, _) = kirim_idempoten(&h, &path, &kirim, "kunci-uji-001").await;
-    assert_eq!(s3, StatusCode::SERVICE_UNAVAILABLE);
 }
 
 async fn kirim_idempoten(
@@ -402,18 +469,39 @@ async fn endpoint_asing_jadi_404_bukan_403() {
 }
 
 #[tokio::test]
-async fn cancel_lalu_404_stub() {
-    // AC-1 for cancel: stub answers 404 (dispatch wired in ARC-65).
+async fn cancel_sesuai_skema_lalu_409_dan_404() {
+    // AC-1 untuk cancel: 200 RequestStatus, 409 dengan status_api, 404.
     let h = Harness::baru();
-    let fake_id = Uuid::now_v7();
-    let path = format!("/v1/requests/{fake_id}/cancel");
+    let kirim = json!({"input": {"NIK": "0012345678901234"}, "metadata": {}});
+    let (_, _, body) = h
+        .kirim(
+            Method::POST,
+            &h.endpoint_path("async"),
+            Some(bearer(&h)),
+            Some(kirim),
+        )
+        .await;
+    let queue_id = teks(&body)["queue_id"].as_str().unwrap().to_owned();
+    let path = format!("/v1/requests/{queue_id}/cancel");
 
     let (status, headers, body) = h.kirim(Method::POST, &path, Some(bearer(&h)), None).await;
-    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert_eq!(status, StatusCode::OK);
+    tanpa_cache(&headers, status);
+    let v = teks(&body);
+    cek_skema("RequestStatus", &v);
+    assert_eq!(v["cancel_reason"], "dibatalkan_client");
+
+    let (status, headers, body) = h.kirim(Method::POST, &path, Some(api_key(&h)), None).await;
+    assert_eq!(status, StatusCode::CONFLICT);
     tanpa_cache(&headers, status);
     let v = teks(&body);
     cek_skema("Problem", &v);
-    assert_eq!(v["kode"], "tidak_ditemukan");
+    assert_eq!(v["status_api"], "cancelled");
+
+    let lain = format!("/v1/requests/{}/cancel", Uuid::now_v7());
+    let (status, _, body) = h.kirim(Method::POST, &lain, Some(bearer(&h)), None).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    cek_skema("Problem", &teks(&body));
 }
 
 #[tokio::test]

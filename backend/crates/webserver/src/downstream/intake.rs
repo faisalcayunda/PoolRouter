@@ -373,7 +373,9 @@ pub fn baca_idempotency_key(
     let terpotong = raw.trim();
     if terpotong.is_empty()
         || terpotong.len() > IDEMPOTENCY_KEY_MAKS
-        || !terpotong.bytes().all(|b| b.is_ascii_graphic() || b == b' ')
+        // Sama dengan CHECK kolom `request.idempotency_key` (`^[\x21-\x7e]+$`):
+        // spasi di tengah ditolak di sini, bukan oleh database setelah kuota.
+        || !terpotong.bytes().all(|b| b.is_ascii_graphic())
     {
         return Err(TolakIntake::IdempotencyKeyTidakSah);
     }
@@ -743,6 +745,12 @@ mod tests {
             .unwrap();
         assert_eq!(k.as_str().len(), IDEMPOTENCY_KEY_MAKS);
         assert_eq!(k.as_str(), pas);
+    }
+
+    #[test]
+    fn idempotency_key_dengan_spasi_di_tengah_ditolak_seperti_check_kolom() {
+        let galat = baca_idempotency_key(Some("kunci uji"), true).unwrap_err();
+        assert_eq!(galat, TolakIntake::IdempotencyKeyTidakSah);
     }
 
     #[test]

@@ -35,7 +35,10 @@ pub use super::token::LocalThrottle;
 use super::token::{TokenThrottle, issue_token};
 use crate::admin::listener;
 use crate::admin::sesi::router as admin_router;
+use crate::api::downstream_sesi::{KunciIdempoten, OperasiDownstream, TUNGGU_TOKEN_SYNC};
 use crate::api::problem::ProblemKodeDown;
+use crate::downstream::kuota_gerbang::KuotaRedisMalas;
+use crate::downstream::permintaan::PgPermintaan;
 use crate::downstream::downstream_sesi::{PgSessionDownstream, SessionDownstream};
 
 pub const API_ADDR_VAR: &str = "POOLROUTER_API_ADDR";
@@ -52,6 +55,8 @@ pub struct AppState {
     pub throttle: Arc<dyn TokenThrottle>,
     /// Request store behind the five downstream operations (ARC-158).
     pub sesi: Arc<dyn SessionDownstream>,
+    /// Submit, polling, dan pembatalan (ARC-63, ARC-65, ARC-66).
+    pub operasi: Arc<OperasiDownstream>,
 }
 
 async fn tidak_ditemukan() -> ApiError {
@@ -88,6 +93,7 @@ pub fn api_router(state: AppState) -> Router {
         crate::api::downstream_sesi::DownstreamState {
             pengenal: crate::downstream::pengenal::PengenalNyata::baru(state.auth.clone()),
             sesi: state.sesi.clone(),
+            operasi: state.operasi.clone(),
         },
     ))
     .with_state::<()>(());
@@ -245,10 +251,24 @@ async fn start(cfg: Config) -> Result<(), String> {
     // The downstream operations read and write through the same `pr_api` pool
     // the credential store uses; the admin pool never reaches this router.
     let sesi: Arc<dyn SessionDownstream> = PgSessionDownstream::baru(pg.clone());
+    let kunci = cfg
+        .secrets
+        .get("POOLROUTER_IDEMPOTENCY_HMAC_KEY")
+        .ok_or("POOLROUTER_IDEMPOTENCY_HMAC_KEY_FILE missing")?;
+    let operasi = Arc::new(OperasiDownstream {
+        permintaan: PgPermintaan::baru(pg.clone()),
+        kuota: KuotaRedisMalas::baru(redis.clone()),
+        // Klien provider HTTP adalah ARC-64; sampai terpasang, sync menjawab 503
+        // tanpa menulis apa pun.
+        pemanggil: None,
+        kunci_idempoten: KunciIdempoten::baru(kunci.expose_secret().as_bytes()),
+        tunggu_token_sync: TUNGGU_TOKEN_SYNC,
+    });
     let state = AppState {
         auth: Arc::new(Authenticator::new(store, keys)),
         throttle: Arc::new(LocalThrottle::new()),
         sesi,
+        operasi,
     };
     let api = api_router(state);
     let redis_admin = redis.clone();
@@ -344,6 +364,7 @@ mod tests {
             auth: Arc::new(Authenticator::new(fake.clone(), keys())),
             throttle,
             sesi: crate::downstream::downstream_sesi::fake::FakeSession::baru(),
+            operasi: OperasiDownstream::palsu(),
         };
         let app =
             api_router(state).layer(MockConnectInfo(SocketAddr::from(([203, 0, 113, 7], 5555))));
@@ -628,6 +649,7 @@ mod tests {
             auth: Arc::new(Authenticator::new(h.fake.clone(), keys())),
             throttle: Arc::new(LocalThrottle::new()),
             sesi: crate::downstream::downstream_sesi::fake::FakeSession::baru(),
+            operasi: OperasiDownstream::palsu(),
         };
         // Different signing key => bearer from `h` must be refused here.
         let protected = Router::new()
