@@ -42,6 +42,106 @@ const TTL_SLOT_TAMBAHAN_DETIK: i64 = 60;
 /// a pool insert and the dispatcher ticket that fills it in.
 const TIMEOUT_UPSTREAM_BAWAAN_DETIK: i64 = 30;
 
+/// Konkurensi bawaan bila `parameter_dispatch.maks_konkurensi` tidak diisi.
+/// Kuota tetap dijaga skrip token; angka ini hanya membatasi panggilan paralel.
+pub const MAKS_KONKURENSI_BAWAAN: i64 = 10;
+
+/// Upstream pool rute pertama yang aktif untuk `r.downstream_pool_id`, menurut
+/// `upstream_pool_id` (asumsi spec `f0-controller-worker`: F0 satu rute per
+/// downstream pool; CW4). Fragmen SQL dengan alias `r` untuk tabel `request`.
+pub const SQL_RUTE_PERTAMA: &str = "(SELECT rt.upstream_pool_id
+           FROM downstream_pool_rute rt
+           JOIN upstream_pool u ON u.upstream_pool_id = rt.upstream_pool_id
+          WHERE rt.downstream_pool_id = r.downstream_pool_id AND u.aktif
+          ORDER BY rt.upstream_pool_id
+          LIMIT 1)";
+
+/// Pool yang counter `antre`-nya memuat request `r` (CW3, AC-25): upstream pool
+/// yang sudah terisi saat dispatch, atau rute pertama yang aktif bila request
+/// belum pernah di-dispatch (EN-04: `upstream_pool_id` baru terisi saat
+/// dispatch). Rebuild, dispatcher, dan penyapu memakai fragmen yang sama.
+pub fn sql_pool_antre() -> String {
+    format!("COALESCE(r.upstream_pool_id, {SQL_RUTE_PERTAMA})")
+}
+
+/// Isi `upstream_pool.parameter_dispatch` yang dipakai dispatcher dan rebuild
+/// (bentuknya dikunci ARC-70; `docs/db/skema-f0.md`):
+///
+/// ```json
+/// { "rate": { "tps": { "t_mikro": 100000, "burst": 1 } },
+///   "timeout_total_upstream_detik": 20,
+///   "maks_konkurensi": 10,
+///   "jeda_acak_maks_mikro": 100000 }
+/// ```
+///
+/// Semua kunci boleh absen; `rate` yang absen berarti dispatcher tidak bisa
+/// mengambil token (fail-closed di skrip), bukan "tanpa batas".
+#[derive(Debug, Clone, PartialEq)]
+pub struct ParameterDispatch {
+    pub jendela_rate: Vec<JendelaRate>,
+    pub timeout_total_upstream_detik: i64,
+    pub maks_konkurensi: i64,
+    /// Batas atas jeda acak antar-publish K-05 yang diminta admin, sebelum
+    /// dipotong ke satu slot token. `None` = satu slot token penuh.
+    pub jeda_acak_maks_mikro: Option<i64>,
+}
+
+impl ParameterDispatch {
+    pub fn dari_json(parameter: &serde_json::Value) -> Result<Self, GalatPemulihan> {
+        let angka_opsional = |kunci: &str| -> Result<Option<i64>, GalatPemulihan> {
+            match parameter.get(kunci) {
+                None | Some(serde_json::Value::Null) => Ok(None),
+                Some(v) => v.as_i64().filter(|n| *n >= 0).map(Some).ok_or_else(|| {
+                    GalatPemulihan::DataTidakSah(format!(
+                        "parameter_dispatch.{kunci} bukan bilangan bulat >= 0"
+                    ))
+                }),
+            }
+        };
+        let maks_konkurensi = angka_opsional("maks_konkurensi")?.unwrap_or(MAKS_KONKURENSI_BAWAAN);
+        if maks_konkurensi < 1 {
+            return Err(GalatPemulihan::DataTidakSah(
+                "parameter_dispatch.maks_konkurensi harus >= 1".to_owned(),
+            ));
+        }
+        Ok(Self {
+            jendela_rate: jendela_rate(parameter)?,
+            timeout_total_upstream_detik: angka_opsional("timeout_total_upstream_detik")?
+                .unwrap_or(TIMEOUT_UPSTREAM_BAWAAN_DETIK),
+            maks_konkurensi,
+            jeda_acak_maks_mikro: angka_opsional("jeda_acak_maks_mikro")?,
+        })
+    }
+
+    /// TTL slot = timeout total upstream + 60 s (§5a.1 butir 5), dalam mikrodetik.
+    pub fn ttl_slot_mikro(&self) -> i64 {
+        (self.timeout_total_upstream_detik + TTL_SLOT_TAMBAHAN_DETIK) * 1_000_000
+    }
+
+    /// Ambang reconciler dan penyapu log: timeout total upstream + 60 s.
+    pub fn ambang_reconciler_detik(&self) -> i64 {
+        self.timeout_total_upstream_detik + TTL_SLOT_TAMBAHAN_DETIK
+    }
+
+    /// Batas jeda acak K-05: di dalam satu slot token, yaitu `1/rate` jendela
+    /// terketat (t_mikro terkecil), dan tidak lebih dari permintaan admin.
+    /// Dipotong 1 s supaya jendela TPM/TPH tidak membuat dispatcher tidur lama.
+    pub fn batas_jeda_mikro(&self) -> i64 {
+        let slot = self
+            .jendela_rate
+            .iter()
+            .map(|j| j.t_mikro)
+            .filter(|t| *t > 0)
+            .min()
+            .unwrap_or(0)
+            .min(1_000_000);
+        match self.jeda_acak_maks_mikro {
+            Some(maks) => maks.clamp(0, slot),
+            None => slot,
+        }
+    }
+}
+
 /// Rolling window of the per-bucket counts: `JUMLAH_EMBER_HARIAN` buckets of
 /// [`super::periode::MENIT_EMBER`] minutes each, as the scripts derive it.
 fn batas_jendela_gulir(sekarang: DateTime<Utc>) -> DateTime<Utc> {
@@ -114,14 +214,10 @@ async fn satu_pool(
     let slot = slot_pool(tx, pool_id).await?;
 
     let parameter = kolom::<sqlx::types::Json<serde_json::Value>>(baris, "parameter_dispatch")?.0;
-    let jendela_rate = jendela_rate(&parameter)?;
+    let parameter = ParameterDispatch::dari_json(&parameter)?;
     let porsi_sync = kolom::<String>(baris, "porsi_sync_maks")?
         .parse::<f64>()
         .map_err(|e| GalatPemulihan::Sumber(format!("porsi_sync_maks bukan angka: {e}")))?;
-    let timeout_detik = parameter
-        .get("timeout_total_upstream_detik")
-        .and_then(serde_json::Value::as_i64)
-        .unwrap_or(TIMEOUT_UPSTREAM_BAWAAN_DETIK);
 
     Ok(KeadaanPool {
         pool_id: pool_id.to_string(),
@@ -131,8 +227,8 @@ async fn satu_pool(
         log_ember,
         antre,
         slot,
-        ttl_slot_mikro: (timeout_detik + TTL_SLOT_TAMBAHAN_DETIK) * 1_000_000,
-        jendela_rate,
+        ttl_slot_mikro: parameter.ttl_slot_mikro(),
+        jendela_rate: parameter.jendela_rate,
         porsi_sync,
     })
 }
@@ -278,30 +374,45 @@ async fn ember_pool(
 }
 
 /// `queued` plus `dispatched`: what the pool still owes, claimed or not.
+///
+/// Request `queued` yang belum pernah di-dispatch belum punya
+/// `upstream_pool_id` (EN-04), jadi pool-nya diturunkan lewat
+/// [`sql_pool_antre`], kunci yang sama dengan koreksi `antre` di controller
+/// (ARC-72, AC-25).
 async fn antre_pool(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     pool_id: Uuid,
 ) -> Result<i64, GalatPemulihan> {
-    let jumlah: i64 = sqlx::query_scalar(
+    let sql = format!(
         "SELECT COUNT(*)
-           FROM request
-          WHERE upstream_pool_id = $1
-            AND status IN ('queued', 'dispatched')",
-    )
-    .bind(pool_id)
-    .fetch_one(&mut **tx)
-    .await
-    .map_err(|e| GalatPemulihan::Sumber(format!("hitung antre: {e}")))?;
+           FROM request r
+          WHERE r.status IN ('queued', 'dispatched')
+            AND {} = $1",
+        sql_pool_antre()
+    );
+    let jumlah: i64 = sqlx::query_scalar(sqlx::AssertSqlSafe(sql.as_str()))
+        .bind(pool_id)
+        .fetch_one(&mut **tx)
+        .await
+        .map_err(|e| GalatPemulihan::Sumber(format!("hitung antre: {e}")))?;
     Ok(jumlah)
 }
 
 /// The semaphore occupants: `dispatched` and `in_flight` with their attempt.
+///
+/// Member slot memakai nomor percobaan yang *akan* atau *sedang* berjalan:
+/// dispatcher mengambil token untuk `attempt_count + 1` (request `dispatched`
+/// belum menaikkan `attempt_count`), sedangkan `in_flight` sudah menaikkannya.
+/// Tanpa `+ 1` itu rebuild menolak slot `dispatched` percobaan pertama
+/// (`nomor_percobaan` 0) dan worker tidak menemukan slotnya (ARC-70).
 async fn slot_pool(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     pool_id: Uuid,
 ) -> Result<Vec<SlotAktif>, GalatPemulihan> {
     let baris = sqlx::query(
-        "SELECT request_id, attempt_count
+        "SELECT request_id,
+                CASE WHEN status = 'dispatched' THEN attempt_count + 1 ELSE attempt_count END
+                  AS attempt_count
            FROM request
           WHERE upstream_pool_id = $1
             AND status IN ('dispatched', 'in_flight')",
@@ -368,4 +479,60 @@ pub fn jendela_rate(parameter: &serde_json::Value) -> Result<Vec<JendelaRate>, G
         });
     }
     Ok(hasil)
+}
+
+#[cfg(test)]
+mod uji_parameter {
+    use super::*;
+
+    #[test]
+    fn parameter_kosong_memakai_bawaan() {
+        let p = ParameterDispatch::dari_json(&serde_json::json!({})).expect("objek kosong sah");
+        assert!(p.jendela_rate.is_empty());
+        assert_eq!(p.maks_konkurensi, MAKS_KONKURENSI_BAWAAN);
+        assert_eq!(
+            p.timeout_total_upstream_detik,
+            TIMEOUT_UPSTREAM_BAWAAN_DETIK
+        );
+        assert_eq!(p.ttl_slot_mikro(), (30 + 60) * 1_000_000);
+        assert_eq!(p.batas_jeda_mikro(), 0, "tanpa rate tidak ada jeda");
+    }
+
+    #[test]
+    fn jeda_k05_berada_di_dalam_slot_token() {
+        let p = ParameterDispatch::dari_json(&serde_json::json!({
+            "rate": { "tps": { "t_mikro": 100_000, "burst": 1 },
+                      "tph": { "t_mikro": 360_000_000, "burst": 10 } },
+            "jeda_acak_maks_mikro": 500_000
+        }))
+        .expect("parameter sah");
+        // 10 TPS: satu slot = 100 ms; permintaan 500 ms dipotong ke slot.
+        assert_eq!(p.batas_jeda_mikro(), 100_000);
+
+        let kecil = ParameterDispatch::dari_json(&serde_json::json!({
+            "rate": { "tps": { "t_mikro": 100_000, "burst": 1 } },
+            "jeda_acak_maks_mikro": 20_000
+        }))
+        .expect("parameter sah");
+        assert_eq!(kecil.batas_jeda_mikro(), 20_000);
+
+        let lambat = ParameterDispatch::dari_json(&serde_json::json!({
+            "rate": { "tpm": { "t_mikro": 6_000_000, "burst": 1 } }
+        }))
+        .expect("parameter sah");
+        assert_eq!(lambat.batas_jeda_mikro(), 1_000_000, "dipotong 1 s");
+    }
+
+    #[test]
+    fn konkurensi_nol_atau_negatif_ditolak() {
+        assert!(
+            ParameterDispatch::dari_json(&serde_json::json!({ "maks_konkurensi": 0 })).is_err()
+        );
+        assert!(
+            ParameterDispatch::dari_json(&serde_json::json!({ "maks_konkurensi": -1 })).is_err()
+        );
+        assert!(
+            ParameterDispatch::dari_json(&serde_json::json!({ "maks_konkurensi": "x" })).is_err()
+        );
+    }
 }

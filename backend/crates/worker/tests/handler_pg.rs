@@ -984,8 +984,15 @@ impl<K: KuotaStore> KuotaStore for Lambat<K> {
         ctx: &KonteksKuota,
         permintaan: &PermintaanToken,
         urutan: &[SumberDana],
+        downstream_pool_id: i64,
     ) -> Result<HasilToken, GalatStore> {
-        self.0.ambil_token_alokasi(ctx, permintaan, urutan).await
+        self.0
+            .ambil_token_alokasi(ctx, permintaan, urutan, downstream_pool_id)
+            .await
+    }
+
+    async fn ubah_antre(&self, pool_id: &str, delta: i64) -> Result<i64, GalatStore> {
+        self.0.ubah_antre(pool_id, delta).await
     }
 
     async fn klaim_slot(

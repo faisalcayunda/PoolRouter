@@ -2,9 +2,9 @@
 //!
 //! Scope of this ticket is the *frame*: leader election, the leader-gated
 //! scheduler, the Redis rebuild from PostgreSQL and the `upstream_attempt_daily`
-//! snapshot. The dispatcher, worker, sweeper, reconciler and webhook jobs are
-//! later tickets and plug into the scheduler as additional
-//! [`poolrouter_controller::jadwal::Pekerjaan`].
+//! snapshot. Reconciler dan penyapu (ARC-72) masuk penjadwal sebagai
+//! [`poolrouter_controller::jadwal::Pekerjaan`]; dispatcher (ARC-70) berjalan
+//! di task sendiri selama leader lock yang sama dipegang.
 //!
 //! Steps, and why they are in this order:
 //!
@@ -16,6 +16,8 @@
 //!    the intended state: AC-4 only asks that it take over within 30 s.
 //! 4. Run the scheduler until SIGINT/SIGTERM.
 
+use std::collections::HashSet;
+use std::sync::Arc;
 use std::time::Duration;
 
 use chrono::Utc;
@@ -25,16 +27,22 @@ use sqlx::postgres::{PgConnectOptions, PgPoolOptions, PgSslMode};
 use tokio_util::sync::CancellationToken;
 
 use poolrouter_controller::balikan::Balikan;
+use poolrouter_controller::dispatcher::jalankan_loop_dispatcher;
 use poolrouter_controller::jadwal::{INTERVAL_SIKLUS, Pekerjaan, SumberLeader, jalankan_loop};
 use poolrouter_controller::leader::KotakFutur;
 use poolrouter_controller::leader::{Leader, PemegangLeader};
+use poolrouter_controller::penyapu::Penyapu;
 use poolrouter_controller::rebuild::Rebuild;
+use poolrouter_controller::reconciler::{KonfigurasiReconciler, Reconciler};
 use poolrouter_controller::snapshot::{Snapshot, SumberSnapshotPg};
 use poolrouter_controller::webhook::Webhook;
 use poolrouter_core::config::{Component, Config, DbRole};
 use poolrouter_core::kuota::sumber_pg::SumberPostgres;
+use poolrouter_core::queue::{JobPublisher, QueueError};
+use poolrouter_core::retry::AcakAwsLc;
 use poolrouter_core::secret::Brankas;
 use poolrouter_queue_apalis::ApalisQueue;
+use uuid::Uuid;
 
 /// How long one acquire may wait before `/readyz` sees the database as down.
 const TIMEOUT_AKUISISI: Duration = Duration::from_secs(5);
@@ -106,19 +114,38 @@ async fn jalankan(cfg: &Config) -> Result<(), String> {
     let antrean = ApalisQueue::connect(&rabbitmq_uri(cfg)?)
         .await
         .map_err(|e| e.to_string())?;
+    let publisher = Arc::new(PublisherDeklarasi {
+        antrean,
+        sudah: tokio::sync::Mutex::new(HashSet::new()),
+    });
+    let konf_reconciler = KonfigurasiReconciler {
+        ambang_dispatched: ambang_dispatched(),
+        ..KonfigurasiReconciler::default()
+    };
+    // Reconciler sebelum penyapu: log `in_flight` ditutup bersama transisinya,
+    // penyapu log hanya menangkap sisa yang yatim.
     let pekerjaan: Vec<Box<dyn Pekerjaan>> = vec![
         Box::new(Rebuild::baru(redis.clone(), sumber_rebuild)),
         Box::new(Snapshot::baru(SumberSnapshotPg::baru(pool.clone()))),
+        Box::new(Reconciler::baru(
+            pool.clone(),
+            redis.clone(),
+            Box::new(AcakAwsLc::baru()),
+            konf_reconciler,
+        )),
+        Box::new(Penyapu::baru(pool.clone(), redis.clone())),
         Box::new(Webhook::baru(pg_pool_webhook(cfg)?, brankas)),
-        Box::new(Balikan::baru(pool.clone(), antrean)),
+        Box::new(Balikan::baru(pool.clone(), publisher.clone())),
     ];
 
     // The first leader was acquired above; the source hands it over once and
     // re-elects afterwards, when a cycle reports the lock lost.
     let sumber = SumberLeaderPg {
         pool,
+        redis,
+        publisher,
         berhenti: berhenti.clone(),
-        awal: tokio::sync::Mutex::new(Some(Box::new(pemegang) as Box<dyn Leader>)),
+        awal: tokio::sync::Mutex::new(Some(pemegang)),
     };
 
     jalankan_loop(sumber, pekerjaan, INTERVAL_SIKLUS, berhenti, Utc::now).await;
@@ -127,24 +154,84 @@ async fn jalankan(cfg: &Config) -> Result<(), String> {
 }
 
 /// [`SumberLeader`] backed by the PostgreSQL advisory lock.
+///
+/// Setiap kepemimpinan baru juga menyalakan loop dispatcher (ARC-70) yang
+/// berbagi lock yang sama; loop itu berhenti sendiri saat lock hilang.
 struct SumberLeaderPg {
     pool: sqlx::PgPool,
+    redis: redis::Client,
+    publisher: Arc<PublisherDeklarasi>,
     berhenti: CancellationToken,
     /// The leader already held when the process started.
-    awal: tokio::sync::Mutex<Option<Box<dyn Leader>>>,
+    awal: tokio::sync::Mutex<Option<PemegangLeader>>,
+}
+
+impl SumberLeaderPg {
+    fn mulai(&self, pemegang: PemegangLeader) -> Box<dyn Leader> {
+        let bersama: Arc<dyn Leader> = Arc::new(pemegang);
+        tokio::spawn(jalankan_loop_dispatcher(
+            Arc::clone(&bersama),
+            self.pool.clone(),
+            self.redis.clone(),
+            Arc::clone(&self.publisher),
+            self.berhenti.clone(),
+        ));
+        Box::new(LeaderBersama(bersama))
+    }
 }
 
 impl SumberLeader for SumberLeaderPg {
     fn ambil(&self) -> KotakFutur<'_, Option<Box<dyn Leader>>> {
         Box::pin(async move {
-            if let Some(awal) = self.awal.lock().await.take() {
-                return Some(awal);
-            }
-            PemegangLeader::tunggu_jadi_leader(&self.pool, &self.berhenti)
-                .await
-                .map(|p| Box::new(p) as Box<dyn Leader>)
+            let awal = self.awal.lock().await.take();
+            let pemegang = match awal {
+                Some(p) => p,
+                None => PemegangLeader::tunggu_jadi_leader(&self.pool, &self.berhenti).await?,
+            };
+            Some(self.mulai(pemegang))
         })
     }
+}
+
+/// Leader yang dipegang bersama penjadwal dan loop dispatcher.
+struct LeaderBersama(Arc<dyn Leader>);
+
+impl Leader for LeaderBersama {
+    fn masih_leader(&self) -> KotakFutur<'_, bool> {
+        self.0.masih_leader()
+    }
+}
+
+/// Publisher yang mendeklarasikan queue (idempoten) sebelum publish pertama
+/// ke nama itu: queue per upstream pool baru diketahui saat dispatch, dan
+/// publish `mandatory` ke queue yang belum ada ditolak broker.
+struct PublisherDeklarasi {
+    antrean: ApalisQueue,
+    sudah: tokio::sync::Mutex<HashSet<String>>,
+}
+
+impl JobPublisher for PublisherDeklarasi {
+    async fn publish(&self, queue: &str, request_id: Uuid) -> Result<(), QueueError> {
+        {
+            let mut sudah = self.sudah.lock().await;
+            if !sudah.contains(queue) {
+                self.antrean.declare(queue).await?;
+                sudah.insert(queue.to_owned());
+            }
+        }
+        self.antrean.publish(queue, request_id).await
+    }
+}
+
+/// Ambang reconciler `dispatched` (AC-22, "dapat dikonfigurasi"):
+/// `POOLROUTER_RECONCILER_DISPATCHED_DETIK`, default 120 s.
+fn ambang_dispatched() -> Duration {
+    std::env::var("POOLROUTER_RECONCILER_DISPATCHED_DETIK")
+        .ok()
+        .and_then(|v| v.parse::<u64>().ok())
+        .filter(|d| *d > 0)
+        .map(Duration::from_secs)
+        .unwrap_or(poolrouter_controller::reconciler::AMBANG_DISPATCHED_BAWAAN)
 }
 
 fn pg_pool_webhook(cfg: &Config) -> Result<sqlx::PgPool, String> {
