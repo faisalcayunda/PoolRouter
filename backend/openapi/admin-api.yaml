@@ -3558,6 +3558,12 @@ components:
           example: 1
           maximum: 2
           minimum: 1
+        data_balikan:
+          type: object
+          description: |-
+            Data balikan configuration block, present only for documents with
+            config_schema_version = 2. Mirrors `ProviderConfig::data_balikan` so a
+            read pre-fills the edit form and the full-replacement PUT keeps it.
         log_mode:
           $ref: '#/components/schemas/LogMode'
         metode:

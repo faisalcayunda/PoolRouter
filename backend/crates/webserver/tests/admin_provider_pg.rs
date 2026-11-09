@@ -855,6 +855,8 @@ async fn create_provider_config_schema_v2_valid_data_balikan() {
     assert_eq!(st, StatusCode::CREATED, "{res}");
     assert_eq!(res["config_schema_version"], 2);
     assert_eq!(res["provider_config_version"], 1);
+    // Entitas respons memuat blok yang sama dengan body PUT/POST (kontrak form edit).
+    assert_eq!(res["data_balikan"], data_balikan_sah(&s), "{res}");
     u.bersihkan_secret().await;
 }
 

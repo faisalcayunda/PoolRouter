@@ -321,6 +321,7 @@ impl BarisProvider {
             respons_skema: doc.respons_skema,
             tls_trust: doc.tls_trust,
             log_mode: doc.log_mode,
+            data_balikan: doc.data_balikan,
             config_schema_version: i64::from(self.config_schema_version.unwrap_or(1)),
             provider_config_version: i64::from(versi),
             aktif: self.aktif,

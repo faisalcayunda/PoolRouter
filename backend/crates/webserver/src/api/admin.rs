@@ -233,6 +233,12 @@ pub struct Provider {
     /// 1 in F0; 2 in F1. Mirrors `ProviderConfig::config_schema_version`.
     #[schema(minimum = 1, maximum = 2, example = 1)]
     pub config_schema_version: i64,
+    /// Data balikan configuration block, present only for documents with
+    /// config_schema_version = 2. Mirrors `ProviderConfig::data_balikan` so a
+    /// read pre-fills the edit form and the full-replacement PUT keeps it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[schema(value_type = Object)]
+    pub data_balikan: Option<serde_json::Value>,
     #[schema(example = 2)]
     pub provider_config_version: i64,
     pub aktif: bool,
