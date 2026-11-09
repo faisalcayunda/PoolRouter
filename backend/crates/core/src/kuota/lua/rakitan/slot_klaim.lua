@@ -17,6 +17,7 @@
 --   1 pr:siap               gerbang kesiapan
 --   2 pr:slot:{<pool>}      semaphore konkurensi
 --   3 pr:antre:{<pool>}     jumlah permintaan async yang belum dipanggil
+--   4 pr:slot_sumber:{<pool>} slot sumber anggaran (AC-7)
 --
 -- ARGV:
 --   1 run_id               dicocokkan dengan KEYS[1]
@@ -28,7 +29,7 @@
 --   {'belum_siap'} / {'kunci_tidak_sah'} / {<kode galat>}
 --   {'slot_tidak_ada'}                 member tidak pernah dipesan
 --   {'slot_kedaluwarsa'}               skor sudah lewat; tanpa perpanjangan
---   {'ok', skor_lama, antre}           slot diperpanjang ke `now + ttl`
+--   {'ok', skor_lama, antre, sumber}   slot diperpanjang ke `now + ttl`, sumber dari pr:slot_sumber atau nil
 
 local siap = (function()
 -- Potongan bersama: gerbang kesiapan Redis (ADR-0001 rev 15 §5a.2 butir 2).
@@ -238,7 +239,7 @@ local run_id = ARGV[1]
 if not siap(KEYS[1], run_id) then
   return { 'belum_siap' }
 end
-if not bersama.kunci_sah(KEYS[1], KEYS[2], KEYS[3]) then
+if not bersama.kunci_sah(KEYS[1], KEYS[2], KEYS[3], KEYS[4]) then
   return { 'kunci_tidak_sah' }
 end
 
@@ -273,4 +274,5 @@ if dari_antre == '1' and antre > 0 then
   antre = redis.call('DECR', KEYS[3])
 end
 
-return { 'ok', skor, antre }
+local sumber = redis.call('HGET', KEYS[4], member)
+return { 'ok', skor, antre, sumber or '' }

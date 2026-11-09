@@ -1,4 +1,4 @@
-import { expect, expectNoAxeViolations, test } from './fixtures';
+import { expect, expectNoAxeViolations, stubSesi, test } from './fixtures';
 import type { Page } from '@playwright/test';
 
 /**
@@ -85,6 +85,7 @@ async function stubScreens(page: Page): Promise<void> {
     if (url.includes('/log')) return json(LOG_PAGE);
     return json(LOG_PAGE);
   });
+  await stubSesi(page);
 }
 
 const SCREENS = [
@@ -151,4 +152,55 @@ for (const screen of SCREENS) {
       expect(cspViolations).toEqual([]);
     });
   }
+}
+
+/**
+ * Login dan dua dialog sesi (ARC-209). Layar login berdiri di luar shell dan tidak memanggil API.
+ * Dialog sesi dipicu lewat stub `GET /auth/sesi` yang jatuh di dalam jendela peringatan 2 menit,
+ * jadi hook membukanya saat dimuat tanpa menunggu timer.
+ */
+const JENDELA_MS = 110_000;
+
+for (const bahasa of ['id', 'en'] as const) {
+  test(`S01 login passes axe in ${bahasa}`, async ({ page, cspViolations }) => {
+    await page.goto(`/login?bahasa=${bahasa}`);
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText(
+      bahasa === 'id' ? 'Masuk ke PoolRouter' : 'Sign in to PoolRouter',
+    );
+    await expectNoAxeViolations(page);
+    expect(cspViolations).toEqual([]);
+  });
+
+  test(`S01 login with the expired-session notice passes axe in ${bahasa}`, async ({
+    page,
+    cspViolations,
+  }) => {
+    await page.goto(`/login?alasan=sesi_berakhir&bahasa=${bahasa}`);
+    await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+    await expectNoAxeViolations(page);
+    expect(cspViolations).toEqual([]);
+  });
+
+  test(`idle session warning dialog passes axe in ${bahasa}`, async ({ page, cspViolations }) => {
+    await stubScreens(page);
+    await stubSesi(page, { idleMs: JENDELA_MS });
+    await page.goto(`/?peran=auditor&bahasa=${bahasa}`);
+    const dialog = page.getByRole('alertdialog');
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByRole('button').first()).toBeVisible();
+    await expectNoAxeViolations(page);
+    expect(cspViolations).toEqual([]);
+  });
+
+  test(`absolute session warning dialog passes axe in ${bahasa}`, async ({
+    page,
+    cspViolations,
+  }) => {
+    await stubScreens(page);
+    await stubSesi(page, { absolutMs: JENDELA_MS });
+    await page.goto(`/?peran=auditor&bahasa=${bahasa}`);
+    await expect(page.getByRole('alertdialog')).toBeVisible();
+    await expectNoAxeViolations(page);
+    expect(cspViolations).toEqual([]);
+  });
 }
