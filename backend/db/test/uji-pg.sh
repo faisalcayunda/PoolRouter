@@ -105,6 +105,9 @@ export POOLROUTER_TEST_DATABASE_URL_WEBHOOK="postgres://pr_webhook:$PW_W@127.0.0
 # ARC-71: handler worker berjalan sebagai pr_worker, role produksinya, supaya grant kolom ikut teruji.
 PW_K=$($ENGINE exec "$NAME" cat /tmp/sec/pr_worker)
 export POOLROUTER_TEST_DATABASE_URL_WORKER="postgres://pr_worker:$PW_K@127.0.0.1:$PORT/poolrouter_test"
-echo "uji-pg: PostgreSQL 127.0.0.1:$PORT sebagai pr_admin_api (dan pr_webhook untuk uji ARC-73)"
+# ARC-211: penyusun data balikan berjalan sebagai pr_job_balikan, role handler batch di produksi.
+PW_B=$($ENGINE exec "$NAME" cat /tmp/sec/pr_job_balikan)
+export POOLROUTER_TEST_DATABASE_URL_JOB_BALIKAN="postgres://pr_job_balikan:$PW_B@127.0.0.1:$PORT/poolrouter_test"
+echo "uji-pg: PostgreSQL 127.0.0.1:$PORT sebagai pr_admin_api (pr_webhook untuk uji ARC-73, pr_worker untuk ARC-71, pr_job_balikan untuk ARC-211)"
 $MAKE_CMD
 echo "uji-pg: lulus"
