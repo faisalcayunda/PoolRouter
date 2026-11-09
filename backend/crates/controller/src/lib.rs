@@ -9,6 +9,7 @@ pub mod balikan;
 pub mod dispatcher;
 pub mod jadwal;
 pub mod leader;
+pub mod penyapu;
 pub mod rebuild;
 pub mod snapshot;
 pub mod transisi;

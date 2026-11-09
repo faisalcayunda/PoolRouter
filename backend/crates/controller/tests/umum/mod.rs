@@ -572,3 +572,41 @@ pub async fn status_log_terakhir(su: &PgPool, id: Uuid) -> Option<String> {
     .await
     .expect("baca log")
 }
+
+/// Fault injection untuk uji galat di tengah siklus: setiap `UPDATE` pada
+/// baris `request` itu gagal dengan galat PostgreSQL sampai [`lepas_galat`]
+/// dipanggil. Baris lain tidak terpengaruh, jadi transisi yang diproses lebih
+/// dulu tetap commit. Mengembalikan nama trigger.
+pub async fn pasang_galat_update(su: &PgPool, request_id: Uuid) -> String {
+    let nama = format!("uji_galat_{}", request_id.simple());
+    let fungsi = format!(
+        "CREATE FUNCTION {nama}() RETURNS trigger LANGUAGE plpgsql AS $$
+         BEGIN RAISE EXCEPTION 'galat uji fault injection'; END $$"
+    );
+    sqlx::query(sqlx::AssertSqlSafe(fungsi.as_str()))
+        .execute(su)
+        .await
+        .expect("fungsi galat uji");
+    let trigger = format!(
+        "CREATE TRIGGER {nama} BEFORE UPDATE ON request FOR EACH ROW
+         WHEN (OLD.request_id = '{request_id}'::uuid) EXECUTE FUNCTION {nama}()"
+    );
+    sqlx::query(sqlx::AssertSqlSafe(trigger.as_str()))
+        .execute(su)
+        .await
+        .expect("trigger galat uji");
+    nama
+}
+
+/// Melepas trigger dan fungsi dari [`pasang_galat_update`].
+pub async fn lepas_galat(su: &PgPool, nama: &str) {
+    for sql in [
+        format!("DROP TRIGGER IF EXISTS {nama} ON request"),
+        format!("DROP FUNCTION IF EXISTS {nama}()"),
+    ] {
+        sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
+            .execute(su)
+            .await
+            .expect("lepas galat uji");
+    }
+}

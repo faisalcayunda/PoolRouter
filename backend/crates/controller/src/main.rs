@@ -3,8 +3,8 @@
 //! Scope of this ticket is the *frame*: leader election, the leader-gated
 //! scheduler, the Redis rebuild from PostgreSQL and the `upstream_attempt_daily`
 //! snapshot. Dispatcher (ARC-70) berjalan di task sendiri selama leader lock
-//! yang sama dipegang; penyapu dan reconciler (ARC-72) menyusul sebagai
-//! [`poolrouter_controller::jadwal::Pekerjaan`].
+//! yang sama dipegang. Penyapu (ARC-72) masuk penjadwal sebagai
+//! [`poolrouter_controller::jadwal::Pekerjaan`]; reconciler menyusul.
 //!
 //! Steps, and why they are in this order:
 //!
@@ -31,6 +31,7 @@ use poolrouter_controller::dispatcher::jalankan_loop_dispatcher;
 use poolrouter_controller::jadwal::{INTERVAL_SIKLUS, Pekerjaan, SumberLeader, jalankan_loop};
 use poolrouter_controller::leader::KotakFutur;
 use poolrouter_controller::leader::{Leader, PemegangLeader};
+use poolrouter_controller::penyapu::Penyapu;
 use poolrouter_controller::rebuild::Rebuild;
 use poolrouter_controller::snapshot::{Snapshot, SumberSnapshotPg};
 use poolrouter_controller::webhook::Webhook;
@@ -118,6 +119,7 @@ async fn jalankan(cfg: &Config) -> Result<(), String> {
     let pekerjaan: Vec<Box<dyn Pekerjaan>> = vec![
         Box::new(Rebuild::baru(redis.clone(), sumber_rebuild)),
         Box::new(Snapshot::baru(SumberSnapshotPg::baru(pool.clone()))),
+        Box::new(Penyapu::baru(pool.clone(), redis.clone())),
         Box::new(Webhook::baru(pg_pool_webhook(cfg)?, brankas)),
         Box::new(Balikan::baru(pool.clone(), publisher.clone())),
     ];
