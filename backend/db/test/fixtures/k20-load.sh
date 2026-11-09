@@ -52,8 +52,23 @@ $ENGINE exec -e POOLROUTER_SECRETS_DIR=/tmp/sec -e PGUSER=postgres -e PGHOST=127
   "$NAME" sh /tmp/db/bootstrap.sh poolrouter_test
 echo "bootstrap: ok"
 
-{ echo "SET ROLE poolrouter_owner;"; for f in "$mig_dir"/*.sql; do echo "-- $(basename "$f")"; cat "$f"; echo; done; } \
-  | psql_su -d poolrouter_test -1
+# Migrasi diterapkan berurutan sebagai poolrouter_owner. Berkas berbaris pertama `-- no-transaction`
+# (CREATE INDEX CONCURRENTLY, ARC-199) diterapkan sendiri di luar `psql -1`; berkas lain dikumpulkan
+# menjadi satu transaksi per rangkaian.
+terapkan_tx() { db=$1; shift; { echo "SET ROLE poolrouter_owner;"; for m; do echo "-- $(basename "$m")"; cat "$m"; echo; done; } | psql_su -d "$db" -1; }
+terapkan_migrasi() {
+  set --
+  for f in "$mig_dir"/*.sql; do
+    if head -n 1 "$f" | grep -qx -- '-- no-transaction'; then
+      [ $# -eq 0 ] || { terapkan_tx poolrouter_test "$@"; set --; }
+      { echo "SET ROLE poolrouter_owner;"; cat "$f"; } | psql_su -d poolrouter_test
+    else
+      set -- "$@" "$f"
+    fi
+  done
+  [ $# -eq 0 ] || terapkan_tx poolrouter_test "$@"
+}
+terapkan_migrasi
 echo "migrations: ok"
 
 psql_su -d poolrouter_test -f - < "$test_dir/05_fixtures.sql"
