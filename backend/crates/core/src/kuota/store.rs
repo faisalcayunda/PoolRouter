@@ -685,12 +685,11 @@ fn hasil_token(
         metrik::retry_budget_habis(pool_id);
     }
     // Track loan counter when token is granted from a non-self source (AC-10).
-    if kode == "ok" {
-        if let Some(sumber_txt) = terpilih {
-            if sumber_txt != pool_id {
-                metrik::pinjaman_total(pool_id, &sumber_txt, downstream_pool_id);
-            }
-        }
+    if kode == "ok"
+        && let Some(sumber_txt) = terpilih
+        && sumber_txt != pool_id
+    {
+        metrik::pinjaman_total(pool_id, &sumber_txt, downstream_pool_id);
     }
     match kode.as_str() {
         "ok" => Ok(HasilToken::Diberikan(status()?)),
