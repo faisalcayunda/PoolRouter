@@ -360,7 +360,7 @@ impl Fixture {
         .bind(sqlx::types::Json(json!({"NIK": NIK, "NAMA_LGKP": "BUDI"})))
         .bind(Utc::now() + Duration::from_std(ttl).unwrap())
         .bind(attempt_awal)
-        .bind(Uuid::new_v4())
+        .bind(Uuid::now_v7())
         .execute(&mut *tx)
         .await
         .expect("request");
@@ -680,7 +680,7 @@ async fn duplikat_2000_tanpa_panggilan_ganda() {
     pesan_slot(&l.store, &f, id, 1).await;
 
     let handler = Arc::new(l.handler(l.store.clone()));
-    konsumen::sqlx::query(&Daftar(vec![id; 2000]), "uji", Arc::clone(&handler))
+    konsumen::jalankan(&Daftar(vec![id; 2000]), "uji", Arc::clone(&handler))
         .await
         .expect("consumer");
     assert_eq!(l.panggilan().await.len(), 1);

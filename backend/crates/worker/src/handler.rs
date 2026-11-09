@@ -535,7 +535,7 @@ where
                     d,
                     "failed",
                     Some((*reason).to_owned()),
-                    Hasil::Gagal(*reason),
+                    Hasil::Gagal(reason),
                 )
             }
             StatusFinal::Antre(not_before) => {
