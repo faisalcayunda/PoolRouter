@@ -106,7 +106,7 @@ impl Uji {
         }
         let token = TokenSesi::baru();
         SesiStore::baru(self.pool.clone())
-            .terbitkan(uid, &token.hash(), Some("uji"), t0())
+            .terbitkan_terverifikasi_mfa(uid, &token.hash(), Some("uji"), t0())
             .await
             .unwrap();
         (uid, format!("{COOKIE_SESI}={}", token.sebagai_b64()))

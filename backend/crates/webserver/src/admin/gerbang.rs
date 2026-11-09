@@ -40,6 +40,9 @@ pub(super) struct Peminta {
     pub client_id: Option<Uuid>,
     /// MFA verification timestamp, if the session has passed the MFA step (AC-15).
     pub mfa_terverifikasi_at: Option<DateTime<Utc>>,
+    /// Apakah MFA berlaku untuk panggilan ini: `mfa_wajib` aktif DAN peran
+    /// termasuk `wajib_mfa` (aturan yang sama dengan `me.rs`).
+    pub mfa_wajib: bool,
 }
 
 /// Check `Origin` (write methods only), the session, and the role, in that
@@ -76,7 +79,7 @@ pub(super) async fn masuk(
             .copied()
             .or_else(|| diterima.first().copied())
             .unwrap_or(Peran::PlatformAdmin);
-        catat_penolakan(s, sesi, tercatat, operasi, &ip).await?;
+        catat_penolakan(s, sesi.clone(), tercatat, operasi, &ip).await?;
         tracing::debug!(
             pengguna_id = %sesi.pengguna_id,
             ditemukan = ?ditemukan,
@@ -96,6 +99,7 @@ pub(super) async fn masuk(
         sumber_ip: ip,
         client_id: None,
         mfa_terverifikasi_at: sesi.mfa_terverifikasi_at,
+        mfa_wajib: s.mfa_wajib && peran.wajib_mfa(),
     };
     let peminta = if diterima.contains(&Peran::ClientOwner) {
         let client_id = sqlx::query_scalar::<_, Option<Uuid>>(
@@ -107,7 +111,6 @@ pub(super) async fn masuk(
         .map_err(|e| galat_db(&e))?;
         Peminta {
             client_id,
-            mfa_terverifikasi_at: sesi.mfa_terverifikasi_at,
             ..peminta
         }
     } else {
@@ -207,10 +210,11 @@ fn galat_db(e: &sqlx::Error) -> Galat {
     Galat::layanan()
 }
 
-/// MFA verification guard for auditor and platform admin operations (AC-15).
-/// Returns 403 if the caller's session has not passed MFA verification.
+/// Guard MFA untuk operasi auditor dan platform admin (AC-15). Menolak dengan
+/// 403 hanya bila MFA berlaku (`mfa_wajib` aktif dan peran wajib MFA) dan
+/// sesi belum lulus verifikasi MFA; `client_owner` dan `operator` tidak kena.
 pub(super) fn periksa_guard_mfa(peminta: &Peminta) -> Result<(), Galat> {
-    if peminta.mfa_terverifikasi_at.is_none() {
+    if peminta.mfa_wajib && peminta.mfa_terverifikasi_at.is_none() {
         tracing::debug!(
             pengguna_id = %peminta.pengguna_id,
             peran = %peminta.peran,
