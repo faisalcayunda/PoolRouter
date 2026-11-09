@@ -333,19 +333,32 @@ pub fn petakan_reqwest(e: reqwest::Error) -> crate::GagalPanggilProvider {
 fn ada_galat_tls(e: &(dyn std::error::Error + 'static)) -> bool {
     let mut kini = Some(e);
     while let Some(g) = kini {
-        if g.downcast_ref::<rustls::Error>().is_some() {
-            return true;
-        }
-        // hyper-rustls membungkus galat rustls di `io::Error`; `source()` milik
-        // `io::Error` melompati galat dalamnya, jadi diperiksa lewat `get_ref`.
-        let dalam_io = g
-            .downcast_ref::<std::io::Error>()
-            .and_then(std::io::Error::get_ref)
-            .is_some_and(|d| d.downcast_ref::<rustls::Error>().is_some());
-        if dalam_io {
+        if galat_tls_di(g) {
             return true;
         }
         kini = g.source();
     }
     false
+}
+
+/// Satu tingkat rantai galat. Tiga bungkus yang menyembunyikan galat `rustls`
+/// dari `source()`: `io::Error` (galat dalamnya hanya lewat `get_ref`),
+/// `Box<dyn Error>` (yang `source()`-nya melompati isi box), dan konektor yang
+/// hanya membawa teks. Teks `invalid peer certificate` adalah `Display` milik
+/// `rustls::Error::InvalidCertificate`.
+fn galat_tls_di(g: &(dyn std::error::Error + 'static)) -> bool {
+    if g.downcast_ref::<rustls::Error>().is_some() {
+        return true;
+    }
+    if let Some(dalam) = g
+        .downcast_ref::<std::io::Error>()
+        .and_then(std::io::Error::get_ref)
+    {
+        return galat_tls_di(dalam) || ada_galat_tls(dalam);
+    }
+    if let Some(b) = g.downcast_ref::<Box<dyn std::error::Error + Send + Sync>>() {
+        let isi: &(dyn std::error::Error + 'static) = &**b;
+        return galat_tls_di(isi) || ada_galat_tls(isi);
+    }
+    g.to_string().contains("invalid peer certificate")
 }
