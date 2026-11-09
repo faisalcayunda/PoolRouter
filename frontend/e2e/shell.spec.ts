@@ -1,4 +1,4 @@
-import { expect, expectNoAxeViolations, test } from './fixtures';
+import { expect, expectNoAxeViolations, stubSesi, test } from './fixtures';
 
 /**
  * Shell smoke test (scope 1): the built SPA on `vite preview` must render the
@@ -8,6 +8,11 @@ import { expect, expectNoAxeViolations, test } from './fixtures';
  * `securitypolicyviolation` assertion runs even when the body only checks markup.
  */
 test.describe('app shell', () => {
+  // AppRoot memanggil GET me dan getSesi dulu; tanpa stub halaman jatuh ke layar login.
+  test.beforeEach(async ({ page }) => {
+    await stubSesi(page);
+  });
+
   test('renders the shell under the production CSP and passes axe', async ({
     page,
     cspViolations,

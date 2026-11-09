@@ -20,16 +20,34 @@ use serde_json::json;
 use uuid::Uuid;
 
 use super::gerbang::{galat_validasi, masuk};
+use super::k20::{self, GalatK20, JenisEntitas};
 use super::sesi::{AdminState, Galat};
-use crate::api::admin::{Credential, CredentialCreate, CredentialSecret, FieldError};
+use crate::api::admin::{
+    AlasanK20, Credential, CredentialCreate, CredentialSecret, FieldError, PratinjauK20,
+};
 use crate::api::enums::{JenisKredensial, StatusKredensial};
 use crate::api::problem::ProblemKodeAdmin;
 
+/// `fn_nonaktifkan_entitas`/`fn_pratinjau_nonaktif` accept a client owner for
+/// its own credential (migration `20261103000003_functions.sql`); the role
+/// gate here matches, and cross-client ownership is checked afterwards.
 const PERAN: [Peran; 2] = [Peran::PlatformAdmin, Peran::ClientOwner];
+/// `fn_aktifkan_entitas` has no client_owner branch for any entity kind.
+const PERAN_AKTIFKAN: [Peran; 1] = [Peran::PlatformAdmin];
 const KEDALUWARSA_MAKS_HARI: i64 = 365;
 
 /// One credential row as sqlx returns it: id, kind, status, expiry, revocation.
 type BarisKredensial = (
+    Uuid,
+    String,
+    String,
+    Option<DateTime<Utc>>,
+    Option<DateTime<Utc>>,
+);
+/// `BarisKredensial` plus `client_id`, for the K-20 handlers that need to check
+/// ownership before acting.
+type BarisKredensialDenganClient = (
+    Uuid,
     Uuid,
     String,
     String,
@@ -162,6 +180,169 @@ pub(super) async fn create_credential(
         }),
     )
         .into_response())
+}
+
+/// Preview credential revocation (K-20, AC-28): counts only.
+pub(super) async fn pratinjau_cabut_credential(
+    State(s): State<AdminState>,
+    method: Method,
+    headers: HeaderMap,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
+    Path(id): Path<Uuid>,
+) -> Result<Response, Galat> {
+    let peminta = masuk(
+        &s,
+        &method,
+        &headers,
+        peer,
+        &PERAN,
+        "pratinjauCabutCredential",
+    )
+    .await?;
+    let baris = ada_kredensial(&s, id).await?;
+    pastikan_milik(&peminta, baris.client_id)?;
+
+    let hasil = s
+        .k20
+        .pratinjau(JenisEntitas::Kredensial, id)
+        .await
+        .map_err(|e| galat_k20(&e))?;
+    Ok((
+        StatusCode::OK,
+        axum::Json(PratinjauK20 {
+            akan_cancelled: i64::from(hasil.akan_cancelled),
+            akan_failed: i64::from(hasil.akan_failed),
+            dihitung_pada: hasil.dihitung_at,
+            upstream_aktif_terakhir_untuk: None,
+            dipakai_oleh_downstream_pool_count: None,
+        }),
+    )
+        .into_response())
+}
+
+/// Revoke a credential (K-20, AC-29): one mass cancel/fail transaction, then
+/// the credential itself turns `dicabut`.
+pub(super) async fn cabut_credential(
+    State(s): State<AdminState>,
+    method: Method,
+    headers: HeaderMap,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
+    Path(id): Path<Uuid>,
+    axum::Json(body): axum::Json<AlasanK20>,
+) -> Result<Response, Galat> {
+    let peminta = masuk(&s, &method, &headers, peer, &PERAN, "cabutCredential").await?;
+    let baris = ada_kredensial(&s, id).await?;
+    pastikan_milik(&peminta, baris.client_id)?;
+
+    s.k20
+        .nonaktifkan(
+            JenisEntitas::Kredensial,
+            id,
+            peminta.pengguna_id,
+            &body.alasan,
+        )
+        .await
+        .map_err(|e| galat_k20(&e))?;
+
+    let setelah = ada_kredensial(&s, id).await?;
+    Ok((StatusCode::OK, axum::Json(satu_credential(setelah))).into_response())
+}
+
+/// Re-activate a credential: always 409 `kredensial_dicabut`, revoked or not
+/// (U-54b; `fn_aktifkan_entitas` has no credential path other than this
+/// exception).
+pub(super) async fn aktifkan_credential(
+    State(s): State<AdminState>,
+    method: Method,
+    headers: HeaderMap,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
+    Path(id): Path<Uuid>,
+) -> Result<Response, Galat> {
+    let _peminta = masuk(
+        &s,
+        &method,
+        &headers,
+        peer,
+        &PERAN_AKTIFKAN,
+        "aktifkanCredential",
+    )
+    .await?;
+    // `fn_aktifkan_entitas` has no credential path other than raising
+    // `kredensial_dicabut_terminal` (U-54b); the outcome is known up front, so
+    // reject here without running the transactional SQL (and its audit row).
+    ada_kredensial(&s, id).await?;
+    Err(Galat::baru(
+        StatusCode::CONFLICT,
+        ProblemKodeAdmin::KredensialDicabut,
+    ))
+}
+
+/// One credential row, by id; 404 when it does not exist.
+async fn ada_kredensial(
+    s: &AdminState,
+    credential_id: Uuid,
+) -> Result<BarisKredensialMilik, Galat> {
+    let baris: Option<BarisKredensialDenganClient> = sqlx::query_as(
+        "SELECT credential_id, client_id, jenis, status, kedaluwarsa_at, dicabut_at \
+               FROM client_kredensial WHERE credential_id = $1",
+    )
+    .bind(credential_id)
+    .fetch_optional(&s.pool)
+    .await
+    .map_err(|e| galat_db(&e))?;
+    baris
+        .map(
+            |(credential_id, client_id, jenis, status, kedaluwarsa_at, dicabut_at)| {
+                BarisKredensialMilik {
+                    credential_id,
+                    client_id,
+                    jenis,
+                    status,
+                    kedaluwarsa_at,
+                    dicabut_at,
+                }
+            },
+        )
+        .ok_or_else(Galat::tidak_ditemukan)
+}
+
+struct BarisKredensialMilik {
+    credential_id: Uuid,
+    client_id: Uuid,
+    jenis: String,
+    status: String,
+    kedaluwarsa_at: Option<DateTime<Utc>>,
+    dicabut_at: Option<DateTime<Utc>>,
+}
+
+fn satu_credential(baris: BarisKredensialMilik) -> Credential {
+    let sekarang = Utc::now();
+    Credential {
+        credential_id: baris.credential_id,
+        jenis: jenis_dari_db(&baris.jenis),
+        status: status_dari_db(&baris.status, baris.kedaluwarsa_at, sekarang),
+        kedaluwarsa_at: baris.kedaluwarsa_at,
+        dicabut_at: baris.dicabut_at,
+    }
+}
+
+/// `fn_nonaktifkan_entitas`/`fn_pratinjau_nonaktif` only ever raise
+/// `check_violation` (23514, the alasan-empty guard — unreachable, the body is
+/// already validated) or `insufficient_privilege` (42501 — also unreachable,
+/// `masuk`/`pastikan_milik` already checked); anything else is a database
+/// failure.
+fn galat_k20(e: &GalatK20) -> Galat {
+    match e {
+        GalatK20::AlasanTidakValid => galat_validasi(vec![FieldError {
+            field: "alasan",
+            kode: "rentang",
+            batas: Some(k20::ALASAN_MAX as f64),
+        }]),
+        GalatK20::BasisData(e) => {
+            tracing::error!(error = %e, "admin: operasi K-20 kredensial gagal");
+            Galat::layanan()
+        }
+    }
 }
 
 fn pastikan_milik(peminta: &super::gerbang::Peminta, client_id: Uuid) -> Result<(), Galat> {
