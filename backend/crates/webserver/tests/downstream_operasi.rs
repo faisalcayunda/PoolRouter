@@ -719,8 +719,7 @@ async fn sync_client_putus_tidak_membatalkan_panggilan() {
     // AC-29: client memutus koneksi sebelum jawaban; panggilan upstream dan
     // transaksi kedua tetap selesai, slot dilepas.
     let u = Uji::dengan_tunda(Some(hasil_sesuai()), Duration::from_millis(100));
-    let putus =
-        tokio::time::timeout(Duration::from_millis(20), u.sinkron(&body_sah(), None)).await;
+    let putus = tokio::time::timeout(Duration::from_millis(20), u.sinkron(&body_sah(), None)).await;
     assert!(putus.is_err(), "client harus memutus sebelum jawaban");
     tokio::time::sleep(Duration::from_millis(400)).await;
     let semua = u.permintaan.semua();
