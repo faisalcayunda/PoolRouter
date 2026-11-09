@@ -826,9 +826,7 @@ async fn create_provider_config_schema_v1_unchanged() {
     let mut b = body(&nama, &s, &["NAMA_LGKP"]);
     b["config_schema_version"] = Value::Number(1.into());
 
-    let (st, _, res) = u
-        .kirim(Method::POST, PROVIDERS, Some(&pa), Some(b))
-        .await;
+    let (st, _, res) = u.kirim(Method::POST, PROVIDERS, Some(&pa), Some(b)).await;
     assert_eq!(st, StatusCode::CREATED, "{res}");
     assert_eq!(res["config_schema_version"], 1);
     u.bersihkan_secret().await;
@@ -849,9 +847,7 @@ async fn create_provider_config_schema_v2_valid_data_balikan() {
     // Blok sah menurut AC-15: endpoint https dan rujukan_secret {{secret.X}}.
     b["data_balikan"] = data_balikan_sah(&s);
 
-    let (st, _, res) = u
-        .kirim(Method::POST, PROVIDERS, Some(&pa), Some(b))
-        .await;
+    let (st, _, res) = u.kirim(Method::POST, PROVIDERS, Some(&pa), Some(b)).await;
     assert_eq!(st, StatusCode::CREATED, "{res}");
     assert_eq!(res["config_schema_version"], 2);
     assert_eq!(res["provider_config_version"], 1);
@@ -877,19 +873,14 @@ async fn create_provider_config_schema_v2_invalid_data_balikan_422() {
     blok["endpoint"] = Value::String("http://bgn.example.go.id/balikan".into());
     b["data_balikan"] = blok;
 
-    let (st, _, prob) = u
-        .kirim(Method::POST, PROVIDERS, Some(&pa), Some(b))
-        .await;
+    let (st, _, prob) = u.kirim(Method::POST, PROVIDERS, Some(&pa), Some(b)).await;
     assert_eq!(st, StatusCode::UNPROCESSABLE_ENTITY, "{prob}");
     assert!(
         prob["errors"]
             .as_array()
             .unwrap()
             .iter()
-            .any(|e| e["field"]
-                .as_str()
-                .unwrap_or("")
-                .contains("data_balikan")),
+            .any(|e| e["field"].as_str().unwrap_or("").contains("data_balikan")),
         "field pointer in errors: {prob}"
     );
     u.bersihkan_secret().await;
@@ -907,7 +898,12 @@ async fn update_provider_v1_to_v2_with_data_balikan() {
 
     // Create v1
     let (st, _, b) = u
-        .kirim(Method::POST, PROVIDERS, Some(&pa), Some(body(&nama, &s, &["NAMA_LGKP"])))
+        .kirim(
+            Method::POST,
+            PROVIDERS,
+            Some(&pa),
+            Some(body(&nama, &s, &["NAMA_LGKP"])),
+        )
         .await;
     assert_eq!(st, StatusCode::CREATED);
     let provider_id = b["provider_id"].as_str().unwrap().to_owned();

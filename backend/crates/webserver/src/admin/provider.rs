@@ -28,8 +28,8 @@ use poolrouter_core::audit::{
 };
 use poolrouter_core::data_balikan::GalatDataBalikan;
 use poolrouter_core::template::{
-    ParameterTemplate, TemplateError, validasi_config_schema_version, validasi_template,
-    CONFIG_SCHEMA_VERSION_F1,
+    CONFIG_SCHEMA_VERSION_F1, ParameterTemplate, TemplateError, validasi_config_schema_version,
+    validasi_template,
 };
 use serde_json::json;
 use uuid::Uuid;
