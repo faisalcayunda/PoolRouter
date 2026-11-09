@@ -75,16 +75,16 @@ pub enum HasilAck {
 /// selama provider belum meng-ack.
 pub trait PengirimDataBalikan: Send + Sync {
     fn kirim(
-        &self,
+        self: std::sync::Arc<Self>,
         batch: BatchKeluar,
-        body: impl Stream<Item = Bytes> + Send,
-    ) -> impl std::future::Future<Output = HasilKirimBatch> + Send;
+        body: Box<dyn Stream<Item = Bytes> + Send + Unpin>,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = HasilKirimBatch> + Send>>;
 
     fn periksa_ack(
-        &self,
+        self: std::sync::Arc<Self>,
         batch_id: Uuid,
         r#ref: &str,
-    ) -> impl std::future::Future<Output = HasilAck> + Send;
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = HasilAck> + Send>>;
 }
 
 /// Satu pengiriman yang tercatat adapter tiruan. Tidak membawa body, hanya
@@ -196,48 +196,56 @@ impl PengirimTiruan {
 }
 
 impl PengirimDataBalikan for PengirimTiruan {
-    async fn kirim(
-        &self,
+    fn kirim(
+        self: std::sync::Arc<Self>,
         batch: BatchKeluar,
-        body: impl Stream<Item = Bytes> + Send,
-    ) -> HasilKirimBatch {
+        body: Box<dyn Stream<Item = Bytes> + Send + Unpin>,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = HasilKirimBatch> + Send>> {
         use futures::StreamExt;
-        let mut buf = Vec::new();
-        let mut body = std::pin::pin!(body);
-        while let Some(chunk) = body.next().await {
-            buf.extend_from_slice(&chunk);
-        }
-        self.catat(batch.batch_id, batch.jumlah_item, &buf);
-        match self.ambil_hasil() {
-            HasilDiprogam::Diterima => HasilKirimBatch::Diterima {
-                ack_ref: format!("ack-{}", batch.batch_id),
-            },
-            HasilDiprogam::Dikirim => HasilKirimBatch::Dikirim {
-                r#ref: format!("ref-{}", batch.batch_id),
-            },
-            HasilDiprogam::GagalSementara => HasilKirimBatch::GagalSementara {
-                kelas: KelasGagal::Sementara,
-            },
-            HasilDiprogam::Ditolak => HasilKirimBatch::Ditolak {
-                kelas: KelasGagal::Permanen,
-            },
-            HasilDiprogam::PanikSetelahKirim => {
-                panic!(
-                    "pengirim tiruan panik setelah kirim (batch {})",
-                    batch.batch_id
-                )
+        Box::pin(async move {
+            let mut buf = Vec::new();
+            let mut body = body;
+            while let Some(chunk) = body.next().await {
+                buf.extend_from_slice(&chunk);
             }
-        }
+            self.catat(batch.batch_id, batch.jumlah_item, &buf);
+            match self.ambil_hasil() {
+                HasilDiprogam::Diterima => HasilKirimBatch::Diterima {
+                    ack_ref: format!("ack-{}", batch.batch_id),
+                },
+                HasilDiprogam::Dikirim => HasilKirimBatch::Dikirim {
+                    r#ref: format!("ref-{}", batch.batch_id),
+                },
+                HasilDiprogam::GagalSementara => HasilKirimBatch::GagalSementara {
+                    kelas: KelasGagal::Sementara,
+                },
+                HasilDiprogam::Ditolak => HasilKirimBatch::Ditolak {
+                    kelas: KelasGagal::Permanen,
+                },
+                HasilDiprogam::PanikSetelahKirim => {
+                    panic!(
+                        "pengirim tiruan panik setelah kirim (batch {})",
+                        batch.batch_id
+                    )
+                }
+            }
+        })
     }
 
-    async fn periksa_ack(&self, batch_id: Uuid, r#ref: &str) -> HasilAck {
-        self.ack
-            .lock()
-            .unwrap()
-            .iter()
-            .find(|(b, r, _)| *b == batch_id && r == r#ref)
-            .map(|(_, _, h)| h.clone())
-            .unwrap_or(HasilAck::BelumAda)
+    fn periksa_ack(
+        self: std::sync::Arc<Self>,
+        batch_id: Uuid,
+        r#ref: &str,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = HasilAck> + Send>> {
+        let r_owned = r#ref.to_owned();
+        let ack_list = self.ack.lock().unwrap().clone();
+        Box::pin(async move {
+            ack_list
+                .iter()
+                .find(|(b, r, _)| *b == batch_id && r == &r_owned)
+                .map(|(_, _, h)| h.clone())
+                .unwrap_or(HasilAck::BelumAda)
+        })
     }
 }
 
@@ -256,14 +264,17 @@ mod uji {
         }
     }
 
-    fn body() -> impl Stream<Item = Bytes> + Send {
-        stream::iter(vec![Bytes::from_static(b"a"), Bytes::from_static(b"bc")])
+    fn body() -> Box<dyn Stream<Item = Bytes> + Send + Unpin> {
+        Box::new(stream::iter(vec![
+            Bytes::from_static(b"a"),
+            Bytes::from_static(b"bc"),
+        ]))
     }
 
     #[tokio::test]
     async fn hasil_sukses_tercatat_dengan_hash_body() {
-        let p = PengirimTiruan::baru();
-        let hasil = p.kirim(batch(), body()).await;
+        let p = std::sync::Arc::new(PengirimTiruan::baru());
+        let hasil = p.clone().kirim(batch(), body()).await;
         assert!(matches!(hasil, HasilKirimBatch::Diterima { .. }));
         let r = p.rekaman();
         assert_eq!(r.len(), 1);
@@ -278,64 +289,72 @@ mod uji {
     #[tokio::test]
     async fn body_utuh_diterima_atau_hash_cocok() {
         // Body dipecah di tengah, hash harus sama dengan body utuh.
-        let p = PengirimTiruan::baru();
-        let _ = p.kirim(batch(), body()).await;
-        let p2 = PengirimTiruan::baru();
+        let p = std::sync::Arc::new(PengirimTiruan::baru());
+        let _ = p.clone().kirim(batch(), body()).await;
+        let p2 = std::sync::Arc::new(PengirimTiruan::baru());
         let _ = p2
-            .kirim(batch(), stream::iter(vec![Bytes::from_static(b"abc")]))
+            .clone()
+            .kirim(
+                batch(),
+                Box::new(stream::iter(vec![Bytes::from_static(b"abc")])),
+            )
             .await;
         assert_eq!(p.rekaman()[0].hash_body, p2.rekaman()[0].hash_body);
     }
 
     #[tokio::test]
     async fn kelas_gagal_bisa_dipilih() {
-        let p = PengirimTiruan::dengan_program(vec![
+        let p = std::sync::Arc::new(PengirimTiruan::dengan_program(vec![
             HasilDiprogam::GagalSementara,
             HasilDiprogam::Ditolak,
             HasilDiprogam::Dikirim,
             HasilDiprogam::Diterima,
-        ]);
+        ]));
         assert!(matches!(
-            p.kirim(batch(), body()).await,
+            p.clone().kirim(batch(), body()).await,
             HasilKirimBatch::GagalSementara {
                 kelas: KelasGagal::Sementara
             }
         ));
         assert!(matches!(
-            p.kirim(batch(), body()).await,
+            p.clone().kirim(batch(), body()).await,
             HasilKirimBatch::Ditolak {
                 kelas: KelasGagal::Permanen
             }
         ));
         assert!(matches!(
-            p.kirim(batch(), body()).await,
+            p.clone().kirim(batch(), body()).await,
             HasilKirimBatch::Dikirim { .. }
         ));
         assert!(matches!(
-            p.kirim(batch(), body()).await,
+            p.clone().kirim(batch(), body()).await,
             HasilKirimBatch::Diterima { .. }
         ));
     }
 
     #[tokio::test]
     async fn percobaan_berikutnya_memakai_bawaan_saat_program_habis() {
-        let p = PengirimTiruan::dengan_program(vec![HasilDiprogam::GagalSementara])
-            .dengan_bawaan(HasilDiprogam::Ditolak);
+        let p = std::sync::Arc::new(
+            PengirimTiruan::dengan_program(vec![HasilDiprogam::GagalSementara])
+                .dengan_bawaan(HasilDiprogam::Ditolak),
+        );
         assert!(matches!(
-            p.kirim(batch(), body()).await,
+            p.clone().kirim(batch(), body()).await,
             HasilKirimBatch::GagalSementara { .. }
         ));
         assert!(matches!(
-            p.kirim(batch(), body()).await,
+            p.clone().kirim(batch(), body()).await,
             HasilKirimBatch::Ditolak { .. }
         ));
     }
 
     #[tokio::test]
     async fn panik_setelah_kirim_tetap_tercatat() {
-        let p = PengirimTiruan::dengan_program(vec![HasilDiprogam::PanikSetelahKirim]);
+        let p = std::sync::Arc::new(PengirimTiruan::dengan_program(vec![
+            HasilDiprogam::PanikSetelahKirim,
+        ]));
         let hasil = futures::FutureExt::catch_unwind(std::panic::AssertUnwindSafe(
-            p.kirim(batch(), body()),
+            p.clone().kirim(batch(), body()),
         ))
         .await;
         assert!(hasil.is_err());
@@ -344,9 +363,9 @@ mod uji {
 
     #[tokio::test]
     async fn kirim_ulang_batch_id_sama_tercatat_dua_kali() {
-        let p = PengirimTiruan::baru();
-        let _ = p.kirim(batch(), body()).await;
-        let _ = p.kirim(batch(), body()).await;
+        let p = std::sync::Arc::new(PengirimTiruan::baru());
+        let _ = p.clone().kirim(batch(), body()).await;
+        let _ = p.clone().kirim(batch(), body()).await;
         assert_eq!(p.jumlah_kirim(Uuid::nil()), 2);
         // Idempotensi adalah kewajiban penerima; port hanya menjamin
         // `batch_id` yang sama terkirim, bukan diterima sekali.
@@ -355,8 +374,11 @@ mod uji {
 
     #[tokio::test]
     async fn ack_bisa_diprogam_dan_bawaan_belum_ada() {
-        let p = PengirimTiruan::baru();
-        assert_eq!(p.periksa_ack(Uuid::nil(), "ref").await, HasilAck::BelumAda);
+        let p = std::sync::Arc::new(PengirimTiruan::baru());
+        assert_eq!(
+            p.clone().periksa_ack(Uuid::nil(), "ref").await,
+            HasilAck::BelumAda
+        );
         p.program_ack(
             Uuid::nil(),
             "ref",
@@ -365,12 +387,15 @@ mod uji {
             },
         );
         assert_eq!(
-            p.periksa_ack(Uuid::nil(), "ref").await,
+            p.clone().periksa_ack(Uuid::nil(), "ref").await,
             HasilAck::Diterima {
                 ack_ref: "ack-1".to_owned()
             }
         );
         // Referensi lain tetap belum ada.
-        assert_eq!(p.periksa_ack(Uuid::nil(), "lain").await, HasilAck::BelumAda);
+        assert_eq!(
+            p.clone().periksa_ack(Uuid::nil(), "lain").await,
+            HasilAck::BelumAda
+        );
     }
 }
