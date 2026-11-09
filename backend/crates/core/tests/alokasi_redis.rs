@@ -17,6 +17,12 @@ use poolrouter_core::kuota::store::{
 };
 use redis::aio::MultiplexedConnection;
 
+/// Fase restart `pemulihan_redis` memegang Redis di antara restart; tes ini
+/// menjalankan FLUSHALL, jadi hanya jalan bila tidak ada fase terpilih.
+fn lewati() -> bool {
+    std::env::var("POOLROUTER_TEST_FASE").is_ok_and(|f| !f.is_empty())
+}
+
 struct Kosong;
 
 impl SumberRebuild for Kosong {
@@ -69,6 +75,9 @@ async fn baca_counter(c: &mut MultiplexedConnection, kunci: &str) -> i64 {
 #[tokio::test]
 #[ignore = "butuh Redis: make -C backend uji-redis"]
 async fn intake_alokasi_menegakkan_antre_dp() {
+    if lewati() {
+        return;
+    }
     let (mut c, store) = siap().await;
     let k = ctx("pool-a", 100);
     let alokasi = IntakeAlokasi {
@@ -162,4 +171,76 @@ async fn intake_alokasi_menegakkan_antre_dp() {
             Err(GalatStore::ArgumenTidakSah(_))
         ));
     }
+}
+
+// T2e AC-10: Metrik pinjaman naik saat sumber ≠ sendiri melalui ambil_token_alokasi Lua.
+// block_in_place panik di runtime current_thread, jadi tes ini wajib multi_thread.
+#[tokio::test(flavor = "multi_thread")]
+#[ignore = "butuh Redis: make -C backend uji-redis"]
+async fn pinjaman_total_naikkan_counter_via_lua() {
+    if lewati() {
+        return;
+    }
+    let (_c, store) = siap().await;
+    use metrics_exporter_prometheus::PrometheusBuilder;
+    use poolrouter_core::kuota::pemulihan::JendelaRate;
+    use poolrouter_core::kuota::rencana::{Sumber, SumberDana};
+    use poolrouter_core::kuota::store::{HasilToken, PermintaanToken};
+
+    let recorder = PrometheusBuilder::new().build_recorder();
+    let handle = recorder.handle();
+
+    // Record metrics in the local recorder context while calling Lua.
+    metrics::with_local_recorder(&recorder, || {
+        let k = ctx("pool-a", 100);
+        // Semua field PermintaanToken harus diisi; nilainya sama dengan helper
+        // `permintaan` di kuota_store_redis.rs (satu jendela rate longgar).
+        let permintaan = PermintaanToken {
+            request_id: "test-002".into(),
+            nomor_percobaan: 1,
+            sync: false,
+            maks_konkurensi: 50,
+            ttl_slot_mikro: 60_000_000,
+            rasio_retry: 0.1,
+            retry_min: 20,
+            porsi_sync: 0.2,
+            jendela_rate: vec![JendelaRate {
+                jenis: "tps".into(),
+                t_mikro: 1_000_000,
+                burst: 1000,
+            }],
+        };
+        // `pool_donor` kosong: sumber `sisa` milik satu pool, tanpa donor lain.
+        let urutan = vec![SumberDana {
+            sumber: Sumber::Sisa,
+            ruang: 10,
+            pool_donor: &[],
+        }];
+        let downstream_id = 7i64;
+
+        // Synchronous block: spawn a task to run the async call.
+        // In tests, it's safe to use block_on on the current runtime.
+        let result = tokio::task::block_in_place(|| {
+            tokio::runtime::Handle::current().block_on(async {
+                store
+                    .ambil_token_alokasi(&k, &permintaan, &urutan, downstream_id)
+                    .await
+            })
+        });
+
+        // Should succeed: token granted from "sisa" source.
+        assert!(
+            matches!(result, Ok(HasilToken::Diberikan(_))),
+            "ambil_token_alokasi failed: {result:?}"
+        );
+    });
+
+    let out = handle.render();
+    // Counter naik 1 dengan label pool-a, downstream=7, sumber=sisa (urutan label mengikuti pendaftaran di metrik.rs).
+    assert!(
+        out.contains(
+            r#"poolrouter_pinjaman_total{upstream_pool_id="pool-a",downstream_pool_id="7",sumber_anggaran="sisa"} 1"#
+        ),
+        "counter did not increment via Lua; rendered:\n{out}"
+    );
 }

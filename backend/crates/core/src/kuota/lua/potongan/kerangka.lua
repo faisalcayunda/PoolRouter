@@ -125,6 +125,7 @@ local function kerangka(KEYS, ARGV, opsi)
   if opsi ~= nil then
     o.pilih_sumber = opsi.pilih_sumber
     o.kunci_slot_sumber = opsi.kunci_slot_sumber
+    o.ambil_sumber = opsi.ambil_sumber
   end
 
   local hasil = ambil_token.ambil_token(KEYS, o)

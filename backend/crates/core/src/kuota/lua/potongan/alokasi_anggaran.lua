@@ -92,7 +92,11 @@ local function buat(anggota, kunci_anggaran, kunci_slot_sumber_hash, ember_detik
     end
   end
 
-  return { pilih_sumber = pilih_sumber, kunci_slot_sumber = kunci_slot_sumber }
+  local function ambil_sumber()
+    return terpilih
+  end
+
+  return { pilih_sumber = pilih_sumber, kunci_slot_sumber = kunci_slot_sumber, ambil_sumber = ambil_sumber }
 end
 
 return { buat = buat }
