@@ -79,12 +79,15 @@ function roleFromSearch(search: string): AdminRole | null {
 export function RoutedScreens({
   pathname,
   search = window.location.search,
+  role,
 }: {
   pathname: string;
   search?: string;
+  /** Session role; the test seam still wins so Playwright can pin a role. */
+  role?: AdminRole | null;
 }): ReactNode {
   return (
-    <RoleProvider current={roleFromSearch(search)}>
+    <RoleProvider current={roleFromSearch(search) ?? role ?? null}>
       <Suspense fallback={null}>
         <ScreenForPath pathname={pathname} />
       </Suspense>

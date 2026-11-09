@@ -10,6 +10,7 @@
 -- KEYS (D1.7):
 --   1 pr:siap               gerbang kesiapan
 --   2 pr:slot:{<pool>}      semaphore konkurensi
+--   3 pr:slot_sumber:{<pool>} slot sumber anggaran (AC-7)
 --
 -- ARGV:
 --   1 run_id               dicocokkan dengan KEYS[1]
@@ -19,7 +20,7 @@
 --
 -- Kembalian:
 --   {'belum_siap'} / {'kunci_tidak_sah'} / {'member_tidak_sah'}
---   {'ok', dihapus}        `dihapus` 0 berarti slot sudah tidak ada
+--   {'ok', dihapus}        `dihapus` 0 berarti slot sudah tidak ada, pr:slot_sumber entry juga dihapus
 
 -- sisip: potongan/siap.lua sebagai siap
 -- sisip: potongan/bersama.lua sebagai bersama
@@ -28,7 +29,7 @@ local run_id = ARGV[1]
 if not siap(KEYS[1], run_id) then
   return { 'belum_siap' }
 end
-if not bersama.kunci_sah(KEYS[1], KEYS[2]) then
+if not bersama.kunci_sah(KEYS[1], KEYS[2], KEYS[3]) then
   return { 'kunci_tidak_sah' }
 end
 
@@ -38,4 +39,7 @@ if member == nil or member == '' then
 end
 
 local dihapus = redis.call('ZREM', KEYS[2], member)
+if dihapus > 0 then
+  redis.call('HDEL', KEYS[3], member)
+end
 return { 'ok', dihapus }
