@@ -15,5 +15,14 @@ workspace = true
 poolrouter-core = { workspace = true }
 apalis = { workspace = true }
 apalis-amqp = { workspace = true }
+apalis-core = { workspace = true }
+futures = { workspace = true }
 lapin = { workspace = true }
+tokio = { workspace = true }
+tokio-util = { workspace = true }
+tracing = { workspace = true }
 uuid = { workspace = true }
+
+[dev-dependencies]
+# `tokio::sync` dan HTTP mentah ke management API untuk uji kontrak (fitur saja, tanpa crate baru).
+tokio = { workspace = true, features = ["sync", "io-util", "net"] }

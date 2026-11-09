@@ -24,6 +24,7 @@ path = "src/lib.rs"
 [dependencies]
 poolrouter-core = { workspace = true }
 poolrouter-adapter-provider = { path = "../adapter-provider" }
+poolrouter-queue-apalis = { workspace = true }
 anyhow = { workspace = true }
 tokio = { workspace = true }
 tokio-util = { workspace = true }
@@ -33,9 +34,10 @@ uuid = { workspace = true }
 serde_json = { workspace = true }
 sqlx = { workspace = true }
 reqwest = { workspace = true }
+redis = { workspace = true }
+secrecy = { workspace = true }
 
 [dev-dependencies]
-redis = { workspace = true }
 wiremock = { workspace = true }
 # AC-16: uji tangkap `tracing` (secret dan NIK tidak muncul di log aplikasi).
 tracing-subscriber = { workspace = true }
