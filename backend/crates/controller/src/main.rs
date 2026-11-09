@@ -272,14 +272,7 @@ fn rabbitmq_uri(cfg: &Config) -> Result<String, String> {
         .rabbitmq
         .as_ref()
         .ok_or_else(|| "rabbitmq configuration missing".to_owned())?;
-    Ok(format!(
-        "amqp://{}:{}@{}:{}/{}",
-        r.user,
-        r.password.expose_secret(),
-        r.host,
-        r.port,
-        r.vhost
-    ))
+    Ok(poolrouter_core::runtime::amqp_uri(r))
 }
 
 fn redis_client(cfg: &Config) -> Result<redis::Client, String> {
