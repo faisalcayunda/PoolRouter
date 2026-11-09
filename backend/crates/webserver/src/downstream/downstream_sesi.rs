@@ -38,6 +38,9 @@ pub struct BidangInput {
 pub struct KontrakEndpoint {
     pub endpoint_id: Uuid,
     pub config_versi_aktif: i32,
+    /// Kontrak input endpoint (ADR-0002 rev 5 D6): nama `{{input.*}}` di
+    /// template provider versi aktif, fungsi yang sama dengan intake.
+    pub field_input: Vec<super::intake::FieldInputKontrak>,
     pub input: Vec<BidangInput>,
 }
 
@@ -112,8 +115,12 @@ impl PgSessionDownstream {
             return Err(GalatDownstream::EndpointTidakDikenal);
         }
         let baris = sqlx::query(
-            "SELECT config_versi_aktif FROM downstream_endpoint \
-              WHERE downstream_endpoint_id = $1",
+            "SELECT e.config_versi_aktif, pcv.dokumen->>'body_template' AS body_template \
+               FROM downstream_endpoint e \
+               JOIN provider p ON p.provider_id = e.provider_id \
+               LEFT JOIN provider_config_versi pcv \
+                      ON pcv.provider_id = p.provider_id AND pcv.versi = p.config_versi_aktif \
+              WHERE e.downstream_endpoint_id = $1",
         )
         .bind(endpoint)
         .fetch_optional(&self.pool)
@@ -126,6 +133,11 @@ impl PgSessionDownstream {
         // No active config version means the endpoint is not fully provisioned
         // yet; report it as a store problem rather than fabricating version 0.
         let versi = versi.ok_or(GalatDownstream::Layanan)?;
+        let template: Option<String> = baris
+            .try_get("body_template")
+            .map_err(|_| GalatDownstream::Layanan)?;
+        let field_input =
+            super::permintaan::field_input_dari_template(template.as_deref().unwrap_or_default());
         let input = sqlx::query(
             "SELECT nama_field, tipe, wajib, nilai_diizinkan, aturan_validasi, klasifikasi, \
                     kirim_ke_data_balikan, deskripsi, versi \
@@ -158,6 +170,7 @@ impl PgSessionDownstream {
         Ok(KontrakEndpoint {
             endpoint_id: endpoint,
             config_versi_aktif: versi,
+            field_input,
             input,
         })
     }
@@ -241,6 +254,7 @@ pub mod fake {
                 Ok(KontrakEndpoint {
                     endpoint_id: endpoint,
                     config_versi_aktif: 3,
+                    field_input: Vec::new(),
                     input: self.bidang_set.clone(),
                 })
             })

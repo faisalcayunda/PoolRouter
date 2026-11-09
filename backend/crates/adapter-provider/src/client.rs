@@ -279,3 +279,73 @@ fn spki_dari_cert(cert: &CertificateDer<'_>) -> Option<Vec<u8>> {
     let (_, parsed) = X509Certificate::from_der(cert.as_ref()).ok()?;
     Some(parsed.tbs_certificate.subject_pki.raw.to_vec())
 }
+
+/// Kirim satu request ke provider lewat klien hasil [`build_provider_client`]
+/// (ARC-66). Respons HTTP apa pun kodenya adalah `Ok`; `Err` hanya untuk
+/// transport. Pemanggil wajib sudah memeriksa URL dengan [`Allowlist`].
+///
+/// Body dikirim sebagai `String` utuh sehingga ber-`Content-Length` (D1, GET
+/// dengan body). `batas_total` menimpa timeout total klien untuk request ini.
+pub async fn kirim(
+    klien: &Client,
+    metode: &str,
+    url: &str,
+    body: Option<String>,
+    batas_total: Duration,
+) -> Result<crate::hasil::ResponsMentah, crate::GagalPanggilProvider> {
+    // Metode berasal dari dokumen yang sudah divalidasi admin API (GET/POST);
+    // metode lain adalah konfigurasi rusak dan dipetakan ke `lainnya`.
+    let metode = reqwest::Method::from_bytes(metode.as_bytes())
+        .map_err(|_| crate::GagalPanggilProvider::HttpKlien { status: 0 })?;
+    let mut rb = klien.request(metode, url).timeout(batas_total);
+    if let Some(body) = body {
+        rb = rb.header("content-type", "application/json").body(body);
+    }
+    let jawab = rb.send().await.map_err(petakan_reqwest)?;
+    let status = jawab.status().as_u16();
+    let body = jawab.bytes().await.map_err(petakan_reqwest)?.to_vec();
+    Ok(crate::hasil::ResponsMentah { status, body })
+}
+
+/// Galat `reqwest` → [`crate::GagalPanggilProvider`], tanpa URL (URL hasil render
+/// bisa memuat NIK atau secret).
+///
+/// Kegagalan verifikasi sertifikat (galat `rustls` di rantai `source()`)
+/// menjadi `Tls`, bukan `Koneksi`: ADR-0002 D5 dan uji 6 menuntut `tls` yang
+/// tidak di-retry. Galat saat merakit request (URL rusak, skema bukan https
+/// pada klien `https_only`) adalah konfigurasi, jadi `HttpKlien` → `lainnya`.
+pub fn petakan_reqwest(e: reqwest::Error) -> crate::GagalPanggilProvider {
+    if e.is_timeout() {
+        return crate::GagalPanggilProvider::Timeout;
+    }
+    if e.is_builder() {
+        return crate::GagalPanggilProvider::HttpKlien { status: 0 };
+    }
+    let tls = ada_galat_tls(&e);
+    let pesan = e.without_url().to_string();
+    if tls {
+        crate::GagalPanggilProvider::Tls(pesan)
+    } else {
+        crate::GagalPanggilProvider::Koneksi(pesan)
+    }
+}
+
+fn ada_galat_tls(e: &(dyn std::error::Error + 'static)) -> bool {
+    let mut kini = Some(e);
+    while let Some(g) = kini {
+        if g.downcast_ref::<rustls::Error>().is_some() {
+            return true;
+        }
+        // hyper-rustls membungkus galat rustls di `io::Error`; `source()` milik
+        // `io::Error` melompati galat dalamnya, jadi diperiksa lewat `get_ref`.
+        let dalam_io = g
+            .downcast_ref::<std::io::Error>()
+            .and_then(std::io::Error::get_ref)
+            .is_some_and(|d| d.downcast_ref::<rustls::Error>().is_some());
+        if dalam_io {
+            return true;
+        }
+        kini = g.source();
+    }
+    false
+}

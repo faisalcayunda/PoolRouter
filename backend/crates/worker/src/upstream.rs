@@ -40,21 +40,9 @@ impl fmt::Debug for PermintaanKabel {
     }
 }
 
-/// Respons HTTP apa pun kodenya. Klasifikasi ada di [`crate::keputusan`].
-#[derive(Clone, PartialEq, Eq)]
-pub struct ResponsMentah {
-    pub status: u16,
-    pub body: Vec<u8>,
-}
-
-impl fmt::Debug for ResponsMentah {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("ResponsMentah")
-            .field("status", &self.status)
-            .field("panjang_body", &self.body.len())
-            .finish()
-    }
-}
+/// Respons HTTP apa pun kodenya; dipindah ke adapter (ARC-66). Klasifikasi
+/// ada di [`crate::keputusan`].
+pub use poolrouter_adapter_provider::hasil::ResponsMentah;
 
 /// Satu panggilan ke provider. `Err` hanya untuk kegagalan transport
 /// (timeout, koneksi, TLS); respons HTTP non-2xx tetap `Ok`.

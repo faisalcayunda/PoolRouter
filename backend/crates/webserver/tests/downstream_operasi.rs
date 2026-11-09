@@ -3,6 +3,10 @@
 //! urutan gerbang, pemetaan HTTP, baris yang ditulis, dan panggilan kuota.
 //! Perilaku PostgreSQL/Redis sungguhan ada di `downstream_permintaan_pg.rs`.
 //!
+//! Jalur sync juga diuji dengan pemanggil produksi `PemanggilHttp` terhadap
+//! provider tiruan wiremock (render, panggilan HTTP, parser `status_skor`,
+//! pemetaan 200/502/504), dengan dokumen dan secret dari memori (ARC-66).
+//!
 //! NIK di sini sintetis dan berawalan `00`.
 
 use std::collections::BTreeMap;
@@ -30,7 +34,14 @@ use poolrouter_webserver::downstream::downstream_sesi::SesiKlien;
 use poolrouter_webserver::downstream::downstream_sesi::fake::FakeSession;
 use poolrouter_webserver::downstream::intake::{FieldInputKontrak, FieldMetadataKontrak};
 use poolrouter_webserver::downstream::kuota_gerbang::fake::{FakeKuota, status_token};
-use poolrouter_webserver::downstream::pemanggil::{PanggilanProvider, PemanggilProvider};
+use poolrouter_adapter_provider::dokumen::DokumenProvider;
+use poolrouter_webserver::downstream::downstream_sesi::{Fut as DFut, GalatDownstream, Hasil};
+use poolrouter_webserver::downstream::pemanggil::{
+    HasilProvider, Kirim, KlienProvider, PanggilanProvider, PanggilanSiap, PemanggilHttp,
+    PemanggilProvider, SumberPanggilan, Transport,
+};
+use wiremock::matchers::{method, path};
+use wiremock::{Mock, MockServer, ResponseTemplate};
 use poolrouter_webserver::downstream::pengenal::{Fut, GalatPengenal, PengenalDownstream};
 use poolrouter_webserver::downstream::permintaan::fake::{FakePermintaan, baris_kosong};
 use poolrouter_webserver::downstream::permintaan::{
@@ -50,22 +61,34 @@ impl PengenalDownstream for PengenalTetap {
 
 struct PemanggilTetap {
     hasil: HasilPanggilan,
-    jumlah: Mutex<u32>,
+    /// Jumlah panggilan yang benar-benar dikirim (bukan yang hanya disiapkan).
+    jumlah: Arc<Mutex<u32>>,
     /// Latensi tiruan provider.
     tunda: Duration,
 }
 
 impl PemanggilProvider for PemanggilTetap {
-    fn panggil(
-        &self,
-        _p: PanggilanProvider,
-    ) -> poolrouter_webserver::downstream::downstream_sesi::Fut<'_, HasilPanggilan> {
+    fn siapkan(&self, _p: PanggilanProvider) -> DFut<'_, Hasil<PanggilanSiap>> {
+        let hasil = self.hasil.clone();
+        let jumlah = self.jumlah.clone();
+        let tunda = self.tunda;
         Box::pin(async move {
-            *self.jumlah.lock().unwrap() += 1;
-            if !self.tunda.is_zero() {
-                tokio::time::sleep(self.tunda).await;
-            }
-            self.hasil.clone()
+            let kirim: Kirim = Box::new(move |_batas| -> DFut<'static, HasilProvider> {
+                Box::pin(async move {
+                    *jumlah.lock().unwrap() += 1;
+                    if !tunda.is_zero() {
+                        tokio::time::sleep(tunda).await;
+                    }
+                    HasilProvider {
+                        hasil,
+                        response_payload: None,
+                    }
+                })
+            });
+            Ok(PanggilanSiap {
+                request_payload: None,
+                kirim,
+            })
         })
     }
 }
@@ -139,25 +162,40 @@ impl Uji {
     }
 
     fn dengan_tunda(hasil: Option<HasilPanggilan>, tunda: Duration) -> Self {
+        let pemanggil = hasil.map(|h| {
+            Arc::new(PemanggilTetap {
+                hasil: h,
+                jumlah: Arc::new(Mutex::new(0)),
+                tunda,
+            })
+        });
+        let mut u = Self::rakit(
+            pemanggil.clone().map(|p| p as Arc<dyn PemanggilProvider>),
+            |_| {},
+        );
+        u.pemanggil = pemanggil;
+        u
+    }
+
+    /// Router dengan pemanggil apa pun; `ubah` menyesuaikan rantai endpoint.
+    fn rakit(
+        pemanggil: Option<Arc<dyn PemanggilProvider>>,
+        ubah: impl FnOnce(&mut RantaiEndpoint),
+    ) -> Self {
         let klien = SesiKlien {
             client_id: Uuid::now_v7(),
             credential_id: Uuid::now_v7(),
         };
         let endpoint = Uuid::now_v7();
         let permintaan = FakePermintaan::baru();
-        permintaan.atur_rantai(rantai(endpoint));
+        let mut r = rantai(endpoint);
+        ubah(&mut r);
+        permintaan.atur_rantai(r);
         let kuota = FakeKuota::baru();
-        let pemanggil = hasil.map(|h| {
-            Arc::new(PemanggilTetap {
-                hasil: h,
-                jumlah: Mutex::new(0),
-                tunda,
-            })
-        });
         let operasi = Arc::new(OperasiDownstream {
             permintaan: permintaan.clone(),
             kuota: kuota.clone(),
-            pemanggil: pemanggil.clone().map(|p| p as Arc<dyn PemanggilProvider>),
+            pemanggil,
             kunci_idempoten: KunciIdempoten::baru(b"kunci-hmac-sintetis"),
             tunggu_token_sync: TUNGGU_TOKEN_SYNC,
         });
@@ -172,7 +210,7 @@ impl Uji {
             endpoint,
             permintaan,
             kuota,
-            pemanggil,
+            pemanggil: None,
         }
     }
 
@@ -781,6 +819,274 @@ async fn nik_dan_nilai_input_tidak_masuk_log() {
 
     let log = String::from_utf8(tulis.0.lock().unwrap().clone()).unwrap();
     for rahasia in [NIK, "Budi Sintetis", "rahasia-sintetis"] {
+        assert!(!log.contains(rahasia), "{rahasia} bocor ke log");
+    }
+}
+
+// ------------------------------------------------- ARC-66: PemanggilHttp + wiremock
+
+const SECRET: &str = "rahasia-provider-sintetis";
+
+/// Dokumen dan secret dari memori; produksi memakai `SumberPg` (`pr_api`).
+struct SumberUji {
+    dokumen: Value,
+    secret: BTreeMap<String, String>,
+}
+
+impl SumberPanggilan for SumberUji {
+    fn dokumen_provider(&self, _id: Uuid, _versi: i32) -> DFut<'_, Hasil<Value>> {
+        let d = self.dokumen.clone();
+        Box::pin(async move { Ok(d) })
+    }
+
+    fn dokumen_endpoint(&self, _id: Uuid, _versi: i32) -> DFut<'_, Hasil<Option<Value>>> {
+        Box::pin(async { Ok(Some(json!({"parameter_literal": {"TRESHOLD": "80"}}))) })
+    }
+
+    fn secret(&self, nama: Vec<String>) -> DFut<'_, Hasil<BTreeMap<String, String>>> {
+        let peta = self.secret.clone();
+        Box::pin(async move {
+            nama.iter()
+                .map(|n| {
+                    peta.get(n)
+                        .map(|v| (n.clone(), v.clone()))
+                        .ok_or(GalatDownstream::Layanan)
+                })
+                .collect()
+        })
+    }
+}
+
+/// wiremock berjalan di http biasa, jadi uji memakai klien tanpa TLS. Produksi
+/// selalu `TransportTls` (https_only + allowlist; diuji di unit test modul).
+struct TransportUji;
+
+impl Transport for TransportUji {
+    fn klien(&self, _dok: &DokumenProvider) -> Result<KlienProvider, String> {
+        Ok(KlienProvider::tanpa_tls_untuk_uji(reqwest::Client::new()))
+    }
+}
+
+fn dokumen_provider(base: &str) -> Value {
+    json!({
+        "metode": "POST",
+        "base_url": format!("{base}/api"),
+        "body_template": "{\"NIK\":\"{{input.NIK}}\",\"NAMA_LGKP\":\"{{input.NAMA_LGKP}}\",\
+                          \"USER_ID\":\"{{secret.USER_ID}}\",\
+                          \"transactionId\":\"{{system.kode_transaksi}}\",\
+                          \"TRESHOLD\":\"{{endpoint.TRESHOLD}}\"}",
+        "tls_trust": "system",
+        "respons_skema": {
+            "parser": "status_skor",
+            "literal": [
+                {"teks": "Sesuai", "status": "sesuai"},
+                {"teks": "Tidak Sesuai", "status": "tidak_sesuai"}
+            ],
+            "parameter_output": [{"nama": "NAMA_LGKP"}, {"nama": "TMPT_LHR"}]
+        },
+        "parameters": [],
+        "log_mode": "full_payload"
+    })
+}
+
+fn respons_dukcapil() -> Value {
+    json!({"content": [{
+        "NAMA_LGKP": "Sesuai (90)",
+        "TMPT_LHR": "Tidak Sesuai",
+        "UID": SECRET
+    }]})
+}
+
+fn pemanggil_http(
+    server: &MockServer,
+    secret: bool,
+) -> PemanggilHttp<SumberUji, TransportUji> {
+    let mut peta = BTreeMap::new();
+    if secret {
+        peta.insert("USER_ID".to_owned(), SECRET.to_owned());
+    }
+    PemanggilHttp::baru(
+        SumberUji {
+            dokumen: dokumen_provider(&server.uri()),
+            secret: peta,
+        },
+        TransportUji,
+    )
+}
+
+fn uji_http(server: &MockServer, ubah: impl FnOnce(&mut RantaiEndpoint)) -> Uji {
+    Uji::rakit(Some(Arc::new(pemanggil_http(server, true))), ubah)
+}
+
+#[tokio::test]
+async fn sync_http_done_merender_template_dan_membaca_status_skor() {
+    // AC-27, AC-28 end-to-end di atas adapter provider: template dirender dengan
+    // secret, literal endpoint, dan `kode_transaksi` yang sama dengan baris log.
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/api"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(respons_dukcapil()))
+        .expect(1)
+        .mount(&server)
+        .await;
+    let u = uji_http(&server, |_| {});
+    let (s, h, v) = u.sinkron(&body_sah(), None).await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    no_store(&h);
+    assert_eq!(v["hasil"]["NAMA_LGKP"], json!({"status": "sesuai", "skor": 90}));
+    // P-1: TMPT_LHR tidak dikirim client, jadi tidak ada di output.
+    assert!(v["hasil"].get("TMPT_LHR").is_none(), "{v}");
+
+    let diterima = server.received_requests().await.unwrap();
+    assert_eq!(diterima.len(), 1);
+    let body: Value = serde_json::from_slice(&diterima[0].body).unwrap();
+    assert_eq!(body["NIK"], NIK);
+    assert_eq!(body["USER_ID"], SECRET);
+    assert_eq!(body["TRESHOLD"], "80");
+    let kode: Uuid = body["transactionId"].as_str().unwrap().parse().unwrap();
+    assert_eq!(kode.get_version_num(), 7, "kode_transaksi UUIDv7");
+
+    let semua = u.permintaan.semua();
+    assert_eq!(semua.len(), 1);
+    let r = &semua[0].1;
+    assert_eq!(r.status, StatusInternal::Done);
+    assert_eq!(r.log.len(), 1);
+    assert_eq!(r.log[0].0, kode, "transactionId = kode_transaksi baris log");
+    assert_eq!(r.log[0].1, Some("berhasil"));
+    let hit = u.kuota.hitung.lock().unwrap();
+    assert_eq!((hit.intake, hit.token, hit.tambah, hit.lepas), (1, 1, 1, 1));
+}
+
+#[tokio::test]
+async fn sync_http_gagal_dipetakan_502_504_tanpa_retry_after() {
+    // AC-28: kode provider → failure_reason → HTTP, dengan request_id.
+    let kasus = [
+        (
+            ResponseTemplate::new(503),
+            StatusCode::BAD_GATEWAY,
+            "retry_habis",
+        ),
+        (
+            ResponseTemplate::new(401),
+            StatusCode::BAD_GATEWAY,
+            "provider_error_permanen",
+        ),
+        (
+            ResponseTemplate::new(200).set_body_string("bukan json"),
+            StatusCode::BAD_GATEWAY,
+            "provider_error_permanen",
+        ),
+        (
+            ResponseTemplate::new(200)
+                .set_body_json(respons_dukcapil())
+                .set_delay(Duration::from_secs(3)),
+            StatusCode::GATEWAY_TIMEOUT,
+            "timeout_sync",
+        ),
+    ];
+    for (respons, http, kode) in kasus {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .respond_with(respons)
+            .mount(&server)
+            .await;
+        let u = uji_http(&server, |r| {
+            r.rute[0].parameter_dispatch = json!({"timeout_total_upstream_detik": 1});
+        });
+        let (s, h, v) = u.sinkron(&body_sah(), None).await;
+        assert_eq!(s, http, "{kode} {v}");
+        assert_eq!(v["kode"], kode);
+        assert!(h.get(header::RETRY_AFTER).is_none());
+        let semua = u.permintaan.semua();
+        assert_eq!(v["request_id"], json!(semua[0].0));
+        assert_eq!(semua[0].1.status, StatusInternal::Failed);
+        assert_eq!(semua[0].1.failure_reason.as_deref(), Some(kode));
+        assert_eq!(u.kuota.hitung.lock().unwrap().lepas, 1);
+    }
+}
+
+#[tokio::test]
+async fn sync_http_konfigurasi_rusak_503_tanpa_baris_kuota_dan_panggilan() {
+    // Secret yang dirujuk template tidak ada: gagal sebelum kuota dan sebelum
+    // baris apa pun, sehingga tidak ada log tanpa panggilan (M-03).
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(respons_dukcapil()))
+        .mount(&server)
+        .await;
+    let u = Uji::rakit(Some(Arc::new(pemanggil_http(&server, false))), |_| {});
+    let (s, _, v) = u.sinkron(&body_sah(), None).await;
+    assert_eq!(s, StatusCode::SERVICE_UNAVAILABLE, "{v}");
+    assert_eq!(v["kode"], "layanan_tidak_tersedia");
+    assert_eq!(u.jumlah_baris(), 0);
+    let hit = u.kuota.hitung.lock().unwrap();
+    assert_eq!(hit.intake + hit.token + hit.tambah, 0);
+    assert!(server.received_requests().await.unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn payload_log_mengikuti_log_mode_dan_menyamarkan_secret() {
+    // ADR-0001 bagian 7: `full_payload` menyimpan keluaran log (penanda
+    // `{{secret.X}}`), gema secret di respons disamarkan; `metadata_only` NULL.
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(respons_dukcapil()))
+        .mount(&server)
+        .await;
+    let p = pemanggil_http(&server, true);
+    let panggilan = |full_payload| PanggilanProvider {
+        request_id: Uuid::now_v7(),
+        kode_transaksi: Uuid::now_v7(),
+        provider_id: Uuid::now_v7(),
+        endpoint_id: Uuid::now_v7(),
+        provider_config_version: 1,
+        endpoint_config_version: 1,
+        full_payload,
+        input: json!({"NIK": NIK, "NAMA_LGKP": "Budi Sintetis"}),
+    };
+
+    let siap = p.siapkan(panggilan(true)).await.unwrap();
+    let rp = siap.request_payload.clone().unwrap();
+    assert_eq!(rp["metode"], "POST");
+    assert_eq!(rp["body"]["USER_ID"], "{{secret.USER_ID}}");
+    assert!(!rp.to_string().contains(SECRET), "{rp}");
+    let h = (siap.kirim)(Duration::from_secs(5)).await;
+    assert!(matches!(h.hasil, HasilPanggilan::Berhasil { .. }), "{h:?}");
+    let resp = h.response_payload.unwrap();
+    assert_eq!(resp["content"][0]["UID"], "{{secret.USER_ID}}");
+    assert!(!resp.to_string().contains(SECRET));
+
+    let siap = p.siapkan(panggilan(false)).await.unwrap();
+    assert!(siap.request_payload.is_none());
+    let h = (siap.kirim)(Duration::from_secs(5)).await;
+    assert!(h.response_payload.is_none());
+}
+
+#[tokio::test]
+async fn pemanggil_http_tidak_mencetak_secret_dan_nik_ke_log() {
+    // AC-4 dengan pemanggil produksi: sukses dan konfigurasi rusak.
+    let tulis = Penyangga::default();
+    let subscriber = tracing_subscriber::fmt()
+        .with_ansi(false)
+        .with_max_level(tracing::Level::TRACE)
+        .with_writer(tulis.clone())
+        .finish();
+    let _guard = tracing::subscriber::set_default(subscriber);
+
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(respons_dukcapil()))
+        .mount(&server)
+        .await;
+    let u = uji_http(&server, |_| {});
+    let (s, _, _) = u.sinkron(&body_sah(), None).await;
+    assert_eq!(s, StatusCode::OK);
+    let rusak = Uji::rakit(Some(Arc::new(pemanggil_http(&server, false))), |_| {});
+    let (s, _, _) = rusak.sinkron(&body_sah(), None).await;
+    assert_eq!(s, StatusCode::SERVICE_UNAVAILABLE);
+
+    let log = String::from_utf8(tulis.0.lock().unwrap().clone()).unwrap();
+    for rahasia in [NIK, SECRET, "Budi Sintetis"] {
         assert!(!log.contains(rahasia), "{rahasia} bocor ke log");
     }
 }
