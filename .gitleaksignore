@@ -1,12 +1,2 @@
-# Daftar abaikan gitleaks — hanya untuk temuan di riwayat yang sudah dibekukan (ARC-30).
-#
-# Dua temuan di bawah berada di `backend/db/test/f1/gen_f1.py` baris 220, pada dua commit
-# yang hanya dapat dijangkau lewat tag arsip `archive/shaal/agent/gengen/6cc00d19cdc9` dan
-# `archive/shaal/agent/yuzu/23fde654d73f`. Berkas itu generator fixture sintetis untuk uji
-# F1; nilai yang ditandai adalah data dummy, bukan kredensial nyata. Berkas tersebut tidak
-# ada di `main`, jadi ignores dikunci per fingerprint commit: kode baru tidak ikut di-ignore.
-#
-# Rule generic-api-key, baris 220, commit 3abd842 (tag archive/shaal/agent/gengen/6cc00d19cdc9).
-3abd8422bd5a907e2a988bdb1d8d3c2c24e5b1ef:backend/db/test/f1/gen_f1.py:generic-api-key:220
-# Rule generic-api-key, baris 220, commit 217ca4b (tag archive/shaal/agent/yuzu/23fde654d73f).
-217ca4b0c94833aee0d68bae85e9faeb6d258dda:backend/db/test/f1/gen_f1.py:generic-api-key:220
+# Fixture sintetis (contoh otpauth bertuliskan CONTOH...BUKANASLI) di commit lama #54; riwayat main tidak boleh ditulis ulang.
+d24e1197cb596b36259e6f1e455b0bcd9a5af55e:frontend/tests/mfa-screens.test.tsx:generic-api-key:31
