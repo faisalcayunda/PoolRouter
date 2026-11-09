@@ -6,10 +6,12 @@
 //! 1. Baca request dan konfigurasi tanpa kunci. Request yang bukan
 //!    `dispatched` (duplikat, sudah dibatalkan, terminal) di-ack tanpa
 //!    panggilan dan tanpa baris log (T-01, T-03).
-//! 2. `slot_klaim.lua` (D1.5): perpanjang slot milik percobaan ini dan
+//! 2. Buka secret, buat `kode_transaksi` UUIDv7, render template ganda, hitung
+//!    periode kuota. Semua langkah yang bisa gagal (`Err`) ada di sini, sebelum
+//!    efek samping pertama.
+//! 3. `slot_klaim.lua` (D1.5): perpanjang slot milik percobaan ini dan
 //!    kurangi `antre`. Slot hilang atau Redis gagal → ack tanpa menulis apa
 //!    pun; reconciler mengembalikan request ke `queued`.
-//! 3. Buka secret, buat `kode_transaksi` UUIDv7, render template ganda.
 //! 4. Satu transaksi: compare-and-set `dispatched → in_flight` dengan predikat
 //!    keenam entitas aktif dibaca dari tabel (gerbang §3a.4) + history +
 //!    insert `transaction_log` (`status_akses` NULL) + `attempt_count + 1`.
@@ -299,40 +301,22 @@ where
             .unwrap_or(TIMEOUT_UPSTREAM_BAWAAN_DETIK);
         let ttl_slot_mikro = (timeout_detik + TTL_SLOT_TAMBAHAN_DETIK) * 1_000_000;
 
-        // Langkah 2: klaim slot (D1.5). `dari_antre = 1`: nilai 0 hanya untuk
-        // rekonsiliasi (slot_klaim.lua).
-        let klaim = tokio::time::timeout(
-            BATAS_REDIS,
-            self.kuota
-                .klaim_slot(&pool, &rid, nomor, ttl_slot_mikro, true),
-        )
-        .await;
-        match klaim {
-            Ok(Ok(HasilKlaim::Diperpanjang { .. })) => {}
-            Ok(Ok(lain)) => {
-                tracing::warn!(request_id = %request_id, hasil = ?lain,
-                    "worker: slot percobaan tidak tersedia, ack tanpa panggilan");
-                return Ok(Hasil::SlotTidakTersedia);
-            }
-            Ok(Err(e)) => {
-                tracing::warn!(request_id = %request_id, error = %e,
-                    "worker: klaim slot gagal, ack tanpa panggilan");
-                return Ok(Hasil::SlotTidakTersedia);
-            }
-            Err(_) => {
-                metrik::redis_failclosed(metrik::Komponen::Worker);
-                tracing::warn!(request_id = %request_id,
-                    "worker: klaim slot melewati 250 ms, ack tanpa panggilan");
-                return Ok(Hasil::SlotTidakTersedia);
-            }
-        }
-
-        // Langkah 3: konfigurasi, secret, render. Semua sebelum commit apa pun.
+        // Langkah 2: konfigurasi, secret, render. Semua yang bisa gagal terjadi di
+        // sini, sebelum efek samping apa pun di Redis atau PostgreSQL.
         let dokumen: Option<Json<Value>> = kol(&b, "dokumen_provider")?;
         let dokumen =
             dokumen.ok_or_else(|| konfigurasi("provider tanpa versi konfigurasi aktif"))?;
         let dok =
             render::baca_dokumen_provider(&dokumen.0).map_err(|e| konfigurasi(e.to_string()))?;
+        if dok.tls_trust != "system" {
+            // `ca_kustom`/`pin_spki` menunggu klien ARC-221. Ditolak sebelum CAS
+            // supaya tidak ada baris log dan kuota untuk panggilan yang tidak
+            // pernah keluar (M-03).
+            return Err(konfigurasi(format!(
+                "tls_trust {} belum didukung worker",
+                dok.tls_trust
+            )));
+        }
         let dok_endpoint: Option<Json<Value>> = kol(&b, "dokumen_endpoint")?;
         let literal = render::parameter_literal(dok_endpoint.as_ref().map(|j| &j.0));
         let input_payload: Option<Json<Value>> = kol(&b, "input_payload")?;
@@ -385,6 +369,35 @@ where
             },
             kuota_efektif: kol(&b, "kuota_efektif")?,
         };
+
+        // Langkah 3: klaim slot (D1.5), efek samping pertama. Semua langkah yang
+        // bisa gagal sudah lewat, sehingga pesan yang ditolak (`Err`) tidak pernah
+        // mengurangi `antre`. `dari_antre = 1`: nilai 0 hanya untuk rekonsiliasi.
+        let klaim = tokio::time::timeout(
+            BATAS_REDIS,
+            self.kuota
+                .klaim_slot(&pool, &rid, nomor, ttl_slot_mikro, true),
+        )
+        .await;
+        match klaim {
+            Ok(Ok(HasilKlaim::Diperpanjang { .. })) => {}
+            Ok(Ok(lain)) => {
+                tracing::warn!(request_id = %request_id, hasil = ?lain,
+                    "worker: slot percobaan tidak tersedia, ack tanpa panggilan");
+                return Ok(Hasil::SlotTidakTersedia);
+            }
+            Ok(Err(e)) => {
+                tracing::warn!(request_id = %request_id, error = %e,
+                    "worker: klaim slot gagal, ack tanpa panggilan");
+                return Ok(Hasil::SlotTidakTersedia);
+            }
+            Err(_) => {
+                metrik::redis_failclosed(metrik::Komponen::Worker);
+                tracing::warn!(request_id = %request_id,
+                    "worker: klaim slot melewati 250 ms, ack tanpa panggilan");
+                return Ok(Hasil::SlotTidakTersedia);
+            }
+        }
 
         // Langkah 4: CAS + history + log dalam satu transaksi.
         let mut tx = self.pool.begin().await.map_err(galat_pg)?;

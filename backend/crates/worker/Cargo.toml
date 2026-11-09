@@ -37,3 +37,5 @@ reqwest = { workspace = true }
 [dev-dependencies]
 redis = { workspace = true }
 wiremock = { workspace = true }
+# AC-16: uji tangkap `tracing` (secret dan NIK tidak muncul di log aplikasi).
+tracing-subscriber = { workspace = true }

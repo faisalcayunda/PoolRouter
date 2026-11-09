@@ -49,7 +49,7 @@ fn env(nama: &str) -> String {
 
 async fn pool(url: &str) -> PgPool {
     sqlx::postgres::PgPoolOptions::new()
-        .max_connections(4)
+        .max_connections(12)
         .connect(url)
         .await
         .expect("koneksi PostgreSQL uji")
@@ -1082,4 +1082,114 @@ async fn redis_lambat_setelah_log_tanpa_panggilan() {
     let log = log_request(&l.su, id).await;
     assert_eq!(log.len(), 1);
     assert_eq!(log[0].status_akses, None, "log dibiarkan untuk reconciler");
+}
+
+/// AC-12 (S4): pesan duplikat yang diproses bersamaan. Penengahnya CAS
+/// PostgreSQL: tepat satu `Done`, sisanya ack tanpa panggilan dan tanpa log.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+#[ignore = "butuh PostgreSQL + Redis: make -C backend uji-pg"]
+async fn duplikat_bersamaan_tepat_satu_panggilan() {
+    let l = lingkungan().await;
+    let f = Fixture::baru(&l, 5).await;
+    l.pasang(200, respons_sukses(), 1, None).await;
+    let id = f.request(0, StdDuration::from_secs(3600)).await;
+    pesan_slot(&l.store, &f, id, 1).await;
+
+    let handler = Arc::new(l.handler(l.store.clone()));
+    let mut kerja = tokio::task::JoinSet::new();
+    for _ in 0..50 {
+        let h = Arc::clone(&handler);
+        kerja.spawn(async move { h.proses(id).await });
+    }
+    let mut done = 0;
+    while let Some(hasil) = kerja.join_next().await {
+        let hasil = hasil.expect("task").expect("ack, bukan error");
+        match hasil {
+            Hasil::Done => done += 1,
+            Hasil::BukanDispatched | Hasil::KalahCas | Hasil::SlotTidakTersedia => {}
+            lain => panic!("hasil tak terduga: {lain:?}"),
+        }
+    }
+    assert_eq!(done, 1);
+    assert_eq!(l.panggilan().await.len(), 1);
+    assert_eq!(log_request(&l.su, id).await.len(), 1);
+}
+
+/// Penulis log bersama untuk uji tangkap `tracing`.
+#[derive(Clone, Default)]
+struct Tangkap(Arc<std::sync::Mutex<Vec<u8>>>);
+
+impl std::io::Write for Tangkap {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        self.0.lock().expect("kunci buffer").extend_from_slice(buf);
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+impl Tangkap {
+    fn teks(&self) -> String {
+        String::from_utf8_lossy(&self.0.lock().expect("kunci buffer")).into_owned()
+    }
+}
+
+/// AC-16 (R1 AC-4, AC-23): secret provider dan NIK tidak muncul di log
+/// aplikasi pada jalur sukses, kelas yang tidak di-retry, dan secret hilang.
+/// Secret hilang juga ditolak sebelum efek samping: slot dan status utuh.
+#[tokio::test]
+#[ignore = "butuh PostgreSQL + Redis: make -C backend uji-pg"]
+async fn log_aplikasi_tanpa_secret_dan_nik() {
+    let buffer = Tangkap::default();
+    let penulis = buffer.clone();
+    let subscriber = tracing_subscriber::fmt()
+        // Log aplikasi worker; log pustaka (sqlx, hyper, wiremock) di luar cakupan uji ini.
+        .with_env_filter(tracing_subscriber::EnvFilter::new(
+            "poolrouter_worker=debug",
+        ))
+        .with_ansi(false)
+        .with_writer(move || penulis.clone())
+        .finish();
+    let _jaga = tracing::subscriber::set_default(subscriber);
+
+    let l = lingkungan().await;
+    l.pasang(401, json!({"error": SECRET}), 1, Some(1)).await;
+    l.pasang(200, respons_sukses(), 2, None).await;
+    let f = Fixture::baru(&l, 5).await;
+    let handler = l.handler(l.store.clone());
+
+    let id = f.request(0, StdDuration::from_secs(3600)).await;
+    pesan_slot(&l.store, &f, id, 1).await;
+    assert_eq!(
+        handler.proses(id).await.expect("proses"),
+        Hasil::Gagal("provider_error_permanen")
+    );
+    let id = f.request(0, StdDuration::from_secs(3600)).await;
+    pesan_slot(&l.store, &f, id, 1).await;
+    assert_eq!(handler.proses(id).await.expect("proses"), Hasil::Done);
+
+    // Secret dihapus: pesan ditolak sebelum klaim slot dan sebelum CAS.
+    sqlx::query(
+        "DELETE FROM provider_secret WHERE nama_secret IN
+           (SELECT substring(dokumen->>'body_template' FROM 'secret\\.([A-Za-z0-9_]+)')
+              FROM provider_config_versi WHERE provider_id = $1)",
+    )
+    .bind(f.provider_id)
+    .execute(&l.su)
+    .await
+    .expect("hapus secret");
+    let id = f.request(0, StdDuration::from_secs(3600)).await;
+    pesan_slot(&l.store, &f, id, 1).await;
+    let galat = handler.proses(id).await.expect_err("secret hilang ditolak");
+    assert!(!galat.to_string().contains(SECRET));
+    assert_eq!(baris_request(&l.su, id).await.status, "dispatched");
+    assert!(slot_ada(&l.redis, &f, id, 1).await);
+    assert_eq!(log_request(&l.su, id).await.len(), 0);
+
+    let log = buffer.teks();
+    assert!(log.contains("worker:"), "log worker tertangkap");
+    assert!(!log.contains(SECRET), "secret muncul di log aplikasi");
+    assert!(!log.contains(NIK), "NIK muncul di log aplikasi");
 }
