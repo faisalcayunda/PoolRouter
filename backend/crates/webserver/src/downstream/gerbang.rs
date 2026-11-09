@@ -69,6 +69,10 @@ pub enum Jawaban {
     PorsiSyncHabis {
         retry_after: u64,
     },
+    ObjekNonaktif {
+        objek: crate::api::enums::JenisObjek,
+    },
+    LayananTidakTersedia,
 }
 
 impl Jawaban {
@@ -123,6 +127,17 @@ impl Jawaban {
                 ProblemKodeDown::PorsiSyncHabis,
             )
             .retry_after(retry_after),
+            Self::ObjekNonaktif { objek } => {
+                use crate::api::enums::JenisObjek;
+                let st = match objek {
+                    JenisObjek::Endpoint => StatusCode::FORBIDDEN,
+                    JenisObjek::DownstreamPool
+                    | JenisObjek::UpstreamPool
+                    | JenisObjek::Provider => StatusCode::SERVICE_UNAVAILABLE,
+                };
+                ApiError::new(st, ProblemKodeDown::ObjekNonaktif)
+            }
+            Self::LayananTidakTersedia => ApiError::unavailable(),
         }
     }
 }
@@ -440,5 +455,81 @@ mod tests {
             !body.contains_key("errors"),
             "body tidak boleh punya key 'errors'"
         );
+    }
+
+    #[test]
+    fn objek_nonaktif_endpoint_403_tanpa_retry_after() {
+        use crate::api::enums::JenisObjek;
+        let j = Jawaban::ObjekNonaktif {
+            objek: JenisObjek::Endpoint,
+        };
+        let err = j.into_api_error();
+        assert_eq!(err.status(), StatusCode::FORBIDDEN);
+        assert_eq!(err.retry_after_secs(), None);
+    }
+
+    #[test]
+    fn objek_nonaktif_downstream_pool_503_tanpa_retry_after() {
+        use crate::api::enums::JenisObjek;
+        let j = Jawaban::ObjekNonaktif {
+            objek: JenisObjek::DownstreamPool,
+        };
+        let err = j.into_api_error();
+        assert_eq!(err.status(), StatusCode::SERVICE_UNAVAILABLE);
+        assert_eq!(err.retry_after_secs(), None);
+    }
+
+    #[test]
+    fn objek_nonaktif_upstream_pool_503_tanpa_retry_after() {
+        use crate::api::enums::JenisObjek;
+        let j = Jawaban::ObjekNonaktif {
+            objek: JenisObjek::UpstreamPool,
+        };
+        let err = j.into_api_error();
+        assert_eq!(err.status(), StatusCode::SERVICE_UNAVAILABLE);
+        assert_eq!(err.retry_after_secs(), None);
+    }
+
+    #[test]
+    fn objek_nonaktif_provider_503_tanpa_retry_after() {
+        use crate::api::enums::JenisObjek;
+        let j = Jawaban::ObjekNonaktif {
+            objek: JenisObjek::Provider,
+        };
+        let err = j.into_api_error();
+        assert_eq!(err.status(), StatusCode::SERVICE_UNAVAILABLE);
+        assert_eq!(err.retry_after_secs(), None);
+    }
+
+    #[test]
+    fn layanan_tidak_tersedia_503_dengan_retry_after_5() {
+        let j = Jawaban::LayananTidakTersedia;
+        let err = j.into_api_error();
+        assert_eq!(err.status(), StatusCode::SERVICE_UNAVAILABLE);
+        assert_eq!(err.retry_after_secs(), Some(5));
+    }
+
+    #[test]
+    fn limiter_penolakan_dievaluasi_sebelum_kuota() {
+        // Accepted request (no validation failure) must always return CekKuota,
+        // regardless of limiter state.
+        let k = putuskan(
+            None, // validation passed
+            HasilPenolakan::Dibatasi {
+                tunggu_mikro: 2_000_000,
+            },
+        );
+        assert_eq!(k, Keputusan::CekKuota);
+
+        // When validation failed but limiter is exhausted, limiter wins.
+        let k = putuskan(
+            Some(tolak_input()),
+            HasilPenolakan::Dibatasi {
+                tunggu_mikro: 2_000_000,
+            },
+        );
+        let Keputusan::TolakTanpaBaris(Jawaban::PenolakanBerlebih { .. }) = k else {
+            panic!("harus penolakan berlebih ketika limiter dibatasi");
+        };
     }
 }
