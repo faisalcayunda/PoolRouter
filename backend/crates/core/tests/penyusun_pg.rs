@@ -29,7 +29,7 @@ async fn pool() -> sqlx::PgPool {
 async fn ac24_susun_dan_kirim_batch() {
     let db = pool().await;
     let provider_id = Uuid::from_u128(100);
-    let pengirim = PengirimTiruan::baru();
+    let pengirim = std::sync::Arc::new(PengirimTiruan::baru());
     let sekarang = chrono::Utc::now();
 
     // Query provider eligible (dari fixture atau test setup).
@@ -59,7 +59,7 @@ async fn ac24_susun_dan_kirim_batch() {
         return;
     }
 
-    let hasil = jalankan_job_balikan(&db, provider_id, &pengirim, sekarang).await;
+    let hasil = jalankan_job_balikan(&db, provider_id, pengirim.clone(), sekarang).await;
     assert!(hasil.is_ok(), "handler gagal: {hasil:?}");
 
     // Verifikasi: batch dibuat, item diassign.
@@ -92,7 +92,7 @@ async fn ac24_susun_dan_kirim_batch() {
 async fn ac25_idempotensi_batch_sama() {
     let db = pool().await;
     let provider_id = Uuid::from_u128(101);
-    let pengirim = PengirimTiruan::baru();
+    let pengirim = std::sync::Arc::new(PengirimTiruan::baru());
     let sekarang = chrono::Utc::now();
 
     let batch_awal: i64 =
@@ -103,8 +103,8 @@ async fn ac25_idempotensi_batch_sama() {
             .expect("count batch");
 
     // Jalankan dua kali.
-    let _ = jalankan_job_balikan(&db, provider_id, &pengirim, sekarang).await;
-    let _ = jalankan_job_balikan(&db, provider_id, &pengirim, sekarang).await;
+    let _ = jalankan_job_balikan(&db, provider_id, pengirim.clone(), sekarang).await;
+    let _ = jalankan_job_balikan(&db, provider_id, pengirim.clone(), sekarang).await;
 
     let batch_akhir: i64 =
         sqlx::query_scalar("SELECT COUNT(*) FROM data_balikan_batch WHERE provider_id = $1")
@@ -126,8 +126,8 @@ async fn ac25_idempotensi_batch_sama() {
 async fn ac27_concurrency_safety() {
     let db = pool().await;
     let provider_id = Uuid::from_u128(102);
-    let pengirim1 = PengirimTiruan::baru();
-    let pengirim2 = PengirimTiruan::baru();
+    let pengirim1 = std::sync::Arc::new(PengirimTiruan::baru());
+    let pengirim2 = std::sync::Arc::new(PengirimTiruan::baru());
     let sekarang = chrono::Utc::now();
 
     // INSERT dua item untuk provider.
@@ -139,8 +139,8 @@ async fn ac27_concurrency_safety() {
     // Fixture anggap provider, request, transaksi sudah ada.
     // Test ini cek: kedua handler tidak buat batch terpisah untuk item yang sama.
 
-    let _hasil1 = jalankan_job_balikan(&db, provider_id, &pengirim1, sekarang).await;
-    let _hasil2 = jalankan_job_balikan(&db, provider_id, &pengirim2, sekarang).await;
+    let _hasil1 = jalankan_job_balikan(&db, provider_id, pengirim1.clone(), sekarang).await;
+    let _hasil2 = jalankan_job_balikan(&db, provider_id, pengirim2.clone(), sekarang).await;
 
     // Satu berhasil, satu mungkin TidakAdaItem (karena item sudah terassign).
     // Penting: tidak ada duplikat batch.
@@ -167,10 +167,12 @@ async fn ac28_pengirim_gagal_tercatat() {
     let provider_id = Uuid::from_u128(103);
 
     // Pengirim yang gagal sementara.
-    let pengirim = PengirimTiruan::dengan_program(vec![HasilDiprogam::GagalSementara]);
+    let pengirim = std::sync::Arc::new(PengirimTiruan::dengan_program(vec![
+        HasilDiprogam::GagalSementara,
+    ]));
     let sekarang = chrono::Utc::now();
 
-    let hasil = jalankan_job_balikan(&db, provider_id, &pengirim, sekarang).await;
+    let hasil = jalankan_job_balikan(&db, provider_id, pengirim.clone(), sekarang).await;
     assert!(
         hasil.is_ok(),
         "error pengirim harus ditangani (tidak panic)"

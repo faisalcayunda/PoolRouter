@@ -49,6 +49,9 @@
 --                      slot_aktif)`; kembalikan nil atau `{ kode, tabel }`
 -- `o.kunci_slot_sumber` hook F1 (opsional): dipanggil sesudah slot ditulis;
 --                       argumen `(KEYS, o, member)`; kembalikan nil
+-- `o.ambil_sumber`      hook F1 (opsional, T2e AC-10): fungsi tanpa argumen
+--                       yang mengembalikan teks sumber terpilih atau nil;
+--                       hasil ditambahkan sebagai elemen ke-8 pada return 'ok'
 --
 -- Kembalian: `{ kode = ..., tabel = <bentuk kembalian skrip F0> }`. `kode`
 -- adalah `tabel[1]`, disediakan supaya pemanggil bisa memeriksa tanpa
@@ -235,7 +238,15 @@ local function ambil_token(KEYS, o)
   end
   redis.call('PEXPIRE', KEYS[5], 7200000)
 
-  return { kode = 'ok', tabel = { 'ok', terpakai, slot_aktif + 1, kedaluwarsa, 0, isi, isi_porsi } }
+  local tabel = { 'ok', terpakai, slot_aktif + 1, kedaluwarsa, 0, isi, isi_porsi }
+  if o.ambil_sumber then
+    local sumber = o.ambil_sumber()
+    if sumber ~= nil then
+      tabel[8] = sumber
+    end
+  end
+
+  return { kode = 'ok', tabel = tabel }
 end
 
 return {
