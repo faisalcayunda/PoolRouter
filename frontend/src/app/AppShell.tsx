@@ -5,6 +5,7 @@ import { cx } from '../components/m3/cx';
 import { IconButton } from '../components/m3/IconButton';
 import { NavigationDrawer } from '../components/m3/NavigationDrawer';
 import { TopAppBar } from '../components/m3/TopAppBar';
+import { enumLabel } from '../i18n/enums';
 import { Icon, icons } from '../icons';
 import { activeHref, NAV_GROUPS } from './nav';
 
@@ -75,7 +76,7 @@ export interface AppShellProps {
  * - expanded and up (>= 840 px): `NavigationDrawer variant="standard"`, always visible.
  */
 export function AppShell({ pathname = '/', user, children }: AppShellProps) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const isExpanded = useIsExpanded();
   const [drawerOpen, setDrawerOpen] = useState(false);
   const closeDrawer = useCallback(() => setDrawerOpen(false), []);
@@ -105,7 +106,7 @@ export function AppShell({ pathname = '/', user, children }: AppShellProps) {
         trailing={
           user ? (
             <span className="typescale-body-medium text-on-surface-variant">
-              {user.username} · {t(`enum.peran.${user.peran}`)}
+              {user.username} · {enumLabel(i18n, 'peran', user.peran)}
             </span>
           ) : undefined
         }

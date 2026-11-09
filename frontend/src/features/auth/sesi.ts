@@ -13,10 +13,32 @@ export function fasePada(sesi: SesiStatus, saat: number): FaseSesi {
   const absolut = Date.parse(sesi.absolut_berakhir_pada);
   const idle = Date.parse(sesi.idle_berakhir_pada);
   if (!Number.isFinite(absolut) || !Number.isFinite(idle)) return 'aman';
-  if (saat >= absolut) return 'berakhir';
+  // Sesi berakhir saat now() >= idle_berakhir_pada (ADR-0003 3.6f, aturan server 3). Menjelang batas
+  // absolut idle sama dengan absolut, jadi satu pemeriksaan ini mencakup keduanya.
+  if (saat >= absolut || saat >= idle) return 'berakhir';
   if (saat >= absolut - PERINGATAN_MS) return 'peringatan_absolut';
   if (saat >= idle - PERINGATAN_MS) return 'peringatan_idle';
   return 'aman';
+}
+
+/**
+ * Epoch ms transisi berikutnya setelah fase `fase`, atau null kalau tidak ada yang perlu dijadwalkan.
+ * Fase terakhir sebelum `berakhir` menunjuk ke batas idle atau absolut yang lebih dulu tiba.
+ */
+export function jadwalBerikut(sesi: SesiStatus, fase: FaseSesi): number | null {
+  const idle = Date.parse(sesi.idle_berakhir_pada);
+  const absolut = Date.parse(sesi.absolut_berakhir_pada);
+  if (!Number.isFinite(idle) || !Number.isFinite(absolut)) return null;
+  switch (fase) {
+    case 'aman':
+      return Math.min(idle, absolut) - PERINGATAN_MS;
+    case 'peringatan_idle':
+      return Math.min(idle, absolut - PERINGATAN_MS);
+    case 'peringatan_absolut':
+      return Math.min(idle, absolut);
+    default:
+      return null;
+  }
 }
 
 /** Whole seconds until `iso`; never negative, so a dialog never prints "-3 detik". */

@@ -109,8 +109,8 @@
   },
   "enum": {
     "peran": {
-      "admin": "Platform admin",
-      "owner": "Client owner",
+      "platform_admin": "Platform admin",
+      "client_owner": "Client owner",
       "operator": "Operator",
       "auditor": "Auditor"
     },

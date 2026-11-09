@@ -7,7 +7,7 @@ import {
   type Me,
   type SesiStatus,
 } from '../../api/client';
-import { detikKe, fasePada, offsetServer, PERINGATAN_MS, type FaseSesi } from './sesi';
+import { detikKe, fasePada, jadwalBerikut, offsetServer, type FaseSesi } from './sesi';
 
 export interface SesiArgs {
   client?: ApiClient;
@@ -55,8 +55,10 @@ export function useSesi({ client = api, onBerakhir, onKeluar }: SesiArgs): SesiS
   const pakai = useCallback(
     (next: SesiStatus) => {
       offset.current = offsetServer(next, Date.now());
+      const faseBaru = fasePada(next, sekarang());
       setSesi(next);
-      setFase(fasePada(next, sekarang()));
+      setFase(faseBaru);
+      return faseBaru;
     },
     [sekarang],
   );
@@ -66,7 +68,7 @@ export function useSesi({ client = api, onBerakhir, onKeluar }: SesiArgs): SesiS
       Promise.all([client.me({ signal }), client.getSesi({ signal })])
         .then(([identity, status]) => {
           setMe(identity);
-          pakai(status);
+          if (pakai(status) === 'berakhir') berakhir.current();
         })
         .catch((error: unknown) => {
           if (signal?.aborted) return;
@@ -102,7 +104,9 @@ export function useSesi({ client = api, onBerakhir, onKeluar }: SesiArgs): SesiS
       if (document.visibilityState !== 'visible') return;
       client
         .getSesi()
-        .then(pakai)
+        .then((status) => {
+          if (pakai(status) === 'berakhir') berakhir.current();
+        })
         .catch((error: unknown) => {
           if (error instanceof ApiError && error.status === 401) berakhir.current();
         });
@@ -111,26 +115,41 @@ export function useSesi({ client = api, onBerakhir, onKeluar }: SesiArgs): SesiS
     return () => document.removeEventListener('visibilitychange', onVisible);
   }, [client, pakai]);
 
-  // One timer per state transition; it never wakes up more often than the spec allows.
+  // Satu timer per transisi keadaan. Saat jadwal tiba, hook memanggil GET /auth/sesi dulu (ADR-0003
+  // 3.6f, aturan frontend 2): request admin dari tab lain menggeser idle di server, jadi jadwal
+  // lokal saja bisa memunculkan dialog untuk sesi yang masih hidup. GET itu tidak menggeser idle.
   useEffect(() => {
     if (!sesi || fase === 'berakhir') return;
-    const idle = Date.parse(sesi.idle_berakhir_pada);
-    const absolut = Date.parse(sesi.absolut_berakhir_pada);
-    if (!Number.isFinite(idle) || !Number.isFinite(absolut)) return;
-    const target =
-      fase === 'aman'
-        ? Math.min(idle - PERINGATAN_MS, absolut - PERINGATAN_MS)
-        : fase === 'peringatan_idle'
-          ? absolut - PERINGATAN_MS
-          : absolut;
-    const delay = Math.max(0, target - sekarang());
-    const timer = setTimeout(() => {
-      const next = fasePada(sesi, sekarang());
-      setFase(next);
-      if (next === 'berakhir') berakhir.current();
-    }, delay + 20);
-    return () => clearTimeout(timer);
-  }, [sesi, fase, sekarang]);
+    const target = jadwalBerikut(sesi, fase);
+    if (target === null) return;
+    const controller = new AbortController();
+    const timer = setTimeout(
+      () => {
+        client
+          .getSesi({ signal: controller.signal })
+          .then((status) => {
+            if (controller.signal.aborted) return;
+            if (pakai(status) === 'berakhir') berakhir.current();
+          })
+          .catch((error: unknown) => {
+            if (controller.signal.aborted) return;
+            if (error instanceof ApiError && error.status === 401) {
+              berakhir.current();
+              return;
+            }
+            // Server tidak terjangkau: pakai jadwal lokal supaya peringatan tetap muncul.
+            const lokal = fasePada(sesi, sekarang());
+            setFase(lokal);
+            if (lokal === 'berakhir') berakhir.current();
+          });
+      },
+      Math.max(0, target - sekarang()) + 20,
+    );
+    return () => {
+      controller.abort();
+      clearTimeout(timer);
+    };
+  }, [sesi, fase, sekarang, client, pakai]);
 
   // Countdown text updates once per second only while the idle dialog is open.
   useEffect(() => {

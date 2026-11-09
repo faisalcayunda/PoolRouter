@@ -1416,6 +1416,14 @@ export interface components {
             requested_at: string;
             status_akses: string;
         };
+        /**
+         * @description What the transaction log keeps for a provider call. Closed set, the same
+         *     values as the database `CHECK (log_mode IN ('metadata_only','full_payload'))`.
+         *     A free string here let the contract advertise values the database rejects
+         *     (AD5).
+         * @enum {string}
+         */
+        LogMode: "metadata_only" | "full_payload";
         /** @description Paginated log result. */
         LogPage: {
             baris: components["schemas"]["LogBaris"][];
@@ -1489,6 +1497,12 @@ export interface components {
             tipe: string;
             wajib: boolean;
         };
+        /**
+         * @description HTTP method for the provider call (ADR-0002 D1). Only these two appear in
+         *     the contract; `GET` may still carry a JSON body.
+         * @enum {string}
+         */
+        MetodeProvider: "GET" | "POST";
         /** @description `POST /auth/mfa/daftar` response: shown once, never logged (AC-12). */
         MfaDaftar: {
             /**
@@ -1664,8 +1678,14 @@ export interface components {
              * @example 1
              */
             config_schema_version: number;
-            /** @example ringkas */
-            log_mode: string;
+            log_mode: components["schemas"]["LogMode"];
+            /** @description HTTP method the provider call uses (ADR-0002 D1). */
+            metode: components["schemas"]["MetodeProvider"];
+            /**
+             * @description Provider name, unique across the deployment (`provider.nama`).
+             * @example dukcapil-produksi
+             */
+            nama: string;
             /** @description Provider parameters plus their validation rules. */
             parameters: components["schemas"]["ParameterRule"][];
             /**
@@ -1677,11 +1697,8 @@ export interface components {
             provider_id: string;
             /** @description Response schema used to map elements (US-05). */
             respons_skema: Record<string, never>;
-            /**
-             * @description TLS trust setting for the provider call.
-             * @example sistem
-             */
-            tls_trust: string;
+            /** @description TLS trust setting for the provider call (ADR-0002 D5). */
+            tls_trust: components["schemas"]["TlsTrust"];
         };
         /** @description Provider configuration body (`createProvider`/`updateProvider`, US-01/04). */
         ProviderConfig: {
@@ -1704,17 +1721,28 @@ export interface components {
              * @example 1
              */
             config_schema_version: number;
-            /** @example ringkas */
-            log_mode: string;
+            log_mode: components["schemas"]["LogMode"];
+            /**
+             * @description HTTP method the provider call uses. `GET` with a body is allowed
+             *     (ADR-0002 D1): the template is no longer tied to the method.
+             */
+            metode: components["schemas"]["MetodeProvider"];
+            /**
+             * @description Provider name, unique across the deployment (`provider.nama`). It is part
+             *     of the body because `provider.nama` is NOT NULL UNIQUE, so the create
+             *     call has to carry it (AD5).
+             * @example dukcapil-produksi
+             */
+            nama: string;
             /** @description Provider parameters plus their validation rules. */
             parameters: components["schemas"]["ParameterRule"][];
             /** @description Response schema used to map elements (US-05). */
             respons_skema: Record<string, never>;
             /**
-             * @description TLS trust setting for the provider call.
-             * @example sistem
+             * @description TLS trust setting for the provider call (ADR-0002 D5). Closed set: there
+             *     is deliberately no "verify off" mode, not even in dev.
              */
-            tls_trust: string;
+            tls_trust: components["schemas"]["TlsTrust"];
         };
         /**
          * @description Jenis rule validasi pada konfigurasi provider (BRD US-03). F0 tidak
@@ -1770,6 +1798,13 @@ export interface components {
          * @enum {string}
          */
         StatusKredensial: "aktif" | "kedaluwarsa" | "dicabut";
+        /**
+         * @description TLS trust for the provider host (ADR-0002 D5). The three modes are the ones
+         *     the configuration allows; disabling verification is deliberately not among
+         *     them, not even in dev.
+         * @enum {string}
+         */
+        TlsTrust: "system" | "ca_kustom" | "pin_spki";
         /** @description Last-active-upstream detail in a preview (section 3a.10). */
         UpstreamAktifTerakhir: {
             /** Format: uuid */
@@ -2033,6 +2068,12 @@ export interface components {
              */
             field: string;
             kode: string;
+            /**
+             * @description Name of the parameter or secret the template referenced and that does
+             *     not exist (AC-13, U-46). Echoed so the UI can offer to create it; it is a
+             *     name the operator typed, never a value. Absent for every other error.
+             */
+            nama?: string | null;
             posisi?: components["schemas"]["Posisi"] | null;
         };
         /** @description Webhook configuration view; the secret itself is never returned. */

@@ -237,10 +237,10 @@ export default interface Resources {
         "ditolak": "Ditolak"
       },
       "peran": {
-        "admin": "Platform admin",
         "auditor": "Auditor",
+        "client_owner": "Client owner",
         "operator": "Operator",
-        "owner": "Client owner"
+        "platform_admin": "Platform admin"
       },
       "status_akses": {
         "ok": "Berhasil",

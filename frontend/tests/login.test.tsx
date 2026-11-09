@@ -5,11 +5,10 @@ import { ApiError, type ApiClient } from '../src/api/client';
 import { LoginScreen } from '../src/features/auth/LoginScreen';
 import { renderWithI18n } from './render';
 
-// Fixture kredensial uji — disusun saat runtime agar tidak terdeteksi pemindai secret.
-const FIXTURE_USER = 'auditor' + '_01';
-const FIXTURE_PASS = 'rahasia' + '-panjang';
-const WRONG_USER = 'sa' + 'lah';
-const WRONG_PASS = WRONG_USER;
+const FIXTURE_USER = 'a';
+const FIXTURE_PASS = 'b';
+const WRONG_USER = 'a';
+const WRONG_PASS = 'b';
 
 function stub(overrides: Partial<ApiClient> = {}): ApiClient {
   return { login: vi.fn().mockResolvedValue(undefined), ...overrides } as unknown as ApiClient;

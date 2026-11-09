@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import type { SesiStatus } from '../src/api/client';
-import { detikKe, fasePada, offsetServer, PERINGATAN_MS } from '../src/features/auth/sesi';
+import {
+  detikKe,
+  fasePada,
+  jadwalBerikut,
+  offsetServer,
+  PERINGATAN_MS,
+} from '../src/features/auth/sesi';
 
 const SESI: SesiStatus = {
   idle_berakhir_pada: '2026-11-03T08:00:00.000Z',
@@ -17,7 +23,20 @@ describe('fase sesi', () => {
   });
 
   it('moves to the absolute warning when extending is pointless', () => {
-    expect(fasePada(SESI, at('2026-11-03T14:58:00.000Z'))).toBe('peringatan_absolut');
+    // Menjelang batas absolut, idle sama dengan absolut (ADR-0003 3.6f).
+    const dekat = { ...SESI, idle_berakhir_pada: SESI.absolut_berakhir_pada };
+    expect(fasePada(dekat, at('2026-11-03T14:58:00.000Z'))).toBe('peringatan_absolut');
+  });
+
+  it('ends at the idle deadline, so the countdown cannot stick at zero', () => {
+    expect(fasePada(SESI, at('2026-11-03T07:59:59.000Z'))).toBe('peringatan_idle');
+    expect(fasePada(SESI, at('2026-11-03T08:00:00.000Z'))).toBe('berakhir');
+  });
+
+  it('schedules the next transition per phase', () => {
+    expect(jadwalBerikut(SESI, 'aman')).toBe(at('2026-11-03T07:58:00.000Z'));
+    expect(jadwalBerikut(SESI, 'peringatan_idle')).toBe(at('2026-11-03T08:00:00.000Z'));
+    expect(jadwalBerikut(SESI, 'berakhir')).toBeNull();
   });
 
   it('is over at the absolute deadline even if the idle timer was extended', () => {
