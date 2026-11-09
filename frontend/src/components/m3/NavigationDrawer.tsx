@@ -7,6 +7,7 @@ import { cx } from './cx';
  * - `standard`: permanently visible beside the content (expanded window class).
  * - `modal`: overlaid with a scrim while open (compact/medium window class).
  *
+ * Both variants use the inverse surface roles (UI v2): the drawer stays dark in the light theme.
  * The shell owns the list of links (`AppShell` renders them as children); this
  * component owns the container and, for the modal variant, the overlay, the
  * focus trap, the Escape handling and `aria-modal` semantics via React Aria's
@@ -42,7 +43,7 @@ export function NavigationDrawer({
     return (
       <aside
         aria-label={ariaLabel}
-        className={cx(WIDTH, 'border-r border-on-surface/12 p-3', className)}
+        className={cx(WIDTH, 'bg-inverse-surface p-3 text-inverse-on-surface', className)}
       >
         {children}
       </aside>
@@ -59,7 +60,7 @@ export function NavigationDrawer({
       <RacDialog
         aria-label={ariaLabel}
         className={cx(
-          'm3-focus relative z-10 overflow-auto bg-surface-container p-3 shadow-level1 outline-none',
+          'm3-focus relative z-10 overflow-auto bg-inverse-surface p-3 text-inverse-on-surface shadow-level1 outline-none',
           WIDTH,
           className,
         )}

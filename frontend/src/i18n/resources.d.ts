@@ -371,6 +371,11 @@ export default interface Resources {
       }
     },
     "nav": {
+      "breadcrumb": {
+        "aria": "Jejak halaman",
+        "new": "Baru",
+        "not_found": "Halaman tidak ditemukan"
+      },
       "drawer": {
         "aria": "Navigasi utama",
         "audit": "Audit akses",

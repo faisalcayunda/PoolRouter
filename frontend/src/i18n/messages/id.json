@@ -1,5 +1,10 @@
 {
   "nav": {
+    "breadcrumb": {
+      "aria": "Jejak halaman",
+      "new": "Baru",
+      "not_found": "Halaman tidak ditemukan"
+    },
     "group": {
       "account": "Akun",
       "config": "Konfigurasi",

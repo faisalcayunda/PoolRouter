@@ -1,13 +1,15 @@
 import { Suspense, useCallback, useEffect, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-aria-components';
+import { Breadcrumbs } from '../components/m3/Breadcrumbs';
 import { cx } from '../components/m3/cx';
 import { IconButton } from '../components/m3/IconButton';
 import { NavigationDrawer } from '../components/m3/NavigationDrawer';
 import { TopAppBar } from '../components/m3/TopAppBar';
 import { enumLabel } from '../i18n/enums';
 import { Icon, icons } from '../icons';
-import { activeHref, NAV_GROUPS } from './nav';
+import type { AdminRole } from '../features/common/RoleContext';
+import { activeHref, crumbsFor, navGroupsFor } from './nav';
 
 /** M3 window size class breakpoint for the `expanded` layout (tailwind.css `--breakpoint-expanded`). */
 const EXPANDED_QUERY = '(min-width: 840px)';
@@ -25,14 +27,22 @@ function useIsExpanded(): boolean {
   return expanded;
 }
 
-function DrawerNav({ pathname, onNavigate }: { pathname: string; onNavigate?: () => void }) {
+function DrawerNav({
+  pathname,
+  role,
+  onNavigate,
+}: {
+  pathname: string;
+  role: AdminRole | null;
+  onNavigate?: () => void;
+}) {
   const { t } = useTranslation();
   const current = activeHref(pathname);
   return (
     <nav aria-label={t('nav.drawer.aria')} className="flex flex-col gap-3">
-      {NAV_GROUPS.map((group) => (
+      {navGroupsFor(role).map((group) => (
         <div key={group.id} className="flex flex-col gap-0.5">
-          <p className="typescale-label-small px-3 text-on-surface-variant">{t(group.labelKey)}</p>
+          <p className="typescale-label-small px-3 text-inverse-on-surface/70">{t(group.labelKey)}</p>
           {group.items.map((item) => {
             const isActive = item.href === current;
             return (
@@ -44,8 +54,9 @@ function DrawerNav({ pathname, onNavigate }: { pathname: string; onNavigate?: ()
                 className={cx(
                   'typescale-label-large rounded-full px-3 py-2.5 no-underline outline-none',
                   isActive
-                    ? 'bg-secondary-container text-on-secondary-container'
-                    : 'text-on-surface hover:bg-on-surface/8 focus-visible:outline-2 focus-visible:outline-primary',
+                    ? 'bg-inverse-primary text-inverse-surface'
+                    : 'text-inverse-on-surface hover:bg-inverse-on-surface/8',
+                  'focus-visible:outline-2 focus-visible:outline-inverse-primary',
                 )}
               >
                 {t(item.labelKey)}
@@ -63,6 +74,8 @@ export interface AppShellProps {
   pathname?: string;
   /** Signed-in identity shown at the right of the top app bar (spec section 13.1). */
   user?: { username: string; peran: string } | null;
+  /** Admin role that filters the drawer; `null` = unknown, full menu (API is the last guard). */
+  role?: AdminRole | null;
   /** Screen rendered inside `<main>`. */
   children?: ReactNode;
 }
@@ -75,7 +88,7 @@ export interface AppShellProps {
  *   opened from the menu button.
  * - expanded and up (>= 840 px): `NavigationDrawer variant="standard"`, always visible.
  */
-export function AppShell({ pathname = '/', user, children }: AppShellProps) {
+export function AppShell({ pathname = '/', user, role = null, children }: AppShellProps) {
   const { t, i18n } = useTranslation();
   const isExpanded = useIsExpanded();
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -120,12 +133,19 @@ export function AppShell({ pathname = '/', user, children }: AppShellProps) {
           isOpen={isModalDrawerOpen}
           onOpenChange={(open) => setDrawerOpen(open)}
         >
-          <DrawerNav pathname={pathname} onNavigate={isExpanded ? undefined : closeDrawer} />
+          <DrawerNav pathname={pathname} role={role} onNavigate={isExpanded ? undefined : closeDrawer} />
         </NavigationDrawer>
 
         <main id="main-content" tabIndex={-1} className="min-w-0 flex-1 p-4">
           {/* Section 4: content is capped at 1200 px so long tables stay readable on a wide screen. */}
-          <div className="mx-auto w-full max-w-[1200px]">
+          <div className="mx-auto flex w-full max-w-[1200px] flex-col gap-3">
+            <Breadcrumbs
+              aria-label={t('nav.breadcrumb.aria')}
+              items={crumbsFor(pathname).map((c) => ({
+                label: c.labelKey ? t(c.labelKey) : c.text,
+                ...(c.href ? { href: c.href } : {}),
+              }))}
+            />
             <Suspense
               fallback={<p className="typescale-body-medium">{t('common.state.loading')}</p>}
             >

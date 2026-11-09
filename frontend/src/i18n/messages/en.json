@@ -1,5 +1,10 @@
 {
   "nav": {
+    "breadcrumb": {
+      "aria": "Breadcrumb",
+      "new": "New",
+      "not_found": "Page not found"
+    },
     "group": {
       "account": "Account",
       "config": "Configuration",

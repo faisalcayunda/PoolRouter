@@ -1,11 +1,12 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createI18n } from '../i18n/i18n';
 import type { i18n } from 'i18next';
 import { AppI18nProvider } from '../i18n/provider';
 import { AppShell } from './AppShell';
-import { activeHref } from './nav';
+import { activeHref, crumbsFor, navGroupsFor } from './nav';
+import type { AdminRole } from '../features/common/RoleContext';
 
 /** Drive the `expanded` media query without a real viewport. */
 function setExpanded(matches: boolean) {
@@ -23,10 +24,10 @@ function setExpanded(matches: boolean) {
 
 let instance: i18n;
 
-function renderShell(pathname = '/') {
+function renderShell(pathname = '/', role: AdminRole | null = null) {
   return render(
     <AppI18nProvider i18n={instance}>
-      <AppShell pathname={pathname}>
+      <AppShell pathname={pathname} role={role}>
         <p>ISI Halaman</p>
       </AppShell>
     </AppI18nProvider>,
@@ -121,5 +122,93 @@ describe('activeHref', () => {
     expect(activeHref('/provider')).toBe('/provider');
     expect(activeHref('/')).toBe('/');
     expect(activeHref('/tidak-ada')).toBeUndefined();
+  });
+});
+
+describe('AppShell — menu per role', () => {
+  beforeEach(() => setExpanded(true));
+
+  it('shows the full menu while the role is unknown', () => {
+    renderShell('/', null);
+    expect(screen.getByRole('link', { name: 'Provider' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Pencarian log per NIK' })).toBeInTheDocument();
+  });
+
+  it('auditor sees logs, access audit and NIK search but no configuration', () => {
+    renderShell('/', 'auditor');
+    expect(screen.getByRole('link', { name: 'Pencarian log per NIK' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Audit akses' })).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Provider' })).not.toBeInTheDocument();
+    expect(screen.queryByText('Konfigurasi')).not.toBeInTheDocument();
+  });
+
+  it('operator has no secret, NIK search or access audit', () => {
+    renderShell('/', 'operator');
+    expect(screen.getByRole('link', { name: 'Kuota' })).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Secret' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Pencarian log per NIK' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Audit akses' })).not.toBeInTheDocument();
+  });
+
+  it('every role keeps logs and settings', () => {
+    for (const role of ['platform_admin', 'operator', 'auditor'] as const) {
+      const hrefs = navGroupsFor(role).flatMap((g) => g.items.map((i) => i.href));
+      expect(hrefs).toContain('/');
+      expect(hrefs).toContain('/settings');
+    }
+  });
+
+  it('uses the inverse surface for the drawer', () => {
+    renderShell('/', 'auditor');
+    expect(screen.getByRole('complementary', { name: 'Navigasi utama' }).className).toContain(
+      'bg-inverse-surface',
+    );
+  });
+
+  it('lets the drawer links be reached with Tab', async () => {
+    renderShell('/', 'auditor');
+    await userEvent.tab(); // skip link
+    await userEvent.tab();
+    expect(document.activeElement).toBe(screen.getByRole('link', { name: 'Log transaksi' }));
+  });
+});
+
+describe('AppShell — breadcrumbs', () => {
+  beforeEach(() => setExpanded(true));
+
+  it('renders a trail ending at the current page', () => {
+    renderShell('/kuota');
+    const trail = screen.getByRole('navigation', { name: 'Jejak halaman' });
+    expect(trail).toHaveTextContent('Pemantauan');
+    expect(screen.getByText('Kuota', { selector: '[aria-current="page"]' })).toBeInTheDocument();
+  });
+
+  it('links back to the list from a detail route', () => {
+    renderShell('/provider/abc');
+    const trail = screen.getByRole('navigation', { name: 'Jejak halaman' });
+    expect(within(trail).getByRole('link', { name: 'Provider' })).toHaveAttribute(
+      'href',
+      '/provider',
+    );
+    expect(within(trail).getByText('abc')).toHaveAttribute('aria-current', 'page');
+  });
+
+  it('has a trail on the not-found route too', () => {
+    renderShell('/tidak-ada');
+    const trail = screen.getByRole('navigation', { name: 'Jejak halaman' });
+    expect(trail).toHaveTextContent('Halaman tidak ditemukan');
+  });
+});
+
+describe('crumbsFor', () => {
+  it('covers the list, detail, new and unknown routes', () => {
+    expect(crumbsFor('/')).toHaveLength(2);
+    expect(crumbsFor('/log/TX-1')).toEqual([
+      { labelKey: 'nav.group.monitoring' },
+      { labelKey: 'nav.drawer.log', href: '/' },
+      { text: 'TX-1' },
+    ]);
+    expect(crumbsFor('/provider/baru').at(-1)).toEqual({ labelKey: 'nav.breadcrumb.new' });
+    expect(crumbsFor('/x')).toEqual([{ labelKey: 'nav.breadcrumb.not_found' }]);
   });
 });
