@@ -7,6 +7,7 @@ members = [
     "crates/controller",
     "crates/worker",
     "crates/queue-apalis",
+    "crates/cli",
 ]
 
 [workspace.package]
