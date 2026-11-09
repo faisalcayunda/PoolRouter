@@ -1,4 +1,4 @@
-import { expect, test } from './fixtures';
+import { expect, stubSesi, test } from './fixtures';
 import type { Page } from '@playwright/test';
 
 /**
@@ -100,6 +100,7 @@ async function stub(page: Page, logPage: unknown = LOG_PAGE) {
     if (url.includes('/upstream')) return json([]);
     return json(logPage);
   });
+  await stubSesi(page);
 }
 
 /** Assert the stylesheet is live, then freeze the animations so the shot is deterministic. */
