@@ -12,6 +12,11 @@
 //!    restart.
 //! 4. SIGINT/SIGTERM: consumer berhenti mengambil pesan, handler yang sedang
 //!    berjalan diselesaikan dan di-ack, lalu proses keluar.
+//!
+//! `/healthz` worker membaca [`StatusKonsumen`] (ADR-0004 bagian 4.3 W3):
+//! gagal bila ada loop consumer yang tidak tersambung lebih lama dari
+//! [`TOLERANSI_LIVENESS`], sehingga orkestrator me-restart proses yang
+//! consumer-nya berputar gagal terus (mis. 406 atau izin ditolak).
 
 use std::collections::HashSet;
 use std::sync::Arc;
@@ -20,11 +25,11 @@ use std::time::Duration;
 use poolrouter_core::config::{Component, Config, DbRole};
 use poolrouter_core::kuota::metrik::Komponen;
 use poolrouter_core::kuota::store::KuotaRedis;
-use poolrouter_core::queue::nama_antrean_upstream;
+use poolrouter_core::queue::{StatusKonsumen, nama_antrean_upstream};
 use poolrouter_core::retry::AcakAwsLc;
 use poolrouter_core::runtime::{self, DependencyReadiness};
 use poolrouter_core::secret::Brankas;
-use poolrouter_queue_apalis::{ApalisQueue, PREFETCH_BAWAAN};
+use poolrouter_queue_apalis::{ApalisQueue, PREFETCH_BAWAAN, TOLERANSI_LIVENESS};
 use poolrouter_worker::handler::Handler;
 use poolrouter_worker::konsumen;
 use poolrouter_worker::upstream::PemanggilReqwest;
@@ -65,9 +70,10 @@ async fn main() -> std::process::ExitCode {
             return std::process::ExitCode::from(2);
         }
     };
-    runtime::spawn_ready_server(Arc::new(readiness));
+    let status = StatusKonsumen::baru(TOLERANSI_LIVENESS);
+    runtime::spawn_ready_server_with_liveness(Arc::new(readiness), status.clone());
 
-    match jalankan(&cfg).await {
+    match jalankan(&cfg, status).await {
         Ok(()) => std::process::ExitCode::SUCCESS,
         Err(err) => {
             tracing::error!(component = "worker", error = %err, "worker stopped");
@@ -76,7 +82,7 @@ async fn main() -> std::process::ExitCode {
     }
 }
 
-async fn jalankan(cfg: &Config) -> Result<(), String> {
+async fn jalankan(cfg: &Config, status: Arc<StatusKonsumen>) -> Result<(), String> {
     let berhenti = CancellationToken::new();
     let token_sinyal = berhenti.clone();
     tokio::spawn(async move {
@@ -110,7 +116,8 @@ async fn jalankan(cfg: &Config) -> Result<(), String> {
             .await
             .map_err(|e| e.to_string())?
             .dengan_penghenti(berhenti.clone())
-            .dengan_prefetch(prefetch()),
+            .dengan_prefetch(prefetch())
+            .dengan_status(status),
     );
 
     let mut sudah: HashSet<Uuid> = HashSet::new();
@@ -193,20 +200,14 @@ fn ssl_mode(raw: &str) -> Result<PgSslMode, String> {
         .map_err(|_| "POOLROUTER_DB_SSLMODE is not a PostgreSQL ssl mode".to_owned())
 }
 
-/// URI AMQP. Password hanya ada di `String` hasil, tidak pernah di-log.
+/// URI AMQP lewat [`runtime::amqp_uri`] (kredensial di-percent-encode).
+/// Password hanya ada di `String` hasil, tidak pernah di-log.
 fn rabbitmq_uri(cfg: &Config) -> Result<String, String> {
     let r = cfg
         .rabbitmq
         .as_ref()
         .ok_or_else(|| "rabbitmq configuration missing".to_owned())?;
-    Ok(format!(
-        "amqp://{}:{}@{}:{}/{}",
-        r.user,
-        r.password.expose_secret(),
-        r.host,
-        r.port,
-        r.vhost
-    ))
+    Ok(runtime::amqp_uri(r))
 }
 
 fn redis_client(cfg: &Config) -> Result<redis::Client, String> {

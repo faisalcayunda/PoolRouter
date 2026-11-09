@@ -31,7 +31,9 @@ use lapin::{
     BasicProperties, Channel, Confirmation, Connection, ConnectionProperties,
     options::{BasicNackOptions, BasicPublishOptions, ConfirmSelectOptions},
 };
-use poolrouter_core::queue::{JobConsumer, JobPublisher, QueueError};
+use poolrouter_core::queue::{
+    JobConsumer, JobPublisher, PenandaKonsumen, QueueError, StatusKonsumen,
+};
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
@@ -44,7 +46,23 @@ pub const PREFETCH_BAWAAN: u16 = 4;
 
 /// Jeda awal dan maksimum loop sambung ulang (W3).
 const JEDA_AWAL: Duration = Duration::from_secs(1);
-const JEDA_MAKS: Duration = Duration::from_secs(30);
+pub const JEDA_MAKS: Duration = Duration::from_secs(30);
+
+/// Toleransi liveness worker (W3): berapa lama satu loop consumer boleh
+/// tidak tersambung sebelum `/healthz` gagal. Tiga kali [`JEDA_MAKS`]:
+/// setelah backoff mencapai batasnya, setiap percobaan memakan jeda 30 detik
+/// ditambah waktu connect dan deklarasi (beberapa detik), jadi dalam 90 detik
+/// selalu ada minimal dua percobaan sambung ulang penuh. Restart broker biasa
+/// atau putus jaringan sesaat pulih di dalam jendela ini tanpa membunuh
+/// proses; loop yang gagal terus (406, izin ditolak) tetap ketahuan.
+pub const TOLERANSI_LIVENESS: Duration = Duration::from_secs(JEDA_MAKS.as_secs() * 3);
+
+/// Sesi dicatat tersambung setelah worker apalis bertahan selama ini.
+/// `basic_qos` dan `basic_consume` terjadi pada poll pertama worker
+/// (milidetik); bila ditolak broker (403, 406), `Worker::run` langsung
+/// kembali `Err`. Dengan menunggu dua detik, sesi yang gagal di titik itu
+/// tidak pernah tercatat tersambung, sehingga tidak mereset toleransi.
+const JEDA_STABIL: Duration = Duration::from_secs(2);
 
 fn transport(galat: impl std::fmt::Display) -> QueueError {
     QueueError::Transport(galat.to_string())
@@ -55,6 +73,7 @@ pub struct ApalisQueue {
     uri: String,
     berhenti: CancellationToken,
     prefetch: u16,
+    status: Option<Arc<StatusKonsumen>>,
 }
 
 impl ApalisQueue {
@@ -74,6 +93,7 @@ impl ApalisQueue {
             uri: uri.to_owned(),
             berhenti: CancellationToken::new(),
             prefetch: PREFETCH_BAWAAN,
+            status: None,
         })
     }
 
@@ -91,6 +111,13 @@ impl ApalisQueue {
         self
     }
 
+    /// Laporkan status sambungan setiap loop [`JobConsumer::run`] ke
+    /// `status` (probe liveness worker, W3).
+    pub fn dengan_status(mut self, status: Arc<StatusKonsumen>) -> Self {
+        self.status = Some(status);
+        self
+    }
+
     /// Deklarasikan topologi untuk `queue` (idempoten, AC-3). Lihat
     /// [`topologi`].
     pub async fn declare(&self, queue: &str) -> Result<(), QueueError> {
@@ -101,7 +128,12 @@ impl ApalisQueue {
 
     /// Satu sesi consumer: koneksi baru, topologi, backend apalis, lalu worker
     /// sampai shutdown atau koneksi putus.
-    async fn satu_sesi<H, F>(&self, queue: &str, handler: Arc<H>) -> Result<(), QueueError>
+    async fn satu_sesi<H, F>(
+        &self,
+        queue: &str,
+        handler: Arc<H>,
+        penanda: Option<Arc<PenandaKonsumen>>,
+    ) -> Result<(), QueueError>
     where
         H: Fn(Uuid) -> F + Send + Sync + 'static,
         F: Future<Output = Result<(), QueueError>> + Send + 'static,
@@ -133,7 +165,7 @@ impl ApalisQueue {
         let prefetch = self.prefetch;
         let berhenti = self.berhenti.clone();
         tokio::task::spawn_blocking(move || {
-            runtime.block_on(sesi_apalis(uri, nama, prefetch, berhenti, handler))
+            runtime.block_on(sesi_apalis(uri, nama, prefetch, berhenti, handler, penanda))
         })
         .await
         .map_err(|galat| {
@@ -150,6 +182,7 @@ async fn sesi_apalis<H, F>(
     prefetch: u16,
     berhenti: CancellationToken,
     handler: Arc<H>,
+    penanda: Option<Arc<PenandaKonsumen>>,
 ) -> Result<(), QueueError>
 where
     H: Fn(Uuid) -> F + Send + Sync + 'static,
@@ -182,11 +215,22 @@ where
         });
     let jalan = worker.run();
     tokio::pin!(jalan);
-    tokio::select! {
-        biased;
-        // Stream berakhir atau galat: kembali ke loop W3.
-        hasil = &mut jalan => return hasil.map_err(transport),
-        _ = berhenti.cancelled() => {}
+    let stabil = tokio::time::sleep(JEDA_STABIL);
+    tokio::pin!(stabil);
+    let mut sudah_stabil = false;
+    loop {
+        tokio::select! {
+            biased;
+            // Stream berakhir atau galat: kembali ke loop W3.
+            hasil = &mut jalan => return hasil.map_err(transport),
+            _ = berhenti.cancelled() => break,
+            _ = &mut stabil, if !sudah_stabil => {
+                sudah_stabil = true;
+                if let Some(penanda) = &penanda {
+                    penanda.tersambung();
+                }
+            }
+        }
     }
     // Shutdown: berhenti mengambil pesan, tunggu handler yang berjalan.
     if let Err(galat) = konteks.stop() {
@@ -283,13 +327,23 @@ impl JobConsumer for ApalisQueue {
         F: Future<Output = Result<(), QueueError>> + Send + 'static,
     {
         let handler = Arc::new(handler);
+        // Didaftarkan per loop (satu `ApalisQueue` dipakai beberapa antrean);
+        // di-drop saat `run` kembali sehingga shutdown tidak menggagalkan
+        // liveness.
+        let penanda = self.status.as_ref().map(|status| Arc::new(status.daftar()));
         let mut jeda = JEDA_AWAL;
         loop {
             if self.berhenti.is_cancelled() {
                 return Ok(());
             }
             let mulai = Instant::now();
-            match self.satu_sesi(queue, Arc::clone(&handler)).await {
+            let hasil = self
+                .satu_sesi(queue, Arc::clone(&handler), penanda.clone())
+                .await;
+            if let Some(penanda) = &penanda {
+                penanda.terputus();
+            }
+            match hasil {
                 Ok(()) if self.berhenti.is_cancelled() => return Ok(()),
                 Ok(()) => tracing::warn!(antrean = queue, "consumer berhenti; menyambung ulang"),
                 Err(galat) => {
@@ -332,6 +386,14 @@ mod tests {
                 .downcast_ref::<AbortError>()
                 .is_none()
         );
+    }
+
+    /// Toleransi liveness harus memuat minimal dua percobaan sambung ulang
+    /// penuh pada backoff maksimum ditambah jeda stabil satu sesi.
+    #[test]
+    fn toleransi_liveness_memuat_dua_percobaan_backoff_maksimum() {
+        assert_eq!(TOLERANSI_LIVENESS, Duration::from_secs(90));
+        assert!(TOLERANSI_LIVENESS >= JEDA_MAKS * 2 + JEDA_STABIL);
     }
 
     #[test]
