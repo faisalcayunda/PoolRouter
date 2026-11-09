@@ -176,25 +176,29 @@ fn ac17_jadwal_batch_full_jitter_memakai_kebijakan_retry_yang_sama() {
 }
 
 // AC-18: port + adapter tiruan.
-async fn kontrak_pengirim<P: PengirimDataBalikan>(pengirim: &P) {
-    let body = || stream::iter(vec![bytes::Bytes::from_static(b"{\"item\":[]}")]);
+async fn kontrak_pengirim<P: PengirimDataBalikan>(pengirim: std::sync::Arc<P>) {
+    let body = || {
+        Box::new(stream::iter(vec![bytes::Bytes::from_static(
+            b"{\"item\":[]}",
+        )]))
+    };
     assert!(matches!(
-        pengirim.kirim(batch(10), body()).await,
+        pengirim.clone().kirim(batch(10), body()).await,
         HasilKirimBatch::GagalSementara { .. }
     ));
     assert!(matches!(
-        pengirim.kirim(batch(10), body()).await,
+        pengirim.clone().kirim(batch(10), body()).await,
         HasilKirimBatch::Diterima { .. }
     ));
 }
 
 #[tokio::test]
 async fn ac18_adapter_tiruan_bisa_diprogam_per_percobaan() {
-    let pengirim = PengirimTiruan::dengan_program(vec![
+    let pengirim = std::sync::Arc::new(PengirimTiruan::dengan_program(vec![
         HasilDiprogam::GagalSementara,
         HasilDiprogam::Diterima,
-    ]);
-    kontrak_pengirim(&pengirim).await;
+    ]));
+    kontrak_pengirim(pengirim.clone()).await;
     let rekaman = pengirim.rekaman();
     assert_eq!(rekaman.len(), 2);
     assert_eq!(rekaman[0].batch_id, rekaman[1].batch_id);
@@ -204,10 +208,10 @@ async fn ac18_adapter_tiruan_bisa_diprogam_per_percobaan() {
 
 #[tokio::test]
 async fn ac18_ack_tersedia_lewat_port() {
-    let pengirim = PengirimTiruan::baru();
+    let pengirim = std::sync::Arc::new(PengirimTiruan::baru());
     let b = batch(3);
     assert_eq!(
-        pengirim.periksa_ack(b.batch_id, "ref-1").await,
+        pengirim.clone().periksa_ack(b.batch_id, "ref-1").await,
         HasilAck::BelumAda
     );
     pengirim.program_ack(
@@ -218,7 +222,7 @@ async fn ac18_ack_tersedia_lewat_port() {
         },
     );
     assert_eq!(
-        pengirim.periksa_ack(b.batch_id, "ref-1").await,
+        pengirim.clone().periksa_ack(b.batch_id, "ref-1").await,
         HasilAck::Diterima {
             ack_ref: "ack-1".to_owned()
         }
@@ -227,9 +231,14 @@ async fn ac18_ack_tersedia_lewat_port() {
 
 #[tokio::test]
 async fn ac18_dikirim_membawa_ref_untuk_periksa_ack() {
-    let pengirim = PengirimTiruan::dengan_program(vec![HasilDiprogam::Dikirim]);
+    let pengirim = std::sync::Arc::new(PengirimTiruan::dengan_program(vec![
+        HasilDiprogam::Dikirim,
+    ]));
     let b = batch(4);
-    let HasilKirimBatch::Dikirim { r#ref } = pengirim.kirim(batch(4), stream::iter(vec![])).await
+    let HasilKirimBatch::Dikirim { r#ref } = pengirim
+        .clone()
+        .kirim(batch(4), Box::new(stream::iter(Vec::<bytes::Bytes>::new())))
+        .await
     else {
         panic!("program Dikirim harus menghasilkan Dikirim");
     };
@@ -241,7 +250,7 @@ async fn ac18_dikirim_membawa_ref_untuk_periksa_ack() {
         },
     );
     assert_eq!(
-        pengirim.periksa_ack(b.batch_id, &r#ref).await,
+        pengirim.clone().periksa_ack(b.batch_id, &r#ref).await,
         HasilAck::Diterima {
             ack_ref: "ack-9".to_owned()
         }
@@ -250,11 +259,15 @@ async fn ac18_dikirim_membawa_ref_untuk_periksa_ack() {
 
 #[tokio::test]
 async fn ac18_panik_setelah_kirim_tetap_tercatat() {
-    let pengirim = PengirimTiruan::dengan_program(vec![HasilDiprogam::PanikSetelahKirim]);
-    let hasil = futures::FutureExt::catch_unwind(std::panic::AssertUnwindSafe(pengirim.kirim(
-        batch(2),
-        stream::iter(vec![bytes::Bytes::from_static(b"x")]),
-    )))
+    let pengirim = std::sync::Arc::new(PengirimTiruan::dengan_program(vec![
+        HasilDiprogam::PanikSetelahKirim,
+    ]));
+    let hasil = futures::FutureExt::catch_unwind(std::panic::AssertUnwindSafe(
+        pengirim.clone().kirim(
+            batch(2),
+            Box::new(stream::iter(vec![bytes::Bytes::from_static(b"x")])),
+        ),
+    ))
     .await;
     assert!(hasil.is_err());
     assert_eq!(pengirim.jumlah_kirim(batch(2).batch_id), 1);

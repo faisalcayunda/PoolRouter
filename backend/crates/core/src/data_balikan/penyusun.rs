@@ -265,10 +265,10 @@ mod uji {
         .await
         .expect("insert item");
 
-        let pengirim = PengirimTiruan::baru();
+        let pengirim = std::sync::Arc::new(PengirimTiruan::baru());
         let sekarang = Utc::now();
 
-        let hasil = jalankan_job_balikan(&db, provider_id, &pengirim, sekarang).await;
+        let hasil = jalankan_job_balikan(&db, provider_id, pengirim.clone(), sekarang).await;
         assert!(hasil.is_ok(), "handler seharusnya berhasil: {hasil:?}");
 
         // Verifikasi batch tercatat.
@@ -290,11 +290,11 @@ mod uji {
         let db = pool().await;
         let provider_id = Uuid::nil();
 
-        let pengirim = PengirimTiruan::baru();
+        let pengirim = std::sync::Arc::new(PengirimTiruan::baru());
         let sekarang = Utc::now();
 
         // Jalankan pertama kali.
-        let _ = jalankan_job_balikan(&db, provider_id, &pengirim, sekarang).await;
+        let _ = jalankan_job_balikan(&db, provider_id, pengirim.clone(), sekarang).await;
 
         // Jalankan ulang dengan item baru (mimic retry).
         let request_id_2 = Uuid::from_u128(3);
@@ -309,7 +309,7 @@ mod uji {
         .await
         .expect("insert item");
 
-        let _ = jalankan_job_balikan(&db, provider_id, &pengirim, sekarang).await;
+        let _ = jalankan_job_balikan(&db, provider_id, pengirim.clone(), sekarang).await;
 
         // Verifikasi batch tetap satu (tidak duplikat).
         let batch_count: i64 =
@@ -330,10 +330,12 @@ mod uji {
         let provider_id = Uuid::nil();
 
         // Pengirim yang selalu gagal.
-        let pengirim = PengirimTiruan::dengan_program(vec![HasilDiprogam::GagalSementara]);
+        let pengirim = std::sync::Arc::new(PengirimTiruan::dengan_program(vec![
+            HasilDiprogam::GagalSementara,
+        ]));
 
         let sekarang = Utc::now();
-        let hasil = jalankan_job_balikan(&db, provider_id, &pengirim, sekarang).await;
+        let hasil = jalankan_job_balikan(&db, provider_id, pengirim.clone(), sekarang).await;
 
         // Error dari pengirim, tapi batch tetap tersimpan dengan status gagal.
         assert!(
