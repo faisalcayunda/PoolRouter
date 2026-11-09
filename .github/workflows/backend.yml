@@ -11,6 +11,12 @@
 name: backend
 
 on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "backend/**"
+      - ".github/workflows/backend.yml"
+      - "Makefile"
   push:
     branches: [main]
     paths:
@@ -24,10 +30,11 @@ permissions:
 
 concurrency:
   group: backend-${{ github.ref }}
-  cancel-in-progress: false
+  # PR: run lama untuk PR yang sama dibatalkan; push ke main tidak pernah dibatalkan.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  gate:
+  gate-backend:
     # Ambang gagal: setiap langkah `make` di bawah harus exit 0. `cargo fmt --check`, clippy `-D warnings`,
     # dan `cargo deny check` masing-masing gagal pada temuan apa pun.
     runs-on: ubuntu-latest

@@ -4,6 +4,12 @@
 name: frontend
 
 on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "frontend/**"
+      - "backend/openapi/admin-api.yaml"
+      - ".github/workflows/frontend.yml"
   push:
     branches: [main]
     paths:
@@ -17,10 +23,11 @@ permissions:
 
 concurrency:
   group: frontend-${{ github.ref }}
-  cancel-in-progress: false
+  # PR: run lama untuk PR yang sama dibatalkan; push ke main tidak pernah dibatalkan.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  gate:
+  gate-frontend:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     # Node sama dengan frontend/.nvmrc (24.22.2) dan NODE_IMAGE di frontend/Makefile. Digest sama dengan Makefile.

@@ -3,6 +3,8 @@
 name: security
 
 on:
+  pull_request:
+    branches: [main]
   push:
     branches: [main]
   workflow_dispatch:
@@ -12,10 +14,13 @@ permissions:
 
 concurrency:
   group: security-${{ github.ref }}
-  cancel-in-progress: false
+  # PR: run lama untuk PR yang sama dibatalkan; push ke main tidak pernah dibatalkan.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   sbom:
+    # Hanya push ke main: SBOM adalah artifact rilis, tidak dipakai sebagai gate PR (ARC-212).
+    if: github.event_name != 'pull_request'
     # Ambang: tidak ada. Job gagal hanya jika SBOM tidak bisa dibuat. SBOM dihasilkan per build (artifact 90 hari).
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -73,6 +78,8 @@ jobs:
             semgrep scan --config p/rust --severity ERROR --error --metrics=off .
 
   image-scan:
+    # Berat (tiga build image); hanya push ke main dan manual, bukan gate PR (ARC-212).
+    if: github.event_name != 'pull_request'
     # Ambang: gagal pada CVE HIGH atau CRITICAL yang punya perbaikan (--ignore-unfixed --exit-code 1).
     # Mencakup tiga image F0: backend, frontend, dan mock Dukcapil (ARC-76).
     # Build dan push image-nya ada di workflow backend-image.yml dan app-images.yml.
