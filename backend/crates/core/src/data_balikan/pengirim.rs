@@ -294,7 +294,10 @@ mod uji {
         let p2 = std::sync::Arc::new(PengirimTiruan::baru());
         let _ = p2
             .clone()
-            .kirim(batch(), Box::new(stream::iter(vec![Bytes::from_static(b"abc")])))
+            .kirim(
+                batch(),
+                Box::new(stream::iter(vec![Bytes::from_static(b"abc")])),
+            )
             .await;
         assert_eq!(p.rekaman()[0].hash_body, p2.rekaman()[0].hash_body);
     }
@@ -372,7 +375,10 @@ mod uji {
     #[tokio::test]
     async fn ack_bisa_diprogam_dan_bawaan_belum_ada() {
         let p = std::sync::Arc::new(PengirimTiruan::baru());
-        assert_eq!(p.clone().periksa_ack(Uuid::nil(), "ref").await, HasilAck::BelumAda);
+        assert_eq!(
+            p.clone().periksa_ack(Uuid::nil(), "ref").await,
+            HasilAck::BelumAda
+        );
         p.program_ack(
             Uuid::nil(),
             "ref",
@@ -387,6 +393,9 @@ mod uji {
             }
         );
         // Referensi lain tetap belum ada.
-        assert_eq!(p.clone().periksa_ack(Uuid::nil(), "lain").await, HasilAck::BelumAda);
+        assert_eq!(
+            p.clone().periksa_ack(Uuid::nil(), "lain").await,
+            HasilAck::BelumAda
+        );
     }
 }

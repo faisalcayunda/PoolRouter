@@ -163,10 +163,7 @@ pub async fn jalankan_job_balikan(
     };
 
     let body_stream = futures::stream::iter(vec![bytes::Bytes::from(body_bytes)]);
-    let hasil = pengirim
-        .clone()
-        .kirim(batch, Box::new(body_stream))
-        .await;
+    let hasil = pengirim.clone().kirim(batch, Box::new(body_stream)).await;
 
     // Catat hasil di batch.
     match hasil {

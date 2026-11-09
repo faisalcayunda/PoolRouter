@@ -231,9 +231,8 @@ async fn ac18_ack_tersedia_lewat_port() {
 
 #[tokio::test]
 async fn ac18_dikirim_membawa_ref_untuk_periksa_ack() {
-    let pengirim = std::sync::Arc::new(PengirimTiruan::dengan_program(vec![
-        HasilDiprogam::Dikirim,
-    ]));
+    let pengirim =
+        std::sync::Arc::new(PengirimTiruan::dengan_program(vec![HasilDiprogam::Dikirim]));
     let b = batch(4);
     let HasilKirimBatch::Dikirim { r#ref } = pengirim
         .clone()
@@ -262,13 +261,12 @@ async fn ac18_panik_setelah_kirim_tetap_tercatat() {
     let pengirim = std::sync::Arc::new(PengirimTiruan::dengan_program(vec![
         HasilDiprogam::PanikSetelahKirim,
     ]));
-    let hasil = futures::FutureExt::catch_unwind(std::panic::AssertUnwindSafe(
-        pengirim.clone().kirim(
+    let hasil =
+        futures::FutureExt::catch_unwind(std::panic::AssertUnwindSafe(pengirim.clone().kirim(
             batch(2),
             Box::new(stream::iter(vec![bytes::Bytes::from_static(b"x")])),
-        ),
-    ))
-    .await;
+        )))
+        .await;
     assert!(hasil.is_err());
     assert_eq!(pengirim.jumlah_kirim(batch(2).batch_id), 1);
 }
