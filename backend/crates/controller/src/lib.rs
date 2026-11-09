@@ -11,6 +11,7 @@ pub mod jadwal;
 pub mod leader;
 pub mod penyapu;
 pub mod rebuild;
+pub mod reconciler;
 pub mod snapshot;
 pub mod transisi;
 pub mod webhook;

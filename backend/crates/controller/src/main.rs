@@ -2,9 +2,9 @@
 //!
 //! Scope of this ticket is the *frame*: leader election, the leader-gated
 //! scheduler, the Redis rebuild from PostgreSQL and the `upstream_attempt_daily`
-//! snapshot. Dispatcher (ARC-70) berjalan di task sendiri selama leader lock
-//! yang sama dipegang. Penyapu (ARC-72) masuk penjadwal sebagai
-//! [`poolrouter_controller::jadwal::Pekerjaan`]; reconciler menyusul.
+//! snapshot. Reconciler dan penyapu (ARC-72) masuk penjadwal sebagai
+//! [`poolrouter_controller::jadwal::Pekerjaan`]; dispatcher (ARC-70) berjalan
+//! di task sendiri selama leader lock yang sama dipegang.
 //!
 //! Steps, and why they are in this order:
 //!
@@ -33,11 +33,13 @@ use poolrouter_controller::leader::KotakFutur;
 use poolrouter_controller::leader::{Leader, PemegangLeader};
 use poolrouter_controller::penyapu::Penyapu;
 use poolrouter_controller::rebuild::Rebuild;
+use poolrouter_controller::reconciler::{KonfigurasiReconciler, Reconciler};
 use poolrouter_controller::snapshot::{Snapshot, SumberSnapshotPg};
 use poolrouter_controller::webhook::Webhook;
 use poolrouter_core::config::{Component, Config, DbRole};
 use poolrouter_core::kuota::sumber_pg::SumberPostgres;
 use poolrouter_core::queue::{JobPublisher, QueueError};
+use poolrouter_core::retry::AcakAwsLc;
 use poolrouter_core::secret::Brankas;
 use poolrouter_queue_apalis::ApalisQueue;
 use uuid::Uuid;
@@ -116,9 +118,21 @@ async fn jalankan(cfg: &Config) -> Result<(), String> {
         antrean,
         sudah: tokio::sync::Mutex::new(HashSet::new()),
     });
+    let konf_reconciler = KonfigurasiReconciler {
+        ambang_dispatched: ambang_dispatched(),
+        ..KonfigurasiReconciler::default()
+    };
+    // Reconciler sebelum penyapu: log `in_flight` ditutup bersama transisinya,
+    // penyapu log hanya menangkap sisa yang yatim.
     let pekerjaan: Vec<Box<dyn Pekerjaan>> = vec![
         Box::new(Rebuild::baru(redis.clone(), sumber_rebuild)),
         Box::new(Snapshot::baru(SumberSnapshotPg::baru(pool.clone()))),
+        Box::new(Reconciler::baru(
+            pool.clone(),
+            redis.clone(),
+            Box::new(AcakAwsLc::baru()),
+            konf_reconciler,
+        )),
         Box::new(Penyapu::baru(pool.clone(), redis.clone())),
         Box::new(Webhook::baru(pg_pool_webhook(cfg)?, brankas)),
         Box::new(Balikan::baru(pool.clone(), publisher.clone())),
@@ -207,6 +221,17 @@ impl JobPublisher for PublisherDeklarasi {
         }
         self.antrean.publish(queue, request_id).await
     }
+}
+
+/// Ambang reconciler `dispatched` (AC-22, "dapat dikonfigurasi"):
+/// `POOLROUTER_RECONCILER_DISPATCHED_DETIK`, default 120 s.
+fn ambang_dispatched() -> Duration {
+    std::env::var("POOLROUTER_RECONCILER_DISPATCHED_DETIK")
+        .ok()
+        .and_then(|v| v.parse::<u64>().ok())
+        .filter(|d| *d > 0)
+        .map(Duration::from_secs)
+        .unwrap_or(poolrouter_controller::reconciler::AMBANG_DISPATCHED_BAWAAN)
 }
 
 fn pg_pool_webhook(cfg: &Config) -> Result<sqlx::PgPool, String> {

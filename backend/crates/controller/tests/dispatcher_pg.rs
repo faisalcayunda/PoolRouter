@@ -15,7 +15,9 @@ use chrono::Utc;
 use poolrouter_controller::dispatcher::{
     JedaTetap, KonfigurasiPutaran, RingkasanPutaran, jalankan_putaran,
 };
+use poolrouter_controller::reconciler::{KonfigurasiReconciler, jalankan_siklus_reconciler};
 use poolrouter_core::queue::{JobPublisher, nama_antrean_upstream};
+use poolrouter_core::retry::AcakBatasAtas;
 use sqlx::PgPool;
 use umum::*;
 use uuid::Uuid;
@@ -321,6 +323,78 @@ async fn ac8_retry_budget_habis_melewati_retry_tapi_request_baru_jalan() {
         assert_eq!(baca(&su, *id).await.status, "queued", "retry dilewati");
     }
     assert!(ringkasan.iter().map(|r| r.dilewati_retry).sum::<usize>() >= 3);
+}
+
+#[tokio::test]
+#[ignore]
+async fn ac9_publish_gagal_tidak_rollback_lalu_reconciler_memulihkan() {
+    let su = pool_su().await;
+    let db = pool_controller().await;
+    let g = buat_graf(&su, &OpsiGraf::default()).await;
+    let mut ids = Vec::new();
+    for _ in 0..4 {
+        ids.push(buat_request(&su, &g, &Req::queued()).await);
+    }
+    let kuota = siapkan_redis(&db).await;
+    let sekarang = Utc::now();
+    let r = jalankan_putaran(
+        &db,
+        &kuota,
+        &PublisherGagal,
+        &JedaTetap(0),
+        &konf(g.upool_id),
+        sekarang,
+    )
+    .await
+    .expect("putaran");
+    assert_eq!(r.publish_gagal, 4);
+    for id in &ids {
+        assert_eq!(
+            baca(&su, *id).await.status,
+            "dispatched",
+            "status tidak di-rollback"
+        );
+        assert!(ada_slot(g.upool_id, *id, 1).await, "slot dipegang");
+    }
+
+    // AC-22: lewat 2 menit, reconciler mengembalikan ke queued dan melepas slot.
+    let r = jalankan_siklus_reconciler(
+        &db,
+        Some(&kuota),
+        &AcakBatasAtas,
+        // Database uji dipakai bersama: request `dispatched` milik uji lain
+        // juga terpilih, jadi batasnya dinaikkan supaya fixture ini pasti
+        // masuk satu siklus.
+        &KonfigurasiReconciler {
+            batas_baris: 100_000,
+            ..KonfigurasiReconciler::default()
+        },
+        sekarang + chrono::Duration::seconds(121),
+    )
+    .await
+    .expect("reconciler");
+    for id in &ids {
+        assert!(r.dikembalikan.contains(id));
+        assert_eq!(baca(&su, *id).await.status, "queued");
+        assert!(!ada_slot(g.upool_id, *id, 1).await, "slot dilepas");
+    }
+
+    // Dispatcher mem-publish ulang.
+    let perekam = Perekam::default();
+    kirim_sampai(
+        &db,
+        &kuota,
+        &perekam,
+        &JedaTetap(0),
+        g.upool_id,
+        4,
+        Duration::from_secs(5),
+    )
+    .await;
+    for id in &ids {
+        assert!(perekam.id().contains(id), "di-publish ulang");
+        assert_eq!(baca(&su, *id).await.status, "dispatched");
+    }
 }
 
 #[tokio::test]
