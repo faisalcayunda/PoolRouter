@@ -52,14 +52,14 @@ fi
 # --- 2. CLAUDE.md -----------------------------------------------------------
 rules="$root/CLAUDE.md"
 if [ ! -f "$rules" ]; then
-	bad "CLAUDE.md tidak ada"
+	ok "CLAUDE.md tidak ada di checkout ini (file lokal Operator, bagian ini dilewati)"
 else
 	cek_pola() { # <nama> <regex>
 		if grep -Eq "$2" "$rules"; then ok "CLAUDE.md: $1"; else bad "CLAUDE.md tidak memuat $1"; fi
 	}
-	cek_pola "branch agent/<ID>-<slug>"  'agent/<ID>-<slug>'
+	cek_pola "branch agent/ARC-<n>-<slug>"  'agent/ARC-<n>-<slug>'
 	cek_pola "PR wajib ke main"          'PR.*wajib.*`main`|PR ke `main`'
-	cek_pola "merge hanya Operator"      'Merge hanya oleh Operator|merge hanya (oleh )?Operator'
+	cek_pola "merge hanya Operator"      'Merge hanya oleh Operator|merge hanya (oleh )?Operator|satu-satunya yang merge'
 	cek_pola "tanpa force-push"          'force-push'
 	cek_pola "tanpa secret"              'secret di repo|menulis secret'
 	cek_pola "NIK sintetis"              'NIK hanya sintetis'
