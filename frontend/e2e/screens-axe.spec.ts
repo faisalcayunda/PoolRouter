@@ -155,6 +155,96 @@ for (const screen of SCREENS) {
 }
 
 /**
+ * Layar konfigurasi provider dan secret (ARC-101). Hanya platform admin yang boleh membukanya,
+ * jadi peran disematkan ke `platform_admin`; stub mengembalikan satu baris supaya tabel dan form
+ * terisi saat axe berjalan. Route ini didaftarkan setelah catch-all sehingga dicocokkan lebih dulu.
+ */
+const PROVIDER = {
+  provider_id: '00000000-0000-4000-8000-0000000000a1',
+  provider_config_version: 3,
+  aktif: true,
+  nama: 'provider-contoh-a',
+  base_url: 'https://provider.example.test/api',
+  metode: 'POST',
+  tls_trust: 'system',
+  log_mode: 'metadata_only',
+  config_schema_version: 2,
+  body_template: '{"NIK":"{{input.NIK}}"}',
+  parameters: [{ nama: 'TRESHOLD', nilai: '90' }],
+  respons_skema: { status: 'string' },
+  data_balikan: { versi: 2 },
+};
+
+const SECRETS = [
+  { nama: 'USER_ID', tersamar: true, dipakai_oleh_provider_count: 1 },
+  { nama: 'KUNCI_UJI', tersamar: true, dipakai_oleh_provider_count: 0 },
+];
+
+async function stubKonfigurasi(page: Page): Promise<void> {
+  await stubScreens(page);
+  const json = (body: unknown) => ({
+    status: 200,
+    headers: { 'content-type': 'application/json', 'cache-control': 'no-store' },
+    body: JSON.stringify(body),
+  });
+  await page.route('**/admin/v1/providers', (route) => route.fulfill(json([PROVIDER])));
+  await page.route('**/admin/v1/providers/*', (route) => route.fulfill(json(PROVIDER)));
+  await page.route('**/admin/v1/secrets', (route) => route.fulfill(json(SECRETS)));
+}
+
+const KONFIGURASI = [
+  {
+    path: '/provider',
+    name: 'S02 daftar provider',
+    heading: { id: 'Provider', en: 'Providers' },
+    ready: (page: Page) => page.getByRole('cell').first(),
+  },
+  {
+    path: `/provider/${PROVIDER.provider_id}`,
+    name: 'S03 form provider',
+    heading: { id: 'Ubah provider provider-contoh-a', en: 'Edit provider provider-contoh-a' },
+    ready: (page: Page) => page.getByLabel(/Template body|Body template/),
+  },
+  {
+    path: '/secret',
+    name: 'S05 secret',
+    heading: { id: 'Secret', en: 'Secrets' },
+    ready: (page: Page) => page.getByRole('cell').first(),
+  },
+] as const;
+
+for (const layar of KONFIGURASI) {
+  for (const bahasa of ['id', 'en'] as const) {
+    test(`${layar.name} passes axe in ${bahasa}`, async ({ page, cspViolations }) => {
+      await stubKonfigurasi(page);
+      await page.goto(`${layar.path}?peran=platform_admin&bahasa=${bahasa}`);
+
+      await expect(page.getByRole('heading', { level: 1 })).toHaveText(layar.heading[bahasa]);
+      await expect(layar.ready(page)).toBeVisible();
+
+      await expectNoAxeViolations(page);
+      expect(cspViolations).toEqual([]);
+    });
+  }
+}
+
+for (const bahasa of ['id', 'en'] as const) {
+  test(`S05 add-secret dialog passes axe in ${bahasa}`, async ({ page, cspViolations }) => {
+    await stubKonfigurasi(page);
+    await page.goto(`/secret?peran=platform_admin&bahasa=${bahasa}`);
+    await expect(page.getByRole('cell').first()).toBeVisible();
+
+    await page
+      .getByRole('button', { name: bahasa === 'id' ? 'Tambah secret' : 'Add secret' })
+      .click();
+    await expect(page.getByRole('dialog')).toBeVisible();
+
+    await expectNoAxeViolations(page);
+    expect(cspViolations).toEqual([]);
+  });
+}
+
+/**
  * Login dan dua dialog sesi (ARC-209). Layar login berdiri di luar shell dan tidak memanggil API.
  * Dialog sesi dipicu lewat stub `GET /auth/sesi` yang jatuh di dalam jendela peringatan 2 menit,
  * jadi hook membukanya saat dimuat tanpa menunggu timer.

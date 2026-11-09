@@ -218,3 +218,40 @@ describe('admin API client', () => {
     ).rejects.toMatchObject({ status: 429, retryAfterDetik: null });
   });
 });
+
+describe('admin API client: secret (ARC-101)', () => {
+  it('PUTs the secret value in the body, never in the URL', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(new Response(null, { status: 204 }));
+    await client(fetchImpl).putSecret('NAMA_UJI', 'nilai-uji-xq');
+
+    const [url, init] = firstCall(fetchImpl);
+    expect(url).toBe('/admin/v1/secrets/NAMA_UJI');
+    expect(url).not.toContain('nilai-uji-xq');
+    expect(init.method).toBe('PUT');
+    expect(await requestJson(fetchImpl)).toEqual({ nilai: 'nilai-uji-xq' });
+  });
+
+  it('keeps the 409 secret_dipakai detail for the blocked-delete message', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(
+      jsonResponse(
+        {
+          type: 'x',
+          title: 'Secret masih dipakai',
+          status: 409,
+          kode: 'secret_dipakai',
+          detail: 'Masih dipakai 1 provider aktif.',
+        },
+        409,
+      ),
+    );
+
+    const error = await client(fetchImpl)
+      .deleteSecret('USER_ID')
+      .catch((e: unknown) => e as ApiError);
+    const [url, init] = firstCall(fetchImpl);
+    expect(url).toBe('/admin/v1/secrets/USER_ID');
+    expect(init.method).toBe('DELETE');
+    expect(error).toMatchObject({ status: 409, kode: 'secret_dipakai' });
+    expect((error as ApiError).problem?.detail).toBe('Masih dipakai 1 provider aktif.');
+  });
+});

@@ -45,19 +45,38 @@ export function TextField({
   );
 }
 
-export interface TextAreaProps extends Omit<RacTextAreaProps, 'className'> {
+export interface TextAreaProps extends Omit<RacTextFieldProps, 'className'> {
   className?: string;
   label?: ReactNode;
   description?: ReactNode;
   errorMessage?: ReactNode;
+  /** Tinggi awal dalam baris teks. */
+  rows?: RacTextAreaProps['rows'];
+  /** Kelas tambahan untuk elemen `textarea`, mis. `font-code` untuk JSON (ADR-0008 2.3). */
+  textAreaClassName?: string;
 }
 
-/** M3 multiline text field (outlined), used for notes and long values in F0. */
-export function TextArea({ label, description, errorMessage, className, ...props }: TextAreaProps) {
+/**
+ * M3 multiline text field (outlined), used for notes and long values in F0.
+ * Prop field (value, onChange, isInvalid, name) diteruskan ke `TextField` RAC, bukan ke
+ * `textarea`-nya, supaya validasi, `aria-describedby`, dan `FieldError` bekerja seperti `TextField`.
+ */
+export function TextArea({
+  label,
+  description,
+  errorMessage,
+  className,
+  rows,
+  textAreaClassName,
+  ...props
+}: TextAreaProps) {
   return (
-    <RacTextField className={cx('flex flex-col gap-1', className)}>
+    <RacTextField {...props} className={cx('flex flex-col gap-1', className)}>
       {label ? <Label>{label}</Label> : null}
-      <RacTextArea {...(props as object)} className={cx(FIELD, 'h-auto min-h-24 resize-y')} />
+      <RacTextArea
+        rows={rows}
+        className={cx(FIELD, 'h-auto min-h-24 resize-y', textAreaClassName)}
+      />
       {description ? <Text slot="description">{description}</Text> : null}
       <FieldError>{errorMessage}</FieldError>
     </RacTextField>

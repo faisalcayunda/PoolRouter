@@ -255,6 +255,77 @@
     },
     "snackbar": {
       "saved": "Provider tersimpan"
+    },
+    "list": {
+      "col": {
+        "name": "Nama",
+        "version": "Versi",
+        "method": "Metode",
+        "status": "Status",
+        "actions": "Aksi"
+      },
+      "inactive": "Nonaktif",
+      "edit_aria": "Ubah provider {{nama}}"
+    },
+    "form": {
+      "title_edit": "Ubah provider {{nama}}",
+      "subtitle": "Setiap simpan membuat versi baru dari seluruh isian di bawah. Versi lama tetap tersimpan dan request yang sudah mengantre memakai versi saat masuk antrean.",
+      "back": "Kembali ke daftar provider",
+      "url_help": "Wajib diawali https://.",
+      "tls": {
+        "label": "Kepercayaan TLS",
+        "system": "Sertifikat sistem",
+        "ca_kustom": "CA kustom",
+        "pin_spki": "Pin SPKI"
+      },
+      "log_mode": {
+        "label": "Mode log",
+        "metadata_only": "Metadata saja",
+        "full_payload": "Payload lengkap"
+      },
+      "version": {
+        "label": "Versi skema konfigurasi",
+        "v1": "Versi 1 (F0)",
+        "v2": "Versi 2 (F1, dengan data balikan)"
+      },
+      "parameters": {
+        "label": "Parameter dan rule (JSON)",
+        "help": "Daftar objek berisi nama, nilai, dan rule. Jenis rule: regex, enum, panjang, format_tanggal."
+      },
+      "data_balikan": {
+        "heading": "Data balikan",
+        "label": "Blok data balikan (JSON)",
+        "help": "Wajib untuk skema versi 2. Blok ini ikut disimpan utuh setiap kali provider disimpan."
+      },
+      "reason": {
+        "heading": "Alasan",
+        "label": "Alasan perubahan",
+        "help": "{{jumlah}}/{{batas}} karakter, minimal 10. Dicatat di audit konfigurasi dan tidak disimpan di form."
+      },
+      "save_new": "Simpan provider",
+      "save_edit": "Simpan perubahan",
+      "saving": "Menyimpan…",
+      "saved_version": "Provider {{nama}} tersimpan sebagai versi {{versi}}.",
+      "error": {
+        "summary": "Periksa {{jumlah}} isian yang ditandai.",
+        "umum": "Isian ini belum sah (kode {{kode}}, lokasi {{lokasi}}).",
+        "wajib": "Wajib diisi.",
+        "https_wajib": "Alamat harus diawali https://.",
+        "json_tidak_sah": "JSON belum sah. Periksa tanda kutip, koma, dan kurung.",
+        "json_bukan_daftar": "Isi harus berupa daftar JSON (diawali kurung siku).",
+        "json_bukan_objek": "Isi harus berupa objek JSON (diawali kurung kurawal).",
+        "alasan_rentang": "Alasan wajib diisi, 10–500 karakter.",
+        "template_tidak_seimbang": "Kurung kurawal placeholder di template tidak seimbang.",
+        "template_tidak_seimbang_posisi": "Kurung kurawal placeholder tidak seimbang di baris {{baris}}, kolom {{kolom}}.",
+        "template_parameter_tidak_ada": "Parameter {{nama}} dirujuk template tetapi belum ada di daftar parameter.",
+        "template_placeholder_tidak_dikenal": "Placeholder tidak dikenal. Awalan yang dikenal: input, endpoint, dan secret.",
+        "sudah_dipakai": "Nama ini sudah dipakai provider lain.",
+        "required_untuk_versi_2": "Data balikan wajib diisi untuk skema versi 2.",
+        "data_balikan_tidak_sah": "Data balikan belum sah: {{nama}}",
+        "data_balikan_skema_terlalu_tua": "Versi skema data balikan terlalu lama.",
+        "data_balikan_skema_terlalu_baru": "Versi skema data balikan belum didukung.",
+        "config_schema_version_tidak_didukung": "Versi skema konfigurasi tidak didukung."
+      }
     }
   },
   "secret": {
@@ -275,21 +346,46 @@
     "replace": {
       "title": "Ganti secret {{nama}}",
       "new_value": "Nilai baru",
-      "body": "Nilai lama tidak bisa dilihat. Nilai baru langsung menggantikannya."
+      "body": "Nilai lama tidak bisa dilihat. Nilai baru langsung menggantikannya.",
+      "confirm": "Ganti nilai"
     },
     "delete": {
       "blocked": {
         "title": "Secret masih dipakai",
-        "body": "{{nama}} masih dipakai oleh provider aktif: {{daftar}}. Nonaktifkan atau ubah provider itu dulu, lalu hapus secret ini."
-      }
+        "body": "{{nama}} masih dipakai oleh provider aktif: {{daftar}}. Nonaktifkan atau ubah provider itu dulu, lalu hapus secret ini.",
+        "short": "{{nama}} masih dipakai provider aktif. Ubah atau nonaktifkan provider itu dulu, lalu hapus secret ini."
+      },
+      "title": "Hapus secret {{nama}}?",
+      "body": "Secret dihapus permanen. Template yang merujuknya akan ditolak saat disimpan.",
+      "confirm": "Hapus secret"
     },
     "snackbar": {
-      "saved": "Secret tersimpan"
+      "saved": "Secret tersimpan",
+      "saved_named": "Secret {{nama}} tersimpan.",
+      "replaced": "Nilai secret {{nama}} sudah diganti.",
+      "deleted": "Secret {{nama}} dihapus."
     },
     "empty": {
       "title": "Belum ada secret",
       "body": "Secret menyimpan kredensial provider, misalnya USER_ID dan PASSWORD. Tambahkan secret sebelum membuat template provider."
-    }
+    },
+    "masked": "Tersamar",
+    "unused": "Tidak dipakai",
+    "row": {
+      "replace_aria": "Ganti nilai secret {{nama}}",
+      "delete_aria": "Hapus secret {{nama}}"
+    },
+    "add": {
+      "name_help": "Diawali huruf, lalu huruf, angka, atau garis bawah. Dirujuk template sebagai secret.NAMA.",
+      "value": "Nilai",
+      "save": "Simpan secret"
+    },
+    "error": {
+      "name_format": "Nama diawali huruf, lalu huruf, angka, atau garis bawah, paling panjang 64 karakter.",
+      "name_exists": "Secret dengan nama ini sudah ada. Pakai Ganti untuk mengganti nilainya.",
+      "value_required": "Nilai wajib diisi."
+    },
+    "used_by_other": "{{count, number}} provider"
   },
   "upstream": {
     "page": {
@@ -766,10 +862,10 @@
         "submit": "Verifikasi",
         "verifying": "Memverifikasi…",
         "recovery_title": "Masukkan kode pemulihan",
-      "recovery_subtitle": "Pakai salah satu kode pemulihan 10 karakter yang Anda simpan saat mendaftar. Setiap kode hanya berlaku sekali.",
-      "recovery_field_label": "Kode pemulihan",
-      "use_totp": "Pakai kode authenticator",
-      "use_recovery": "Pakai kode pemulihan",
+        "recovery_subtitle": "Pakai salah satu kode pemulihan 10 karakter yang Anda simpan saat mendaftar. Setiap kode hanya berlaku sekali.",
+        "recovery_field_label": "Kode pemulihan",
+        "use_totp": "Pakai kode authenticator",
+        "use_recovery": "Pakai kode pemulihan",
         "back_to_login": "Kembali ke login"
       },
       "registration": {
