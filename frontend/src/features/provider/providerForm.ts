@@ -96,7 +96,8 @@ export function draftFromProvider(provider: Provider): ProviderDraft {
     body_template: provider.body_template,
     parameters: json(provider.parameters),
     respons_skema: json(provider.respons_skema),
-    data_balikan: provider.data_balikan === undefined ? '' : json(provider.data_balikan),
+    // `null` diperlakukan sama dengan tidak ada, supaya provider v1 tetap bisa disunting.
+    data_balikan: provider.data_balikan == null ? '' : json(provider.data_balikan),
     alasan: '',
   };
 }

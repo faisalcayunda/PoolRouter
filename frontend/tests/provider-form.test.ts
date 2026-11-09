@@ -51,6 +51,20 @@ describe('toProviderConfig (PUT penggantian penuh, ARC-101)', () => {
     expect(built.body).not.toHaveProperty('provider_config_version');
   });
 
+  it('treats a null data_balikan on a v1 provider as absent and omits it from the PUT', () => {
+    const v1 = {
+      ...PROVIDER_V2,
+      config_schema_version: 1,
+      data_balikan: null,
+    } as unknown as Provider;
+    const draft = { ...draftFromProvider(v1), alasan: 'Perbarui template untuk uji.' };
+    expect(draft.data_balikan).toBe('');
+
+    const built = toProviderConfig(draft, 'update');
+    expect(built.ok).toBe(true);
+    if (built.ok) expect(built.body).not.toHaveProperty('data_balikan');
+  });
+
   it('starts the reason empty and requires 10–500 characters on update only', () => {
     const draft = draftFromProvider(PROVIDER_V2);
     expect(draft.alasan).toBe('');
