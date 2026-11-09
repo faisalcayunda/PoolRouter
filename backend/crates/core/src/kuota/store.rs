@@ -55,6 +55,7 @@ const SKRIP_LEPAS: &str = include_str!("lua/rakitan/slot_lepas.lua");
 const SKRIP_TAMBAH: &str = include_str!("lua/rakitan/attempts_tambah.lua");
 const SKRIP_BACA: &str = include_str!("lua/rakitan/kuota_baca.lua");
 const SKRIP_TOLAK: &str = include_str!("lua/rakitan/penolakan_ambil.lua");
+const SKRIP_ANTRE: &str = include_str!("lua/rakitan/antre_ubah.lua");
 
 /// Why a store call produced no decision. Every variant means "do not let the
 /// request through on the strength of Redis".
@@ -386,6 +387,15 @@ pub trait KuotaStore: Send + Sync {
 
     fn baca(&self, ctx: &KonteksKuota) -> impl Future<Output = Result<Bacaan, GalatStore>> + Send;
 
+    /// Koreksi counter `antre` pool sebesar `delta` (`-1` atau `1`) sesudah
+    /// commit PostgreSQL (AC-25, CW3). Tidak pernah di bawah 0; hasilnya nilai
+    /// counter sesudah perubahan.
+    fn ubah_antre(
+        &self,
+        pool_id: &str,
+        delta: i64,
+    ) -> impl Future<Output = Result<i64, GalatStore>> + Send;
+
     /// Take one token of the client's rejection bucket.
     fn ambil_token_penolakan(
         &self,
@@ -405,6 +415,7 @@ struct KumpulanSkrip {
     tambah: Script,
     baca: Script,
     tolak: Script,
+    antre: Script,
 }
 
 impl KumpulanSkrip {
@@ -419,6 +430,7 @@ impl KumpulanSkrip {
             tambah: Script::new(SKRIP_TAMBAH),
             baca: Script::new(SKRIP_BACA),
             tolak: Script::new(SKRIP_TOLAK),
+            antre: Script::new(SKRIP_ANTRE),
         }
     }
 }
@@ -960,6 +972,22 @@ where
         let j = self.jalankan(&self.skrip.lepas, kunci, arg).await?;
         match teks(&j[0])?.as_str() {
             "ok" => Ok(angka(j.get(1))? > 0),
+            lain => Err(galat_skrip(lain)),
+        }
+    }
+
+    async fn ubah_antre(&self, pool_id: &str, delta: i64) -> Result<i64, GalatStore> {
+        periksa_id("pool_id", pool_id)?;
+        if delta != -1 && delta != 1 {
+            return Err(GalatStore::ArgumenTidakSah(format!(
+                "delta antre {delta} tidak sah; hanya -1 atau 1"
+            )));
+        }
+        let kunci = vec![KUNCI_SIAP.to_owned(), kunci_antre(pool_id)];
+        let arg = vec![delta.to_string()];
+        let j = self.jalankan(&self.skrip.antre, kunci, arg).await?;
+        match teks(&j[0])?.as_str() {
+            "ok" => angka(j.get(1)),
             lain => Err(galat_skrip(lain)),
         }
     }
