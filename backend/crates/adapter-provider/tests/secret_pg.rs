@@ -48,42 +48,62 @@ async fn ambil_secret(
 #[tokio::test]
 #[ignore]
 async fn ambil_secret_berhasil() {
-    let pool = test_pool().await;
+    let pool_api = pool_dari_env("POOLROUTER_TEST_DATABASE_URL_API").await;
+    let pool_su = pool_dari_env("POOLROUTER_TEST_DATABASE_URL_SU").await;
     let brankas = test_brankas();
 
-    // Insert test secret
-    let nama = "test_secret";
+    // `pr_api` hanya boleh membaca `provider_secret`; penyiapan lewat superuser.
+    let nama = format!("uji_{}", uuid::Uuid::new_v4().simple());
     let nilai = "dukcapil_api_key_sintetis_12345";
     let amplop = brankas
-        .enkripsi(nama, &NilaiAman::baru(nilai.to_owned()))
+        .enkripsi(&nama, &NilaiAman::baru(nilai.to_owned()))
         .expect("enkripsi");
+    siapkan_secret(&pool_su, &nama, &amplop).await;
 
+    let hasil = ambil_secret(&pool_api, &nama, &brankas).await;
+    assert_eq!(hasil.expect("dekripsi").expose().as_str(), nilai);
+
+    sqlx::query("DELETE FROM provider_secret WHERE nama_secret = $1")
+        .bind(&nama)
+        .execute(&pool_su)
+        .await
+        .expect("bersihkan");
+}
+
+#[tokio::test]
+#[ignore]
+async fn ambil_secret_tidak_ada() {
+    let pool_api = pool_dari_env("POOLROUTER_TEST_DATABASE_URL_API").await;
+    let brankas = test_brankas();
+
+    let hasil = ambil_secret(&pool_api, "tidak_ada", &brankas).await;
+    assert!(hasil.is_err());
+}
+
+/// Isi `provider_secret` lewat superuser, termasuk pengguna admin untuk FK `diubah_oleh`.
+async fn siapkan_secret(pool_su: &PgPool, nama: &str, amplop: &Amplop) {
+    let uid = uuid::Uuid::new_v4();
     sqlx::query(
-        "INSERT INTO provider_secret (nama_secret, secret_ciphertext, secret_dek_terbungkus, secret_nonce, kek_id) \
-         VALUES ($1, $2, $3, $4, $5)"
+        "INSERT INTO admin_user (pengguna_id, username, password_hash) VALUES ($1, $2, 'x')",
+    )
+    .bind(uid)
+    .bind(format!("uji-{}", uid.simple()))
+    .execute(pool_su)
+    .await
+    .expect("admin_user");
+    sqlx::query(
+        "INSERT INTO provider_secret (nama_secret, secret_ciphertext, secret_dek_terbungkus, secret_nonce, kek_id, diubah_oleh) \
+         VALUES ($1, $2, $3, $4, $5, $6)",
     )
     .bind(nama)
     .bind(&amplop.ciphertext)
     .bind(&amplop.dek_terbungkus)
     .bind(&amplop.nonce[..])
     .bind(&amplop.kek_id)
-    .execute(&pool)
+    .bind(uid)
+    .execute(pool_su)
     .await
-    .expect("insert");
-
-    let hasil = ambil_secret(&pool, nama, &brankas).await;
-    assert!(hasil.is_ok(), "{:?}", hasil);
-    assert_eq!(hasil.unwrap().expose().as_str(), nilai);
-}
-
-#[tokio::test]
-#[ignore]
-async fn ambil_secret_tidak_ada() {
-    let pool = test_pool().await;
-    let brankas = test_brankas();
-
-    let hasil = ambil_secret(&pool, "tidak_ada", &brankas).await;
-    assert!(hasil.is_err());
+    .expect("insert provider_secret");
 }
 
 #[tokio::test]
@@ -123,8 +143,8 @@ fn test_brankas() -> Brankas {
     Brankas::dari_isi_kek(kek_hex).expect("test kek")
 }
 
-async fn test_pool() -> PgPool {
-    let url = std::env::var("POOLROUTER_TEST_DATABASE_URL_API")
-        .expect("POOLROUTER_TEST_DATABASE_URL_API not set");
+async fn pool_dari_env(nama_env: &str) -> PgPool {
+    let url = std::env::var(nama_env)
+        .unwrap_or_else(|_| panic!("{nama_env} belum diset; jalankan lewat `make -C backend uji-pg`"));
     PgPool::connect(&url).await.expect("pool")
 }

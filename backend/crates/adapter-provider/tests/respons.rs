@@ -103,7 +103,7 @@ fn konfigurasi_kosong_menghasilkan_daftar_kosong() {
 #[test]
 fn hanya_parameter_output_yang_dibaca() {
     // Extra keys in the provider body are not passed through (D3 / P-1).
-    let body = br#"{"content":[{"NAMA_LGKP":"SESUAI (95)","TGL_LAHIR":"SESUAI","NIK":"3200000000000001"}]}"#;
+    let body = br#"{"content":[{"NAMA_LGKP":"SESUAI (95)","TGL_LAHIR":"SESUAI","NIK":"0000000000000001"}]}"#;
 
     let hasil = baca_respons(body, &konfigurasi()).expect("harus berhasil");
 

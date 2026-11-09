@@ -17,7 +17,7 @@ fn peta(pasangan: &[(&str, &str)]) -> BTreeMap<String, String> {
 fn nilai_lengkap() -> Nilai {
     Nilai {
         sistem: peta(&[("kode_transaksi", "TRX-0001")]),
-        input: peta(&[("NIK", "3200000000000001")]),
+        input: peta(&[("NIK", "0000000000000001")]),
         secret: peta(&[("USER_ID", "u-sintetis"), ("KUNCI_UJI", "example")]),
         endpoint: peta(&[("TRESHOLD", "80")]),
     }
@@ -41,7 +41,7 @@ fn merender_placeholder_di_path_query_dan_header() {
     let hasil = render_template(&templat_get(), &nilai_lengkap()).expect("harus berhasil");
 
     assert_eq!(hasil.path, "/dukcapil/verify");
-    assert_eq!(hasil.query["NIK"], "3200000000000001");
+    assert_eq!(hasil.query["NIK"], "0000000000000001");
     assert_eq!(hasil.query["TRESHOLD"], "80");
     assert_eq!(hasil.header["X-Transaction-Id"], "TRX-0001");
     assert_eq!(hasil.body, None);
@@ -61,7 +61,7 @@ fn method_diteruskan_apa_adanya() {
     let hasil = render_template(&templat, &nilai_lengkap()).expect("harus berhasil");
 
     assert_eq!(hasil.method, "POST");
-    assert_eq!(hasil.body.as_deref(), Some(r#"{"NIK":"3200000000000001"}"#));
+    assert_eq!(hasil.body.as_deref(), Some(r#"{"NIK":"0000000000000001"}"#));
 }
 
 #[test]
@@ -189,7 +189,7 @@ fn placeholder_diulang_beberapa_kali_terisi_semua() {
     };
 
     let hasil = render_template(&templat, &nilai_lengkap()).expect("harus berhasil");
-    assert_eq!(hasil.path, "/3200000000000001/verify/3200000000000001");
+    assert_eq!(hasil.path, "/0000000000000001/verify/0000000000000001");
 }
 
 #[test]
@@ -203,7 +203,7 @@ fn placeholder_berdampingan_terisi_semua() {
     };
 
     let hasil = render_template(&templat, &nilai_lengkap()).expect("harus berhasil");
-    assert_eq!(hasil.path, "/320000000000000180");
+    assert_eq!(hasil.path, "/000000000000000180");
 }
 
 #[test]
@@ -257,7 +257,7 @@ fn render_get_dengan_body_menghasilkan_content_length_implicit() {
     let hasil = render_template(&templat, &nilai_lengkap()).expect("harus berhasil");
 
     assert_eq!(hasil.method, "GET");
-    assert_eq!(hasil.body.as_deref(), Some(r#"{"NIK":"3200000000000001"}"#));
+    assert_eq!(hasil.body.as_deref(), Some(r#"{"NIK":"0000000000000001"}"#));
 }
 
 #[test]

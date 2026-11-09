@@ -417,7 +417,7 @@ async fn body_get_diterima_dengan_content_length() {
         ca_pem: s.ca_pem.into_bytes(),
     })
     .unwrap();
-    let body = r#"{"NIK":"3201000000000001"}"#;
+    let body = r#"{"NIK":"0000000000000001"}"#;
 
     let res = klien
         .get(server.url("/uji"))
