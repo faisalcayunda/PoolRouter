@@ -525,7 +525,7 @@ async fn parameter_tidak_ada_di_template_422() {
 
 #[tokio::test]
 #[ignore]
-async fn config_schema_version_selain_satu_422() {
+async fn config_schema_version_di_luar_satu_dan_dua_422() {
     let u = siapkan().await;
     let (uid, pa) = u.pengguna(&["platform_admin"]).await;
     let s = nama_unik("SECRET");
@@ -533,10 +533,10 @@ async fn config_schema_version_selain_satu_422() {
     let nama = nama_unik("dukcapil");
 
     let mut b = body(&nama, &s, &["NAMA_LGKP"]);
-    b["config_schema_version"] = Value::from(2);
+    b["config_schema_version"] = Value::from(3);
 
     let (st, _, prob) = u.kirim(Method::POST, PROVIDERS, Some(&pa), Some(b)).await;
-    // `maximum: 1` in the contract catches it before the handler; either way it
+    // `maximum: 2` in the contract catches it before the handler; either way it
     // is a 422 and nothing is stored.
     assert_eq!(st, StatusCode::UNPROCESSABLE_ENTITY, "{prob}");
     u.bersihkan_secret().await;
@@ -802,6 +802,14 @@ async fn base_url_bukan_https_422() {
     u.bersihkan_secret().await;
 }
 
+/// Blok `data_balikan` sah (skema 2, AC-15): hanya dua field wajib, sisanya default.
+fn data_balikan_sah(secret: &str) -> Value {
+    serde_json::json!({
+        "endpoint": "https://bgn.example.go.id/balikan",
+        "rujukan_secret": format!("{{{{secret.{secret}}}}}")
+    })
+}
+
 // AC-20: config_schema_version 1 and 2 support in createProviderConfigVersion
 // (ARC-121 R7 T4)
 
@@ -838,14 +846,8 @@ async fn create_provider_config_schema_v2_valid_data_balikan() {
 
     let mut b = body(&nama, &s, &["NAMA_LGKP"]);
     b["config_schema_version"] = Value::Number(2.into());
-    // AC-15: valid data_balikan (aktif, pemicu, delay_menit, format, endpoint)
-    b["data_balikan"] = serde_json::json!({
-        "aktif": true,
-        "pemicu": "berhasil",
-        "delay_menit": 0,
-        "format": "json",
-        "endpoint": "{{endpoint.BALIKAN_ENDPOINT}}"
-    });
+    // Blok sah menurut AC-15: endpoint https dan rujukan_secret {{secret.X}}.
+    b["data_balikan"] = data_balikan_sah(&s);
 
     let (st, _, res) = u
         .kirim(Method::POST, PROVIDERS, Some(&pa), Some(b))
@@ -868,11 +870,10 @@ async fn create_provider_config_schema_v2_invalid_data_balikan_422() {
 
     let mut b = body(&nama, &s, &["NAMA_LGKP"]);
     b["config_schema_version"] = Value::Number(2.into());
-    // Missing required "aktif" field
-    b["data_balikan"] = serde_json::json!({
-        "pemicu": "berhasil",
-        "delay_menit": 0,
-    });
+    // endpoint bukan https: ditolak parser AC-15 dengan pointer /data_balikan/endpoint.
+    let mut blok = data_balikan_sah(&s);
+    blok["endpoint"] = Value::String("http://bgn.example.go.id/balikan".into());
+    b["data_balikan"] = blok;
 
     let (st, _, prob) = u
         .kirim(Method::POST, PROVIDERS, Some(&pa), Some(b))
@@ -913,13 +914,7 @@ async fn update_provider_v1_to_v2_with_data_balikan() {
     // Update to v2
     let mut b_v2 = body(&nama, &s, &["NAMA_LGKP"]);
     b_v2["config_schema_version"] = Value::Number(2.into());
-    b_v2["data_balikan"] = serde_json::json!({
-        "aktif": true,
-        "pemicu": "berhasil",
-        "delay_menit": 0,
-        "format": "json",
-        "endpoint": "{{endpoint.BALIKAN_ENDPOINT}}"
-    });
+    b_v2["data_balikan"] = data_balikan_sah(&s);
 
     let (st, _, b_after) = u
         .kirim(
@@ -947,7 +942,7 @@ async fn update_provider_v1_to_v2_with_data_balikan() {
     assert_eq!(b_after["config_schema_version"], 2);
 
     // Verify v1 byte-identical, no data_balikan (V-03)
-    let v1_doc: String = sqlx::query_scalar(
+    let v1_doc: Value = sqlx::query_scalar(
         "SELECT dokumen FROM provider_config_versi \
          WHERE provider_id = $1 AND versi = 1",
     )
@@ -955,7 +950,10 @@ async fn update_provider_v1_to_v2_with_data_balikan() {
     .fetch_one(&u.su)
     .await
     .unwrap();
-    assert!(!v1_doc.contains("data_balikan"), "v1 immutable: {v1_doc}");
+    assert!(
+        !v1_doc.to_string().contains("data_balikan"),
+        "v1 immutable: {v1_doc}"
+    );
 
     u.bersihkan_secret().await;
 }

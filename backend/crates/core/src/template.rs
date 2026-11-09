@@ -404,12 +404,14 @@ mod tests {
     }
 
     #[test]
-    fn versi_skema_selain_satu_ditolak() {
-        assert_eq!(
-            validasi_config_schema_version("/config_schema_version", 1),
-            Ok(())
-        );
-        for v in [0, 2, 99] {
+    fn versi_skema_selain_satu_dan_dua_ditolak() {
+        for v in [1, 2] {
+            assert_eq!(
+                validasi_config_schema_version("/config_schema_version", v),
+                Ok(())
+            );
+        }
+        for v in [0, 3, 99] {
             let e = validasi_config_schema_version("/config_schema_version", v).unwrap_err();
             assert_eq!(e.kode, "config_schema_version_tidak_didukung");
             assert_eq!(e.field, "/config_schema_version");

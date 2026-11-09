@@ -230,8 +230,8 @@ pub struct Provider {
     /// TLS trust setting for the provider call (ADR-0002 D5).
     pub tls_trust: TlsTrust,
     pub log_mode: LogMode,
-    /// Fixed 1 in F0.
-    #[schema(minimum = 1, maximum = 1, example = 1)]
+    /// 1 in F0; 2 in F1. Mirrors `ProviderConfig::config_schema_version`.
+    #[schema(minimum = 1, maximum = 2, example = 1)]
     pub config_schema_version: i64,
     #[schema(example = 2)]
     pub provider_config_version: i64,

@@ -2904,94 +2904,6 @@ components:
         Count of failing names that are withheld instead of echoed (D6). A count of
         zero is never emitted: the field is absent when no name was withheld.
       minimum: 1
-     KonfigurasiDataBalikan:
-       type: object
-       description: Data return (webhook delivery) configuration for schema version 2.
-       required:
-       - endpoint
-       - rujukan_secret
-       properties:
-         backoff_base_detik:
-           type: integer
-           format: int32
-           description: Exponential backoff base duration in seconds.
-           example: 1
-           default: 1
-         backoff_cap_detik:
-           type: integer
-           format: int32
-           description: Exponential backoff cap duration in seconds.
-           example: 600
-           default: 600
-         endpoint:
-           type: string
-           description: Webhook endpoint URL (https) where delivery attempts are sent.
-           example: https://bgn.go.id/webhook/data-balikan
-         format_version:
-           type: string
-           description: Data format version string for compatibility.
-           example: "1.0"
-           default: "1.0"
-         kirim_batas_percobaan:
-           type: integer
-           format: int32
-           description: Maximum number of delivery attempts.
-           example: 5
-           default: 5
-         pemicu_jumlah_n:
-           type: integer
-           format: int32
-           description: Trigger threshold; batch is sent after N items.
-           example: 100
-           default: 100
-         periode:
-           $ref: '#/components/schemas/PeriodeDataBalikan'
-           description: Scheduled batch interval.
-         rujukan_secret:
-           type: string
-           description: |-
-             Reference to a secret (form: {{secret.X}}) for webhook authentication.
-             The actual secret value is resolved by the worker (AC-21).
-           example: '{{secret.WEBHOOK_AUTH_TOKEN}}'
-         toleransi_detik:
-           type: integer
-           format: int32
-           description: Tolerance window in seconds before timeout.
-           example: 30
-           default: 30
-         ukuran_batch_maks:
-           type: integer
-           format: int32
-           description: Maximum number of items per batch.
-           example: 1000
-           default: 1000
-       additionalProperties: false
-     PeriodeDataBalikan:
-       type: object
-       description: Scheduled batch period for data delivery.
-       required:
-       - jenis
-       - jam_kirim
-       - zona
-       properties:
-         jam_kirim:
-           type: array
-           items:
-             type: integer
-             format: int32
-           description: Send time as [hour, minute] in 24-hour format.
-           example: [0, 0]
-         jenis:
-           type: string
-           enum:
-           - harian
-           description: Period type (currently only daily).
-         zona:
-           type: string
-           description: IANA timezone identifier.
-           example: Asia/Jakarta
-           default: Asia/Jakarta
-       additionalProperties: false
     KelasErrorWebhook:
       type: string
       description: |-
@@ -3642,9 +3554,9 @@ components:
         config_schema_version:
           type: integer
           format: int64
-          description: Fixed 1 in F0.
+          description: 1 in F0; 2 in F1. Mirrors `ProviderConfig::config_schema_version`.
           example: 1
-          maximum: 1
+          maximum: 2
           minimum: 1
         log_mode:
           $ref: '#/components/schemas/LogMode'
@@ -3707,10 +3619,15 @@ components:
         config_schema_version:
           type: integer
           format: int64
-          description: 1 for F0 (no data_balikan), 2 for F1+ with data_balikan block.
-          example: 2
+          description: 1 in F0; 2 in F1. Other values are 422.
+          example: 1
           maximum: 2
           minimum: 1
+        data_balikan:
+          type: object
+          description: |-
+            Data balikan configuration block; only valid when config_schema_version = 2 (AC-20).
+            Ignored for version 1; required and validated for version 2.
         log_mode:
           $ref: '#/components/schemas/LogMode'
         metode:
@@ -3740,9 +3657,6 @@ components:
           description: |-
             TLS trust setting for the provider call (ADR-0002 D5). Closed set: there
             is deliberately no "verify off" mode, not even in dev.
-        data_balikan:
-          $ref: '#/components/schemas/KonfigurasiDataBalikan'
-          description: Data return block for schema version 2 (F1+); omitted for version 1.
       additionalProperties: false
     RuleJenis:
       type: string
