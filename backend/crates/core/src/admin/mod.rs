@@ -15,10 +15,13 @@
 //! Not here, on purpose:
 //! - session *storage* (issued/revoked rows): webserver, with `sqlx`;
 //! - the login rate limiter (5 per 15 minutes): webserver, needs shared state;
-//! - the one-time secret issuance (§3.6a): slice 3;
-//! - the user/role CLI (§3.6c): slice 4.
+//! - the one-time secret issuance (§3.6a): slice 3.
+//!
+//! Layanan pengguna dan peran (§3.6c) ada di [`kelola_pengguna`]; antarmuka baris perintahnya di
+//! crate `poolrouter-cli` (ARC-55).
 
 pub mod aman;
+pub mod kelola_pengguna;
 pub mod mfa;
 pub mod origin;
 pub mod password;
