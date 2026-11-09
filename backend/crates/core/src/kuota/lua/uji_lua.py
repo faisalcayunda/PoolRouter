@@ -70,6 +70,7 @@ NAMA_SKRIP = {
     "tambah": "attempts_tambah.lua",
     "baca": "kuota_baca.lua",
     "tolak": "penolakan_ambil.lua",
+    "antre": "antre_ubah.lua",
 }
 
 JUMLAH_EMBER = 145

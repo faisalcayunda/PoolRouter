@@ -6,7 +6,12 @@
 //!
 //! - `terjadi_at` memakai default database (`now()`), bukan jam yang
 //!   diinjeksi: trigger T-04 menuntut `terjadi_at >= transaction_timestamp()`.
+//! - Efek Redis (lepas slot, koreksi `antre`) dicatat sebagai [`EfekRedis`] dan
+//!   baru dijalankan sesudah commit. Kegagalan Redis tidak pernah membatalkan
+//!   transisi PostgreSQL (AC-19: penyapu tetap jalan saat Redis mati); rebuild
+//!   berikutnya menghitung ulang `antre` dan semaphore dari PostgreSQL.
 
+use poolrouter_core::kuota::store::{AsalLepas, KuotaStore};
 use sqlx::{Postgres, Transaction};
 use uuid::Uuid;
 
@@ -53,4 +58,44 @@ pub async fn catat_history(
     .execute(&mut **tx)
     .await?;
     Ok(())
+}
+
+/// Efek Redis satu transisi, dijalankan sesudah commit.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EfekRedis {
+    pub request_id: Uuid,
+    /// Slot yang dilepas: `(upstream_pool_id, nomor_percobaan)`.
+    pub lepas_slot: Option<(Uuid, i64)>,
+    /// Koreksi `antre`: `(pool, delta)` (AC-25, CW3).
+    pub ubah_antre: Option<(Uuid, i64)>,
+}
+
+/// Menjalankan efek Redis sesudah commit, best-effort. Tanpa store (Redis tidak
+/// terhubung) atau saat skrip menjawab `belum_siap`, efek dilewati: rebuild
+/// akan membangun `antre` dan semaphore dari PostgreSQL.
+pub async fn jalankan_efek<K: KuotaStore>(kuota: Option<&K>, efek: &[EfekRedis]) {
+    let Some(kuota) = kuota else {
+        if !efek.is_empty() {
+            tracing::warn!(
+                jumlah = efek.len(),
+                "Redis tidak tersedia; koreksi slot/antre menunggu rebuild"
+            );
+        }
+        return;
+    };
+    for e in efek {
+        let request_id = e.request_id.to_string();
+        if let Some((pool, nomor)) = e.lepas_slot
+            && let Err(galat) = kuota
+                .lepas_slot(&pool.to_string(), &request_id, nomor, AsalLepas::Reconciler)
+                .await
+        {
+            tracing::warn!(upstream_pool_id = %pool, galat = %galat, "lepas slot gagal");
+        }
+        if let Some((pool, delta)) = e.ubah_antre
+            && let Err(galat) = kuota.ubah_antre(&pool.to_string(), delta).await
+        {
+            tracing::warn!(upstream_pool_id = %pool, galat = %galat, "koreksi antre gagal");
+        }
+    }
 }
