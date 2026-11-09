@@ -46,6 +46,24 @@ impl ApiError {
         self
     }
 
+    /// `jenis_objek` pada `objek_nonaktif` (403 endpoint, 503 pool/provider).
+    pub fn jenis_objek(mut self, jenis: crate::api::enums::JenisObjek) -> Self {
+        self.problem.jenis_objek = Some(jenis);
+        self
+    }
+
+    /// `request_id` pada 502/504 sync (§4.1).
+    pub fn request_id(mut self, id: uuid::Uuid) -> Self {
+        self.problem.request_id = Some(id);
+        self
+    }
+
+    /// `status_api` pada 409 `tidak_bisa_dibatalkan`.
+    pub fn status_api(mut self, status: crate::api::enums::ApiStatus) -> Self {
+        self.problem.status_api = Some(status);
+        self
+    }
+
     pub fn www_authenticate(mut self, challenge: &'static str) -> Self {
         self.www_authenticate = Some(challenge);
         self

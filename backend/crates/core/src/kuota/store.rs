@@ -348,6 +348,7 @@ pub trait KuotaStore: Send + Sync {
         ctx: &KonteksKuota,
         permintaan: &PermintaanToken,
         urutan: &[SumberDana],
+        downstream_pool_id: i64,
     ) -> impl Future<Output = Result<HasilToken, GalatStore>> + Send;
 
     fn klaim_slot(
@@ -659,8 +660,13 @@ fn bentuk_token(
 }
 
 /// Reply shape shared by both token scripts (F0 and allocated).
-fn hasil_token(j: &[Value], pool_id: &str) -> Result<HasilToken, GalatStore> {
+fn hasil_token(
+    j: &[Value],
+    pool_id: &str,
+    downstream_pool_id: i64,
+) -> Result<HasilToken, GalatStore> {
     let kode = teks(&j[0])?;
+    let terpilih = if j.len() > 7 { teks(&j[7]).ok() } else { None };
     let status = || -> Result<StatusToken, GalatStore> {
         Ok(StatusToken {
             terpakai: angka(j.get(1))?,
@@ -677,6 +683,13 @@ fn hasil_token(j: &[Value], pool_id: &str) -> Result<HasilToken, GalatStore> {
     }
     if kode == "retry_budget_habis" {
         metrik::retry_budget_habis(pool_id);
+    }
+    // Track loan counter when token is granted from a non-self source (AC-10).
+    if kode == "ok"
+        && let Some(sumber_txt) = terpilih
+        && sumber_txt != pool_id
+    {
+        metrik::pinjaman_total(pool_id, &sumber_txt, downstream_pool_id);
     }
     match kode.as_str() {
         "ok" => Ok(HasilToken::Diberikan(status()?)),
@@ -846,7 +859,7 @@ where
     ) -> Result<HasilToken, GalatStore> {
         let (kunci, arg) = bentuk_token(ctx, p)?;
         let j = self.jalankan(&self.skrip.token, kunci, arg).await?;
-        hasil_token(&j, &ctx.pool_id)
+        hasil_token(&j, &ctx.pool_id, 0)
     }
 
     async fn ambil_token_alokasi(
@@ -854,6 +867,7 @@ where
         ctx: &KonteksKuota,
         p: &PermintaanToken,
         urutan: &[SumberDana],
+        downstream_pool_id: i64,
     ) -> Result<HasilToken, GalatStore> {
         if urutan.is_empty() {
             return Err(GalatStore::ArgumenTidakSah("urutan sumber kosong".into()));
@@ -868,7 +882,8 @@ where
         }
         arg.push(DETIK_EMBER.to_string());
         let j = self.jalankan(&self.skrip.token_alokasi, kunci, arg).await?;
-        hasil_token(&j, &ctx.pool_id)
+        let result = hasil_token(&j, &ctx.pool_id, downstream_pool_id)?;
+        Ok(result)
     }
 
     async fn klaim_slot(
