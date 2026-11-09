@@ -92,7 +92,7 @@ WORK_DIR := $(if $(filter podman docker,$(RUNNER)),/work,$(CURDIR))
 # Repo root on the execution side (/repo is the read-only mount in the podman container).
 REPO_DIR := $(if $(filter podman docker,$(RUNNER)),/repo,$(CURDIR)/..)
 
-.PHONY: help check-label check-disk clean-shared clean-cache-shared setup test test-rust db-test uji-pg uji-pg-cargo uji-lua uji-redis uji-redis-cargo lua-rakit lua-rakit-check lint fmt clean openapi openapi-check
+.PHONY: help check-label check-disk clean-shared clean-cache-shared setup test test-rust db-test uji-pg uji-pg-cargo uji-pg-worker uji-pg-cargo-worker uji-lua uji-redis uji-redis-cargo lua-rakit lua-rakit-check lint fmt clean openapi openapi-check
 
 # Podman toolchain containers must carry the owning issue label, so untracked containers cannot appear (SHAA-222).
 # Docker lane: cek ruang kosong sebelum target apa pun yang memakai container (SHAA-373).
@@ -166,10 +166,22 @@ uji-pg: check-label $(CHECK_DISK)
 	sh db/test/uji-pg.sh "$(SUBMAKE) uji-pg-cargo RUNNER=$(RUNNER) CONTAINER_LABEL=$(CONTAINER_LABEL)"
 
 uji-pg-cargo: BUILD_LOCK_OPTS += --network host -e POOLROUTER_TEST_DATABASE_URL -e POOLROUTER_TEST_DATABASE_URL_API -e POOLROUTER_TEST_DATABASE_URL_SU -e POOLROUTER_TEST_DATABASE_URL_CONTROLLER -e POOLROUTER_TEST_DATABASE_URL_WEBHOOK -e POOLROUTER_TEST_REDIS
+uji-pg-cargo: BUILD_LOCK_OPTS += -e POOLROUTER_TEST_DATABASE_URL_WORKER
 uji-pg-cargo: check-label $(CHECK_DISK)
 	$(HEAVY) cargo test --locked -p poolrouter-core --test sesi_store_pg --test mfa_store_pg --test rencana_alokasi -p poolrouter-webserver --test admin_sesi_pg --test admin_secret_pg --test admin_client_pg --test admin_provider_pg --test admin_log_pg --test admin_k20_pg --test admin_mfa_pg -- --ignored --test-threads=1 --nocapture
 	$(HEAVY) cargo test --locked -p poolrouter-webserver --test downstream_konfigurasi_pg -- --test-threads=1 --nocapture
 	$(HEAVY) cargo test --locked -p poolrouter-controller -- --ignored --test-threads=1 --nocapture
+	$(HEAVY) cargo test --locked -p poolrouter-worker -- --ignored --test-threads=1 --nocapture
+
+# Uji worker ARC-71 saja (handler terhadap PostgreSQL pr_worker + Redis + mock provider), untuk iterasi
+# terarah. `uji-pg-cargo` di atas tetap menjalankan baris yang sama, jadi gate penuh mencakupnya.
+uji-pg-worker: check-label $(CHECK_DISK)
+	CONTAINER_ENGINE=$(DB_ENGINE) ARC_ISSUE=$(patsubst arctiva.issue=%,%,$(CONTAINER_LABEL)) \
+	sh db/test/uji-pg.sh "$(SUBMAKE) uji-pg-cargo-worker RUNNER=$(RUNNER) CONTAINER_LABEL=$(CONTAINER_LABEL)"
+
+uji-pg-cargo-worker: BUILD_LOCK_OPTS += --network host -e POOLROUTER_TEST_DATABASE_URL_SU -e POOLROUTER_TEST_DATABASE_URL_WORKER -e POOLROUTER_TEST_REDIS
+uji-pg-cargo-worker: check-label $(CHECK_DISK)
+	$(HEAVY) cargo test --locked -p poolrouter-worker -- --include-ignored --test-threads=1 --nocapture
 
 # Lua quota scripts (SHAA-195). `lua/` holds sources with `-- sisip:` markers;
 # `scripts/rakit-lua.sh` inlines `potongan/*.lua` into `rakitan/*.lua`, and that
