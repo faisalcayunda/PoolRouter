@@ -136,8 +136,8 @@ mod tests {
             r#"poolrouter_redis_failclosed_total{komponen="webserver"} 1"#,
             r#"poolrouter_redis_rebuild_total{komponen="controller"} 1"#,
             r#"poolrouter_limiter_penolakan_token{client_id="client-1"} 7"#,
-            r#"poolrouter_pinjaman_total{downstream_pool_id="2",sumber_anggaran="sisa",upstream_pool_id="pool-1"} 1"#,
-            r#"poolrouter_pinjaman_total{downstream_pool_id="2",sumber_anggaran="3",upstream_pool_id="pool-1"} 1"#,
+            r#"poolrouter_pinjaman_total{upstream_pool_id="pool-1",downstream_pool_id="2",sumber_anggaran="sisa"} 1"#,
+            r#"poolrouter_pinjaman_total{upstream_pool_id="pool-1",downstream_pool_id="2",sumber_anggaran="3"} 1"#,
         ] {
             assert!(out.contains(harap), "tidak ada: {harap}\n{out}");
         }
