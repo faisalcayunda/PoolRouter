@@ -154,6 +154,87 @@ pub enum JendelaKuota {
     Kalender,
 }
 
+/// Jenis alokasi rute downstream pool (ADR-0006 D2): jumlah tetap per
+/// periode atau persen dari kuota efektif upstream pool.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum AlokasiJenis {
+    Exact,
+    Persen,
+}
+
+impl AlokasiJenis {
+    /// Ejaan kolom `downstream_pool_rute.alokasi_jenis`.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Exact => "exact",
+            Self::Persen => "persen",
+        }
+    }
+}
+
+/// Sifat anggaran alokasi (ADR-0006 D2): `reserved` hanya dipakai pemiliknya,
+/// `shareable` boleh dipinjam downstream pool lain.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum SifatAlokasi {
+    Reserved,
+    Shareable,
+}
+
+impl SifatAlokasi {
+    /// Ejaan kolom `downstream_pool_rute.sifat`.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Reserved => "reserved",
+            Self::Shareable => "shareable",
+        }
+    }
+}
+
+/// Klasifikasi field metadata endpoint (kontrak §4). Ejaannya sama dengan
+/// `CHECK` kolom `endpoint_metadata_field.klasifikasi`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub enum KlasifikasiMetadata {
+    Internal,
+    Terbatas,
+    Rahasia,
+}
+
+impl KlasifikasiMetadata {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Internal => "Internal",
+            Self::Terbatas => "Terbatas",
+            Self::Rahasia => "Rahasia",
+        }
+    }
+}
+
+/// Tipe field metadata endpoint; sama dengan `CHECK` kolom
+/// `endpoint_metadata_field.tipe`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum TipeMetadata {
+    String,
+    Integer,
+    Boolean,
+    Date,
+    Enum,
+}
+
+impl TipeMetadata {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::String => "string",
+            Self::Integer => "integer",
+            Self::Boolean => "boolean",
+            Self::Date => "date",
+            Self::Enum => "enum",
+        }
+    }
+}
+
 /// Status per elemen pada `hasil`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "snake_case")]

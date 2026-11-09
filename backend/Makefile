@@ -173,7 +173,7 @@ uji-pg-cargo: check-label $(CHECK_DISK)
 	# Bootstrap backend-cli wajib paling awal: hanya sah saat admin_user masih kosong (ARC-55).
 	$(HEAVY) cargo test --locked -p poolrouter-cli --test cli_bootstrap_pg -- --ignored --test-threads=1 --nocapture
 	$(HEAVY) cargo test --locked -p poolrouter-cli --test cli_pg -- --ignored --test-threads=1 --nocapture
-	$(HEAVY) cargo test --locked -p poolrouter-core --test sesi_store_pg --test mfa_store_pg --test rencana_alokasi --test penyusun_pg -p poolrouter-adapter-provider --test secret_pg -p poolrouter-webserver --test admin_sesi_pg --test admin_secret_pg --test admin_client_pg --test admin_provider_pg --test admin_log_pg --test admin_k20_pg --test admin_mfa_pg --test admin_k20_client_http_pg --test downstream_permintaan_pg -- --ignored --test-threads=1 --nocapture
+	$(HEAVY) cargo test --locked -p poolrouter-core --test sesi_store_pg --test mfa_store_pg --test rencana_alokasi --test penyusun_pg -p poolrouter-adapter-provider --test secret_pg -p poolrouter-webserver --test admin_sesi_pg --test admin_secret_pg --test admin_client_pg --test admin_provider_pg --test admin_log_pg --test admin_k20_pg --test admin_mfa_pg --test admin_k20_client_http_pg --test downstream_permintaan_pg --test admin_pool_pg --test admin_endpoint_pg -- --ignored --test-threads=1 --nocapture
 	$(HEAVY) cargo test --locked -p poolrouter-webserver --test downstream_konfigurasi_pg -- --test-threads=1 --nocapture
 	$(HEAVY) cargo test --locked -p poolrouter-controller -- --ignored --test-threads=1 --nocapture
 	$(HEAVY) cargo test --locked -p poolrouter-worker -- --ignored --test-threads=1 --nocapture
