@@ -360,12 +360,15 @@ impl Fixture {
         .await
         .expect("transaction_log");
 
+        // `tidak_dikirim`, bukan `menunggu`: baris uji tidak boleh ikut dipindai job webhook (webhook_pg di
+        // database yang sama). Baris fixture tidak bisa dihapus (request_status_history dan transaction_log
+        // append-only), jadi harus inert bagi uji lain.
         sqlx::query(
             "UPDATE request r
                 SET status = $4, completed_at = u.selesai, final_kode_transaksi = u.kode, sumber_hasil = $5,
                     output_payload = CASE WHEN $4 = 'done' THEN '{\"data\": {}}'::jsonb END,
                     failure_reason = CASE WHEN $4 = 'failed' THEN 'retry_habis' END,
-                    webhook_status = 'menunggu'
+                    webhook_status = 'tidak_dikirim'
                FROM unnest($1::uuid[], $2::uuid[], $3::timestamptz[]) AS u(rid, kode, selesai)
               WHERE r.request_id = u.rid",
         )
