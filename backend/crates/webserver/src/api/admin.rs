@@ -15,8 +15,9 @@ use utoipa_axum::{router::OpenApiRouter, routes};
 use uuid::Uuid;
 
 use super::enums::{
-    BahasaUi, HasilWebhook, JendelaKuota, JenisKredensial, KelasErrorWebhook, LogMode,
-    MetodeProvider, Peran, RuleJenis, StatusKredensial, TlsTrust,
+    AlokasiJenis, BahasaUi, HasilWebhook, JendelaKuota, JenisKredensial, KelasErrorWebhook,
+    KlasifikasiMetadata, LogMode, MetodeProvider, Peran, RuleJenis, SifatAlokasi, StatusKredensial,
+    TipeMetadata, TlsTrust,
 };
 use super::problem_admin::ProblemAdmin as Problem;
 
@@ -605,6 +606,25 @@ pub struct DownstreamPoolConfig {
     /// The upstream pools serving this downstream pool. Exactly one in F0.
     #[schema(min_items = 1, max_items = 1)]
     pub upstream_pool_ids: Vec<Uuid>,
+    /// Allocation of the route (ADR-0006 D2); absent or `null` = no allocation,
+    /// the route then only uses the unallocated remainder. `alokasi_jenis`,
+    /// `alokasi_nilai` and `sifat` are all set or all absent.
+    #[serde(default)]
+    pub alokasi_jenis: Option<AlokasiJenis>,
+    /// `exact`: whole number >= 1 per period; `persen`: 0.01..=100.00 of the
+    /// upstream pool's effective quota. The sum over the routes of one upstream
+    /// pool may not exceed its effective quota (422 `alokasi_kelebihan`, `batas`
+    /// = the excess).
+    #[serde(default)]
+    #[schema(minimum = 0.01, example = 25.0)]
+    pub alokasi_nilai: Option<f64>,
+    #[serde(default)]
+    pub sifat: Option<SifatAlokasi>,
+    /// Whether the pool may borrow from the remainder and from shareable
+    /// budgets. Must be `true` (or absent) for a route without allocation;
+    /// absent with an allocation means `false`.
+    #[serde(default)]
+    pub boleh_pinjam: Option<bool>,
     /// Reason; required on update.
     #[serde(skip_serializing_if = "Option::is_none")]
     #[schema(min_length = 10, max_length = 500)]
@@ -619,6 +639,11 @@ pub struct DownstreamPool {
     pub nama: String,
     pub ttl_antrean_detik: i64,
     pub upstream_pool_ids: Vec<Uuid>,
+    /// Allocation of the route; `null` when the route has none.
+    pub alokasi_jenis: Option<AlokasiJenis>,
+    pub alokasi_nilai: Option<f64>,
+    pub sifat: Option<SifatAlokasi>,
+    pub boleh_pinjam: bool,
     /// Derived priority; read-only, always 1 in F0.
     #[schema(example = 1, read_only)]
     pub prioritas: i64,
@@ -770,8 +795,8 @@ pub struct Endpoint {
     pub downstream_pool_id: Uuid,
     /// Literal parameters, including `TRESHOLD` (BGN mandate).
     pub parameter_literal: BTreeMap<String, String>,
-    #[schema(example = "ringkas")]
-    pub log_mode: String,
+    /// Never looser than the provider's `log_mode`.
+    pub log_mode: LogMode,
     /// Metadata field definitions; Dukcapil endpoints must include
     /// `status_penerima_manfaat` (M-R1).
     pub metadata_fields: Vec<MetadataFieldDef>,
@@ -791,8 +816,9 @@ pub struct EndpointConfig {
     pub downstream_pool_id: Uuid,
     /// Literal parameters, including `TRESHOLD` (BGN mandate).
     pub parameter_literal: BTreeMap<String, String>,
-    #[schema(example = "ringkas")]
-    pub log_mode: String,
+    /// Never looser than the provider's `log_mode` (`full_payload` on a
+    /// `metadata_only` provider is 422).
+    pub log_mode: LogMode,
     /// Metadata field definitions; Dukcapil endpoints must include
     /// `status_penerima_manfaat` (M-R1).
     pub metadata_fields: Vec<MetadataFieldDef>,
@@ -807,21 +833,21 @@ pub struct EndpointConfig {
 
 /// Metadata field definition (US-15). Also serialized: the endpoint entity
 /// returns it so the edit form can be pre-filled.
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
 pub struct MetadataFieldDef {
-    #[schema(example = "status_penerima_manfaat")]
+    /// `^[a-z][a-z0-9_]*$`, at most 64 characters.
+    #[schema(example = "status_penerima_manfaat", max_length = 64)]
     pub nama_field: String,
-    #[schema(example = "string")]
-    pub tipe: String,
+    pub tipe: TipeMetadata,
     pub wajib: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub nilai_diizinkan: Option<Vec<String>>,
     /// Validation rule reference, if any.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub aturan_validasi: Option<String>,
-    /// Classification (`rahasia` fields are never logged or sent to callbacks).
-    #[schema(example = "internal")]
-    pub klasifikasi: String,
+    /// Classification (`Rahasia` fields are never logged or sent to callbacks).
+    pub klasifikasi: KlasifikasiMetadata,
     /// Whether the field is sent to the data-balikan callback.
     pub kirim_ke_data_balikan: bool,
     pub deskripsi: String,
@@ -1818,6 +1844,7 @@ async fn update_client(
         ),
         (status = 401, response = Problem401Admin),
         (status = 403, response = Problem403Admin),
+        (status = 404, response = Problem404Admin),
         (status = 422, response = Problem422Admin)
     ),
     security(("sessionCookie" = []))
@@ -2878,6 +2905,7 @@ impl utoipa::Modify for SecurityAddon {
         AuditCariRequest, AuditAksesBaris, AuditAksesPage,
         BahasaUi, JendelaKuota, JenisKredensial, RuleJenis,
         LogMode, MetodeProvider, TlsTrust,
+        AlokasiJenis, SifatAlokasi, KlasifikasiMetadata, TipeMetadata,
         super::problem::ProblemKodeAdmin, super::problem_admin::ProblemAdmin,
         super::problem::ValidasiErrorAdmin, super::problem::Posisi,
         super::problem::JumlahNamaTidakCocok, super::enums::JenisObjek

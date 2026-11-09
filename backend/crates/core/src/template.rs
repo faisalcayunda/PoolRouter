@@ -190,6 +190,23 @@ pub fn validasi_template(
     if galat.is_empty() { Ok(()) } else { Err(galat) }
 }
 
+/// Nama setiap `{{<namespace>.NAMA}}` yang dirujuk template, tanpa duplikat dan
+/// terurut. Template yang tidak seimbang menghasilkan daftar kosong: template
+/// provider yang tersimpan sudah lolos [`validasi_template`], jadi kasus itu
+/// tidak terjadi di jalur admin endpoint (AC-25).
+pub fn rujukan_namespace(template: &str, namespace: &str) -> BTreeSet<String> {
+    let Ok(placeholder) = pecah_placeholder(template) else {
+        return BTreeSet::new();
+    };
+    placeholder
+        .into_iter()
+        .filter_map(|(isi, _)| {
+            let (ns, nama) = isi.split_once('.')?;
+            (ns == namespace).then(|| nama.to_owned())
+        })
+        .collect()
+}
+
 /// Version gate for a stored configuration document (V-05, AC-13).
 ///
 /// F0 writes and reads version 1. F1 adds version 2 (data_balikan block in AC-20).
@@ -395,6 +412,14 @@ mod tests {
                 kolom: 12
             })
         );
+    }
+
+    #[test]
+    fn rujukan_namespace_mengambil_nama_endpoint_saja() {
+        let t = r#"{"T":"{{endpoint.TRESHOLD}}","N":"{{input.NIK}}","U":"{{endpoint.TRESHOLD}}","K":"{{endpoint.KODE}}"}"#;
+        let nama: Vec<String> = rujukan_namespace(t, "endpoint").into_iter().collect();
+        assert_eq!(nama, vec!["KODE".to_owned(), "TRESHOLD".to_owned()]);
+        assert!(rujukan_namespace("{{endpoint.X}", "endpoint").is_empty());
     }
 
     #[test]

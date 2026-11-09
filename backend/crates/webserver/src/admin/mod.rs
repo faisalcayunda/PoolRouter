@@ -2,6 +2,7 @@
 //! module here; the OpenAPI stubs stay in `api::admin` and are the contract.
 
 pub mod allowlist;
+pub mod endpoint;
 pub mod gerbang;
 pub mod k20;
 pub mod klien;
@@ -12,6 +13,7 @@ pub mod login;
 pub mod me;
 pub mod mfa;
 pub mod pembatas;
+pub mod pool;
 pub mod provider;
 pub mod secret;
 pub mod sesi;

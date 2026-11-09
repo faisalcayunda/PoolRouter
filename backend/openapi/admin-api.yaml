@@ -724,6 +724,8 @@ paths:
           $ref: '#/components/responses/Problem401Admin'
         '403':
           $ref: '#/components/responses/Problem403Admin'
+        '404':
+          $ref: '#/components/responses/Problem404Admin'
         '422':
           $ref: '#/components/responses/Problem422Admin'
       security:
@@ -2411,6 +2413,14 @@ components:
         aktif:
           type: boolean
       additionalProperties: false
+    AlokasiJenis:
+      type: string
+      description: |-
+        Jenis alokasi rute downstream pool (ADR-0006 D2): jumlah tetap per
+        periode atau persen dari kuota efektif upstream pool.
+      enum:
+      - exact
+      - persen
     AuditAksesBaris:
       type: object
       description: One `audit_akses` row (no `nik_hmac`).
@@ -2656,10 +2666,23 @@ components:
       - nama
       - ttl_antrean_detik
       - upstream_pool_ids
+      - boleh_pinjam
       - prioritas
       - aktif
       properties:
         aktif:
+          type: boolean
+        alokasi_jenis:
+          oneOf:
+          - $ref: '#/components/schemas/AlokasiJenis'
+            description: Allocation of the route; `null` when the route has none.
+          - type: 'null'
+        alokasi_nilai:
+          type:
+          - number
+          - 'null'
+          format: double
+        boleh_pinjam:
           type: boolean
         downstream_pool_id:
           type: string
@@ -2672,6 +2695,10 @@ components:
           description: Derived priority; read-only, always 1 in F0.
           example: 1
           readOnly: true
+        sifat:
+          oneOf:
+          - $ref: '#/components/schemas/SifatAlokasi'
+          - type: 'null'
         ttl_antrean_detik:
           type: integer
           format: int64
@@ -2697,10 +2724,42 @@ components:
           description: Reason; required on update.
           maxLength: 500
           minLength: 10
+        alokasi_jenis:
+          oneOf:
+          - $ref: '#/components/schemas/AlokasiJenis'
+            description: |-
+              Allocation of the route (ADR-0006 D2); absent or `null` = no allocation,
+              the route then only uses the unallocated remainder. `alokasi_jenis`,
+              `alokasi_nilai` and `sifat` are all set or all absent.
+          - type: 'null'
+        alokasi_nilai:
+          type:
+          - number
+          - 'null'
+          format: double
+          description: |-
+            `exact`: whole number >= 1 per period; `persen`: 0.01..=100.00 of the
+            upstream pool's effective quota. The sum over the routes of one upstream
+            pool may not exceed its effective quota (422 `alokasi_kelebihan`, `batas`
+            = the excess).
+          example: 25.0
+          minimum: 0.01
+        boleh_pinjam:
+          type:
+          - boolean
+          - 'null'
+          description: |-
+            Whether the pool may borrow from the remainder and from shareable
+            budgets. Must be `true` (or absent) for a route without allocation;
+            absent with an allocation means `false`.
         nama:
           type: string
           description: Pool name; unique across downstream pools (schema `NOT NULL UNIQUE`).
           example: BGN MPM
+        sifat:
+          oneOf:
+          - $ref: '#/components/schemas/SifatAlokasi'
+          - type: 'null'
         ttl_antrean_detik:
           type:
           - integer
@@ -2781,8 +2840,8 @@ components:
           type: string
           format: uuid
         log_mode:
-          type: string
-          example: ringkas
+          $ref: '#/components/schemas/LogMode'
+          description: Never looser than the provider's `log_mode`.
         metadata_fields:
           type: array
           items:
@@ -2829,8 +2888,10 @@ components:
           type: string
           format: uuid
         log_mode:
-          type: string
-          example: ringkas
+          $ref: '#/components/schemas/LogMode'
+          description: |-
+            Never looser than the provider's `log_mode` (`full_payload` on a
+            `metadata_only` provider is 422).
         metadata_fields:
           type: array
           items:
@@ -2916,6 +2977,15 @@ components:
       - respons_tidak_valid
       - tls
       - provider_sementara
+    KlasifikasiMetadata:
+      type: string
+      description: |-
+        Klasifikasi field metadata endpoint (kontrak §4). Ejaannya sama dengan
+        `CHECK` kolom `endpoint_metadata_field.klasifikasi`.
+      enum:
+      - Internal
+      - Terbatas
+      - Rahasia
     KodeMfaRequest:
       type: object
       description: 'Body of `POST /auth/mfa` (AC-10): exactly one of the two code kinds.'
@@ -3223,12 +3293,13 @@ components:
           type: boolean
           description: Whether the field is sent to the data-balikan callback.
         klasifikasi:
-          type: string
-          description: Classification (`rahasia` fields are never logged or sent to callbacks).
-          example: internal
+          $ref: '#/components/schemas/KlasifikasiMetadata'
+          description: Classification (`Rahasia` fields are never logged or sent to callbacks).
         nama_field:
           type: string
+          description: '`^[a-z][a-z0-9_]*$`, at most 64 characters.'
           example: status_penerima_manfaat
+          maxLength: 64
         nilai_diizinkan:
           type:
           - array
@@ -3236,10 +3307,10 @@ components:
           items:
             type: string
         tipe:
-          type: string
-          example: string
+          $ref: '#/components/schemas/TipeMetadata'
         wajib:
           type: boolean
+      additionalProperties: false
     MetodeProvider:
       type: string
       description: |-
@@ -3758,6 +3829,14 @@ components:
           type: string
           format: date-time
       additionalProperties: false
+    SifatAlokasi:
+      type: string
+      description: |-
+        Sifat anggaran alokasi (ADR-0006 D2): `reserved` hanya dipakai pemiliknya,
+        `shareable` boleh dipinjam downstream pool lain.
+      enum:
+      - reserved
+      - shareable
     StatusKredensial:
       type: string
       description: Credential lifecycle state (contract EN-02/EN-03, schema `status`).
@@ -3765,6 +3844,17 @@ components:
       - aktif
       - kedaluwarsa
       - dicabut
+    TipeMetadata:
+      type: string
+      description: |-
+        Tipe field metadata endpoint; sama dengan `CHECK` kolom
+        `endpoint_metadata_field.tipe`.
+      enum:
+      - string
+      - integer
+      - boolean
+      - date
+      - enum
     TlsTrust:
       type: string
       description: |-
