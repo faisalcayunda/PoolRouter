@@ -18,7 +18,8 @@ use chrono::{DateTime, Duration, Utc};
 use poolrouter_core::admin::NilaiAman;
 use poolrouter_core::kuota::SumberDana;
 use poolrouter_core::kuota::pemulihan::{
-    GalatPemulihan, KeadaanPool, SumberRebuild, baca_run_id, bangun_ulang, kunci_slot, member_slot,
+    GalatPemulihan, JendelaRate, KeadaanPool, SumberRebuild, baca_run_id, bangun_ulang, kunci_slot,
+    member_slot,
 };
 use poolrouter_core::kuota::store::{
     AsalLepas, Bacaan, GalatStore, HasilIntake, HasilKlaim, HasilPenolakan, HasilTambah,
@@ -485,7 +486,11 @@ async fn pesan_slot(store: &KuotaRedis<MultiplexedConnection>, f: &Fixture, id: 
                 rasio_retry: 0.1,
                 retry_min: 20,
                 porsi_sync: 0.2,
-                jendela_rate: vec![],
+                jendela_rate: vec![JendelaRate {
+                    jenis: "tps".into(),
+                    t_mikro: 1_000,
+                    burst: 10_000,
+                }],
             },
         )
         .await
