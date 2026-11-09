@@ -13,6 +13,7 @@ use std::process::{Command, Stdio};
 
 use chrono::{DateTime, FixedOffset, NaiveDate, Utc};
 use poolrouter_core::admin::kelola_pengguna::{self as kelola, GalatKelola, PemberianPeran};
+use poolrouter_core::admin::seed_dukcapil::seed_dukcapil;
 use poolrouter_core::audit::{Alasan, AlasanTidakValid, Peran};
 use poolrouter_core::config::Environment;
 use secrecy::{ExposeSecret, SecretString};
@@ -35,6 +36,7 @@ perintah:
   peran cabut --username <u> --peran <peran> --oleh <admin> --alasan <teks>
   daftar
   seed pengguna        hanya POOLROUTER_ENV dev/ci, password dari POOLROUTER_SEED_PASSWORD_FILE
+  seed dukcapil        provider, pool, dan endpoint sintetis; hanya dev/ci, sesudah seed pengguna
 
 peran: platform_admin, client_owner, operator, auditor
 password dibaca dari TTY tanpa echo atau dari stdin; tidak pernah dari argumen.";
@@ -75,6 +77,7 @@ pub enum Perintah {
     },
     Daftar,
     SeedPengguna,
+    SeedDukcapil,
 }
 
 /// Argumen yang tidak bisa diurai. Pesan memuat nama opsi saja, tidak pernah nilainya.
@@ -247,6 +250,10 @@ pub fn urai(args: &[String]) -> Result<Perintah, GalatArg> {
         ["seed", "pengguna", ..] => {
             Opsi::urai(&args[2..], &[])?;
             Ok(Perintah::SeedPengguna)
+        }
+        ["seed", "dukcapil", ..] => {
+            Opsi::urai(&args[2..], &[])?;
+            Ok(Perintah::SeedDukcapil)
         }
         _ => Err(GalatArg::PerintahTidakDikenal),
     }
@@ -458,6 +465,14 @@ pub async fn jalankan(
                 h.pengguna_baru, h.peran_baru, h.client_baru
             )?;
         }
+        Perintah::SeedDukcapil => {
+            let h = seed_dukcapil(&k.pool, k.env).await?;
+            writeln!(
+                out,
+                "seed dukcapil: {} provider baru, {} upstream pool baru, {} downstream pool baru, {} endpoint baru",
+                h.provider_baru, h.upstream_baru, h.downstream_baru, h.endpoint_baru
+            )?;
+        }
     }
     Ok(())
 }
@@ -602,6 +617,14 @@ mod tests {
         assert_eq!(
             urai(&a(&["seed", "pengguna"])).unwrap(),
             Perintah::SeedPengguna
+        );
+        assert_eq!(
+            urai(&a(&["seed", "dukcapil"])).unwrap(),
+            Perintah::SeedDukcapil
+        );
+        assert_eq!(
+            urai(&a(&["seed", "dukcapil", "--password", "x"])).unwrap_err(),
+            GalatArg::OpsiTidakDikenal("--password".into())
         );
         assert_eq!(urai(&a(&[])).unwrap(), Perintah::Bantuan);
     }

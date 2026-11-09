@@ -90,6 +90,8 @@ pub enum GalatKelola {
     BootstrapDitolak,
     #[error("seed hanya boleh di POOLROUTER_ENV dev atau ci")]
     SeedDitolak,
+    #[error("jalankan `seed pengguna` lebih dulu: seed-platform-admin belum ada")]
+    SeedPenggunaBelumAda,
     #[error("{0}")]
     Password(HashGagal),
     #[error("{0}")]
