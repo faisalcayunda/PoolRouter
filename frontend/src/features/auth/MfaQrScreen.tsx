@@ -40,7 +40,11 @@ export function MfaQrScreen({
     }
   };
 
-  const grouped = setupKey.replace(/\s+/g, '').match(/.{1,4}/g)?.join(' ') ?? setupKey;
+  const grouped =
+    setupKey
+      .replace(/\s+/g, '')
+      .match(/.{1,4}/g)
+      ?.join(' ') ?? setupKey;
 
   return (
     <section className="flex min-h-screen items-center justify-center bg-[var(--md-sys-color-surface)] p-4">
