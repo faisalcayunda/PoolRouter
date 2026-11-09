@@ -21,8 +21,8 @@ use poolrouter_core::kuota::pemulihan::{
 use poolrouter_core::retry::ErrorClass;
 use redis::aio::MultiplexedConnection;
 use serde_json::{Value, json};
-use sqlx::{PgPool, Row};
 use sqlx::postgres::PgPoolOptions;
+use sqlx::{PgPool, Row};
 use tower::ServiceExt;
 use uuid::Uuid;
 
@@ -192,7 +192,9 @@ impl Uji {
         });
         let operasi = Arc::new(OperasiDownstream {
             permintaan: PgPermintaan::baru(api),
-            kuota: KuotaRedisMalas::baru(redis::Client::open(env("POOLROUTER_TEST_REDIS")).unwrap()),
+            kuota: KuotaRedisMalas::baru(
+                redis::Client::open(env("POOLROUTER_TEST_REDIS")).unwrap(),
+            ),
             pemanggil: Some(mock.clone()),
             kunci_idempoten: KunciIdempoten::baru(b"kunci-hmac-sintetis-pg"),
             tunggu_token_sync: TUNGGU_TOKEN_SYNC,
@@ -266,8 +268,11 @@ impl Uji {
     }
 
     async fn jumlah_request(&self) -> i64 {
-        self.skalar_i64("SELECT count(*) FROM request WHERE client_id = $1", self.client_id)
-            .await
+        self.skalar_i64(
+            "SELECT count(*) FROM request WHERE client_id = $1",
+            self.client_id,
+        )
+        .await
     }
 }
 
@@ -339,7 +344,10 @@ async fn idempoten_replay_konflik_dan_balapan() {
         .query_async(&mut r)
         .await
         .unwrap();
-    assert_eq!(antre_awal, antre_akhir, "replay tidak menyentuh counter intake");
+    assert_eq!(
+        antre_awal, antre_akhir,
+        "replay tidak menyentuh counter intake"
+    );
 
     let mut beda = body_sah();
     beda["input"]["NAMA_LGKP"] = json!("Nama Lain Sintetis");
@@ -351,10 +359,7 @@ async fn idempoten_replay_konflik_dan_balapan() {
     for i in 0..50 {
         let kunci = format!("kunci-balap-{i}");
         let b = body_sah();
-        let (a, c) = tokio::join!(
-            u.asinkron(&b, Some(&kunci)),
-            u.asinkron(&b, Some(&kunci))
-        );
+        let (a, c) = tokio::join!(u.asinkron(&b, Some(&kunci)), u.asinkron(&b, Some(&kunci)));
         assert!(a.0.is_success() && c.0.is_success(), "{a:?} {c:?}");
         assert_eq!(a.1["queue_id"], c.1["queue_id"], "iterasi {i}");
         let n: i64 = sqlx::query_scalar(
@@ -445,7 +450,7 @@ async fn polling_cancel_dan_cancel_bersamaan() {
         .fetch_one(&u.su)
         .await
         .unwrap();
-            assert_eq!(r.get::<String, _>("status"), "cancelled");
+        assert_eq!(r.get::<String, _>("status"), "cancelled");
         assert_eq!(r.get::<String, _>("cancel_reason"), "dibatalkan_client");
         assert_eq!(r.get::<String, _>("cancelled_by"), "client");
         assert_eq!(r.get::<String, _>("webhook_status"), "tidak_dikirim");

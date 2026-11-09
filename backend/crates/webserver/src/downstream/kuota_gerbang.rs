@@ -101,9 +101,7 @@ impl KuotaRedisMalas {
 }
 
 /// Satu perintah dengan batas waktu; galat apa pun menjadi [`RedisTidakSiap`].
-async fn dengan_batas<T, E>(
-    f: impl std::future::Future<Output = Result<T, E>>,
-) -> HasilKuota<T> {
+async fn dengan_batas<T, E>(f: impl std::future::Future<Output = Result<T, E>>) -> HasilKuota<T> {
     match tokio::time::timeout(BATAS_REDIS, f).await {
         Ok(Ok(v)) => Ok(v),
         Ok(Err(_)) | Err(_) => Err(RedisTidakSiap),
@@ -275,7 +273,11 @@ pub mod fake {
             })
         }
 
-        fn token(&self, _ctx: KonteksKuota, _p: PermintaanToken) -> Fut<'_, HasilKuota<HasilToken>> {
+        fn token(
+            &self,
+            _ctx: KonteksKuota,
+            _p: PermintaanToken,
+        ) -> Fut<'_, HasilKuota<HasilToken>> {
             Box::pin(async move {
                 self.cek()?;
                 self.hitung.lock().unwrap().token += 1;

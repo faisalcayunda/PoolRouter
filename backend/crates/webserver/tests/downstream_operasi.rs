@@ -146,9 +146,7 @@ impl Uji {
         let operasi = Arc::new(OperasiDownstream {
             permintaan: permintaan.clone(),
             kuota: kuota.clone(),
-            pemanggil: pemanggil
-                .clone()
-                .map(|p| p as Arc<dyn PemanggilProvider>),
+            pemanggil: pemanggil.clone().map(|p| p as Arc<dyn PemanggilProvider>),
             kunci_idempoten: KunciIdempoten::baru(b"kunci-hmac-sintetis"),
             tunggu_token_sync: TUNGGU_TOKEN_SYNC,
         });
@@ -275,7 +273,11 @@ async fn idempoten_sama_200_tanpa_baris_dan_tanpa_kuota_beda_422() {
     assert_eq!(v2["queue_id"], v1["queue_id"]);
     assert_eq!(v2["status"], "queued");
     assert_eq!(u.jumlah_baris(), 1);
-    assert_eq!(u.kuota.hitung.lock().unwrap().intake, 1, "replay tanpa cek kuota");
+    assert_eq!(
+        u.kuota.hitung.lock().unwrap().intake,
+        1,
+        "replay tanpa cek kuota"
+    );
 
     let mut beda = body_sah();
     beda["input"]["NAMA_LGKP"] = json!("Nama Lain Sintetis");
@@ -491,7 +493,11 @@ async fn polling_mengikuti_pemetaan_status_dan_tidak_menyentuh_kuota() {
     }
     assert!(badan.windows(2).all(|w| w[0] == w[1]));
     let h = u.kuota.hitung.lock().unwrap();
-    assert_eq!(h.intake + h.penolakan + h.token, 0, "polling tidak menyentuh Redis");
+    assert_eq!(
+        h.intake + h.penolakan + h.token,
+        0,
+        "polling tidak menyentuh Redis"
+    );
 }
 
 #[tokio::test]
@@ -501,7 +507,12 @@ async fn cancel_queued_200_lalu_409_dan_processing_409() {
     let (_, _, v) = u.asinkron(&body_sah(), None).await;
     let id = v["queue_id"].as_str().unwrap().to_owned();
     let (s, h, v) = u
-        .kirim(Method::POST, &format!("/v1/requests/{id}/cancel"), None, None)
+        .kirim(
+            Method::POST,
+            &format!("/v1/requests/{id}/cancel"),
+            None,
+            None,
+        )
         .await;
     assert_eq!(s, StatusCode::OK);
     no_store(&h);
@@ -511,7 +522,12 @@ async fn cancel_queued_200_lalu_409_dan_processing_409() {
     assert!(semua[0].1.input.is_none(), "P-02 menghapus input");
 
     let (s, _, v) = u
-        .kirim(Method::POST, &format!("/v1/requests/{id}/cancel"), None, None)
+        .kirim(
+            Method::POST,
+            &format!("/v1/requests/{id}/cancel"),
+            None,
+            None,
+        )
         .await;
     assert_eq!(s, StatusCode::CONFLICT);
     assert_eq!(v["kode"], "tidak_bisa_dibatalkan");
@@ -611,7 +627,11 @@ async fn sync_done_200_hanya_elemen_yang_dikirim() {
 async fn sync_gagal_dipetakan_502_504_dengan_request_id() {
     // AC-28.
     for (kelas, http, kode) in [
-        (ErrorClass::Timeout, StatusCode::GATEWAY_TIMEOUT, "timeout_sync"),
+        (
+            ErrorClass::Timeout,
+            StatusCode::GATEWAY_TIMEOUT,
+            "timeout_sync",
+        ),
         (ErrorClass::Koneksi, StatusCode::BAD_GATEWAY, "retry_habis"),
         (
             ErrorClass::ProviderSementara,
@@ -724,7 +744,8 @@ async fn nik_dan_nilai_input_tidak_masuk_log() {
     let mut b = body_sah();
     b["input"]["TRESHOLD"] = json!(1);
     u.asinkron(&b, None).await;
-    u.permintaan.ubah_rantai(|r| r.nonaktif = Some(JenisObjek::Provider));
+    u.permintaan
+        .ubah_rantai(|r| r.nonaktif = Some(JenisObjek::Provider));
     u.asinkron(&body_sah(), None).await;
     *u.kuota.token_penolakan.lock().unwrap() = 0;
     u.asinkron(&b, None).await;

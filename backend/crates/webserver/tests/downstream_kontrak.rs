@@ -23,16 +23,18 @@ use tower::ServiceExt;
 use uuid::Uuid;
 
 use poolrouter_core::kredensial::buat_api_key;
+use poolrouter_webserver::api::downstream_sesi::{
+    KunciIdempoten, OperasiDownstream, TUNGGU_TOKEN_SYNC,
+};
 use poolrouter_webserver::downstream::auth::{Authenticator, JwtKeys};
 use poolrouter_webserver::downstream::credential::fake::FakeStore;
 use poolrouter_webserver::downstream::credential::{Jenis, Kredensial};
 use poolrouter_webserver::downstream::downstream_sesi::{BidangInput, fake::FakeSession};
-use poolrouter_webserver::downstream::server::{AppState, LocalThrottle, api_router};
-use poolrouter_webserver::api::downstream_sesi::{KunciIdempoten, OperasiDownstream, TUNGGU_TOKEN_SYNC};
 use poolrouter_webserver::downstream::intake::FieldInputKontrak;
 use poolrouter_webserver::downstream::kuota_gerbang::fake::FakeKuota;
 use poolrouter_webserver::downstream::permintaan::fake::FakePermintaan;
 use poolrouter_webserver::downstream::permintaan::{PoolRute, RantaiEndpoint};
+use poolrouter_webserver::downstream::server::{AppState, LocalThrottle, api_router};
 
 #[allow(dead_code)]
 const ASAL: &str = "203.0.113.7";
@@ -69,6 +71,7 @@ fn keys() -> Arc<JwtKeys> {
 struct Harness {
     app: Router,
     sesi: Arc<FakeSession>,
+    permintaan: Arc<FakePermintaan>,
     endpoint: Uuid,
     bearer: String,
     api_key: String,
@@ -136,7 +139,7 @@ impl Harness {
             throttle: Arc::new(LocalThrottle::new()),
             sesi: sesi.clone(),
             operasi: Arc::new(OperasiDownstream {
-                permintaan,
+                permintaan: permintaan.clone(),
                 kuota: FakeKuota::baru(),
                 pemanggil: None,
                 kunci_idempoten: KunciIdempoten::baru(b"kunci-hmac-sintetis"),
@@ -149,6 +152,7 @@ impl Harness {
                 5555,
             )))),
             sesi,
+            permintaan,
             endpoint,
             bearer,
             api_key,
@@ -615,18 +619,19 @@ fn cek_opsi(dok: &Value, skema: &Value, v: &Value) -> bool {
 
 #[tokio::test]
 async fn idempotency_dan_referensi_dibatasi_kolomnya() {
-    // `request.idempotency_key` is varchar(128) ASCII and `referensi_client` is
-    // varchar(128); both are enforced before the row is built, so the client
-    // gets 422 instead of a database error.
+    // `request.idempotency_key` adalah varchar(128) dengan CHECK `^[\x21-\x7e]+$`
+    // dan `referensi_client` varchar(128); keduanya ditegakkan sebelum baris
+    // dibangun, jadi client mendapat 400/422, bukan galat database. Kunci yang
+    // salah bentuk dipetakan `gerbang.rs` ke 400 `validasi_gagal`.
     let h = Harness::baru();
     let path = h.endpoint_path("async");
-    let kirim = json!({"input": {}, "metadata": {"nik": "3201010101010001"}});
+    let kirim = json!({"input": {"NIK": "0012345678901234"}, "metadata": {}});
 
     for kunci in ["k".repeat(129), "ada spasi".to_string(), String::new()] {
         let (status, headers, body) = kirim_idempoten(&h, &path, &kirim, &kunci).await;
         assert_eq!(
             status,
-            StatusCode::UNPROCESSABLE_ENTITY,
+            StatusCode::BAD_REQUEST,
             "idempotency key {:?}",
             kunci.len()
         );
@@ -634,9 +639,9 @@ async fn idempotency_dan_referensi_dibatasi_kolomnya() {
         assert_eq!(teks(&body)["kode"], "validasi_gagal");
     }
 
-    // The boundary itself is accepted (stub still validates headers).
+    // Tepat di batas diterima.
     let (status, _, _) = kirim_idempoten(&h, &path, &kirim, &"k".repeat(128)).await;
-    assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(status, StatusCode::ACCEPTED);
 
     // A reference longer than its column is refused, not truncated.
     let req = Request::builder()
@@ -663,6 +668,9 @@ async fn endpoint_nonaktif_tetap_200_di_kontrak_tapi_403_di_submit() {
     s.atur(endpoint, bidang());
     s.nonaktifkan();
     let h = Harness::dengan(sesi, endpoint);
+    h.permintaan.ubah_rantai(|r| {
+        r.nonaktif = Some(poolrouter_webserver::api::enums::JenisObjek::Endpoint)
+    });
 
     let (status, headers, body) = h
         .kirim(
@@ -685,7 +693,7 @@ async fn endpoint_nonaktif_tetap_200_di_kontrak_tapi_403_di_submit() {
             Method::POST,
             &h.endpoint_path("async"),
             Some(bearer(&h)),
-            Some(json!({"input": {}, "metadata": {"nik": "3201010101010001"}})),
+            Some(json!({"input": {"NIK": "0012345678901234"}, "metadata": {}})),
         )
         .await;
     assert_eq!(status, StatusCode::FORBIDDEN);

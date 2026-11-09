@@ -23,8 +23,7 @@ use axum::http::{HeaderMap, HeaderValue, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use chrono::{DateTime, Utc};
 use poolrouter_core::kuota::store::{
-    HasilIntake, HasilPenolakan, HasilToken, KonteksKuota, ModeJendela, PermintaanToken,
-    detik_naik,
+    HasilIntake, HasilPenolakan, HasilToken, KonteksKuota, ModeJendela, PermintaanToken, detik_naik,
 };
 use poolrouter_core::kuota::sumber_pg::jendela_rate;
 use poolrouter_core::status_api::{StatusApi, StatusInternal, StatusTerpetakan, status_api};
@@ -44,9 +43,8 @@ use crate::downstream::layers::ApiError;
 use crate::downstream::pemanggil::{PanggilanProvider, PemanggilProvider};
 use crate::downstream::pengenal::{GalatPengenal, PengenalDownstream};
 use crate::downstream::permintaan::{
-    Antrean, BarisIdempoten, BarisStatus, HasilAntre, HasilBatal, HasilPanggilan, Mode,
-    MulaiSync, Penolakan, PenyimpanPermintaan, PoolRute, RantaiEndpoint, SelesaiSync, TulisSync,
-    akhir_sync,
+    Antrean, BarisIdempoten, BarisStatus, HasilAntre, HasilBatal, HasilPanggilan, Mode, MulaiSync,
+    Penolakan, PenyimpanPermintaan, PoolRute, RantaiEndpoint, SelesaiSync, TulisSync, akhir_sync,
 };
 
 /// State of the downstream API router: the credential resolver, the contract
@@ -255,8 +253,12 @@ impl Tolakan {
     /// (`chk_reject_http`), jadi tanpa baris.
     fn baris(&self) -> Option<(&'static str, u16)> {
         match self {
-            Self::Gerbang(Jawaban::ValidasiGagal { status, .. }) => Some(("validasi_gagal", *status)),
-            Self::Gerbang(Jawaban::MetadataTidakValid { .. }) => Some(("metadata_tidak_valid", 422)),
+            Self::Gerbang(Jawaban::ValidasiGagal { status, .. }) => {
+                Some(("validasi_gagal", *status))
+            }
+            Self::Gerbang(Jawaban::MetadataTidakValid { .. }) => {
+                Some(("metadata_tidak_valid", 422))
+            }
             Self::Gerbang(Jawaban::KuotaHabis { .. }) => Some(("kuota_habis", 429)),
             Self::Gerbang(Jawaban::PorsiSyncHabis { .. }) => Some(("porsi_sync_habis", 429)),
             Self::Gerbang(_) => None,
@@ -464,7 +466,10 @@ fn nik_dari(input: &Value) -> Option<String> {
 /// Validasi body bersama kedua jalur, urutan `intake.rs`: JSON tanpa kunci
 /// ganda (400), envelope, `input` (422), `metadata` (422), lalu NIK wajib bila
 /// provider mewajibkan log NIK (C-01).
-fn validasi_body(rantai: &RantaiEndpoint, body: &[u8]) -> Result<(Value, Value), (Jawaban, Option<Value>)> {
+fn validasi_body(
+    rantai: &RantaiEndpoint,
+    body: &[u8],
+) -> Result<(Value, Value), (Jawaban, Option<Value>)> {
     let nilai = intake::baca_body(body).map_err(|t| (gerbang::jawaban_untuk(t), None))?;
     let Some(objek) = nilai.as_object() else {
         return Err((
@@ -484,7 +489,9 @@ fn validasi_body(rantai: &RantaiEndpoint, body: &[u8]) -> Result<(Value, Value),
     let asing: Vec<ValidasiErrorDown> = objek
         .keys()
         .filter(|k| k.as_str() != "input" && k.as_str() != "metadata")
-        .filter(|k| (1..=64).contains(&k.len()) && k.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_'))
+        .filter(|k| {
+            (1..=64).contains(&k.len()) && k.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_')
+        })
         .map(|k| ValidasiErrorDown {
             field: k.clone(),
             kode: "field_tak_dikenal".to_owned(),
@@ -606,14 +613,31 @@ pub(crate) async fn enqueue_async(
     let referensi = match referensi_client(&headers) {
         Ok(r) => r,
         Err(j) => {
-            return tolak(op, klien, &rantai, mode, received_at, Tolakan::Gerbang(j), None).await;
+            return tolak(
+                op,
+                klien,
+                &rantai,
+                mode,
+                received_at,
+                Tolakan::Gerbang(j),
+                None,
+            )
+            .await;
         }
     };
     let (input, metadata) = match validasi_body(&rantai, &body) {
         Ok(v) => v,
         Err((j, meta)) => {
-            return tolak(op, klien, &rantai, mode, received_at, Tolakan::Gerbang(j), meta.as_ref())
-                .await;
+            return tolak(
+                op,
+                klien,
+                &rantai,
+                mode,
+                received_at,
+                Tolakan::Gerbang(j),
+                meta.as_ref(),
+            )
+            .await;
         }
     };
     let kunci = match header_idempoten(&headers)
@@ -623,8 +647,16 @@ pub(crate) async fn enqueue_async(
         Ok(k) => k,
         Err(t) => {
             let j = gerbang::jawaban_untuk(t);
-            return tolak(op, klien, &rantai, mode, received_at, Tolakan::Gerbang(j), Some(&metadata))
-                .await;
+            return tolak(
+                op,
+                klien,
+                &rantai,
+                mode,
+                received_at,
+                Tolakan::Gerbang(j),
+                Some(&metadata),
+            )
+            .await;
         }
     };
 
@@ -647,8 +679,16 @@ pub(crate) async fn enqueue_async(
     }
 
     if let Some(jenis) = rantai.nonaktif {
-        return tolak(op, klien, &rantai, mode, received_at, Tolakan::Nonaktif(jenis), Some(&metadata))
-            .await;
+        return tolak(
+            op,
+            klien,
+            &rantai,
+            mode,
+            received_at,
+            Tolakan::Nonaktif(jenis),
+            Some(&metadata),
+        )
+        .await;
     }
 
     match ambil_kuota_intake(op, klien, &rantai, false, received_at).await {
@@ -670,7 +710,11 @@ pub(crate) async fn enqueue_async(
         idempoten: idempoten.clone(),
         referensi_client: referensi,
     };
-    match op.permintaan.simpan_antre(klien, rantai.clone(), antrean).await {
+    match op
+        .permintaan
+        .simpan_antre(klien, rantai.clone(), antrean)
+        .await
+    {
         Err(e) => galat(e),
         Ok(HasilAntre::Baru) => {
             tracing::info!(%request_id, "downstream: request async masuk antrean");
@@ -703,7 +747,16 @@ async fn jawab_idempoten(
 ) -> Response {
     if ada.sidik != sidik {
         let t = Tolakan::Gerbang(Jawaban::IdempotencyKeyKonflik);
-        return tolak(op, klien, rantai, Mode::Async, received_at, t, Some(metadata)).await;
+        return tolak(
+            op,
+            klien,
+            rantai,
+            Mode::Async,
+            received_at,
+            t,
+            Some(metadata),
+        )
+        .await;
     }
     match status_api_dari(ada.status, ada.attempt_count) {
         Some(status) => jawab(
@@ -805,12 +858,17 @@ fn gagal_sync(request_id: Uuid, failure_reason: Option<&str>) -> Response {
     let (status, kode) = match failure_reason {
         Some("timeout_sync") => (StatusCode::GATEWAY_TIMEOUT, ProblemKodeDown::TimeoutSync),
         Some("retry_habis") => (StatusCode::BAD_GATEWAY, ProblemKodeDown::RetryHabis),
-        Some("provider_error_permanen") => {
-            (StatusCode::BAD_GATEWAY, ProblemKodeDown::ProviderErrorPermanen)
-        }
+        Some("provider_error_permanen") => (
+            StatusCode::BAD_GATEWAY,
+            ProblemKodeDown::ProviderErrorPermanen,
+        ),
         _ => return layanan_503(),
     };
-    nirs_cache(ApiError::new(status, kode).request_id(request_id).into_response())
+    nirs_cache(
+        ApiError::new(status, kode)
+            .request_id(request_id)
+            .into_response(),
+    )
 }
 
 /// Hanya elemen yang dikirim client (U-43, ADR-0002 P-1).
@@ -923,14 +981,31 @@ pub(crate) async fn submit_sync(
     let referensi = match referensi_client(&headers) {
         Ok(r) => r,
         Err(j) => {
-            return tolak(op, klien, &rantai, mode, received_at, Tolakan::Gerbang(j), None).await;
+            return tolak(
+                op,
+                klien,
+                &rantai,
+                mode,
+                received_at,
+                Tolakan::Gerbang(j),
+                None,
+            )
+            .await;
         }
     };
     let (input, metadata) = match validasi_body(&rantai, &body) {
         Ok(v) => v,
         Err((j, meta)) => {
-            return tolak(op, klien, &rantai, mode, received_at, Tolakan::Gerbang(j), meta.as_ref())
-                .await;
+            return tolak(
+                op,
+                klien,
+                &rantai,
+                mode,
+                received_at,
+                Tolakan::Gerbang(j),
+                meta.as_ref(),
+            )
+            .await;
         }
     };
     // Sync tidak mendukung Idempotency-Key: 400 tanpa baris, tetap memakai satu
@@ -940,8 +1015,16 @@ pub(crate) async fn submit_sync(
         return tolak(op, klien, &rantai, mode, received_at, t, Some(&metadata)).await;
     }
     if let Some(jenis) = rantai.nonaktif {
-        return tolak(op, klien, &rantai, mode, received_at, Tolakan::Nonaktif(jenis), Some(&metadata))
-            .await;
+        return tolak(
+            op,
+            klien,
+            &rantai,
+            mode,
+            received_at,
+            Tolakan::Nonaktif(jenis),
+            Some(&metadata),
+        )
+        .await;
     }
     let rute = match ambil_kuota_intake(op, klien, &rantai, true, received_at).await {
         Ok(r) => r.clone(),
@@ -969,8 +1052,16 @@ pub(crate) async fn submit_sync(
             return tolak(op, klien, &rantai, mode, received_at, t, Some(&metadata)).await;
         }
         Err(Some(j)) => {
-            return tolak(op, klien, &rantai, mode, received_at, Tolakan::Gerbang(j), Some(&metadata))
-                .await;
+            return tolak(
+                op,
+                klien,
+                &rantai,
+                mode,
+                received_at,
+                Tolakan::Gerbang(j),
+                Some(&metadata),
+            )
+            .await;
         }
     }
     let pool_id = rute.upstream_pool_id.to_string();

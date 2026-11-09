@@ -470,8 +470,8 @@ impl PgPermintaan {
             }
             // Fungsi periode yang sama dengan rebuild dan snapshot, supaya kunci
             // Redis intake sama dengan kunci yang mereka tulis (M-02).
-            let periode =
-                poolrouter_core::kuota::sumber_pg::periode_dari_baris(r, sekarang).map_err(layanan)?;
+            let periode = poolrouter_core::kuota::sumber_pg::periode_dari_baris(r, sekarang)
+                .map_err(layanan)?;
             let jendela: String = r.try_get("jendela_kuota").map_err(layanan)?;
             rute.push(PoolRute {
                 upstream_pool_id: r.try_get("upstream_pool_id").map_err(layanan)?,
@@ -563,7 +563,9 @@ impl PgPermintaan {
         t: Penolakan,
     ) -> Hasil<()> {
         let ttl = match t.mode {
-            Mode::Async => Some(t.received_at + chrono::Duration::seconds(rantai.ttl_antrean_detik)),
+            Mode::Async => {
+                Some(t.received_at + chrono::Duration::seconds(rantai.ttl_antrean_detik))
+            }
             Mode::Sync => None,
         };
         let mut tx = self.pool.begin().await.map_err(layanan)?;
@@ -892,7 +894,9 @@ impl PgPermintaan {
         })?;
         if menang.is_none() {
             tx.commit().await.map_err(layanan)?;
-            return Ok(TulisSync::Kalah(self.status_dalam(klien, s.request_id).await?));
+            return Ok(TulisSync::Kalah(
+                self.status_dalam(klien, s.request_id).await?,
+            ));
         }
         sqlx::query(
             "INSERT INTO request_status_history (request_id, seq, status_dari, status_ke, alasan, aktor) \
@@ -1126,8 +1130,12 @@ pub mod fake {
         ) -> Fut<'_, Hasil<Option<BarisIdempoten>>> {
             Box::pin(async move {
                 self.cek()?;
-                Ok(self.baris.lock().unwrap().iter().find_map(|(id, b)| {
-                    match &b.idempoten {
+                Ok(self
+                    .baris
+                    .lock()
+                    .unwrap()
+                    .iter()
+                    .find_map(|(id, b)| match &b.idempoten {
                         Some((k, s)) if b.client_id == klien.client_id && *k == kunci => {
                             Some(BarisIdempoten {
                                 request_id: *id,
@@ -1137,8 +1145,7 @@ pub mod fake {
                             })
                         }
                         _ => None,
-                    }
-                }))
+                    }))
             })
         }
 
@@ -1221,8 +1228,10 @@ pub mod fake {
                 }) else {
                     return Ok(HasilBatal::TidakAda);
                 };
-                let boleh = matches!(b.status, StatusInternal::Queued | StatusInternal::Dispatched)
-                    && b.attempt_count == 0;
+                let boleh = matches!(
+                    b.status,
+                    StatusInternal::Queued | StatusInternal::Dispatched
+                ) && b.attempt_count == 0;
                 if !boleh {
                     return Ok(HasilBatal::TidakBisa(Self::status_baris(request_id, b)));
                 }
@@ -1253,11 +1262,7 @@ pub mod fake {
             })
         }
 
-        fn selesai_sync(
-            &self,
-            klien: SesiKlien,
-            s: SelesaiSync,
-        ) -> Fut<'_, Hasil<TulisSync>> {
+        fn selesai_sync(&self, klien: SesiKlien, s: SelesaiSync) -> Fut<'_, Hasil<TulisSync>> {
             Box::pin(async move {
                 self.cek()?;
                 let akhir = akhir_sync(&s.hasil);
