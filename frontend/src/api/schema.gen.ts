@@ -352,8 +352,8 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Deactivate a client (K-20): cancel queued, fail waiting-for-retry, expire
-         *     the rest. Same numbers go to the config audit.
+         * Deactivate a client (K-20): cancel queued, fail waiting for retry; in-flight
+         *     requests are left untouched and expire by TTL. Same numbers go to the config audit.
          */
         post: operations["nonaktifkanClient"];
         delete?: never;
@@ -471,8 +471,8 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Revoke a credential (K-20): cancel queued, fail waiting for retry, expire
-         *     the rest.
+         * Revoke a credential (K-20): cancel queued, fail waiting for retry; in-flight
+         *     requests are left untouched and expire by TTL.
          */
         post: operations["cabutCredential"];
         delete?: never;
@@ -1674,10 +1674,16 @@ export interface components {
             body_template: string;
             /**
              * Format: int64
-             * @description Fixed 1 in F0.
+             * @description 1 in F0; 2 in F1. Mirrors `ProviderConfig::config_schema_version`.
              * @example 1
              */
             config_schema_version: number;
+            /**
+             * @description Data balikan configuration block, present only for documents with
+             *     config_schema_version = 2. Mirrors `ProviderConfig::data_balikan` so a
+             *     read pre-fills the edit form and the full-replacement PUT keeps it.
+             */
+            data_balikan?: Record<string, never>;
             log_mode: components["schemas"]["LogMode"];
             /** @description HTTP method the provider call uses (ADR-0002 D1). */
             metode: components["schemas"]["MetodeProvider"];
@@ -1717,10 +1723,15 @@ export interface components {
             body_template: string;
             /**
              * Format: int64
-             * @description Fixed 1 in F0; any other value is 422.
+             * @description 1 in F0; 2 in F1. Other values are 422.
              * @example 1
              */
             config_schema_version: number;
+            /**
+             * @description Data balikan configuration block; only valid when config_schema_version = 2 (AC-20).
+             *     Ignored for version 1; required and validated for version 2.
+             */
+            data_balikan?: Record<string, never>;
             log_mode: components["schemas"]["LogMode"];
             /**
              * @description HTTP method the provider call uses. `GET` with a body is allowed

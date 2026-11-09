@@ -192,14 +192,15 @@ pub fn validasi_template(
 
 /// Version gate for a stored configuration document (V-05, AC-13).
 ///
-/// F0 only writes and reads version 1. An unknown version is a 422, never a
-/// silent upgrade and never a guess: by ADR-0001 rev 6, adding a field is what
-/// bumps this number, so a version F0 does not know may carry fields whose
-/// meaning changed.
+/// F0 writes and reads version 1. F1 adds version 2 (data_balikan block in AC-20).
+/// An unknown version is a 422, never a silent upgrade and never a guess:
+/// by ADR-0001 rev 6, adding a field is what bumps this number, so a version
+/// this release does not know may carry fields whose meaning changed.
 pub const CONFIG_SCHEMA_VERSION_F0: i64 = 1;
+pub const CONFIG_SCHEMA_VERSION_F1: i64 = 2;
 
 pub fn validasi_config_schema_version(field: &str, versi: i64) -> Result<(), TemplateError> {
-    if versi == CONFIG_SCHEMA_VERSION_F0 {
+    if versi == CONFIG_SCHEMA_VERSION_F0 || versi == CONFIG_SCHEMA_VERSION_F1 {
         Ok(())
     } else {
         Err(TemplateError {
@@ -403,12 +404,14 @@ mod tests {
     }
 
     #[test]
-    fn versi_skema_selain_satu_ditolak() {
-        assert_eq!(
-            validasi_config_schema_version("/config_schema_version", 1),
-            Ok(())
-        );
-        for v in [0, 2, 99] {
+    fn versi_skema_selain_satu_dan_dua_ditolak() {
+        for v in [1, 2] {
+            assert_eq!(
+                validasi_config_schema_version("/config_schema_version", v),
+                Ok(())
+            );
+        }
+        for v in [0, 3, 99] {
             let e = validasi_config_schema_version("/config_schema_version", v).unwrap_err();
             assert_eq!(e.kode, "config_schema_version_tidak_didukung");
             assert_eq!(e.field, "/config_schema_version");
