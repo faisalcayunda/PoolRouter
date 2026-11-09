@@ -666,7 +666,7 @@ fn hasil_token(
 ) -> Result<HasilToken, GalatStore> {
     let kode = teks(&j[0])?;
     let terpilih = if j.len() > 7 {
-        teks(j.get(7)).ok()
+        teks(&j[7]).ok()
     } else {
         None
     };

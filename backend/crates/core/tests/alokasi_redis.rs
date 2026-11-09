@@ -165,7 +165,8 @@ async fn intake_alokasi_menegakkan_antre_dp() {
 }
 
 // T2e AC-10: Metrik pinjaman naik saat sumber ≠ sendiri melalui ambil_token_alokasi Lua.
-#[tokio::test]
+// block_in_place panik di runtime current_thread, jadi tes ini wajib multi_thread.
+#[tokio::test(flavor = "multi_thread")]
 #[ignore = "butuh Redis: make -C backend uji-redis"]
 async fn pinjaman_total_naikkan_counter_via_lua() {
     let (_c, store) = siap().await;
