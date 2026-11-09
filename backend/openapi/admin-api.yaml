@@ -733,8 +733,8 @@ paths:
       tags:
       - admin
       summary: |-
-        Deactivate a client (K-20): cancel queued, fail waiting-for-retry, expire
-        the rest. Same numbers go to the config audit.
+        Deactivate a client (K-20): cancel queued, fail waiting for retry; in-flight
+        requests are left untouched and expire by TTL. Same numbers go to the config audit.
       operationId: nonaktifkanClient
       parameters:
       - name: id
@@ -1008,8 +1008,8 @@ paths:
       tags:
       - admin
       summary: |-
-        Revoke a credential (K-20): cancel queued, fail waiting for retry, expire
-        the rest.
+        Revoke a credential (K-20): cancel queued, fail waiting for retry; in-flight
+        requests are left untouched and expire by TTL.
       operationId: cabutCredential
       parameters:
       - name: id

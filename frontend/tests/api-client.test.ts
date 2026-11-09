@@ -184,4 +184,37 @@ describe('admin API client', () => {
       client(fetchImpl).eksporLog({ nik: '1', dari: 'a', sampai: 'b', alasan: 'x' }),
     ).rejects.toMatchObject({ status: 422, kode: 'ekspor_terlalu_besar' });
   });
+  it('carries Retry-After from a throttled login as whole seconds', async () => {
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValue(
+        jsonResponse({ status: 429, kode: 'login_dibatasi' }, 429, { 'Retry-After': '37' }),
+      );
+
+    await expect(
+      createApiClient({ fetch: fetchImpl as never }).login({ username: 'a', password: 'b' }),
+    ).rejects.toMatchObject({ status: 429, kode: 'login_dibatasi', retryAfterDetik: 37 });
+  });
+
+  it('reads an HTTP-date Retry-After and leaves it null when the header is absent', async () => {
+    const sampai = new Date(Date.now() + 40_000).toUTCString();
+    const bertanggal = vi
+      .fn()
+      .mockResolvedValue(
+        jsonResponse({ status: 429, kode: 'login_dibatasi' }, 429, { 'Retry-After': sampai }),
+      );
+    const polos = vi
+      .fn()
+      .mockResolvedValue(jsonResponse({ status: 429, kode: 'login_dibatasi' }, 429));
+
+    const errTanggal = await createApiClient({ fetch: bertanggal as never })
+      .login({ username: 'a', password: 'b' })
+      .catch((error: unknown) => error as ApiError);
+    expect(errTanggal).toMatchObject({ status: 429 });
+    expect((errTanggal as ApiError).retryAfterDetik).toBeGreaterThan(30);
+
+    await expect(
+      createApiClient({ fetch: polos as never }).login({ username: 'a', password: 'b' }),
+    ).rejects.toMatchObject({ status: 429, retryAfterDetik: null });
+  });
 });

@@ -1,4 +1,4 @@
-import { expect, expectNoAxeViolations, test } from './fixtures';
+import { expect, expectNoAxeViolations, stubSesi, test } from './fixtures';
 import type { Page } from '@playwright/test';
 
 /**
@@ -81,6 +81,7 @@ async function stubAuditorApi(page: Page): Promise<Recorded[]> {
       body: JSON.stringify(LOG_PAGE),
     });
   });
+  await stubSesi(page);
   return calls;
 }
 

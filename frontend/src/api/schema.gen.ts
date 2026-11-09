@@ -352,8 +352,8 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Deactivate a client (K-20): cancel queued, fail waiting-for-retry, expire
-         *     the rest. Same numbers go to the config audit.
+         * Deactivate a client (K-20): cancel queued, fail waiting for retry; in-flight
+         *     requests are left untouched and expire by TTL. Same numbers go to the config audit.
          */
         post: operations["nonaktifkanClient"];
         delete?: never;
@@ -471,8 +471,8 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Revoke a credential (K-20): cancel queued, fail waiting for retry, expire
-         *     the rest.
+         * Revoke a credential (K-20): cancel queued, fail waiting for retry; in-flight
+         *     requests are left untouched and expire by TTL.
          */
         post: operations["cabutCredential"];
         delete?: never;
