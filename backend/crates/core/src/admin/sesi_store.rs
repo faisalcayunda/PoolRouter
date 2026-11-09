@@ -29,6 +29,9 @@ use super::sesi::{
 };
 use super::token::HashToken;
 
+/// Satu baris `admin_session`: sesi, pengguna, dibuat, terakhir aktif, dan stempel MFA.
+type BarisSesi = (Uuid, Uuid, DateTime<Utc>, DateTime<Utc>, Option<DateTime<Utc>>);
+
 /// A session as read back: the owner, plus the two instants the rules need.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SesiTersimpan {
@@ -164,7 +167,7 @@ impl SesiStore {
     /// invisible, so deactivating a user ends their sessions even before the
     /// explicit revocation runs.
     pub async fn baca(&self, hash: &HashToken) -> Result<Option<SesiTersimpan>, GalatSesi> {
-        let baris: Option<(Uuid, Uuid, DateTime<Utc>, DateTime<Utc>, Option<DateTime<Utc>>)> = sqlx::query_as(
+        let baris: Option<BarisSesi> = sqlx::query_as(
             "SELECT s.sesi_id, s.pengguna_id, s.dibuat_at, s.terakhir_aktif_at, s.mfa_terverifikasi_at \
              FROM admin_session s JOIN admin_user u USING (pengguna_id) \
              WHERE s.token_sha256 = decode($1, 'hex') AND u.aktif",
