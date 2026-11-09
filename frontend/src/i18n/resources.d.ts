@@ -443,6 +443,66 @@ export default interface Resources {
         "info": "Hanya platform admin yang bisa mengubah nilai ini. Setiap perubahan dicatat di audit (siapa, kapan, apa).",
         "threshold_help": "Dikirim ke Dukcapil dari sini. Client tidak boleh mengirim TRESHOLD (ditolak 422)."
       },
+      "form": {
+        "back": "Kembali ke daftar provider",
+        "data_balikan": {
+          "heading": "Data balikan",
+          "help": "Wajib untuk skema versi 2. Blok ini ikut disimpan utuh setiap kali provider disimpan.",
+          "label": "Blok data balikan (JSON)"
+        },
+        "error": {
+          "alasan_rentang": "Alasan wajib diisi, 10–500 karakter.",
+          "config_schema_version_tidak_didukung": "Versi skema konfigurasi tidak didukung.",
+          "data_balikan_skema_terlalu_baru": "Versi skema data balikan belum didukung.",
+          "data_balikan_skema_terlalu_tua": "Versi skema data balikan terlalu lama.",
+          "data_balikan_tidak_sah": "Data balikan belum sah: {{nama}}",
+          "https_wajib": "Alamat harus diawali https://.",
+          "json_bukan_daftar": "Isi harus berupa daftar JSON (diawali kurung siku).",
+          "json_bukan_objek": "Isi harus berupa objek JSON (diawali kurung kurawal).",
+          "json_tidak_sah": "JSON belum sah. Periksa tanda kutip, koma, dan kurung.",
+          "required_untuk_versi_2": "Data balikan wajib diisi untuk skema versi 2.",
+          "sudah_dipakai": "Nama ini sudah dipakai provider lain.",
+          "summary": "Periksa {{jumlah}} isian yang ditandai.",
+          "template_parameter_tidak_ada": "Parameter {{nama}} dirujuk template tetapi belum ada di daftar parameter.",
+          "template_placeholder_tidak_dikenal": "Placeholder tidak dikenal. Awalan yang dikenal: input, endpoint, dan secret.",
+          "template_tidak_seimbang": "Kurung kurawal placeholder di template tidak seimbang.",
+          "template_tidak_seimbang_posisi": "Kurung kurawal placeholder tidak seimbang di baris {{baris}}, kolom {{kolom}}.",
+          "umum": "Isian ini belum sah (kode {{kode}}, lokasi {{lokasi}}).",
+          "wajib": "Wajib diisi."
+        },
+        "log_mode": {
+          "full_payload": "Payload lengkap",
+          "label": "Mode log",
+          "metadata_only": "Metadata saja"
+        },
+        "parameters": {
+          "help": "Daftar objek berisi nama, nilai, dan rule. Jenis rule: regex, enum, panjang, format_tanggal.",
+          "label": "Parameter dan rule (JSON)"
+        },
+        "reason": {
+          "heading": "Alasan",
+          "help": "{{jumlah}}/{{batas}} karakter, minimal 10. Dicatat di audit konfigurasi dan tidak disimpan di form.",
+          "label": "Alasan perubahan"
+        },
+        "save_edit": "Simpan perubahan",
+        "save_new": "Simpan provider",
+        "saved_version": "Provider {{nama}} tersimpan sebagai versi {{versi}}.",
+        "saving": "Menyimpan…",
+        "subtitle": "Setiap simpan membuat versi baru dari seluruh isian di bawah. Versi lama tetap tersimpan dan request yang sudah mengantre memakai versi saat masuk antrean.",
+        "title_edit": "Ubah provider {{nama}}",
+        "tls": {
+          "ca_kustom": "CA kustom",
+          "label": "Kepercayaan TLS",
+          "pin_spki": "Pin SPKI",
+          "system": "Sertifikat sistem"
+        },
+        "url_help": "Wajib diawali https://.",
+        "version": {
+          "label": "Versi skema konfigurasi",
+          "v1": "Versi 1 (F0)",
+          "v2": "Versi 2 (F1, dengan data balikan)"
+        }
+      },
       "general": {
         "auth": {
           "body": "Kredensial di body (variabel secret)",
@@ -454,6 +514,17 @@ export default interface Resources {
         "method": "Metode",
         "name": "Nama provider",
         "url": "Alamat endpoint (URL)"
+      },
+      "list": {
+        "col": {
+          "actions": "Aksi",
+          "method": "Metode",
+          "name": "Nama",
+          "status": "Status",
+          "version": "Versi"
+        },
+        "edit_aria": "Ubah provider {{nama}}",
+        "inactive": "Nonaktif"
       },
       "page": {
         "add": "Tambah provider",
@@ -620,6 +691,11 @@ export default interface Resources {
       }
     },
     "secret": {
+      "add": {
+        "name_help": "Diawali huruf, lalu huruf, angka, atau garis bawah. Dirujuk template sebagai secret.NAMA.",
+        "save": "Simpan secret",
+        "value": "Nilai"
+      },
       "col": {
         "actions": "Aksi",
         "changed": "Diubah",
@@ -630,13 +706,23 @@ export default interface Resources {
       "delete": {
         "blocked": {
           "body": "{{nama}} masih dipakai oleh provider aktif: {{daftar}}. Nonaktifkan atau ubah provider itu dulu, lalu hapus secret ini.",
+          "short": "{{nama}} masih dipakai provider aktif. Ubah atau nonaktifkan provider itu dulu, lalu hapus secret ini.",
           "title": "Secret masih dipakai"
-        }
+        },
+        "body": "Secret dihapus permanen. Template yang merujuknya akan ditolak saat disimpan.",
+        "confirm": "Hapus secret",
+        "title": "Hapus secret {{nama}}?"
       },
       "empty": {
         "body": "Secret menyimpan kredensial provider, misalnya USER_ID dan PASSWORD. Tambahkan secret sebelum membuat template provider.",
         "title": "Belum ada secret"
       },
+      "error": {
+        "name_exists": "Secret dengan nama ini sudah ada. Pakai Ganti untuk mengganti nilainya.",
+        "name_format": "Nama diawali huruf, lalu huruf, angka, atau garis bawah, paling panjang 64 karakter.",
+        "value_required": "Nilai wajib diisi."
+      },
+      "masked": "Tersamar",
       "page": {
         "add": "Tambah secret",
         "replace": "Ganti",
@@ -646,12 +732,22 @@ export default interface Resources {
       },
       "replace": {
         "body": "Nilai lama tidak bisa dilihat. Nilai baru langsung menggantikannya.",
+        "confirm": "Ganti nilai",
         "new_value": "Nilai baru",
         "title": "Ganti secret {{nama}}"
       },
+      "row": {
+        "delete_aria": "Hapus secret {{nama}}",
+        "replace_aria": "Ganti nilai secret {{nama}}"
+      },
       "snackbar": {
-        "saved": "Secret tersimpan"
-      }
+        "deleted": "Secret {{nama}} dihapus.",
+        "replaced": "Nilai secret {{nama}} sudah diganti.",
+        "saved": "Secret tersimpan",
+        "saved_named": "Secret {{nama}} tersimpan."
+      },
+      "unused": "Tidak dipakai",
+      "used_by_other": "{{count, number}} provider"
     },
     "secret_once": {
       "dialog": {

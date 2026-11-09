@@ -20,6 +20,19 @@ const AuditScreen = lazy(() =>
 const QuotaScreen = lazy(() =>
   import('../features/quota/QuotaScreen').then((m) => ({ default: m.QuotaScreen })),
 );
+const ProviderListScreen = lazy(() =>
+  import('../features/provider/ProviderListScreen').then((m) => ({
+    default: m.ProviderListScreen,
+  })),
+);
+const ProviderFormScreen = lazy(() =>
+  import('../features/provider/ProviderFormScreen').then((m) => ({
+    default: m.ProviderFormScreen,
+  })),
+);
+const SecretScreen = lazy(() =>
+  import('../features/secret/SecretScreen').then((m) => ({ default: m.SecretScreen })),
+);
 
 function NotFound(): ReactNode {
   const { t } = useTranslation();
@@ -35,6 +48,9 @@ function NotFound(): ReactNode {
 /** `/log/<kode_transaksi>` — S11 opened on one transaction (section 7). */
 const LOG_DETAIL = /^\/log\/([^/]+)$/;
 
+/** `/provider/<id>` — form sunting provider (S03–S04, ARC-101); `/provider/baru` membuat baru. */
+const PROVIDER_DETAIL = /^\/provider\/([^/]+)$/;
+
 /** Path → screen. Longest exact match wins; anything else renders the not-found panel. */
 export function ScreenForPath({ pathname }: { pathname: string }): ReactNode {
   const clean = pathname.replace(/\/+$/, '') || '/';
@@ -42,6 +58,11 @@ export function ScreenForPath({ pathname }: { pathname: string }): ReactNode {
   if (logDetail) {
     // The code is never a NIK (section 18.3), so it is safe to keep in the URL.
     return <LogPageScreen initialCode={decodeURIComponent(logDetail[1] ?? '')} />;
+  }
+  const providerDetail = PROVIDER_DETAIL.exec(clean);
+  if (providerDetail) {
+    const id = decodeURIComponent(providerDetail[1] ?? '');
+    return <ProviderFormScreen providerId={id === 'baru' ? undefined : id} />;
   }
   switch (clean) {
     case '/':
@@ -52,6 +73,10 @@ export function ScreenForPath({ pathname }: { pathname: string }): ReactNode {
       return <AuditScreen />;
     case '/kuota':
       return <QuotaScreen />;
+    case '/provider':
+      return <ProviderListScreen />;
+    case '/secret':
+      return <SecretScreen />;
     default:
       return <NotFound />;
   }

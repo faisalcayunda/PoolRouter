@@ -8,9 +8,10 @@
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 
+use poolrouter_adapter_provider::GagalPanggilProvider;
 use poolrouter_adapter_provider::client::{
     Allowlist, BATAS_CONNECT, BATAS_TOTAL, GalatKlien, ProviderClientConfig, TlsTrust,
-    build_provider_client, build_provider_client_with_config,
+    build_provider_client, build_provider_client_with_config, kirim,
 };
 use rcgen::{BasicConstraints, CertificateParams, DnType, IsCa, KeyPair};
 use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified};
@@ -534,4 +535,54 @@ async fn timeout_dengan_config_total_pendek() {
         err.is_timeout(),
         "error harus timeout, bukan error lain: {err:?}"
     );
+}
+
+/// ARC-66: `kirim` memetakan kegagalan verifikasi sertifikat ke `Tls` (bukan
+/// `Koneksi`), sehingga jalur sync menjawab `provider_error_permanen` dan tidak
+/// ada body yang terkirim (ADR-0002 D5, uji 6).
+#[tokio::test]
+async fn kirim_pin_salah_dipetakan_tls_tanpa_data_aplikasi() {
+    let s = sertifikat("a");
+    let server = mock(&s, OK.to_vec()).await;
+    let klien = build_provider_client(TlsTrust::PinSpki {
+        pins: vec![[0x22u8; 32]],
+    })
+    .unwrap();
+    let hasil = kirim(
+        &klien,
+        "GET",
+        &server.url("/uji"),
+        Some("{\"USER_ID\":\"kredensial-sintetis\"}".to_owned()),
+        BATAS_TOTAL,
+    )
+    .await;
+    assert!(
+        matches!(hasil, Err(GagalPanggilProvider::Tls(_))),
+        "{hasil:?}"
+    );
+    assert!(server.data().is_empty(), "{:?}", server.data());
+}
+
+/// ARC-66: GET dengan body lewat `kirim` sampai ke mock dan respons dikembalikan
+/// mentah apa pun kodenya.
+#[tokio::test]
+async fn kirim_ca_kustom_mengembalikan_respons_mentah() {
+    let s = sertifikat("a");
+    let server = mock(&s, OK.to_vec()).await;
+    let klien = build_provider_client(TlsTrust::CaKustom {
+        ca_pem: s.ca_pem.into_bytes(),
+    })
+    .unwrap();
+    let r = kirim(
+        &klien,
+        "GET",
+        &server.url("/uji"),
+        Some("{\"NIK\":\"0012345678901234\"}".to_owned()),
+        BATAS_TOTAL,
+    )
+    .await
+    .unwrap();
+    assert_eq!(r.status, 200);
+    assert_eq!(r.body, b"ok");
+    assert!(posisi(&server.data(), b"0012345678901234").is_some());
 }

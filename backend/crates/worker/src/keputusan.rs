@@ -10,91 +10,13 @@
 //! 2. [`status_final`]: hasil + kebijakan pool → `done`, `failed` dengan
 //!    `failure_reason`, atau kembali `queued` dengan `not_before` (full jitter).
 
-use std::collections::BTreeMap;
-
 use chrono::{DateTime, Utc};
-use poolrouter_adapter_provider::{
-    GagalPanggilProvider, baca_respons, dari_status_http, kelas_error,
-};
 use poolrouter_core::retry::{ErrorClass, KebijakanBackoff, KeputusanRetry, SumberAcakBackoff};
-use serde_json::{Map, Value};
+use serde_json::Value;
 
-use crate::render::KonfigurasiRespons;
-use crate::upstream::ResponsMentah;
-
-/// Hasil satu percobaan, siap ditulis ke `transaction_log`.
-#[derive(Debug, Clone, PartialEq)]
-pub struct Akhir {
-    /// `berhasil`, `gagal_provider`, atau `gagal_jaringan`.
-    pub status_akses: &'static str,
-    pub error_class: Option<ErrorClass>,
-    pub http_status: Option<u16>,
-    /// Provider menjawab (ada respons HTTP); mengisi `responded_at`.
-    pub ada_respons: bool,
-    /// Output `done` (peta elemen → `HasilElemen`), hanya bila berhasil.
-    pub output: Option<Value>,
-}
-
-fn gagal(kelas: ErrorClass, http_status: Option<u16>) -> Akhir {
-    let status_akses = match kelas {
-        ErrorClass::Timeout | ErrorClass::Koneksi | ErrorClass::Tls => "gagal_jaringan",
-        _ => "gagal_provider",
-    };
-    Akhir {
-        status_akses,
-        error_class: Some(kelas),
-        http_status,
-        ada_respons: http_status.is_some(),
-        output: None,
-    }
-}
-
-/// Petakan hasil panggilan. `input` adalah field input client, dipakai untuk
-/// membuang elemen yang tidak dikirim client (P-1) setelah seluruh elemen
-/// lolos parse fail-closed.
-pub fn nilai_hasil(
-    hasil: &Result<ResponsMentah, GagalPanggilProvider>,
-    konfigurasi: &KonfigurasiRespons,
-    input: &BTreeMap<String, String>,
-) -> Akhir {
-    let respons = match hasil {
-        Err(g) => return gagal(kelas_error(g), None),
-        Ok(r) => r,
-    };
-    if !(200..300).contains(&respons.status) {
-        let kelas = kelas_error(&dari_status_http(respons.status));
-        return gagal(kelas, Some(respons.status));
-    }
-    let elemen = match baca_respons(&respons.body, &konfigurasi.status_skor) {
-        Ok(e) => e,
-        Err(_) => return gagal(ErrorClass::ResponsTidakValid, Some(respons.status)),
-    };
-    let mut output = Map::new();
-    for e in elemen {
-        let dibuang = konfigurasi
-            .output
-            .iter()
-            .find(|o| o.nama == e.elemen)
-            .is_some_and(|o| {
-                o.abaikan_jika_input_kosong
-                    && input
-                        .get(&o.parameter_input_sumber)
-                        .is_none_or(|v| v.trim().is_empty())
-            });
-        if dibuang {
-            continue;
-        }
-        let nilai = serde_json::to_value(e.hasil).unwrap_or(Value::Null);
-        output.insert(e.elemen, nilai);
-    }
-    Akhir {
-        status_akses: "berhasil",
-        error_class: None,
-        http_status: Some(respons.status),
-        ada_respons: true,
-        output: Some(Value::Object(output)),
-    }
-}
+// Langkah 1 dipindah ke adapter (ARC-66) dan dipakai juga oleh jalur sync
+// webserver; re-export menjaga path `crate::keputusan::*`.
+pub use poolrouter_adapter_provider::hasil::{Akhir, nilai_hasil};
 
 /// Status request setelah percobaan.
 #[derive(Debug, Clone, PartialEq)]
@@ -133,10 +55,13 @@ pub fn status_final(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::render::baca_respons_skema;
+    use crate::render::{KonfigurasiRespons, baca_respons_skema};
+    use crate::upstream::ResponsMentah;
     use chrono::{Duration, TimeZone};
+    use poolrouter_adapter_provider::GagalPanggilProvider;
     use poolrouter_core::retry::AcakBatasAtas;
     use serde_json::json;
+    use std::collections::BTreeMap;
 
     fn konf() -> KonfigurasiRespons {
         baca_respons_skema(&json!({

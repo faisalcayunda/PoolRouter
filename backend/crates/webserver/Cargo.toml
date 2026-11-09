@@ -21,6 +21,9 @@ path = "src/bin/openapi_gen.rs"
 
 [dependencies]
 poolrouter-core = { workspace = true }
+# Jalur sync: render template, klien TLS per provider, pemetaan hasil (ARC-66).
+poolrouter-adapter-provider = { path = "../adapter-provider" }
+reqwest = { workspace = true }
 anyhow = { workspace = true }
 tokio = { workspace = true }
 tokio-util = { workspace = true }
@@ -53,3 +56,5 @@ regex = { workspace = true }
 tracing-subscriber = { workspace = true }
 # Membaca `openapi/*.yaml` hasil generate di test AC-8.
 yaml_serde = { workspace = true }
+# Mock provider HTTP untuk jalur sync end-to-end (ARC-66).
+wiremock = { workspace = true }

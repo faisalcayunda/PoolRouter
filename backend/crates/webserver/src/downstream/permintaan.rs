@@ -187,6 +187,9 @@ pub struct MulaiSync {
     pub metadata: Value,
     pub nik: Option<String>,
     pub referensi_client: Option<String>,
+    /// Keluaran log render (secret sebagai penanda), hanya pada `full_payload`
+    /// (ADR-0001 bagian 7, R-05).
+    pub request_payload: Option<Value>,
 }
 
 /// Jawaban provider yang sudah dibaca adapter.
@@ -249,9 +252,13 @@ pub fn akhir_sync(hasil: &HasilPanggilan) -> AkhirSync {
 pub struct SelesaiSync {
     pub request_id: Uuid,
     pub kode_transaksi: Uuid,
+    /// Waktu hasil diterima; `transaction_log.responded_at` hanya diisi bila
+    /// provider menjawab HTTP (R-07: kegagalan TLS dan timeout tanpa respons).
     pub responded_at: DateTime<Utc>,
     pub duration_ms: i32,
     pub hasil: HasilPanggilan,
+    /// Hanya pada `full_payload` dan bila provider menjawab.
+    pub response_payload: Option<Value>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -814,8 +821,8 @@ impl PgPermintaan {
         sqlx::query(
             "INSERT INTO transaction_log (kode_transaksi, request_id, attempt_no, provider_id, \
                upstream_pool_id, client_id, downstream_endpoint_id, provider_config_version, \
-               endpoint_config_version, nik, requested_at, log_mode, worker_id) \
-             VALUES ($1, $2, 1, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'webserver')",
+               endpoint_config_version, nik, requested_at, log_mode, request_payload, worker_id) \
+             VALUES ($1, $2, 1, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 'webserver')",
         )
         .bind(m.kode_transaksi)
         .bind(m.request_id)
@@ -828,6 +835,7 @@ impl PgPermintaan {
         .bind(m.nik.as_deref())
         .bind(m.requested_at)
         .bind(rantai.log_mode.as_str())
+        .bind(m.request_payload.map(Json))
         .execute(&mut *tx)
         .await
         .map_err(|e| {
@@ -857,15 +865,17 @@ impl PgPermintaan {
         sqlx::query(
             "UPDATE transaction_log \
                 SET responded_at = $2, duration_ms = $3, status_akses = $4, error_class = $5, \
-                    provider_http_status = $6 \
+                    provider_http_status = $6, response_payload = $7 \
               WHERE kode_transaksi = $1 AND status_akses IS NULL",
         )
         .bind(s.kode_transaksi)
-        .bind(s.responded_at)
+        // `chk_tls`/R-07: tanpa respons HTTP, `responded_at` NULL.
+        .bind(http.is_some().then_some(s.responded_at))
         .bind(s.duration_ms.max(0))
         .bind(akhir.status_akses)
         .bind(akhir.error_class)
         .bind(http)
+        .bind(s.response_payload.clone().map(Json))
         .execute(&mut *tx)
         .await
         .map_err(|e| {

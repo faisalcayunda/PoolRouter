@@ -9,9 +9,14 @@
 //!   rules to the pilot parser in `poolrouter_core` (D3, ARC-46).
 //! - [`error`]: map a failed call onto the shared `retry.rs` table (ARC-4).
 //! - [`client`]: build and configure HTTP clients per provider trust mode (ADR-0004 section 4.2).
+//! - [`dokumen`]: dokumen konfigurasi provider dan render template ganda
+//!   kabel/log (dipakai worker dan jalur sync, ARC-66).
+//! - [`hasil`]: respons mentah → `status_akses`/`error_class`/output (ARC-66).
 
 pub mod client;
+pub mod dokumen;
 pub mod error;
+pub mod hasil;
 pub mod respons;
 pub mod template;
 
