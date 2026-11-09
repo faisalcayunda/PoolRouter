@@ -6,11 +6,17 @@
 //! `POOLROUTER_TEST_AMQP`. Setiap uji memakai antrean upstream baru, jadi
 //! urutan uji tidak saling memengaruhi.
 //!
+//! Uji AC-2 memutus koneksi dari sisi broker lewat management API RabbitMQ
+//! (`POOLROUTER_TEST_AMQP_MGMT`, `POOLROUTER_TEST_AMQP_MGMT_AUTH`) memakai
+//! HTTP/1.1 mentah di atas `tokio::net::TcpStream`, supaya tidak menambah
+//! dependensi (lock `--locked`).
+//!
 //! Efek ganda pesan duplikat di PostgreSQL (compare-and-set) dibuktikan uji
 //! handler `duplikat_2000_tanpa_panggilan_ganda` (AC-12) di crate worker; di
 //! sini yang dibuktikan sisi broker: kedua salinan sampai, keduanya di-ack.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
+use std::str::FromStr;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -18,10 +24,13 @@ use std::time::Duration;
 use lapin::options::{BasicGetOptions, QueueDeclareOptions};
 use lapin::types::FieldTable;
 use lapin::{Channel, Connection, ConnectionProperties};
-use poolrouter_core::queue::{JobConsumer, JobPublisher, QueueError, nama_antrean_upstream};
-use poolrouter_queue_apalis::ApalisQueue;
+use poolrouter_core::queue::{
+    JobConsumer, JobPublisher, QueueError, StatusKonsumen, nama_antrean_upstream,
+};
 use poolrouter_queue_apalis::topologi::nama_dlq;
-use tokio::sync::mpsc;
+use poolrouter_queue_apalis::{ApalisQueue, PREFETCH_BAWAAN, TOLERANSI_LIVENESS};
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::sync::{mpsc, watch};
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
@@ -85,11 +94,29 @@ where
     H: Fn(Uuid) -> F + Send + Sync + 'static,
     F: std::future::Future<Output = Result<(), QueueError>> + Send + 'static,
 {
+    consumer_dengan(antrean, PREFETCH_BAWAAN, None, handler).await
+}
+
+/// [`consumer`] dengan prefetch dan status liveness eksplisit.
+async fn consumer_dengan<H, F>(
+    antrean: &str,
+    prefetch: u16,
+    status: Option<Arc<StatusKonsumen>>,
+    handler: H,
+) -> (CancellationToken, JoinHandle<Result<(), QueueError>>)
+where
+    H: Fn(Uuid) -> F + Send + Sync + 'static,
+    F: std::future::Future<Output = Result<(), QueueError>> + Send + 'static,
+{
     let token = CancellationToken::new();
-    let q = ApalisQueue::connect(&uri())
+    let mut q = ApalisQueue::connect(&uri())
         .await
         .expect("connect consumer")
-        .dengan_penghenti(token.clone());
+        .dengan_penghenti(token.clone())
+        .dengan_prefetch(prefetch);
+    if let Some(status) = status {
+        q = q.dengan_status(status);
+    }
     let antrean = antrean.to_owned();
     let tugas = tokio::spawn(async move { q.run(&antrean, handler).await });
     (token, tugas)
@@ -330,4 +357,270 @@ async fn shutdown_menunggu_handler_berjalan() {
         0,
         "pesan di-ack, tidak kembali"
     );
+}
+
+/// Tunggu sampai `kondisi` benar, paling lama [`BATAS_TUNGGU`].
+async fn tunggu(pesan: &str, kondisi: impl Fn() -> bool) {
+    let batas = tokio::time::Instant::now() + BATAS_TUNGGU;
+    while !kondisi() {
+        assert!(tokio::time::Instant::now() < batas, "{pesan}");
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+}
+
+/// Tutup semua koneksi milik user uji dari sisi broker
+/// (`DELETE /api/connections/username/<user>`). Ikut menutup koneksi
+/// penerbit dan pengamat; keduanya dibuka ulang oleh pemanggil bila perlu.
+async fn putuskan_dari_broker() {
+    let alamat = std::env::var("POOLROUTER_TEST_AMQP_MGMT")
+        .expect("POOLROUTER_TEST_AMQP_MGMT (make -C backend uji-amqp)");
+    let auth = std::env::var("POOLROUTER_TEST_AMQP_MGMT_AUTH")
+        .expect("POOLROUTER_TEST_AMQP_MGMT_AUTH (make -C backend uji-amqp)");
+    let user = lapin::uri::AMQPUri::from_str(&uri())
+        .expect("URI uji")
+        .authority
+        .userinfo
+        .username;
+    let mut tcp = tokio::net::TcpStream::connect(alamat.as_str())
+        .await
+        .expect("koneksi management API");
+    let permintaan = format!(
+        "DELETE /api/connections/username/{user} HTTP/1.1\r\nHost: {alamat}\r\n\
+         Authorization: Basic {auth}\r\nX-Reason: uji AC-2\r\n\
+         Content-Length: 0\r\nConnection: close\r\n\r\n"
+    );
+    tcp.write_all(permintaan.as_bytes())
+        .await
+        .expect("kirim permintaan management");
+    let mut jawaban = Vec::new();
+    tokio::time::timeout(BATAS_TUNGGU, tcp.read_to_end(&mut jawaban))
+        .await
+        .expect("management API tidak menjawab")
+        .expect("baca jawaban management");
+    let baris_status = String::from_utf8_lossy(&jawaban)
+        .lines()
+        .next()
+        .unwrap_or_default()
+        .to_owned();
+    assert!(
+        baris_status.starts_with("HTTP/1.1 2"),
+        "management API menolak penutupan koneksi: {baris_status}"
+    );
+}
+
+/// AC-2 (a), W3: koneksi consumer diputus broker saat pesan sedang diproses.
+/// Consumer menyambung ulang sendiri dengan backoff di proses yang sama (task
+/// `run` tidak pernah selesai), pesan yang belum di-ack dikirim ulang tepat
+/// sekali, dan efek akhirnya (tiruan compare-and-set) terjadi satu kali.
+/// Liveness tetap hidup selama reconnect normal.
+#[tokio::test(flavor = "multi_thread")]
+#[ignore = "butuh RabbitMQ: make -C backend uji-amqp"]
+async fn koneksi_diputus_broker_consumer_sambung_ulang_dan_pesan_dikirim_ulang() {
+    let antrean = antrean_baru();
+    let q = penerbit(&antrean).await;
+    let id = Uuid::now_v7();
+    q.publish(&antrean, id).await.expect("publish");
+
+    let status = StatusKonsumen::baru(TOLERANSI_LIVENESS);
+    let panggilan = Arc::new(AtomicUsize::new(0));
+    let klaim = Arc::new(Mutex::new(HashSet::new()));
+    let efek = Arc::new(AtomicUsize::new(0));
+    let (lepas_tx, lepas_rx) = watch::channel(false);
+    let (tx, mut rx) = mpsc::unbounded_channel();
+    let (p2, k2, e2) = (
+        Arc::clone(&panggilan),
+        Arc::clone(&klaim),
+        Arc::clone(&efek),
+    );
+    let (token, tugas) = consumer_dengan(
+        &antrean,
+        PREFETCH_BAWAAN,
+        Some(Arc::clone(&status)),
+        move |id| {
+            let ke = p2.fetch_add(1, Ordering::SeqCst) + 1;
+            let _ = tx.send(id);
+            let (k3, e3) = (Arc::clone(&k2), Arc::clone(&e2));
+            let mut lepas = lepas_rx.clone();
+            async move {
+                if ke == 1 {
+                    // Handler pertama masih berjalan saat koneksi diputus.
+                    let _ = lepas.wait_for(|v| *v).await;
+                }
+                // "Commit": efek hanya untuk klaim pertama (compare-and-set).
+                if k3.lock().expect("kunci klaim").insert(id) {
+                    e3.fetch_add(1, Ordering::SeqCst);
+                }
+                Ok::<(), QueueError>(())
+            }
+        },
+    )
+    .await;
+    assert_eq!(terima(&mut rx).await, id);
+    tunggu("sesi consumer tidak tercatat tersambung", || {
+        status.jumlah_tersambung() == 1
+    })
+    .await;
+
+    putuskan_dari_broker().await;
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    // Handler pertama selesai sesudah koneksinya mati: ack-nya tidak sampai.
+    lepas_tx.send_replace(true);
+    tunggu("sesi lama tidak tercatat terputus", || {
+        status.jumlah_tersambung() == 0
+    })
+    .await;
+    assert!(
+        status.hidup(),
+        "reconnect normal tidak menggagalkan liveness"
+    );
+    assert!(!tugas.is_finished(), "consumer tidak boleh berhenti");
+
+    assert_eq!(terima(&mut rx).await, id, "pesan tak-ack dikirim ulang");
+    tunggu("consumer tidak tersambung ulang", || {
+        status.jumlah_tersambung() == 1
+    })
+    .await;
+    assert!(status.hidup());
+    assert!(!tugas.is_finished(), "sambung ulang tanpa restart");
+    hentikan(token, tugas).await;
+
+    assert_eq!(
+        panggilan.load(Ordering::SeqCst),
+        2,
+        "dikirim ulang tepat sekali"
+    );
+    assert_eq!(efek.load(Ordering::SeqCst), 1, "efek akhir tepat sekali");
+    let (_k, kanal) = pengamat().await;
+    assert_eq!(
+        jumlah_siap(&kanal, &antrean).await,
+        0,
+        "salinan ulang di-ack"
+    );
+    assert_eq!(jumlah_siap(&kanal, &nama_dlq(&antrean)).await, 0);
+}
+
+/// AC-2 (b), S7: SIGTERM saat 10 handler berjalan (prefetch 10). Consumer
+/// berhenti mengambil pesan, menunggu kesepuluh handler, meng-ack semuanya,
+/// lalu `run` kembali `Ok`: 0 pesan hilang, 0 eksekusi ganda.
+#[tokio::test(flavor = "multi_thread")]
+#[ignore = "butuh RabbitMQ: make -C backend uji-amqp"]
+async fn sigterm_dengan_10_handler_berjalan_tanpa_hilang_tanpa_ganda() {
+    const JUMLAH: usize = 10;
+    let antrean = antrean_baru();
+    let q = penerbit(&antrean).await;
+    let ids: Vec<Uuid> = (0..JUMLAH).map(|_| Uuid::now_v7()).collect();
+    for id in &ids {
+        q.publish(&antrean, *id).await.expect("publish");
+    }
+
+    let eksekusi: Arc<Mutex<HashMap<Uuid, usize>>> = Arc::default();
+    let (lepas_tx, lepas_rx) = watch::channel(false);
+    let (tx, mut rx) = mpsc::unbounded_channel();
+    let e2 = Arc::clone(&eksekusi);
+    let (token, tugas) = consumer_dengan(&antrean, JUMLAH as u16, None, move |id| {
+        let _ = tx.send(id);
+        let e3 = Arc::clone(&e2);
+        let mut lepas = lepas_rx.clone();
+        async move {
+            let _ = lepas.wait_for(|v| *v).await;
+            *e3.lock().expect("kunci eksekusi").entry(id).or_default() += 1;
+            Ok::<(), QueueError>(())
+        }
+    })
+    .await;
+    // Jalur produksi: SIGTERM → `cancel_on_signal` → token penghenti.
+    tokio::spawn(poolrouter_core::runtime::cancel_on_signal(token.clone()));
+
+    let mut mulai = HashSet::new();
+    for _ in 0..JUMLAH {
+        mulai.insert(terima(&mut rx).await);
+    }
+    assert_eq!(mulai, ids.iter().copied().collect::<HashSet<_>>());
+    let (_k, kanal) = pengamat().await;
+    assert_eq!(
+        jumlah_siap(&kanal, &antrean).await,
+        0,
+        "kesepuluh pesan dipegang handler, belum di-ack"
+    );
+
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    let pid = std::process::id().to_string();
+    let kirim = std::process::Command::new("sh")
+        .args(["-c", "kill -TERM \"$1\"", "sh", &pid])
+        .status()
+        .expect("jalankan kill");
+    assert!(kirim.success(), "SIGTERM terkirim");
+    tokio::time::timeout(BATAS_TUNGGU, token.cancelled())
+        .await
+        .expect("SIGTERM tidak membatalkan token");
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    assert!(
+        !tugas.is_finished(),
+        "consumer harus menunggu handler yang berjalan"
+    );
+
+    lepas_tx.send_replace(true);
+    tokio::time::timeout(BATAS_TUNGGU, tugas)
+        .await
+        .expect("consumer tidak berhenti")
+        .expect("task consumer")
+        .expect("run kembali Ok saat shutdown");
+    // Beri broker waktu mengembalikan pesan tak-ack (bila ada) ke antrean.
+    tokio::time::sleep(Duration::from_secs(1)).await;
+
+    let eksekusi = eksekusi.lock().expect("kunci eksekusi").clone();
+    assert_eq!(eksekusi.len(), JUMLAH, "0 pesan hilang");
+    assert!(
+        eksekusi.values().all(|n| *n == 1),
+        "0 eksekusi ganda: {eksekusi:?}"
+    );
+    assert!(rx.try_recv().is_err(), "tidak ada pengiriman tambahan");
+    assert_eq!(jumlah_siap(&kanal, &antrean).await, 0, "semua di-ack");
+    assert_eq!(jumlah_siap(&kanal, &nama_dlq(&antrean)).await, 0);
+}
+
+/// W3 liveness: antrean lama dengan argumen lain membuat setiap sesi gagal
+/// 406 PRECONDITION_FAILED. Loop terus mencoba (tidak keluar), tetapi status
+/// liveness gagal setelah toleransi habis.
+#[tokio::test(flavor = "multi_thread")]
+#[ignore = "butuh RabbitMQ: make -C backend uji-amqp"]
+async fn sesi_gagal_terus_menggagalkan_liveness_setelah_toleransi() {
+    let antrean = antrean_baru();
+    let (_k, kanal) = pengamat().await;
+    kanal
+        .queue_declare(
+            antrean.as_str().into(),
+            QueueDeclareOptions {
+                durable: true,
+                ..QueueDeclareOptions::default()
+            },
+            FieldTable::default(),
+        )
+        .await
+        .expect("antrean lama tanpa argumen DLX");
+
+    let toleransi = Duration::from_secs(3);
+    let status = StatusKonsumen::baru(toleransi);
+    let panggilan = Arc::new(AtomicUsize::new(0));
+    let p2 = Arc::clone(&panggilan);
+    let (token, tugas) = consumer_dengan(
+        &antrean,
+        PREFETCH_BAWAAN,
+        Some(Arc::clone(&status)),
+        move |_| {
+            p2.fetch_add(1, Ordering::SeqCst);
+            async { Ok::<(), QueueError>(()) }
+        },
+    )
+    .await;
+    assert!(status.hidup(), "grace saat start");
+    tokio::time::sleep(toleransi + Duration::from_secs(3)).await;
+    assert_eq!(status.jumlah_tersambung(), 0);
+    assert!(
+        !status.hidup(),
+        "loop yang gagal terus harus menggagalkan liveness"
+    );
+    assert!(!tugas.is_finished(), "loop tetap mencoba sambung ulang");
+    hentikan(token, tugas).await;
+    assert_eq!(panggilan.load(Ordering::SeqCst), 0);
 }

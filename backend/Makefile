@@ -223,7 +223,7 @@ uji-amqp: check-label $(CHECK_DISK)
 	CONTAINER_ENGINE=$(AMQP_ENGINE) ARC_ISSUE=$(patsubst arctiva.issue=%,%,$(CONTAINER_LABEL)) \
 	sh crates/queue-apalis/tests/uji-amqp.sh "$(SUBMAKE) uji-amqp-cargo RUNNER=$(RUNNER) CONTAINER_LABEL=$(CONTAINER_LABEL)"
 
-uji-amqp-cargo: BUILD_LOCK_OPTS += --network host -e POOLROUTER_TEST_AMQP
+uji-amqp-cargo: BUILD_LOCK_OPTS += --network host -e POOLROUTER_TEST_AMQP -e POOLROUTER_TEST_AMQP_MGMT -e POOLROUTER_TEST_AMQP_MGMT_AUTH
 uji-amqp-cargo: check-label $(CHECK_DISK)
 	$(HEAVY) cargo test --locked -p poolrouter-queue-apalis --test kontrak_amqp -- --ignored --test-threads=1 --nocapture
 
