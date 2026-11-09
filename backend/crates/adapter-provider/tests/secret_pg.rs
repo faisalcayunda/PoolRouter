@@ -144,7 +144,8 @@ fn test_brankas() -> Brankas {
 }
 
 async fn pool_dari_env(nama_env: &str) -> PgPool {
-    let url = std::env::var(nama_env)
-        .unwrap_or_else(|_| panic!("{nama_env} belum diset; jalankan lewat `make -C backend uji-pg`"));
+    let url = std::env::var(nama_env).unwrap_or_else(|_| {
+        panic!("{nama_env} belum diset; jalankan lewat `make -C backend uji-pg`")
+    });
     PgPool::connect(&url).await.expect("pool")
 }
