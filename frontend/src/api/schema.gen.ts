@@ -155,6 +155,61 @@ export interface paths {
         patch: operations["updatePreferensi"];
         trace?: never;
     };
+    "/admin/v1/auth/mfa": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Second login step: TOTP or a recovery code (ADR-0006 §9, AC-10).
+         * @description Reads the `__Host-pr_mfa` pre-session cookie; on success sets
+         *     `__Host-pr_session` and clears the pre-session cookie.
+         */
+        post: operations["mfaVerifikasi"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/auth/mfa/daftar": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Start MFA enrollment: returns the `otpauth://` URI once (AC-12). */
+        post: operations["mfaDaftar"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/auth/mfa/daftar/konfirmasi": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Confirm enrollment with one TOTP code; returns the 10 recovery codes (AC-13). */
+        post: operations["mfaKonfirmasi"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/v1/auth/sesi": {
         parameters: {
             query?: never;
@@ -297,8 +352,8 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Deactivate a client (K-20): cancel queued, fail waiting-for-retry, expire
-         *     the rest. Same numbers go to the config audit.
+         * Deactivate a client (K-20): cancel queued, fail waiting for retry; in-flight
+         *     requests are left untouched and expire by TTL. Same numbers go to the config audit.
          */
         post: operations["nonaktifkanClient"];
         delete?: never;
@@ -416,8 +471,8 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Revoke a credential (K-20): cancel queued, fail waiting for retry, expire
-         *     the rest.
+         * Revoke a credential (K-20): cancel queued, fail waiting for retry; in-flight
+         *     requests are left untouched and expire by TTL.
          */
         post: operations["cabutCredential"];
         delete?: never;
@@ -1099,6 +1154,11 @@ export interface components {
              */
             secret: string;
         };
+        /** @description Body of `POST /auth/mfa/daftar` (AC-12): the registration code. */
+        DaftarMfaRequest: {
+            /** @description The one-time code issued to this user; required, never reusable. */
+            kode_pendaftaran: string;
+        };
         /**
          * @description Downstream pool entity. `prioritas` is derived by the allocation: read-only
          *     here, always 1 in F0.
@@ -1255,6 +1315,21 @@ export interface components {
          * @enum {string}
          */
         KelasErrorWebhook: "timeout" | "koneksi" | "rate_limit_provider" | "respons_tidak_valid" | "tls" | "provider_sementara";
+        /** @description Body of `POST /auth/mfa` (AC-10): exactly one of the two code kinds. */
+        KodeMfaRequest: {
+            /**
+             * @description Six-digit TOTP code.
+             * @example 123456
+             */
+            kode?: string | null;
+            /** @description One of the 10 recovery codes issued at enrollment. */
+            kode_pemulihan?: string | null;
+        };
+        /** @description Body of `POST /auth/mfa/daftar/konfirmasi` (AC-13). */
+        KonfirmasiMfaRequest: {
+            /** @example 123456 */
+            kode_totp: string;
+        };
         /** @description One quota tracker row (US-12; KP-07: numbers from the DB, not Redis). */
         KuotaTracker: {
             /** Format: date-time */
@@ -1341,6 +1416,14 @@ export interface components {
             requested_at: string;
             status_akses: string;
         };
+        /**
+         * @description What the transaction log keeps for a provider call. Closed set, the same
+         *     values as the database `CHECK (log_mode IN ('metadata_only','full_payload'))`.
+         *     A free string here let the contract advertise values the database rejects
+         *     (AD5).
+         * @enum {string}
+         */
+        LogMode: "metadata_only" | "full_payload";
         /** @description Paginated log result. */
         LogPage: {
             baris: components["schemas"]["LogBaris"][];
@@ -1365,12 +1448,32 @@ export interface components {
              * @description Set only for `client_owner` sessions.
              */
             client_id?: string | null;
+            /** @description MFA state for this account (AC-14, MF3). */
+            mfa: components["schemas"]["MeMfa"];
             /** Format: uuid */
             pengguna_id: string;
             /** @description Role granted to this user (contract section 8.1). */
             peran: components["schemas"]["Peran"][];
             /** @example auditor_01 */
             username: string;
+        };
+        /**
+         * @description `Me.mfa` (AC-14): whether the step is required, whether it is enrolled, and
+         *     how many recovery codes remain.
+         */
+        MeMfa: {
+            /** @description `true` once a TOTP secret is confirmed (`pengguna_mfa.status = 'aktif'`). */
+            aktif: boolean;
+            /**
+             * Format: int64
+             * @description Unused recovery codes: 10 right after enrollment, 9 after one login.
+             */
+            sisa_kode_pemulihan: number;
+            /**
+             * @description `true` when `POOLROUTER_MFA_WAJIB` is on and the caller's role is one
+             *     the policy covers.
+             */
+            wajib: boolean;
         };
         /**
          * @description Metadata field definition (US-15). Also serialized: the endpoint entity
@@ -1393,6 +1496,27 @@ export interface components {
             /** @example string */
             tipe: string;
             wajib: boolean;
+        };
+        /**
+         * @description HTTP method for the provider call (ADR-0002 D1). Only these two appear in
+         *     the contract; `GET` may still carry a JSON body.
+         * @enum {string}
+         */
+        MetodeProvider: "GET" | "POST";
+        /** @description `POST /auth/mfa/daftar` response: shown once, never logged (AC-12). */
+        MfaDaftar: {
+            /**
+             * @description `otpauth://totp/...` for the authenticator app (issuer `PoolRouter`).
+             * @example otpauth://totp/PoolRouter:auditor_01?secret=JBSWY3DPEHPK3PXP&issuer=PoolRouter
+             */
+            otpauth_uri: string;
+            /** @description The same secret in base32, for manual entry. */
+            rahasia_base32: string;
+        };
+        /** @description `POST /auth/mfa/daftar/konfirmasi` response: the recovery codes, once (AC-13). */
+        MfaKonfirmasi: {
+            /** @description 10 codes; each works once. */
+            kode_pemulihan: string[];
         };
         /**
          * @description `searchLogByNik` body (auditor only; exact 16-digit NIK, no wildcard or
@@ -1550,12 +1674,24 @@ export interface components {
             body_template: string;
             /**
              * Format: int64
-             * @description Fixed 1 in F0.
+             * @description 1 in F0; 2 in F1. Mirrors `ProviderConfig::config_schema_version`.
              * @example 1
              */
             config_schema_version: number;
-            /** @example ringkas */
-            log_mode: string;
+            /**
+             * @description Data balikan configuration block, present only for documents with
+             *     config_schema_version = 2. Mirrors `ProviderConfig::data_balikan` so a
+             *     read pre-fills the edit form and the full-replacement PUT keeps it.
+             */
+            data_balikan?: Record<string, never>;
+            log_mode: components["schemas"]["LogMode"];
+            /** @description HTTP method the provider call uses (ADR-0002 D1). */
+            metode: components["schemas"]["MetodeProvider"];
+            /**
+             * @description Provider name, unique across the deployment (`provider.nama`).
+             * @example dukcapil-produksi
+             */
+            nama: string;
             /** @description Provider parameters plus their validation rules. */
             parameters: components["schemas"]["ParameterRule"][];
             /**
@@ -1567,11 +1703,8 @@ export interface components {
             provider_id: string;
             /** @description Response schema used to map elements (US-05). */
             respons_skema: Record<string, never>;
-            /**
-             * @description TLS trust setting for the provider call.
-             * @example sistem
-             */
-            tls_trust: string;
+            /** @description TLS trust setting for the provider call (ADR-0002 D5). */
+            tls_trust: components["schemas"]["TlsTrust"];
         };
         /** @description Provider configuration body (`createProvider`/`updateProvider`, US-01/04). */
         ProviderConfig: {
@@ -1590,21 +1723,37 @@ export interface components {
             body_template: string;
             /**
              * Format: int64
-             * @description Fixed 1 in F0; any other value is 422.
+             * @description 1 in F0; 2 in F1. Other values are 422.
              * @example 1
              */
             config_schema_version: number;
-            /** @example ringkas */
-            log_mode: string;
+            /**
+             * @description Data balikan configuration block; only valid when config_schema_version = 2 (AC-20).
+             *     Ignored for version 1; required and validated for version 2.
+             */
+            data_balikan?: Record<string, never>;
+            log_mode: components["schemas"]["LogMode"];
+            /**
+             * @description HTTP method the provider call uses. `GET` with a body is allowed
+             *     (ADR-0002 D1): the template is no longer tied to the method.
+             */
+            metode: components["schemas"]["MetodeProvider"];
+            /**
+             * @description Provider name, unique across the deployment (`provider.nama`). It is part
+             *     of the body because `provider.nama` is NOT NULL UNIQUE, so the create
+             *     call has to carry it (AD5).
+             * @example dukcapil-produksi
+             */
+            nama: string;
             /** @description Provider parameters plus their validation rules. */
             parameters: components["schemas"]["ParameterRule"][];
             /** @description Response schema used to map elements (US-05). */
             respons_skema: Record<string, never>;
             /**
-             * @description TLS trust setting for the provider call.
-             * @example sistem
+             * @description TLS trust setting for the provider call (ADR-0002 D5). Closed set: there
+             *     is deliberately no "verify off" mode, not even in dev.
              */
-            tls_trust: string;
+            tls_trust: components["schemas"]["TlsTrust"];
         };
         /**
          * @description Jenis rule validasi pada konfigurasi provider (BRD US-03). F0 tidak
@@ -1660,6 +1809,13 @@ export interface components {
          * @enum {string}
          */
         StatusKredensial: "aktif" | "kedaluwarsa" | "dicabut";
+        /**
+         * @description TLS trust for the provider host (ADR-0002 D5). The three modes are the ones
+         *     the configuration allows; disabling verification is deliberately not among
+         *     them, not even in dev.
+         * @enum {string}
+         */
+        TlsTrust: "system" | "ca_kustom" | "pin_spki";
         /** @description Last-active-upstream detail in a preview (section 3a.10). */
         UpstreamAktifTerakhir: {
             /** Format: uuid */
@@ -1923,6 +2079,12 @@ export interface components {
              */
             field: string;
             kode: string;
+            /**
+             * @description Name of the parameter or secret the template referenced and that does
+             *     not exist (AC-13, U-46). Echoed so the UI can offer to create it; it is a
+             *     name the operator typed, never a value. Absent for every other error.
+             */
+            nama?: string | null;
             posisi?: components["schemas"]["Posisi"] | null;
         };
         /** @description Webhook configuration view; the secret itself is never returned. */
@@ -2278,6 +2440,94 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PreferensiUpdate"];
+                };
+            };
+            401: components["responses"]["Problem401Admin"];
+            403: components["responses"]["Problem403Admin"];
+            422: components["responses"]["Problem422Admin"];
+        };
+    };
+    mfaVerifikasi: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["KodeMfaRequest"];
+            };
+        };
+        responses: {
+            /** @description Kode diterima; cookie sesi diterbitkan */
+            204: {
+                headers: {
+                    /** @description Selalu no-store (R-16) */
+                    "Cache-Control"?: string;
+                    /** @description __Host-pr_session=...; HttpOnly; Secure; SameSite=Strict; Path=/ */
+                    "Set-Cookie"?: string;
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Problem401Admin"];
+            422: components["responses"]["Problem422Admin"];
+            429: components["responses"]["Problem429Admin"];
+        };
+    };
+    mfaDaftar: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DaftarMfaRequest"];
+            };
+        };
+        responses: {
+            /** @description URI otpauth dan secret base32; ditampilkan sekali */
+            200: {
+                headers: {
+                    /** @description Selalu no-store (R-16) */
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MfaDaftar"];
+                };
+            };
+            401: components["responses"]["Problem401Admin"];
+            403: components["responses"]["Problem403Admin"];
+        };
+    };
+    mfaKonfirmasi: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["KonfirmasiMfaRequest"];
+            };
+        };
+        responses: {
+            /** @description MFA aktif; kode pemulihan dan cookie sesi diterbitkan */
+            200: {
+                headers: {
+                    /** @description Selalu no-store (R-16) */
+                    "Cache-Control"?: string;
+                    /** @description __Host-pr_session=...; HttpOnly; Secure; SameSite=Strict; Path=/ */
+                    "Set-Cookie"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MfaKonfirmasi"];
                 };
             };
             401: components["responses"]["Problem401Admin"];

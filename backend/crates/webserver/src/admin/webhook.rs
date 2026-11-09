@@ -48,6 +48,7 @@ pub(super) async fn get_webhook_config(
     Path(client_id): Path<Uuid>,
 ) -> Result<Response, Galat> {
     let peminta = masuk(&s, &method, &headers, peer, &PERAN, "getWebhookConfig").await?;
+    super::gerbang::periksa_guard_mfa(&peminta)?;
     pastikan_milik(&peminta, client_id)?;
 
     let baris: Option<(String, bool, Option<i64>)> = sqlx::query_as(
@@ -85,6 +86,7 @@ pub(super) async fn put_webhook_config(
     axum::Json(body): axum::Json<PutWebhookBody>,
 ) -> Result<Response, Galat> {
     let peminta = masuk(&s, &method, &headers, peer, &PERAN, "putWebhookConfig").await?;
+    super::gerbang::periksa_guard_mfa(&peminta)?;
     pastikan_milik(&peminta, client_id)?;
     ada_client(&s, client_id).await?;
     periksa_https(&body.webhook_url)?;
@@ -140,6 +142,7 @@ pub(super) async fn rotate_webhook_secret(
     Path(client_id): Path<Uuid>,
 ) -> Result<Response, Galat> {
     let peminta = masuk(&s, &method, &headers, peer, &PERAN, "rotateWebhookSecret").await?;
+    super::gerbang::periksa_guard_mfa(&peminta)?;
     pastikan_milik(&peminta, client_id)?;
 
     let mut tx = s.pool.begin().await.map_err(|e| galat_db(&e))?;
@@ -218,6 +221,7 @@ pub(super) async fn list_webhook_log(
     Query(params): Query<ListLogQuery>,
 ) -> Result<Response, Galat> {
     let peminta = masuk(&s, &method, &headers, peer, &PERAN, "listWebhookLog").await?;
+    super::gerbang::periksa_guard_mfa(&peminta)?;
     pastikan_milik(&peminta, client_id)?;
     ada_client(&s, client_id).await?;
 

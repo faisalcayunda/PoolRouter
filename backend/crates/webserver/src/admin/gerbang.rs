@@ -38,6 +38,11 @@ pub(super) struct Peminta {
     /// only when the operation accepts `client_owner`; `None` for every other
     /// role.
     pub client_id: Option<Uuid>,
+    /// MFA verification timestamp, if the session has passed the MFA step (AC-15).
+    pub mfa_terverifikasi_at: Option<DateTime<Utc>>,
+    /// Apakah MFA berlaku untuk panggilan ini: `mfa_wajib` aktif DAN peran
+    /// termasuk `wajib_mfa` (aturan yang sama dengan `me.rs`).
+    pub mfa_wajib: bool,
 }
 
 /// Check `Origin` (write methods only), the session, and the role, in that
@@ -74,7 +79,7 @@ pub(super) async fn masuk(
             .copied()
             .or_else(|| diterima.first().copied())
             .unwrap_or(Peran::PlatformAdmin);
-        catat_penolakan(s, sesi, tercatat, operasi, &ip).await?;
+        catat_penolakan(s, sesi.clone(), tercatat, operasi, &ip).await?;
         tracing::debug!(
             pengguna_id = %sesi.pengguna_id,
             ditemukan = ?ditemukan,
@@ -93,6 +98,8 @@ pub(super) async fn masuk(
         sesi_id: sesi.sesi_id,
         sumber_ip: ip,
         client_id: None,
+        mfa_terverifikasi_at: sesi.mfa_terverifikasi_at,
+        mfa_wajib: s.mfa_wajib && peran.wajib_mfa(),
     };
     let peminta = if diterima.contains(&Peran::ClientOwner) {
         let client_id = sqlx::query_scalar::<_, Option<Uuid>>(
@@ -201,4 +208,22 @@ fn galat_sesi(e: &GalatSesi) -> Galat {
 fn galat_db(e: &sqlx::Error) -> Galat {
     tracing::error!(error = %e, "admin: kueri gagal");
     Galat::layanan()
+}
+
+/// Guard MFA untuk operasi auditor dan platform admin (AC-15). Menolak dengan
+/// 403 hanya bila MFA berlaku (`mfa_wajib` aktif dan peran wajib MFA) dan
+/// sesi belum lulus verifikasi MFA; `client_owner` dan `operator` tidak kena.
+pub(super) fn periksa_guard_mfa(peminta: &Peminta) -> Result<(), Galat> {
+    if peminta.mfa_wajib && peminta.mfa_terverifikasi_at.is_none() {
+        tracing::debug!(
+            pengguna_id = %peminta.pengguna_id,
+            peran = %peminta.peran,
+            "admin: MFA guard failed"
+        );
+        return Err(Galat::baru(
+            StatusCode::FORBIDDEN,
+            crate::api::problem::ProblemKodeAdmin::AksesDitolak,
+        ));
+    }
+    Ok(())
 }

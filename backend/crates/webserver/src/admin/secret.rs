@@ -45,7 +45,8 @@ pub(super) async fn list_secrets(
     headers: HeaderMap,
     ConnectInfo(peer): ConnectInfo<SocketAddr>,
 ) -> Result<Response, Galat> {
-    masuk(&s, &method, &headers, peer, &PERAN_PA, "listSecrets").await?;
+    let peminta = masuk(&s, &method, &headers, peer, &PERAN_PA, "listSecrets").await?;
+    super::gerbang::periksa_guard_mfa(&peminta)?;
 
     let baris: Vec<(String,)> =
         sqlx::query_as("SELECT ps.nama_secret FROM provider_secret ps ORDER BY ps.nama_secret")
@@ -78,6 +79,7 @@ pub(super) async fn put_secret(
     body: Result<Json<SecretNilai>, axum::extract::rejection::JsonRejection>,
 ) -> Result<Response, Galat> {
     let peminta = masuk(&s, &method, &headers, peer, &PERAN_PA, "putSecret").await?;
+    super::gerbang::periksa_guard_mfa(&peminta)?;
     // A body that is not `{"nilai": "..."}` is a validation failure, not a
     // parse error: the contract lists 422 for this operation, not 400.
     let axum::Json(req) = body.map_err(|_| {
@@ -171,6 +173,7 @@ pub(super) async fn delete_secret(
     Path(nama): Path<String>,
 ) -> Result<Response, Galat> {
     let peminta = masuk(&s, &method, &headers, peer, &PERAN_PA, "deleteSecret").await?;
+    super::gerbang::periksa_guard_mfa(&peminta)?;
     periksa_nama(&nama)?;
 
     let pemakai = provider_pemakai(&s.pool, &nama).await?;

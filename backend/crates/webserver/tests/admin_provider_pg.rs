@@ -525,7 +525,7 @@ async fn parameter_tidak_ada_di_template_422() {
 
 #[tokio::test]
 #[ignore]
-async fn config_schema_version_selain_satu_422() {
+async fn config_schema_version_di_luar_satu_dan_dua_422() {
     let u = siapkan().await;
     let (uid, pa) = u.pengguna(&["platform_admin"]).await;
     let s = nama_unik("SECRET");
@@ -533,10 +533,10 @@ async fn config_schema_version_selain_satu_422() {
     let nama = nama_unik("dukcapil");
 
     let mut b = body(&nama, &s, &["NAMA_LGKP"]);
-    b["config_schema_version"] = Value::from(2);
+    b["config_schema_version"] = Value::from(3);
 
     let (st, _, prob) = u.kirim(Method::POST, PROVIDERS, Some(&pa), Some(b)).await;
-    // `maximum: 1` in the contract catches it before the handler; either way it
+    // `maximum: 2` in the contract catches it before the handler; either way it
     // is a 422 and nothing is stored.
     assert_eq!(st, StatusCode::UNPROCESSABLE_ENTITY, "{prob}");
     u.bersihkan_secret().await;
@@ -799,5 +799,159 @@ async fn base_url_bukan_https_422() {
             .any(|e| e["field"] == "/base_url"),
         "{prob}"
     );
+    u.bersihkan_secret().await;
+}
+
+/// Blok `data_balikan` sah (skema 2, AC-15): hanya dua field wajib, sisanya default.
+fn data_balikan_sah(secret: &str) -> Value {
+    serde_json::json!({
+        "endpoint": "https://bgn.example.go.id/balikan",
+        "rujukan_secret": format!("{{{{secret.{secret}}}}}")
+    })
+}
+
+// AC-20: config_schema_version 1 and 2 support in createProviderConfigVersion
+// (ARC-121 R7 T4)
+
+#[tokio::test]
+#[ignore]
+async fn create_provider_config_schema_v1_unchanged() {
+    // Schema 1 still works; no data_balikan required
+    let u = siapkan().await;
+    let (uid, pa) = u.pengguna(&["platform_admin"]).await;
+    let s = nama_unik("SECRET");
+    u.secret(&s, uid).await;
+    let nama = nama_unik("provider_v1");
+
+    let mut b = body(&nama, &s, &["NAMA_LGKP"]);
+    b["config_schema_version"] = Value::Number(1.into());
+
+    let (st, _, res) = u.kirim(Method::POST, PROVIDERS, Some(&pa), Some(b)).await;
+    assert_eq!(st, StatusCode::CREATED, "{res}");
+    assert_eq!(res["config_schema_version"], 1);
+    u.bersihkan_secret().await;
+}
+
+#[tokio::test]
+#[ignore]
+async fn create_provider_config_schema_v2_valid_data_balikan() {
+    // AC-20: schema 2 with valid data_balikan block → 201
+    let u = siapkan().await;
+    let (uid, pa) = u.pengguna(&["platform_admin"]).await;
+    let s = nama_unik("SECRET");
+    u.secret(&s, uid).await;
+    let nama = nama_unik("provider_v2");
+
+    let mut b = body(&nama, &s, &["NAMA_LGKP"]);
+    b["config_schema_version"] = Value::Number(2.into());
+    // Blok sah menurut AC-15: endpoint https dan rujukan_secret {{secret.X}}.
+    b["data_balikan"] = data_balikan_sah(&s);
+
+    let (st, _, res) = u.kirim(Method::POST, PROVIDERS, Some(&pa), Some(b)).await;
+    assert_eq!(st, StatusCode::CREATED, "{res}");
+    assert_eq!(res["config_schema_version"], 2);
+    assert_eq!(res["provider_config_version"], 1);
+    // Entitas respons memuat blok yang sama dengan body PUT/POST (kontrak form edit).
+    assert_eq!(res["data_balikan"], data_balikan_sah(&s), "{res}");
+    u.bersihkan_secret().await;
+}
+
+#[tokio::test]
+#[ignore]
+async fn create_provider_config_schema_v2_invalid_data_balikan_422() {
+    // AC-20: schema 2 with invalid data_balikan → 422 with field pointer
+    let u = siapkan().await;
+    let (uid, pa) = u.pengguna(&["platform_admin"]).await;
+    let s = nama_unik("SECRET");
+    u.secret(&s, uid).await;
+    let nama = nama_unik("provider_v2_bad");
+
+    let mut b = body(&nama, &s, &["NAMA_LGKP"]);
+    b["config_schema_version"] = Value::Number(2.into());
+    // endpoint bukan https: ditolak parser AC-15 dengan pointer /data_balikan/endpoint.
+    let mut blok = data_balikan_sah(&s);
+    blok["endpoint"] = Value::String("http://bgn.example.go.id/balikan".into());
+    b["data_balikan"] = blok;
+
+    let (st, _, prob) = u.kirim(Method::POST, PROVIDERS, Some(&pa), Some(b)).await;
+    assert_eq!(st, StatusCode::UNPROCESSABLE_ENTITY, "{prob}");
+    assert!(
+        prob["errors"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|e| e["field"].as_str().unwrap_or("").contains("data_balikan")),
+        "field pointer in errors: {prob}"
+    );
+    u.bersihkan_secret().await;
+}
+
+#[tokio::test]
+#[ignore]
+async fn update_provider_v1_to_v2_with_data_balikan() {
+    // Update v1 provider to v2 with data_balikan; verify v1 immutable (V-03)
+    let u = siapkan().await;
+    let (uid, pa) = u.pengguna(&["platform_admin"]).await;
+    let s = nama_unik("SECRET");
+    u.secret(&s, uid).await;
+    let nama = nama_unik("provider_update_v2");
+
+    // Create v1
+    let (st, _, b) = u
+        .kirim(
+            Method::POST,
+            PROVIDERS,
+            Some(&pa),
+            Some(body(&nama, &s, &["NAMA_LGKP"])),
+        )
+        .await;
+    assert_eq!(st, StatusCode::CREATED);
+    let provider_id = b["provider_id"].as_str().unwrap().to_owned();
+    let v1_versi = b["provider_config_version"].as_i64().unwrap();
+
+    // Update to v2
+    let mut b_v2 = body(&nama, &s, &["NAMA_LGKP"]);
+    b_v2["config_schema_version"] = Value::Number(2.into());
+    b_v2["data_balikan"] = data_balikan_sah(&s);
+
+    let (st, _, b_after) = u
+        .kirim(
+            Method::PUT,
+            &format!("{PROVIDERS}/{provider_id}"),
+            Some(&pa),
+            Some(serde_json::json!({
+                "alasan": "add data_balikan",
+                "nama": b_v2["nama"],
+                "metode": b_v2["metode"],
+                "base_url": b_v2["base_url"],
+                "body_template": b_v2["body_template"],
+                "parameters": b_v2["parameters"],
+                "respons_skema": b_v2["respons_skema"],
+                "tls_trust": b_v2["tls_trust"],
+                "log_mode": b_v2["log_mode"],
+                "config_schema_version": 2,
+                "data_balikan": b_v2["data_balikan"]
+            })),
+        )
+        .await;
+    assert_eq!(st, StatusCode::OK, "{b_after}");
+    let v2_versi = b_after["provider_config_version"].as_i64().unwrap();
+    assert!(v2_versi > v1_versi);
+    assert_eq!(b_after["config_schema_version"], 2);
+
+    // Verify v1 byte-identical, no data_balikan (V-03)
+    let v1_doc: Value = sqlx::query_scalar(
+        "SELECT dokumen FROM provider_config_versi \
+         WHERE provider_id = $1 AND versi = 1",
+    )
+    .bind(Uuid::parse_str(&provider_id).unwrap())
+    .fetch_one(&u.su)
+    .await
+    .unwrap();
+    assert!(
+        !v1_doc.to_string().contains("data_balikan"),
+        "v1 immutable: {v1_doc}"
+    );
+
     u.bersihkan_secret().await;
 }

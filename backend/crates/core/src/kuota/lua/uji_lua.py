@@ -70,6 +70,7 @@ NAMA_SKRIP = {
     "tambah": "attempts_tambah.lua",
     "baca": "kuota_baca.lua",
     "tolak": "penolakan_ambil.lua",
+    "antre": "antre_ubah.lua",
 }
 
 JUMLAH_EMBER = 145
@@ -755,12 +756,12 @@ return { hasil.kode, table.concat(dipanggil, ','), redis.call('ZCARD', KEYS[4]),
 
     def klaim(self, *, member="req-1:1", pool="p1", run="run-1",
               ttl=80_000_000, dari_antre=True):
-        keys = ["pr:siap", self.k_slot(pool), self.k_antre(pool)]
+        keys = ["pr:siap", self.k_slot(pool), self.k_antre(pool), self.k_slot_sumber(pool)]
         argv = [run, member, str(ttl), "1" if dari_antre else "0"]
         return self.panggil("klaim", keys, argv)
 
     def lepas(self, *, member="req-1:1", pool="p1", run="run-1", asal="kas"):
-        keys = ["pr:siap", self.k_slot(pool)]
+        keys = ["pr:siap", self.k_slot(pool), self.k_slot_sumber(pool)]
         return self.panggil("lepas", keys, [run, member, asal])
 
     def baca(self, *, pool="p1", run="run-1", mode="bergulir", kuota=100,

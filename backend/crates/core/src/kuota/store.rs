@@ -55,6 +55,7 @@ const SKRIP_LEPAS: &str = include_str!("lua/rakitan/slot_lepas.lua");
 const SKRIP_TAMBAH: &str = include_str!("lua/rakitan/attempts_tambah.lua");
 const SKRIP_BACA: &str = include_str!("lua/rakitan/kuota_baca.lua");
 const SKRIP_TOLAK: &str = include_str!("lua/rakitan/penolakan_ambil.lua");
+const SKRIP_ANTRE: &str = include_str!("lua/rakitan/antre_ubah.lua");
 
 /// Why a store call produced no decision. Every variant means "do not let the
 /// request through on the strength of Redis".
@@ -214,6 +215,7 @@ pub enum HasilKlaim {
     Diperpanjang {
         skor_lama: i64,
         antre: i64,
+        sumber: Option<Sumber>,
     },
     /// The slot was never reserved.
     SlotTidakAda,
@@ -347,6 +349,7 @@ pub trait KuotaStore: Send + Sync {
         ctx: &KonteksKuota,
         permintaan: &PermintaanToken,
         urutan: &[SumberDana],
+        downstream_pool_id: i64,
     ) -> impl Future<Output = Result<HasilToken, GalatStore>> + Send;
 
     fn klaim_slot(
@@ -384,6 +387,15 @@ pub trait KuotaStore: Send + Sync {
 
     fn baca(&self, ctx: &KonteksKuota) -> impl Future<Output = Result<Bacaan, GalatStore>> + Send;
 
+    /// Koreksi counter `antre` pool sebesar `delta` (`-1` atau `1`) sesudah
+    /// commit PostgreSQL (AC-25, CW3). Tidak pernah di bawah 0; hasilnya nilai
+    /// counter sesudah perubahan.
+    fn ubah_antre(
+        &self,
+        pool_id: &str,
+        delta: i64,
+    ) -> impl Future<Output = Result<i64, GalatStore>> + Send;
+
     /// Take one token of the client's rejection bucket.
     fn ambil_token_penolakan(
         &self,
@@ -403,6 +415,7 @@ struct KumpulanSkrip {
     tambah: Script,
     baca: Script,
     tolak: Script,
+    antre: Script,
 }
 
 impl KumpulanSkrip {
@@ -417,6 +430,7 @@ impl KumpulanSkrip {
             tambah: Script::new(SKRIP_TAMBAH),
             baca: Script::new(SKRIP_BACA),
             tolak: Script::new(SKRIP_TOLAK),
+            antre: Script::new(SKRIP_ANTRE),
         }
     }
 }
@@ -658,8 +672,13 @@ fn bentuk_token(
 }
 
 /// Reply shape shared by both token scripts (F0 and allocated).
-fn hasil_token(j: &[Value], pool_id: &str) -> Result<HasilToken, GalatStore> {
+fn hasil_token(
+    j: &[Value],
+    pool_id: &str,
+    downstream_pool_id: i64,
+) -> Result<HasilToken, GalatStore> {
     let kode = teks(&j[0])?;
+    let terpilih = if j.len() > 7 { teks(&j[7]).ok() } else { None };
     let status = || -> Result<StatusToken, GalatStore> {
         Ok(StatusToken {
             terpakai: angka(j.get(1))?,
@@ -676,6 +695,13 @@ fn hasil_token(j: &[Value], pool_id: &str) -> Result<HasilToken, GalatStore> {
     }
     if kode == "retry_budget_habis" {
         metrik::retry_budget_habis(pool_id);
+    }
+    // Track loan counter when token is granted from a non-self source (AC-10).
+    if kode == "ok"
+        && let Some(sumber_txt) = terpilih
+        && sumber_txt != pool_id
+    {
+        metrik::pinjaman_total(pool_id, &sumber_txt, downstream_pool_id);
     }
     match kode.as_str() {
         "ok" => Ok(HasilToken::Diberikan(status()?)),
@@ -699,6 +725,21 @@ fn teks_sumber(pool_id: &str, sumber: Sumber) -> String {
         Sumber::Sisa => "sisa".to_owned(),
         Sumber::Pinjam { downstream_pool_id } => downstream_pool_id.to_string(),
     }
+}
+
+fn dari_teks_sumber(pool_id: &str, teks: &str) -> Option<Sumber> {
+    if teks.is_empty() {
+        return None;
+    }
+    if teks == "sisa" {
+        return Some(Sumber::Sisa);
+    }
+    if teks == pool_id {
+        return Some(Sumber::Sendiri);
+    }
+    teks.parse::<i64>()
+        .ok()
+        .map(|downstream_pool_id| Sumber::Pinjam { downstream_pool_id })
 }
 
 /// The error a script reports for bad arguments (any code that is not a
@@ -830,7 +871,7 @@ where
     ) -> Result<HasilToken, GalatStore> {
         let (kunci, arg) = bentuk_token(ctx, p)?;
         let j = self.jalankan(&self.skrip.token, kunci, arg).await?;
-        hasil_token(&j, &ctx.pool_id)
+        hasil_token(&j, &ctx.pool_id, 0)
     }
 
     async fn ambil_token_alokasi(
@@ -838,6 +879,7 @@ where
         ctx: &KonteksKuota,
         p: &PermintaanToken,
         urutan: &[SumberDana],
+        downstream_pool_id: i64,
     ) -> Result<HasilToken, GalatStore> {
         if urutan.is_empty() {
             return Err(GalatStore::ArgumenTidakSah("urutan sumber kosong".into()));
@@ -852,7 +894,8 @@ where
         }
         arg.push(DETIK_EMBER.to_string());
         let j = self.jalankan(&self.skrip.token_alokasi, kunci, arg).await?;
-        hasil_token(&j, &ctx.pool_id)
+        let result = hasil_token(&j, &ctx.pool_id, downstream_pool_id)?;
+        Ok(result)
     }
 
     async fn klaim_slot(
@@ -869,6 +912,7 @@ where
             KUNCI_SIAP.to_owned(),
             kunci_slot(pool_id),
             kunci_antre(pool_id),
+            kunci_slot_sumber(pool_id),
         ];
         let arg = vec![
             member,
@@ -880,6 +924,10 @@ where
             "ok" => Ok(HasilKlaim::Diperpanjang {
                 skor_lama: angka(j.get(1))?,
                 antre: angka(j.get(2))?,
+                sumber: j
+                    .get(3)
+                    .and_then(|v| teks(v).ok())
+                    .and_then(|s| dari_teks_sumber(pool_id, &s)),
             }),
             "slot_tidak_ada" => Ok(HasilKlaim::SlotTidakAda),
             "slot_kedaluwarsa" => Ok(HasilKlaim::SlotKedaluwarsa),
@@ -915,11 +963,31 @@ where
     ) -> Result<bool, GalatStore> {
         periksa_id("pool_id", pool_id)?;
         let member = periksa_member(request_id, nomor_percobaan)?;
-        let kunci = vec![KUNCI_SIAP.to_owned(), kunci_slot(pool_id)];
+        let kunci = vec![
+            KUNCI_SIAP.to_owned(),
+            kunci_slot(pool_id),
+            kunci_slot_sumber(pool_id),
+        ];
         let arg = vec![member, asal.sebagai_arg().to_owned()];
         let j = self.jalankan(&self.skrip.lepas, kunci, arg).await?;
         match teks(&j[0])?.as_str() {
             "ok" => Ok(angka(j.get(1))? > 0),
+            lain => Err(galat_skrip(lain)),
+        }
+    }
+
+    async fn ubah_antre(&self, pool_id: &str, delta: i64) -> Result<i64, GalatStore> {
+        periksa_id("pool_id", pool_id)?;
+        if delta != -1 && delta != 1 {
+            return Err(GalatStore::ArgumenTidakSah(format!(
+                "delta antre {delta} tidak sah; hanya -1 atau 1"
+            )));
+        }
+        let kunci = vec![KUNCI_SIAP.to_owned(), kunci_antre(pool_id)];
+        let arg = vec![delta.to_string()];
+        let j = self.jalankan(&self.skrip.antre, kunci, arg).await?;
+        match teks(&j[0])?.as_str() {
+            "ok" => angka(j.get(1)),
             lain => Err(galat_skrip(lain)),
         }
     }

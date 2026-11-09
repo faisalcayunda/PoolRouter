@@ -4,3 +4,7 @@
 data/
 deploy/compose/env/*.env
 deploy/compose/secrets/
+
+# Aturan kerja agen dan catatan pengambilalihan bersifat lokal; repo dipindah setelah proyek selesai
+CLAUDE.md
+.takeover/

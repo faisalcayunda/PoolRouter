@@ -2,7 +2,7 @@
 //!
 //! Dijalankan oleh `make -C backend uji-pg`. Fixture ditulis sebagai superuser
 //! (`POOLROUTER_TEST_DATABASE_URL_SU`); handler berjalan sebagai `pr_job_balikan`
-//! (`POOLROUTER_TEST_DATABASE_URL_WORKER`), role yang dipakai produksi, jadi grant ikut teruji.
+//! (`POOLROUTER_TEST_DATABASE_URL_JOB_BALIKAN`), role yang dipakai produksi, jadi grant ikut teruji.
 //! Setiap uji membuat provider sendiri dengan nama unik, sehingga data uji lain tidak ikut terbaca.
 //! NIK di fixture sintetis (berawalan 00).
 
@@ -14,7 +14,7 @@ use uuid::Uuid;
 
 /// NIK sintetis, bukan data pribadi.
 const NIK_UJI: &str = "0012345678901234";
-const URL_WORKER: &str = "POOLROUTER_TEST_DATABASE_URL_WORKER";
+const URL_JOB_BALIKAN: &str = "POOLROUTER_TEST_DATABASE_URL_JOB_BALIKAN";
 const URL_SU: &str = "POOLROUTER_TEST_DATABASE_URL_SU";
 
 fn url(nama: &str) -> String {
@@ -30,7 +30,7 @@ async fn pool(nama: &str, maks: u32) -> PgPool {
 }
 
 async fn pool_worker() -> PgPool {
-    pool(URL_WORKER, 10).await
+    pool(URL_JOB_BALIKAN, 10).await
 }
 
 async fn pool_su() -> PgPool {
@@ -60,7 +60,7 @@ fn blok(pemicu_jumlah_n: u32, ukuran_batch_maks: u32) -> serde_json::Value {
 /// Pemegang kunci sesi di luar pool (penyusun lain atau pengirim, AC-24). Koneksi sendiri, bukan dari pool,
 /// supaya kunci tidak ikut kembali ke pool dan tertinggal untuk panggilan berikutnya.
 async fn pegang_kunci_sesi(provider_id: Uuid) -> PgConnection {
-    let mut conn = PgConnection::connect(&url(URL_WORKER))
+    let mut conn = PgConnection::connect(&url(URL_JOB_BALIKAN))
         .await
         .expect("koneksi pemegang kunci");
     sqlx::query("SELECT pg_advisory_lock(hashtextextended($1, 0))")
