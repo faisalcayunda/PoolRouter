@@ -92,7 +92,7 @@ WORK_DIR := $(if $(filter podman docker,$(RUNNER)),/work,$(CURDIR))
 # Repo root on the execution side (/repo is the read-only mount in the podman container).
 REPO_DIR := $(if $(filter podman docker,$(RUNNER)),/repo,$(CURDIR)/..)
 
-.PHONY: help check-label check-disk clean-shared clean-cache-shared setup test test-rust db-test uji-pg uji-pg-cargo uji-pg-worker uji-pg-cargo-worker uji-lua uji-redis uji-redis-cargo lua-rakit lua-rakit-check lint fmt clean openapi openapi-check
+.PHONY: help check-label check-disk clean-shared clean-cache-shared setup test test-rust db-test uji-pg uji-pg-cargo uji-pg-worker uji-pg-cargo-worker uji-lua uji-redis uji-redis-cargo uji-amqp uji-amqp-cargo lua-rakit lua-rakit-check lint fmt clean openapi openapi-check
 
 # Podman toolchain containers must carry the owning issue label, so untracked containers cannot appear (SHAA-222).
 # Docker lane: cek ruang kosong sebelum target apa pun yang memakai container (SHAA-373).
@@ -143,7 +143,7 @@ setup: check-label $(CHECK_DISK)
 
 # Uji yang butuh engine container di host. Dipisah agar gate tanpa engine
 # (mis. CI dalam container image rust) tetap bisa jalan lewat `make test-rust lint`.
-UJI_KONTAINER := db-test uji-pg uji-lua uji-redis
+UJI_KONTAINER := db-test uji-pg uji-lua uji-redis uji-amqp
 
 test: test-rust $(UJI_KONTAINER)
 
@@ -214,6 +214,18 @@ uji-redis: check-label $(CHECK_DISK)
 uji-redis-cargo: BUILD_LOCK_OPTS += --network host -e POOLROUTER_TEST_REDIS -e POOLROUTER_TEST_FASE -e POOLROUTER_TEST_RUN_ID_LAMA
 uji-redis-cargo: check-label $(CHECK_DISK)
 	$(HEAVY) cargo test --locked -p poolrouter-core --test pemulihan_redis --test kuota_store_redis --test alokasi_redis -- --ignored --test-threads=1 --nocapture
+
+# Suite kontrak port antrean terhadap RabbitMQ sungguhan (ARC-68, spec f0-controller-worker AC-1–AC-3).
+# Broker jalan sebagai container sekali pakai berlabel (image sama dengan deploy/compose), independen dari
+# RUNNER; `uji-amqp-cargo` menjalankan uji `#[ignore]` crate queue-apalis lewat kunci build.
+AMQP_ENGINE ?= $(CONTAINER_ENGINE)
+uji-amqp: check-label $(CHECK_DISK)
+	CONTAINER_ENGINE=$(AMQP_ENGINE) ARC_ISSUE=$(patsubst arctiva.issue=%,%,$(CONTAINER_LABEL)) \
+	sh crates/queue-apalis/tests/uji-amqp.sh "$(SUBMAKE) uji-amqp-cargo RUNNER=$(RUNNER) CONTAINER_LABEL=$(CONTAINER_LABEL)"
+
+uji-amqp-cargo: BUILD_LOCK_OPTS += --network host -e POOLROUTER_TEST_AMQP
+uji-amqp-cargo: check-label $(CHECK_DISK)
+	$(HEAVY) cargo test --locked -p poolrouter-queue-apalis --test kontrak_amqp -- --ignored --test-threads=1 --nocapture
 
 lint: check-label $(CHECK_DISK)
 	$(RUN) cargo fmt --all --check
