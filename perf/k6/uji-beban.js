@@ -13,8 +13,8 @@
 //   POLL_SAMPLE         porsi async yang di-poll sampai terminal (default 0.1)
 //   POLL_TIMEOUT_S      batas tunggu terminal per sampel (default 90)
 //
-// Data: NIK acak 16 digit berawalan 3201 dibuat di sini; hasilnya tidak
-// berasal dari data penduduk nyata.
+// Data: NIK acak 16 digit berawalan 00 dibuat di sini (aturan repo: NIK hanya sintetis dan
+// berawalan 00); hasilnya tidak berasal dari data penduduk nyata. `make test-nik` menjaga prefiks ini.
 
 import http from 'k6/http';
 import { check, sleep } from 'k6';
@@ -54,9 +54,11 @@ const http429 = new Counter('http_429_total');
 
 const TERMINAL = ['done', 'failed', 'expired', 'cancelled'];
 
+const NIK_PREFIKS = '00';
+
 function syntheticNik() {
-  let s = '3201';
-  for (let i = 0; i < 12; i++) s += Math.floor(Math.random() * 10);
+  let s = NIK_PREFIKS;
+  for (let i = 0; i < 14; i++) s += Math.floor(Math.random() * 10);
   return s;
 }
 
