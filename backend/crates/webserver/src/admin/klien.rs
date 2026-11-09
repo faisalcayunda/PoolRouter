@@ -11,6 +11,7 @@ use std::net::SocketAddr;
 use axum::extract::{ConnectInfo, Path, State};
 use axum::http::{HeaderMap, Method, StatusCode};
 use axum::response::{IntoResponse, Response};
+use chrono::Utc;
 use poolrouter_core::audit::{
     AksiKonfigurasi, Alasan, EntitasKonfigurasi, KonfigurasiBaru, Penulis, Peran,
 };
@@ -18,13 +19,22 @@ use serde_json::json;
 use uuid::Uuid;
 
 use super::gerbang::{galat_validasi, masuk};
+use super::k20::{self, GalatK20, JenisEntitas};
 use super::sesi::{AdminState, Galat};
-use crate::api::admin::{Client, ClientConfig, FieldError};
+use crate::api::admin::{AlasanK20, Client, ClientConfig, FieldError, HasilK20, PratinjauK20};
 
 /// Reads: platform admin, or the client owner of the addressed client.
 const PERAN_BACA: [Peran; 2] = [Peran::PlatformAdmin, Peran::ClientOwner];
 /// Writes: platform admin only (DESIGN.md §3.2).
 const PERAN_TULIS: [Peran; 1] = [Peran::PlatformAdmin];
+/// K-20 on a client: platform admin only (`fn_nonaktifkan_entitas`/`fn_aktifkan_entitas`
+/// have no client_owner branch for `jenis = 'client'`).
+const PERAN_K20: [Peran; 1] = [Peran::PlatformAdmin];
+/// `activateClient` takes no body (section 3a.4: no confirmation dialog), but
+/// the SQL function still requires a non-empty reason; this fixed, non-secret
+/// string satisfies it.
+const ALASAN_AKTIFKAN_CLIENT: &str =
+    "Diaktifkan lewat admin console (K-20); tanpa dialog konfirmasi.";
 
 const BURST_MIN: i64 = 1;
 const BURST_MAX: i64 = 1000;
@@ -243,6 +253,137 @@ pub(super) async fn update_client(
         }),
     )
         .into_response())
+}
+
+/// Preview client deactivation (K-20, AC-28): counts only, no request id, NIK
+/// or payload, nothing stored.
+pub(super) async fn pratinjau_nonaktifkan_client(
+    State(s): State<AdminState>,
+    method: Method,
+    headers: HeaderMap,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
+    Path(id): Path<Uuid>,
+) -> Result<Response, Galat> {
+    masuk(
+        &s,
+        &method,
+        &headers,
+        peer,
+        &PERAN_K20,
+        "pratinjauNonaktifkanClient",
+    )
+    .await?;
+    ada_client(&s, id).await?;
+    let hasil = s
+        .k20
+        .pratinjau(JenisEntitas::Client, id)
+        .await
+        .map_err(|e| galat_k20(&e))?;
+    Ok((
+        StatusCode::OK,
+        axum::Json(PratinjauK20 {
+            akan_cancelled: i64::from(hasil.akan_cancelled),
+            akan_failed: i64::from(hasil.akan_failed),
+            dihitung_pada: hasil.dihitung_at,
+            upstream_aktif_terakhir_untuk: None,
+            dipakai_oleh_downstream_pool_count: None,
+        }),
+    )
+        .into_response())
+}
+
+/// Deactivate a client (K-20, AC-29): one mass cancel/fail transaction; the
+/// same numbers land in `audit_konfigurasi`.
+pub(super) async fn nonaktifkan_client(
+    State(s): State<AdminState>,
+    method: Method,
+    headers: HeaderMap,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
+    Path(id): Path<Uuid>,
+    axum::Json(body): axum::Json<AlasanK20>,
+) -> Result<Response, Galat> {
+    let peminta = masuk(&s, &method, &headers, peer, &PERAN_K20, "nonaktifkanClient").await?;
+    ada_client(&s, id).await?;
+    let hasil = s
+        .k20
+        .nonaktifkan(JenisEntitas::Client, id, peminta.pengguna_id, &body.alasan)
+        .await
+        .map_err(|e| galat_k20(&e))?;
+    Ok((
+        StatusCode::OK,
+        axum::Json(HasilK20 {
+            jumlah_cancelled: i64::from(hasil.jumlah_cancelled),
+            jumlah_failed: i64::from(hasil.jumlah_failed),
+            dilakukan_pada: Utc::now(),
+        }),
+    )
+        .into_response())
+}
+
+/// Activate a client (K-20, AC-30): no K-20 dialog, applies only to requests
+/// submitted afterwards.
+pub(super) async fn aktifkan_client(
+    State(s): State<AdminState>,
+    method: Method,
+    headers: HeaderMap,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
+    Path(id): Path<Uuid>,
+) -> Result<Response, Galat> {
+    let peminta = masuk(&s, &method, &headers, peer, &PERAN_K20, "aktifkanClient").await?;
+    let lama = ada_client(&s, id).await?;
+
+    s.k20
+        .aktifkan(
+            JenisEntitas::Client,
+            id,
+            peminta.pengguna_id,
+            ALASAN_AKTIFKAN_CLIENT,
+        )
+        .await
+        .map_err(|e| galat_k20(&e))?;
+
+    Ok((
+        StatusCode::OK,
+        axum::Json(Client {
+            client_id: id,
+            aktif: true,
+            ..lama
+        }),
+    )
+        .into_response())
+}
+
+/// `client_id`, or 404; the row is also the entity `aktifkan_client` returns.
+async fn ada_client(s: &AdminState, client_id: Uuid) -> Result<Client, Galat> {
+    let baris: Option<(Uuid, String, i64, f64, bool)> = sqlx::query_as(
+        "SELECT client_id, nama, limiter_penolakan_burst::bigint, \
+                limiter_penolakan_isi_ulang_per_detik::float8, aktif \
+           FROM client WHERE client_id = $1",
+    )
+    .bind(client_id)
+    .fetch_optional(&s.pool)
+    .await
+    .map_err(|e| galat_db(&e))?;
+    baris.map(baris_client).ok_or_else(Galat::tidak_ditemukan)
+}
+
+/// `fn_nonaktifkan_entitas`/`fn_aktifkan_entitas` only ever raise
+/// `check_violation` (23514, the alasan-empty guard — unreachable here, the
+/// body is already validated) or `insufficient_privilege` (42501 — also
+/// unreachable, `masuk` already checked the role); anything else is a
+/// database failure.
+fn galat_k20(e: &GalatK20) -> Galat {
+    match e {
+        GalatK20::AlasanTidakValid => galat_validasi(vec![FieldError {
+            field: "alasan",
+            kode: "rentang",
+            batas: Some(k20::ALASAN_MAX as f64),
+        }]),
+        GalatK20::BasisData(e) => {
+            tracing::error!(error = %e, "admin: operasi K-20 client gagal");
+            Galat::layanan()
+        }
+    }
 }
 
 fn baris_client(baris: (Uuid, String, i64, f64, bool)) -> Client {

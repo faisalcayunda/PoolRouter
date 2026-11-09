@@ -3,6 +3,7 @@ import {
   Heading,
   Modal,
   Dialog as RacDialog,
+  Text,
   type ModalOverlayProps,
 } from 'react-aria-components';
 import type { ReactNode } from 'react';
@@ -76,7 +77,9 @@ export function Dialog({
               ) : null}
             </div>
             {description ? (
-              <p className="typescale-body-medium text-on-surface-variant">{description}</p>
+              <Text slot="description" className="typescale-body-medium text-on-surface-variant">
+                {description}
+              </Text>
             ) : null}
             <div className="typescale-body-medium min-h-0 flex-1 overflow-auto text-on-surface-variant">
               {children}
