@@ -560,7 +560,7 @@ async fn simpan_versi(
     Ok(versi)
 }
 
-async fn baca_provider(s: &AdminState, id: Uuid) -> Result<Provider, Galat> {
+pub(super) async fn baca_provider(s: &AdminState, id: Uuid) -> Result<Provider, Galat> {
     let baris: BarisProvider = sqlx::query_as(
         "SELECT p.provider_id, p.nama, p.aktif, \
          v.versi, v.config_schema_version, v.dokumen \

@@ -791,3 +791,647 @@ async fn credential_audit_angka_non_nol() {
     assert_eq!(audit["jumlah_failed"], 0);
     assert_eq!(audit["alasan"], alasan);
 }
+
+// ---------------------------------------------------------------------------
+// ARC-168: endpoint, downstream pool, upstream pool, provider (AC-28..AC-31)
+// ---------------------------------------------------------------------------
+
+/// Satu rute lengkap beserta client dan kredensialnya.
+struct Rute {
+    client: Uuid,
+    kredensial: Uuid,
+    provider: Uuid,
+    upstream: Uuid,
+    dpool: Uuid,
+    endpoint: Uuid,
+}
+
+async fn rute(u: &Uji, tag: &str) -> Rute {
+    let (pengguna, _) = u.pengguna(&["platform_admin"], None).await;
+    let client = u.klien(&unik(&format!("Klien{tag}"))).await;
+    let kredensial = u.kredensial(client, pengguna).await;
+    let endpoint = u.endpoint(&unik(tag)).await;
+    let (provider, dpool): (Uuid, Uuid) = sqlx::query_as(
+        "SELECT provider_id, downstream_pool_id FROM downstream_endpoint \
+          WHERE downstream_endpoint_id = $1",
+    )
+    .bind(endpoint)
+    .fetch_one(&u.su)
+    .await
+    .unwrap();
+    let upstream: Uuid = sqlx::query_scalar(
+        "SELECT upstream_pool_id FROM downstream_pool_rute WHERE downstream_pool_id = $1",
+    )
+    .bind(dpool)
+    .fetch_one(&u.su)
+    .await
+    .unwrap();
+    // Provider dan endpoint hasil API selalu punya versi aktif; `aktifkan`
+    // membaca ulang entitasnya, jadi fixture ikut menulis versi 1.
+    sqlx::query(
+        "INSERT INTO provider_config_versi (provider_id, versi, config_schema_version, log_mode, dokumen, dibuat_oleh) \
+         VALUES ($1, 1, 1, 'metadata_only', $2, $3)",
+    )
+    .bind(provider)
+    .bind(json!({
+        "metode": "GET",
+        "base_url": "https://penyedia.example.test/api",
+        "body_template": "{}",
+        "parameters": [],
+        "respons_skema": { "status_skema": "status_skor" },
+        "tls_trust": "ca_kustom",
+        "log_mode": "metadata_only"
+    }))
+    .bind(pengguna)
+    .execute(&u.su)
+    .await
+    .unwrap();
+    sqlx::query("UPDATE provider SET config_versi_aktif = 1 WHERE provider_id = $1")
+        .bind(provider)
+        .execute(&u.su)
+        .await
+        .unwrap();
+    sqlx::query(
+        "INSERT INTO endpoint_config_versi (downstream_endpoint_id, versi, config_schema_version, dokumen, dibuat_oleh) \
+         VALUES ($1, 1, 1, '{}'::jsonb, $2)",
+    )
+    .bind(endpoint)
+    .bind(pengguna)
+    .execute(&u.su)
+    .await
+    .unwrap();
+    sqlx::query(
+        "UPDATE downstream_endpoint SET config_versi_aktif = 1 WHERE downstream_endpoint_id = $1",
+    )
+    .bind(endpoint)
+    .execute(&u.su)
+    .await
+    .unwrap();
+    Rute {
+        client,
+        kredensial,
+        provider,
+        upstream,
+        dpool,
+        endpoint,
+    }
+}
+
+/// Request `queued` yang sudah satu kali dicoba (`attempt_count = 1`, upstream
+/// pool terisi): menunggu retry, jadi `failed` saat objeknya dinonaktifkan.
+async fn request_menunggu_retry(su: &PgPool, r: &Rute, nik: &str) -> Uuid {
+    let rid = Uuid::now_v7();
+    let mut tx = su.begin().await.unwrap();
+    sqlx::query(
+        "INSERT INTO request (request_id, client_id, credential_id, downstream_endpoint_id, downstream_pool_id, \
+            provider_id, upstream_pool_id, provider_config_version, endpoint_config_version, mode, prioritas, \
+            prioritas_efektif, status, metadata, received_at, ttl_expires_at, attempt_count) \
+         VALUES ($1, $2, $3, $4, $5, $6, $7, 1, 1, 'async', 1, 1, 'queued', '{}'::jsonb, $8, $8 + interval '1 day', 1)",
+    )
+    .bind(rid)
+    .bind(r.client)
+    .bind(r.kredensial)
+    .bind(r.endpoint)
+    .bind(r.dpool)
+    .bind(r.provider)
+    .bind(r.upstream)
+    .bind(Utc::now())
+    .execute(&mut *tx)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO request_status_history (request_id, seq, status_dari, status_ke, aktor) \
+         VALUES ($1, 1, NULL, 'queued', 'webserver')",
+    )
+    .bind(rid)
+    .execute(&mut *tx)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO transaction_log (kode_transaksi, request_id, attempt_no, provider_id, upstream_pool_id, \
+            client_id, downstream_endpoint_id, provider_config_version, endpoint_config_version, nik, requested_at, \
+            status_akses, error_class, log_mode, worker_id) \
+         VALUES (gen_random_uuid(), $1, 1, $2, $3, $4, $5, 1, 1, $6, now(), 'gagal_provider', 'provider_sementara', \
+            'metadata_only', 'w1')",
+    )
+    .bind(rid)
+    .bind(r.provider)
+    .bind(r.upstream)
+    .bind(r.client)
+    .bind(r.endpoint)
+    .bind(nik)
+    .execute(&mut *tx)
+    .await
+    .unwrap();
+    tx.commit().await.unwrap();
+    rid
+}
+
+/// Request `dispatched` dengan `attempt_count = 0`: sudah punya upstream pool
+/// (EN-04: terisi saat dispatch), jadi ikut dibatalkan untuk keempat tipe.
+async fn request_dispatched(su: &PgPool, r: &Rute, nik: &str) -> Uuid {
+    let rid = request_queued(su, r.client, r.kredensial, r.endpoint, r.dpool, nik).await;
+    let mut tx = su.begin().await.unwrap();
+    sqlx::query(
+        "UPDATE request SET status = 'dispatched', dispatch_key = gen_random_uuid(), \
+                dispatched_at = $2, upstream_pool_id = $3 WHERE request_id = $1",
+    )
+    .bind(rid)
+    .bind(Utc::now())
+    .bind(r.upstream)
+    .execute(&mut *tx)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO request_status_history (request_id, seq, status_dari, status_ke, aktor) \
+         VALUES ($1, 2, 'queued', 'dispatched', 'webserver')",
+    )
+    .bind(rid)
+    .execute(&mut *tx)
+    .await
+    .unwrap();
+    tx.commit().await.unwrap();
+    rid
+}
+
+/// Request `in_flight`: tidak pernah disentuh K-20 (AC-29).
+async fn request_in_flight(su: &PgPool, r: &Rute) -> Uuid {
+    let rid = Uuid::now_v7();
+    let mut tx = su.begin().await.unwrap();
+    sqlx::query(
+        "INSERT INTO request (request_id, client_id, credential_id, downstream_endpoint_id, downstream_pool_id, \
+            provider_id, provider_config_version, endpoint_config_version, mode, prioritas, prioritas_efektif, \
+            status, metadata, received_at, attempt_count) \
+         SELECT $1, $2, $3, $4, $5, provider_id, 1, 1, 'sync', 1, 1, 'in_flight', '{}'::jsonb, $6, 1 \
+           FROM downstream_endpoint WHERE downstream_endpoint_id = $4",
+    )
+    .bind(rid)
+    .bind(r.client)
+    .bind(r.kredensial)
+    .bind(r.endpoint)
+    .bind(r.dpool)
+    .bind(Utc::now())
+    .execute(&mut *tx)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO request_status_history (request_id, seq, status_dari, status_ke, aktor) \
+         VALUES ($1, 1, NULL, 'in_flight', 'webserver')",
+    )
+    .bind(rid)
+    .execute(&mut *tx)
+    .await
+    .unwrap();
+    tx.commit().await.unwrap();
+    rid
+}
+
+/// Satu baris matriks: satu tipe entitas.
+struct Kasus {
+    nama: &'static str,
+    /// Segmen path koleksi, mis. `endpoints`.
+    path: &'static str,
+    /// `entitas_jenis` di `audit_konfigurasi`.
+    entitas: &'static str,
+    /// Nama field id di entitas yang dikembalikan `aktifkan`.
+    kunci_id: &'static str,
+    id: fn(&Rute) -> Uuid,
+    aktif_sql: &'static str,
+    /// Request `queued` tanpa upstream pool ikut dibatalkan? Tidak untuk
+    /// upstream pool (EN-04: baru terikat saat dispatch).
+    queued_terdampak: bool,
+    alasan_cancel: &'static str,
+}
+
+const KASUS: [Kasus; 4] = [
+    Kasus {
+        nama: "endpoint",
+        path: "endpoints",
+        entitas: "downstream_endpoint",
+        kunci_id: "endpoint_id",
+        id: |r| r.endpoint,
+        aktif_sql: "SELECT aktif FROM downstream_endpoint WHERE downstream_endpoint_id = $1",
+        queued_terdampak: true,
+        alasan_cancel: "endpoint_nonaktif",
+    },
+    Kasus {
+        nama: "dpool",
+        path: "downstream-pools",
+        entitas: "downstream_pool",
+        kunci_id: "downstream_pool_id",
+        id: |r| r.dpool,
+        aktif_sql: "SELECT aktif FROM downstream_pool WHERE downstream_pool_id = $1",
+        queued_terdampak: true,
+        alasan_cancel: "pool_nonaktif",
+    },
+    Kasus {
+        nama: "upool",
+        path: "upstream-pools",
+        entitas: "upstream_pool",
+        kunci_id: "upstream_pool_id",
+        id: |r| r.upstream,
+        aktif_sql: "SELECT aktif FROM upstream_pool WHERE upstream_pool_id = $1",
+        queued_terdampak: false,
+        alasan_cancel: "pool_nonaktif",
+    },
+    Kasus {
+        nama: "provider",
+        path: "providers",
+        entitas: "provider",
+        kunci_id: "provider_id",
+        id: |r| r.provider,
+        aktif_sql: "SELECT aktif FROM provider WHERE provider_id = $1",
+        queued_terdampak: true,
+        alasan_cancel: "provider_nonaktif",
+    },
+];
+
+async fn status_request(su: &PgPool, rid: Uuid) -> (String, Option<String>, Option<String>) {
+    sqlx::query_as(
+        "SELECT status, cancel_reason, failure_reason FROM request WHERE request_id = $1",
+    )
+    .bind(rid)
+    .fetch_one(su)
+    .await
+    .unwrap()
+}
+
+/// Matriks satu tipe entitas lewat router produksi: guard, 404, pratinjau,
+/// nonaktifkan (status request, audit, `in_flight`), idempotensi, aktifkan.
+async fn matriks(k: &Kasus) {
+    let u = siapkan().await;
+    let (_, pa) = u.pengguna(&["platform_admin"], None).await;
+    let r = rute(&u, k.nama).await;
+    let id = (k.id)(&r);
+    let dasar = format!("/admin/v1/{}/{id}", k.path);
+    let nik = "0000000000000042";
+
+    // AC-3: tanpa sesi 401, Origin salah 403 tanpa perubahan data.
+    let (st, h, _) = u
+        .kirim(
+            Method::GET,
+            &format!("{dasar}/pratinjau-nonaktif"),
+            None,
+            None,
+            None,
+        )
+        .await;
+    assert_eq!(st, StatusCode::UNAUTHORIZED);
+    no_store(&h);
+    let (st, _, j) = u
+        .kirim(
+            Method::POST,
+            &format!("{dasar}/nonaktifkan"),
+            Some(&pa),
+            Some("https://asing.example.test"),
+            Some(json!({ "alasan": "uji origin salah sintetis" })),
+        )
+        .await;
+    assert_eq!(st, StatusCode::FORBIDDEN);
+    assert_eq!(j["kode"], "origin_tidak_valid");
+
+    // AC-4: client_owner di luar kolom Peran, 403 tanpa perubahan data.
+    let (_, co) = u.pengguna(&["client_owner"], Some(r.client)).await;
+    let (st, _, _) = u
+        .kirim(
+            Method::POST,
+            &format!("{dasar}/nonaktifkan"),
+            Some(&co),
+            Some(ASAL),
+            Some(json!({ "alasan": "uji peran client owner" })),
+        )
+        .await;
+    assert_eq!(st, StatusCode::FORBIDDEN);
+
+    // 404 untuk id tak dikenal pada ketiga operasi.
+    let hantu = Uuid::now_v7();
+    for (method, sufiks, body) in [
+        (Method::GET, "pratinjau-nonaktif", None),
+        (
+            Method::POST,
+            "nonaktifkan",
+            Some(json!({ "alasan": "uji id tidak dikenal" })),
+        ),
+        (Method::POST, "aktifkan", None),
+    ] {
+        let (st, h, _) = u
+            .kirim(
+                method,
+                &format!("/admin/v1/{}/{hantu}/{sufiks}", k.path),
+                Some(&pa),
+                Some(ASAL),
+                body,
+            )
+            .await;
+        assert_eq!(st, StatusCode::NOT_FOUND, "{} {sufiks}", k.nama);
+        no_store(&h);
+    }
+
+    // Fixture: satu request per status.
+    let queued = request_queued(&u.su, r.client, r.kredensial, r.endpoint, r.dpool, nik).await;
+    let retry = request_menunggu_retry(&u.su, &r, nik).await;
+    let dispatched = request_dispatched(&u.su, &r, nik).await;
+    let in_flight = request_in_flight(&u.su, &r).await;
+    let (cancelled, failed) = (1 + i64::from(k.queued_terdampak), 1);
+
+    // AC-28: pratinjau hanya angka, tanpa request_id, NIK, atau payload.
+    let (st, h, p) = u
+        .kirim(
+            Method::GET,
+            &format!("{dasar}/pratinjau-nonaktif"),
+            Some(&pa),
+            Some(ASAL),
+            None,
+        )
+        .await;
+    assert_eq!(st, StatusCode::OK);
+    no_store(&h);
+    assert_eq!(p["akan_cancelled"], cancelled, "{}", k.nama);
+    assert_eq!(p["akan_failed"], failed, "{}", k.nama);
+    assert!(p.get("dihitung_pada").is_some());
+    assert!(!p.to_string().contains(nik));
+    assert!(p.get("request_id").is_none());
+    assert_eq!(
+        p.get("upstream_aktif_terakhir_untuk").is_some(),
+        k.nama == "upool",
+        "keterangan tambahan hanya untuk upstream pool"
+    );
+
+    // Alasan terlalu pendek: 422 tanpa perubahan data.
+    let (st, _, j) = u
+        .kirim(
+            Method::POST,
+            &format!("{dasar}/nonaktifkan"),
+            Some(&pa),
+            Some(ASAL),
+            Some(json!({ "alasan": "pendek" })),
+        )
+        .await;
+    assert_eq!(st, StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(j["errors"][0]["field"], "alasan");
+    assert_eq!(status_request(&u.su, queued).await.0, "queued");
+
+    // AC-29: nonaktifkan, satu transisi per request, angka sama dengan audit.
+    let alasan = "uji matriks K-20 ARC-168 sintetis";
+    let (st, h, hasil) = u
+        .kirim(
+            Method::POST,
+            &format!("{dasar}/nonaktifkan"),
+            Some(&pa),
+            Some(ASAL),
+            Some(json!({ "alasan": alasan })),
+        )
+        .await;
+    assert_eq!(st, StatusCode::OK);
+    no_store(&h);
+    assert_eq!(hasil["jumlah_cancelled"], cancelled, "{}", k.nama);
+    assert_eq!(hasil["jumlah_failed"], failed, "{}", k.nama);
+    assert!(!hasil.to_string().contains(nik));
+    let (s_queued, alasan_cancel, _) = status_request(&u.su, queued).await;
+    if k.queued_terdampak {
+        assert_eq!(s_queued, "cancelled");
+        assert_eq!(alasan_cancel.as_deref(), Some(k.alasan_cancel));
+    } else {
+        assert_eq!(
+            s_queued, "queued",
+            "EN-04: belum di-dispatch, tidak disentuh"
+        );
+    }
+    let (s_dispatched, alasan_dispatched, _) = status_request(&u.su, dispatched).await;
+    assert_eq!(s_dispatched, "cancelled", "{}", k.nama);
+    assert_eq!(alasan_dispatched.as_deref(), Some(k.alasan_cancel));
+    let (s_retry, _, gagal) = status_request(&u.su, retry).await;
+    assert_eq!(s_retry, "failed");
+    assert_eq!(gagal.as_deref(), Some("objek_nonaktif"));
+    assert_eq!(status_request(&u.su, in_flight).await.0, "in_flight");
+    let audit = u.audit_terakhir(k.entitas, id).await.expect("audit");
+    assert_eq!(audit["aksi"], "nonaktifkan");
+    assert_eq!(audit["alasan"], alasan);
+    assert_eq!(audit["jumlah_cancelled"], hasil["jumlah_cancelled"]);
+    assert_eq!(audit["jumlah_failed"], hasil["jumlah_failed"]);
+    let aktif: bool = sqlx::query_scalar(k.aktif_sql)
+        .bind(id)
+        .fetch_one(&u.su)
+        .await
+        .unwrap();
+    assert!(!aktif);
+
+    // Idempotensi: nonaktifkan ulang tidak menutup apa pun lagi.
+    let (st, _, ulang) = u
+        .kirim(
+            Method::POST,
+            &format!("{dasar}/nonaktifkan"),
+            Some(&pa),
+            Some(ASAL),
+            Some(json!({ "alasan": alasan })),
+        )
+        .await;
+    assert_eq!(st, StatusCode::OK);
+    assert_eq!(ulang["jumlah_cancelled"], 0);
+    assert_eq!(ulang["jumlah_failed"], 0);
+    let baris_bukan_nol: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM audit_konfigurasi WHERE entitas_jenis = $1 AND entitas_id = $2 \
+         AND aksi = 'nonaktifkan' AND jumlah_cancelled + jumlah_failed > 0",
+    )
+    .bind(k.entitas)
+    .bind(id)
+    .fetch_one(&u.pool)
+    .await
+    .unwrap();
+    assert_eq!(baris_bukan_nol, 1);
+
+    // AC-30: aktifkan mengembalikan entitas dan tidak mengubah request lama.
+    let (st, h, entitas) = u
+        .kirim(
+            Method::POST,
+            &format!("{dasar}/aktifkan"),
+            Some(&pa),
+            Some(ASAL),
+            None,
+        )
+        .await;
+    assert_eq!(st, StatusCode::OK, "{} {entitas}", k.nama);
+    no_store(&h);
+    assert_eq!(entitas["aktif"], true);
+    assert_eq!(entitas[k.kunci_id], *id.to_string().as_str());
+    assert_eq!(status_request(&u.su, retry).await.0, "failed");
+    assert_eq!(status_request(&u.su, in_flight).await.0, "in_flight");
+    assert_eq!(status_request(&u.su, queued).await.0, s_queued);
+    assert_eq!(status_request(&u.su, dispatched).await.0, "cancelled");
+    let audit = u.audit_terakhir(k.entitas, id).await.expect("audit");
+    assert_eq!(audit["aksi"], "aktifkan");
+    let aktif: bool = sqlx::query_scalar(k.aktif_sql)
+        .bind(id)
+        .fetch_one(&u.su)
+        .await
+        .unwrap();
+    assert!(aktif);
+}
+
+#[tokio::test]
+#[ignore]
+async fn endpoint_matriks_k20() {
+    matriks(&KASUS[0]).await;
+}
+
+#[tokio::test]
+#[ignore]
+async fn downstream_pool_matriks_k20() {
+    matriks(&KASUS[1]).await;
+}
+
+#[tokio::test]
+#[ignore]
+async fn upstream_pool_matriks_k20() {
+    matriks(&KASUS[2]).await;
+}
+
+#[tokio::test]
+#[ignore]
+async fn provider_matriks_k20() {
+    matriks(&KASUS[3]).await;
+}
+
+/// AC-31: dua nonaktifkan bersamaan atas entitas yang sama, satu transisi per
+/// request dan satu baris audit dengan angka bukan nol.
+async fn paralel(k: &Kasus) {
+    let u = siapkan().await;
+    let (_, pa) = u.pengguna(&["platform_admin"], None).await;
+    let r = rute(&u, &format!("p{}", k.nama)).await;
+    let id = (k.id)(&r);
+    let retry = request_menunggu_retry(&u.su, &r, "0000000000000043").await;
+    let queued = request_queued(
+        &u.su,
+        r.client,
+        r.kredensial,
+        r.endpoint,
+        r.dpool,
+        "0000000000000044",
+    )
+    .await;
+
+    let path = format!("/admin/v1/{}/{id}/nonaktifkan", k.path);
+    let kirim = |alasan: &'static str| {
+        let req = Request::builder()
+            .method(Method::POST)
+            .uri(path.clone())
+            .header(header::COOKIE, pa.as_str())
+            .header(header::ORIGIN, ASAL)
+            .header(header::CONTENT_TYPE, "application/json")
+            .body(Body::from(json!({ "alasan": alasan }).to_string()))
+            .unwrap();
+        let app = u.app.clone();
+        async move { app.oneshot(req).await.unwrap().status() }
+    };
+    let (a, b) = tokio::join!(
+        kirim("uji paralel pertama sintetis"),
+        kirim("uji paralel kedua sintetis")
+    );
+    assert_eq!((a, b), (StatusCode::OK, StatusCode::OK));
+
+    for rid in [retry, queued] {
+        let transisi: i64 = sqlx::query_scalar(
+            "SELECT count(*) FROM request_status_history WHERE request_id = $1 \
+             AND status_ke IN ('cancelled', 'failed')",
+        )
+        .bind(rid)
+        .fetch_one(&u.su)
+        .await
+        .unwrap();
+        let diharapkan = i64::from(rid == retry || k.queued_terdampak);
+        assert_eq!(
+            transisi, diharapkan,
+            "{}: satu transisi per request",
+            k.nama
+        );
+    }
+    let baris_bukan_nol: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM audit_konfigurasi WHERE entitas_jenis = $1 AND entitas_id = $2 \
+         AND jumlah_cancelled + jumlah_failed > 0",
+    )
+    .bind(k.entitas)
+    .bind(id)
+    .fetch_one(&u.pool)
+    .await
+    .unwrap();
+    assert_eq!(baris_bukan_nol, 1, "{}: satu baris audit bukan nol", k.nama);
+}
+
+#[tokio::test]
+#[ignore]
+async fn endpoint_dua_nonaktifkan_bersamaan() {
+    paralel(&KASUS[0]).await;
+}
+
+#[tokio::test]
+#[ignore]
+async fn downstream_pool_dua_nonaktifkan_bersamaan() {
+    paralel(&KASUS[1]).await;
+}
+
+#[tokio::test]
+#[ignore]
+async fn upstream_pool_dua_nonaktifkan_bersamaan() {
+    paralel(&KASUS[2]).await;
+}
+
+#[tokio::test]
+#[ignore]
+async fn provider_dua_nonaktifkan_bersamaan() {
+    paralel(&KASUS[3]).await;
+}
+
+/// §3a.10: pratinjau upstream pool menandai downstream pool yang upstream
+/// aktif terakhirnya adalah pool ini, dihitung dari konfigurasi.
+#[tokio::test]
+#[ignore]
+async fn upstream_pool_pratinjau_aktif_terakhir() {
+    let u = siapkan().await;
+    let (_, pa) = u.pengguna(&["platform_admin"], None).await;
+    let r = rute(&u, "terakhir").await;
+    let path = format!("/admin/v1/upstream-pools/{}/pratinjau-nonaktif", r.upstream);
+
+    let (st, _, p) = u
+        .kirim(Method::GET, &path, Some(&pa), Some(ASAL), None)
+        .await;
+    assert_eq!(st, StatusCode::OK);
+    assert_eq!(p["dipakai_oleh_downstream_pool_count"], 1);
+    assert_eq!(
+        p["upstream_aktif_terakhir_untuk"].as_array().unwrap().len(),
+        1
+    );
+    assert_eq!(
+        p["upstream_aktif_terakhir_untuk"][0]["downstream_pool_id"],
+        *r.dpool.to_string().as_str()
+    );
+    assert!(p["upstream_aktif_terakhir_untuk"][0]["nama"].is_string());
+
+    // Upstream pool aktif kedua di rute yang sama: bukan lagi yang terakhir.
+    let kedua = Uuid::now_v7();
+    sqlx::query(
+        "INSERT INTO upstream_pool (upstream_pool_id, provider_id, nama, kuota_harian, batas_percobaan, retry_backoff_base_detik) \
+         VALUES ($1, $2, $3, 1000, 3, 1)",
+    )
+    .bind(kedua)
+    .bind(r.provider)
+    .bind(unik("up-kedua"))
+    .execute(&u.su)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO downstream_pool_rute (downstream_pool_id, upstream_pool_id) VALUES ($1, $2)",
+    )
+    .bind(r.dpool)
+    .bind(kedua)
+    .execute(&u.su)
+    .await
+    .unwrap();
+    let (_, _, p) = u
+        .kirim(Method::GET, &path, Some(&pa), Some(ASAL), None)
+        .await;
+    assert_eq!(p["dipakai_oleh_downstream_pool_count"], 1);
+    assert_eq!(
+        p["upstream_aktif_terakhir_untuk"].as_array().unwrap().len(),
+        0
+    );
+}

@@ -352,7 +352,10 @@ pub(super) async fn get_upstream_pool(
     Ok((StatusCode::OK, Json(entitas)).into_response())
 }
 
-async fn baca_upstream<'e, E>(eksekutor: E, id: Uuid) -> Result<Option<UpstreamPool>, Galat>
+pub(super) async fn baca_upstream<'e, E>(
+    eksekutor: E,
+    id: Uuid,
+) -> Result<Option<UpstreamPool>, Galat>
 where
     E: sqlx::PgExecutor<'e>,
 {
@@ -807,7 +810,10 @@ pub(super) async fn get_downstream_pool(
     Ok((StatusCode::OK, Json(entitas)).into_response())
 }
 
-async fn baca_downstream<'e, E>(eksekutor: E, id: Uuid) -> Result<Option<DownstreamPool>, Galat>
+pub(super) async fn baca_downstream<'e, E>(
+    eksekutor: E,
+    id: Uuid,
+) -> Result<Option<DownstreamPool>, Galat>
 where
     E: sqlx::PgExecutor<'e>,
 {
