@@ -668,9 +668,8 @@ async fn endpoint_nonaktif_tetap_200_di_kontrak_tapi_403_di_submit() {
     s.atur(endpoint, bidang());
     s.nonaktifkan();
     let h = Harness::dengan(sesi, endpoint);
-    h.permintaan.ubah_rantai(|r| {
-        r.nonaktif = Some(poolrouter_webserver::api::enums::JenisObjek::Endpoint)
-    });
+    h.permintaan
+        .ubah_rantai(|r| r.nonaktif = Some(poolrouter_webserver::api::enums::JenisObjek::Endpoint));
 
     let (status, headers, body) = h
         .kirim(
