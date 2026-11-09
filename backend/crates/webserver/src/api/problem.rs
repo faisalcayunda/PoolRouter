@@ -253,7 +253,11 @@ pub struct Posisi {
 /// validasi per field; `batas` hanya membawa parameter angka dari aturan yang
 /// dilanggar (tidak pernah nilai yang ditolak). Tidak ada `posisi`: error
 /// template hanya ada di API admin.
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+///
+// `PartialEq` tanpa `Eq` dan itu disengaja: `batas` bertipe `f64`, sehingga
+// perbandingan hanya untuk uji dan tipe ini tidak boleh dipakai sebagai kunci
+// map.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]
 pub struct ValidasiErrorDown {
     /// Nama field yang ditolak, persis seperti dikirim (`TRESHOLD`, `NAMA_LGKAP`,
     /// atau kunci metadata). Nama yang tidak cocok dengan `^[A-Za-z0-9_]{1,64}$`
@@ -286,6 +290,11 @@ pub struct ValidasiErrorAdmin {
     /// Template position. Admin API and template errors only.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub posisi: Option<Posisi>,
+    /// Name of the parameter or secret the template referenced and that does
+    /// not exist (AC-13, U-46). Echoed so the UI can offer to create it; it is a
+    /// name the operator typed, never a value. Absent for every other error.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub nama: Option<String>,
 }
 
 /// Count of failing names that are withheld instead of echoed (D6). A count of

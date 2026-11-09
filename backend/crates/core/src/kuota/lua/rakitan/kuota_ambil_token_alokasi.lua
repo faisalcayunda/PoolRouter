@@ -5,7 +5,8 @@
 
 -- Gerbang M-02 versi F1: tahap global F0 lebih dulu, lalu tahap anggaran
 -- (prioritas, reserved/shareable, peminjaman) lewat hook sesudah semua gates
--- F0 dan sebelum tulis. ADR-0006 rev 1 §10; spec f1-prioritas-alokasi AC-5.
+-- F0 dan sebelum tulis. ADR-0006 rev 1 §10; spec f1-prioritas-alokasi AC-5,
+-- AC-6.
 --
 -- Tahap globalnya BUKAN salinan: `potongan/kerangka.lua` + `potongan/
 -- ambil_token.lua` dipakai bersama F0, jadi setiap penolakan global
@@ -17,9 +18,17 @@
 -- `kunci_slot_sumber`. KEYS dan ARGV sama persis dengan `kuota_ambil_token.lua`
 -- (tabel lengkapnya di kepala berkas itu); didefinisikan sekali di
 -- `potongan/kerangka.lua` supaya kedua skrip tidak bisa berbeda. Kontrak hook
--- ada di kepala `potongan/ambil_token.lua`. Pada tiket T2a (ARC-169) hook
--- belum dipasang.
+-- ada di kepala `potongan/ambil_token.lua`.
 --
+-- KEYS tambahan sesudah kunci F0 (lihat `potongan/alokasi_anggaran.lua`):
+--   +1 `pr:anggaran:{<pool>}`      hash `<sumber>:<ember>` → cacah commit
+--   +2 `pr:slot_sumber:{<pool>}`   hash member → sumber
+--
+-- ARGV tambahan sesudah `14 + 2n` milik F0:
+--   m                       jumlah sumber pada `urutan_sumber`
+--   pasangan `sumber, batas` (m pasangan), urut prioritas
+--   ember_detik             detik per ember (600)
+
 local siap = (function()
 -- Potongan bersama: gerbang kesiapan Redis (ADR-0001 rev 15 §5a.2 butir 2).
 --
@@ -484,7 +493,9 @@ local kerangka = (function()
 --     `{ kode = '...', tabel = { ... } }`, dipanggil di
 --     `potongan/ambil_token.lua` sesudah semua gates F0 dan sebelum tulis;
 --   * `kunci_slot_sumber(KEYS, o, member)` → mencatat sumber slot yang baru
---     ditulis.
+--     ditulis;
+--   * `jumlah_kunci_tambahan` → kunci di luar bentuk F0 yang sudah dideklarasikan
+--     pemanggil (0 bila tidak ada).
 -- `opsi` nil berarti perilaku F0 apa adanya (AC-5).
 
 local function kerangka(KEYS, ARGV, opsi)
@@ -550,7 +561,13 @@ local function kerangka(KEYS, ARGV, opsi)
   if n == nil or n < 1 then
     return { 'jumlah_jendela_tidak_sah' }
   end
-  if #KEYS ~= 5 + 2 * n then
+  -- Skrip F0 tidak punya kunci tambahan; skrip alokasi menambahkan kunci
+  -- tahap anggaran dan menyebut jumlahnya di `opsi` (AC-6).
+  local tambahan = 0
+  if opsi ~= nil and opsi.jumlah_kunci_tambahan ~= nil then
+    tambahan = opsi.jumlah_kunci_tambahan
+  end
+  if #KEYS ~= 5 + 2 * n + tambahan then
     return { 'kunci_tidak_sah' }
   end
   if not bersama.kunci_sah(KEYS[1], KEYS[2], KEYS[3], KEYS[4], KEYS[5]) then
@@ -596,7 +613,145 @@ end
 
 return { jalankan = kerangka }
 end)()
+local alokasi_anggaran = (function()
+-- Potongan tahap anggaran F1 (AC-6): pilih sumber dana dan catat sumber slot.
+--
+-- BERKAS POTONGAN, bukan skrip. `scripts/rakit-lua.sh` menyisipkannya apa
+-- adanya pada baris penanda `-- sisip: potongan/alokasi_anggaran.lua sebagai
+-- alokasi_anggaran`; hasilnya ada di `rakitan/`.
+--
+-- Dipakai sebagai `o.pilih_sumber` / `o.kunci_slot_sumber` pada
+-- `potongan/ambil_token.lua` (lihat kontrak hook di `potongan/kerangka.lua`).
+--
+-- Kunci (ditetapkan skrip pemanggil, sesudah kunci F0 dan jendela rate):
+--   kunci_anggaran      `pr:anggaran:{<pool>}`, field `<sumber>:<ember>` →
+--                       cacah percobaan yang sudah commit
+--   kunci_slot_sumber_hash   `pr:slot_sumber:{<pool>}`, field member → sumber
+--
+-- `u_x = Σ field <x>:<ember> di jendela + slot aktif bersumber x`. Slot aktif
+-- dibaca dari `KEYS[4]` (`pr:slot`), yang sudah dibersihkan TTL di langkah 3
+-- `ambil_token`; entri `slot_sumber` tanpa slot hidup adalah sisa slot
+-- kedaluwarsa dan dihapus di sini supaya bebannya tidak abadi (AC-7).
 
--- shortcut: tahap anggaran (pilih_sumber/kunci_slot_sumber) belum diisi;
--- skrip ini masih berperilaku sama dengan F0. Upgrade di T2b (ARC-170).
-return kerangka.jalankan(KEYS, ARGV, nil)
+local function buat(anggota, kunci_anggaran, kunci_slot_sumber_hash, ember_detik)
+  local terpilih = nil
+
+  local function beban(KEYS, o, sumber)
+    local jumlah = 0
+    local semua = redis.call('HGETALL', kunci_anggaran)
+    for i = 1, #semua, 2 do
+      local s, n = string.match(semua[i], '^(.-):(%d+)$')
+      if s == sumber then
+        n = tonumber(n)
+        if bersama.di_jendela(o.a, n) then
+          jumlah = jumlah + tonumber(semua[i + 1])
+        end
+      end
+    end
+    local slot = redis.call('HGETALL', kunci_slot_sumber_hash)
+    for i = 1, #slot, 2 do
+      if slot[i + 1] == sumber then
+        if redis.call('ZSCORE', KEYS[4], slot[i]) then
+          jumlah = jumlah + 1
+        else
+          redis.call('HDEL', kunci_slot_sumber_hash, slot[i])
+        end
+      end
+    end
+    return jumlah
+  end
+
+  local function pilih_sumber(KEYS, o, terpakai, slot_aktif)
+    for i = 1, #anggota do
+      local bb = beban(KEYS, o, anggota[i].sumber)
+      if bb < anggota[i].batas then
+        terpilih = anggota[i].sumber
+        return nil
+      end
+    end
+
+    -- Hanya sumber pada `urutan_sumber` tiket ini yang boleh menentukan
+    -- retry_after: hash anggaran dipakai bersama semua downstream pool di
+    -- upstream pool yang sama, jadi ember tua milik pool lain tidak boleh
+    -- memengaruhi pemulihan permintaan ini (AC-6).
+    local sumber_set = {}
+    for i = 1, #anggota do
+      sumber_set[anggota[i].sumber] = true
+    end
+    local tertua = nil
+    local semua = redis.call('HGETALL', kunci_anggaran)
+    for i = 1, #semua, 2 do
+      local s, n = string.match(semua[i], '^(.-):(%d+)$')
+      if s ~= nil and sumber_set[s] then
+        n = tonumber(n)
+        if n ~= nil and bersama.di_jendela(o.a, n) and (tertua == nil or n < tertua) then
+          tertua = n
+        end
+      end
+    end
+    local tunggu = 0
+    if tertua ~= nil then
+      tunggu = math.max(
+        0,
+        (tertua + o.a.jumlah_ember) * ember_detik * 1000000 - o.sekarang()
+      )
+    end
+    return {
+      kode = 'anggaran_habis',
+      tabel = { 'anggaran_habis', terpakai, slot_aktif, 0, tunggu, 0, 0 }
+    }
+  end
+
+  local function kunci_slot_sumber(KEYS, o, member)
+    if terpilih ~= nil then
+      redis.call('HSET', kunci_slot_sumber_hash, tostring(member), tostring(terpilih))
+    end
+  end
+
+  return { pilih_sumber = pilih_sumber, kunci_slot_sumber = kunci_slot_sumber }
+end
+
+return { buat = buat }
+end)()
+
+local run_id = ARGV[1]
+if not siap(KEYS[1], run_id) then
+  return { 'belum_siap' }
+end
+
+local n = bersama.bulat(ARGV[14])
+if n == nil or n < 1 or #KEYS ~= 5 + 2 * n + 2 then
+  return { 'kunci_tidak_sah' }
+end
+
+-- `ekor` = ARGV pertama milik tahap anggaran, sesudah pasangan jendela.
+local ekor = 14 + 2 * n
+local jumlah_sumber = bersama.bulat(ARGV[ekor + 1])
+if jumlah_sumber == nil or jumlah_sumber < 1 then
+  return { 'anggaran_tidak_sah' }
+end
+local anggota = {}
+for i = 1, jumlah_sumber do
+  local sumber = ARGV[ekor + 2 * i]
+  local batas = bersama.bulat(ARGV[ekor + 2 * i + 1])
+  if sumber == nil or sumber == '' or batas == nil or batas < 0 then
+    return { 'anggaran_tidak_sah' }
+  end
+  anggota[i] = { sumber = sumber, batas = batas }
+end
+local ember_detik = bersama.bulat(ARGV[ekor + 2 * jumlah_sumber + 2])
+if ember_detik == nil or ember_detik < 1 then
+  return { 'anggaran_tidak_sah' }
+end
+
+local am = alokasi_anggaran.buat(
+  anggota,
+  KEYS[6 + 2 * n],
+  KEYS[7 + 2 * n],
+  ember_detik
+)
+return kerangka.jalankan(KEYS, ARGV, {
+  pilih_sumber = am.pilih_sumber,
+  kunci_slot_sumber = am.kunci_slot_sumber,
+  jumlah_kunci_tambahan = 2
+})

@@ -15,8 +15,8 @@ use utoipa_axum::{router::OpenApiRouter, routes};
 use uuid::Uuid;
 
 use super::enums::{
-    BahasaUi, HasilWebhook, JendelaKuota, JenisKredensial, KelasErrorWebhook, Peran, RuleJenis,
-    StatusKredensial,
+    BahasaUi, HasilWebhook, JendelaKuota, JenisKredensial, KelasErrorWebhook, LogMode,
+    MetodeProvider, Peran, RuleJenis, StatusKredensial, TlsTrust,
 };
 use super::problem_admin::ProblemAdmin as Problem;
 
@@ -131,6 +131,14 @@ pub struct SesiStatus {
 #[derive(Debug, Clone, Deserialize, ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct ProviderConfig {
+    /// Provider name, unique across the deployment (`provider.nama`). It is part
+    /// of the body because `provider.nama` is NOT NULL UNIQUE, so the create
+    /// call has to carry it (AD5).
+    #[schema(min_length = 1, max_length = 200, example = "dukcapil-produksi")]
+    pub nama: String,
+    /// HTTP method the provider call uses. `GET` with a body is allowed
+    /// (ADR-0002 D1): the template is no longer tied to the method.
+    pub metode: MetodeProvider,
     /// Provider base URL (https).
     #[schema(example = "https://provider.example.go.id/api")]
     pub base_url: String,
@@ -143,11 +151,10 @@ pub struct ProviderConfig {
     /// Response schema used to map elements (US-05).
     #[schema(value_type = Object)]
     pub respons_skema: serde_json::Value,
-    /// TLS trust setting for the provider call.
-    #[schema(example = "sistem")]
-    pub tls_trust: String,
-    #[schema(example = "ringkas")]
-    pub log_mode: String,
+    /// TLS trust setting for the provider call (ADR-0002 D5). Closed set: there
+    /// is deliberately no "verify off" mode, not even in dev.
+    pub tls_trust: TlsTrust,
+    pub log_mode: LogMode,
     /// Fixed 1 in F0; any other value is 422.
     #[schema(minimum = 1, maximum = 1, example = 1)]
     pub config_schema_version: i64,
@@ -198,6 +205,11 @@ pub struct RuleValidasi {
 #[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct Provider {
     pub provider_id: Uuid,
+    /// Provider name, unique across the deployment (`provider.nama`).
+    #[schema(example = "dukcapil-produksi")]
+    pub nama: String,
+    /// HTTP method the provider call uses (ADR-0002 D1).
+    pub metode: MetodeProvider,
     /// Provider base URL (https).
     #[schema(example = "https://provider.example.go.id/api")]
     pub base_url: String,
@@ -210,11 +222,9 @@ pub struct Provider {
     /// Response schema used to map elements (US-05).
     #[schema(value_type = Object)]
     pub respons_skema: serde_json::Value,
-    /// TLS trust setting for the provider call.
-    #[schema(example = "sistem")]
-    pub tls_trust: String,
-    #[schema(example = "ringkas")]
-    pub log_mode: String,
+    /// TLS trust setting for the provider call (ADR-0002 D5).
+    pub tls_trust: TlsTrust,
+    pub log_mode: LogMode,
     /// Fixed 1 in F0.
     #[schema(minimum = 1, maximum = 1, example = 1)]
     pub config_schema_version: i64,
@@ -2856,6 +2866,7 @@ impl utoipa::Modify for SecurityAddon {
         NikCariRequest, PayloadOpenRequest, PayloadView, EksporRequest,
         AuditCariRequest, AuditAksesBaris, AuditAksesPage,
         BahasaUi, JendelaKuota, JenisKredensial, RuleJenis,
+        LogMode, MetodeProvider, TlsTrust,
         super::problem::ProblemKodeAdmin, super::problem_admin::ProblemAdmin,
         super::problem::ValidasiErrorAdmin, super::problem::Posisi,
         super::problem::JumlahNamaTidakCocok, super::enums::JenisObjek

@@ -22,6 +22,8 @@
 --   2 pr:attempts:{<pool>}:<periode>   counter percobaan periode ini
 --   3 pr:ember:{<pool>}                hash ember 10 menit
 --   4 pr:slot:{<pool>}                 semaphore konkurensi (verifikasi saja)
+--   5 pr:anggaran:{<pool>}             (opsional, AC-6) beban anggaran per sumber
+--   6 pr:slot_sumber:{<pool>}          (opsional, AC-6) member → sumber
 --
 -- ARGV:
 --   1 run_id               dicocokkan dengan KEYS[1]
@@ -30,6 +32,8 @@
 --   4 kuota_efektif        untuk penanda `ok_terlampaui`
 --   5 jumlah_ember         `JUMLAH_EMBER` (145)
 --   6 no_ember             `floor(requested_at_unix / 600)`, BUKAN jam Redis
+--   7 sumber_cadangan      (opsional, AC-6) sumber bila `member` tidak punya
+--                          entri `slot_sumber`, yaitu sumber milik rute ini
 --
 -- Kembalian:
 --   {'belum_siap'} / {'kunci_tidak_sah'} / {<kode galat>}
@@ -58,6 +62,12 @@ if not siap(KEYS[1], run_id) then
   return { 'belum_siap' }
 end
 if not bersama.kunci_sah(KEYS[1], KEYS[2], KEYS[3], KEYS[4]) then
+  return { 'kunci_tidak_sah' }
+end
+if #KEYS ~= 4 and #KEYS ~= 6 then
+  return { 'kunci_tidak_sah' }
+end
+if #KEYS == 6 and not bersama.kunci_sah(KEYS[5], KEYS[6]) then
   return { 'kunci_tidak_sah' }
 end
 
@@ -93,6 +103,31 @@ for i = 1, #field do
   local n = tonumber(string.match(field[i], bersama.POLA_FIELD_EMBER))
   if n ~= nil and n < batas then
     redis.call('HDEL', KEYS[3], field[i])
+  end
+end
+
+-- Beban anggaran per sumber (AC-6): percobaan yang sudah commit menambah cacah
+-- `<sumber>:<ember>` milik sumber slot-nya, jadi `u_x` tetap tumbuh sesudah
+-- slot dilepas. Entri `slot_sumber` member dihapus bersamaan: beban percobaan
+-- itu pindah dari "slot aktif" ke "cacah commit", sehingga satu percobaan
+-- tidak pernah dihitung dua kali (AC-7). Hanya bila pemanggil mengirim kunci
+-- alokasi; pool tanpa alokasi tetap jalur F0 tanpa kunci ini.
+if KEYS[5] ~= nil then
+  local sumber = redis.call('HGET', KEYS[6], member)
+  if sumber then  -- redis HGET missing → false, not nil
+    redis.call('HDEL', KEYS[6], member)
+  else
+    sumber = ARGV[7]
+  end
+  if sumber and sumber ~= '' then  -- guard both false and empty string
+    redis.call('HINCRBY', KEYS[5], sumber .. ':' .. a.no_ember, 1)
+    local beban = redis.call('HKEYS', KEYS[5])
+    for i = 1, #beban do
+      local n = tonumber(string.match(beban[i], '^.-:(%d+)$'))
+      if n ~= nil and n < batas then
+        redis.call('HDEL', KEYS[5], beban[i])
+      end
+    end
   end
 end
 

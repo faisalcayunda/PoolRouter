@@ -12,9 +12,7 @@ use chrono::{DateTime, Utc};
 use sqlx::PgPool;
 use uuid::Uuid;
 
-use crate::data_balikan::{
-    BatchKeluar, ItemDataBalikan, KonfigurasiDataBalikan, PengirimDataBalikan,
-};
+use crate::data_balikan::{BatchKeluar, KonfigurasiDataBalikan, PengirimDataBalikan};
 
 /// Error jenis penyusun batch.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -57,25 +55,18 @@ impl std::error::Error for GalatPenyusun {}
 pub async fn jalankan_job_balikan(
     pool: &PgPool,
     provider_id: Uuid,
-    pengirim: &dyn PengirimDataBalikan,
+    pengirim: &impl PengirimDataBalikan,
     sekarang: DateTime<Utc>,
 ) -> Result<(), GalatPenyusun> {
     // Baca konfigurasi.
-    let konfigurasi: KonfigurasiDataBalikan = sqlx::query_scalar(
-        "SELECT konfigurasi FROM provider WHERE provider_id = $1",
-    )
-    .bind(provider_id)
-    .fetch_optional(pool)
-    .await
-    .map_err(|e| GalatPenyusun::Database(e.to_string()))?
-    .and_then(|v: Option<serde_json::Value>| {
-        v.and_then(|cfg| {
-            KonfigurasiDataBalikan::parse(2, &cfg)
-                .map_err(|_| None)
-                .ok()
-        })
-    })
-    .ok_or(GalatPenyusun::KonfigTidakAda)?;
+    let konfigurasi: KonfigurasiDataBalikan =
+        sqlx::query_scalar("SELECT konfigurasi FROM provider WHERE provider_id = $1")
+            .bind(provider_id)
+            .fetch_optional(pool)
+            .await
+            .map_err(|e| GalatPenyusun::Database(e.to_string()))?
+            .and_then(|cfg: serde_json::Value| KonfigurasiDataBalikan::parse(2, &cfg).ok())
+            .ok_or(GalatPenyusun::KonfigTidakAda)?;
 
     // shortcut: AC-26 mengizinkan lewat batch kosong, tapi implementasi awal
     // tidak buat batch jika tidak ada item. Upgrade: D06 tentukan apakah batch
@@ -94,7 +85,7 @@ pub async fn jalankan_job_balikan(
     }
 
     // Buat batch: batch_id unik, status disusun.
-    let batch_id = Uuid::new_v4();
+    let batch_id = Uuid::now_v7();
     let pemicu = "jumlah_n"; // ponytail: hardcode pemicu untuk AC-24; upgrade ke pemicu_batch saat evaluasi_pemicu integrated.
     let periode_mulai = sekarang;
     let periode_selesai = sekarang;
@@ -120,14 +111,12 @@ pub async fn jalankan_job_balikan(
     .await
     .map_err(|e| GalatPenyusun::Database(e.to_string()))?;
 
-    sqlx::query(
-        "UPDATE data_balikan_item SET batch_id = $1 WHERE request_id = ANY($2)"
-    )
-    .bind(batch_id)
-    .bind(&item_ids)
-    .execute(&mut *tx)
-    .await
-    .map_err(|e| GalatPenyusun::Database(e.to_string()))?;
+    sqlx::query("UPDATE data_balikan_item SET batch_id = $1 WHERE request_id = ANY($2)")
+        .bind(batch_id)
+        .bind(&item_ids)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| GalatPenyusun::Database(e.to_string()))?;
 
     tx.commit()
         .await
@@ -161,8 +150,8 @@ pub async fn jalankan_job_balikan(
         })
         .collect();
     let body_json = serde_json::json!({ "item": item_obyek });
-    let body_bytes = serde_json::to_vec(&body_json)
-        .map_err(|e| GalatPenyusun::KirimGagal(e.to_string()))?;
+    let body_bytes =
+        serde_json::to_vec(&body_json).map_err(|e| GalatPenyusun::KirimGagal(e.to_string()))?;
 
     // Kirim via port.
     let batch = BatchKeluar {
@@ -173,7 +162,6 @@ pub async fn jalankan_job_balikan(
         format_version: konfigurasi.format_version,
     };
 
-    use futures::stream::StreamExt;
     let body_stream = futures::stream::iter(vec![bytes::Bytes::from(body_bytes)]);
     let hasil = pengirim.kirim(batch, body_stream).await;
 
@@ -229,7 +217,7 @@ pub async fn jalankan_job_balikan(
 #[cfg(test)]
 mod uji {
     use super::*;
-    use crate::data_balikan::{HasilDiprogam, HasilKirimBatch, PengirimTiruan};
+    use crate::data_balikan::{HasilDiprogam, PengirimTiruan};
     use serde_json::json;
     use sqlx::postgres::PgPoolOptions;
 
@@ -254,7 +242,7 @@ mod uji {
         let provider_id = Uuid::nil();
 
         // Fixture: provider dengan konfigurasi.
-        let konfigurasi = json!({
+        let _konfigurasi = json!({
             "endpoint": "https://test.example.com/balikan",
             "rujukan_secret": "{{secret.TEST}}",
             "pemicu_jumlah_n": 10,
@@ -321,13 +309,12 @@ mod uji {
         let _ = jalankan_job_balikan(&db, provider_id, &pengirim, sekarang).await;
 
         // Verifikasi batch tetap satu (tidak duplikat).
-        let batch_count: i64 = sqlx::query_scalar(
-            "SELECT COUNT(*) FROM data_balikan_batch WHERE provider_id = $1"
-        )
-        .bind(provider_id)
-        .fetch_one(&db)
-        .await
-        .expect("query batch");
+        let batch_count: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM data_balikan_batch WHERE provider_id = $1")
+                .bind(provider_id)
+                .fetch_one(&db)
+                .await
+                .expect("query batch");
 
         assert_eq!(batch_count, 1, "batch tidak boleh duplikat");
     }
@@ -346,10 +333,13 @@ mod uji {
         let hasil = jalankan_job_balikan(&db, provider_id, &pengirim, sekarang).await;
 
         // Error dari pengirim, tapi batch tetap tersimpan dengan status gagal.
-        assert!(hasil.is_ok(), "error pengirim tidak boleh fatal untuk handler");
+        assert!(
+            hasil.is_ok(),
+            "error pengirim tidak boleh fatal untuk handler"
+        );
 
         let batch_status: Option<String> = sqlx::query_scalar(
-            "SELECT status FROM data_balikan_batch WHERE provider_id = $1 LIMIT 1"
+            "SELECT status FROM data_balikan_batch WHERE provider_id = $1 LIMIT 1",
         )
         .bind(provider_id)
         .fetch_optional(&db)
@@ -358,7 +348,8 @@ mod uji {
         .flatten();
 
         assert_eq!(
-            batch_status, Some("gagal".to_owned()),
+            batch_status,
+            Some("gagal".to_owned()),
             "batch harus tercatat dengan status gagal"
         );
     }
