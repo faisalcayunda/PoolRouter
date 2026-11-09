@@ -25,13 +25,16 @@ function toJenis(jenis?: JenisAlokasi, alokasiJenis?: AlokasiJenis): AlokasiJeni
   return null;
 }
 
-export function normalisasiAlokasi(input: AlokasiForm | AlokasiBody | Record<string, unknown>): AlokasiBody {
+export function normalisasiAlokasi(
+  input: AlokasiForm | AlokasiBody | Record<string, unknown>,
+): AlokasiBody {
   const jenisInput = (input as AlokasiForm).jenis;
   const alokasiJenisInput = (input as AlokasiBody).alokasi_jenis;
   const jenis = toJenis(jenisInput, alokasiJenisInput);
   const rawNilai = (input as AlokasiForm).nilai ?? (input as AlokasiBody).alokasi_nilai;
   const sifatInput = (input as AlokasiForm).sifat ?? (input as AlokasiBody).sifat ?? null;
-  const bolehPinjamInput = (input as AlokasiForm).boleh_pinjam ?? (input as AlokasiBody).boleh_pinjam;
+  const bolehPinjamInput =
+    (input as AlokasiForm).boleh_pinjam ?? (input as AlokasiBody).boleh_pinjam;
 
   if (jenis === null) {
     return {
@@ -52,7 +55,12 @@ export function normalisasiAlokasi(input: AlokasiForm | AlokasiBody | Record<str
 }
 
 export function perkiraanAnggaran(
-  alokasi: { jenis?: JenisAlokasi; alokasi_jenis?: AlokasiJenis; nilai?: string | number | null; alokasi_nilai?: number | null },
+  alokasi: {
+    jenis?: JenisAlokasi;
+    alokasi_jenis?: AlokasiJenis;
+    nilai?: string | number | null;
+    alokasi_nilai?: number | null;
+  },
   kuotaEfektif: number,
 ): number | null {
   const jenis = toJenis(alokasi.jenis, alokasi.alokasi_jenis);
@@ -67,11 +75,24 @@ export function perkiraanAnggaran(
   return Math.floor((nilai / 100) * kuotaEfektif);
 }
 
-export function ringkasAlokasi(alokasi: { jenis?: JenisAlokasi; alokasi_jenis?: AlokasiJenis; nilai?: string | number | null; alokasi_nilai?: number | null; sifat?: SifatAlokasi; boleh_pinjam?: boolean | null } | AlokasiBody | AlokasiForm): string {
+export function ringkasAlokasi(
+  alokasi:
+    | {
+        jenis?: JenisAlokasi;
+        alokasi_jenis?: AlokasiJenis;
+        nilai?: string | number | null;
+        alokasi_nilai?: number | null;
+        sifat?: SifatAlokasi;
+        boleh_pinjam?: boolean | null;
+      }
+    | AlokasiBody
+    | AlokasiForm,
+): string {
   const jenis = toJenis((alokasi as AlokasiForm).jenis, (alokasi as AlokasiBody).alokasi_jenis);
   const rawNilai = (alokasi as AlokasiForm).nilai ?? (alokasi as AlokasiBody).alokasi_nilai;
   const sifat = (alokasi as AlokasiForm).sifat ?? (alokasi as AlokasiBody).sifat ?? null;
-  const bolehPinjam = (alokasi as AlokasiForm).boleh_pinjam ?? (alokasi as AlokasiBody).boleh_pinjam ?? false;
+  const bolehPinjam =
+    (alokasi as AlokasiForm).boleh_pinjam ?? (alokasi as AlokasiBody).boleh_pinjam ?? false;
 
   if (jenis === null) {
     return 'Tanpa alokasi';

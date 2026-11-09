@@ -3,7 +3,10 @@ import { problemToFieldErrors } from '../src/features/common/problem';
 
 describe('problemToFieldErrors', () => {
   it('maps prioritas error', () => {
-    const r = problemToFieldErrors({ kode: 'validasi_gagal', errors: [{ field: 'prioritas', kode: 'di_atas_maks' }] });
+    const r = problemToFieldErrors({
+      kode: 'validasi_gagal',
+      errors: [{ field: 'prioritas', kode: 'di_atas_maks' }],
+    });
     expect(r.prioritas).toBe('di_atas_maks');
   });
 

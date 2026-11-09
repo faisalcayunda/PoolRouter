@@ -1,9 +1,15 @@
 import { describe, expect, it } from 'vitest';
-import { normalisasiAlokasi, perkiraanAnggaran, ringkasAlokasi } from '../src/features/pool/alokasi';
+import {
+  normalisasiAlokasi,
+  perkiraanAnggaran,
+  ringkasAlokasi,
+} from '../src/features/pool/alokasi';
 
 describe('alokasi helpers', () => {
   it('normalisasi tanpa alokasi', () => {
-    expect(normalisasiAlokasi({ jenis: 'none', nilai: null, sifat: null, boleh_pinjam: null })).toEqual({
+    expect(
+      normalisasiAlokasi({ jenis: 'none', nilai: null, sifat: null, boleh_pinjam: null }),
+    ).toEqual({
       alokasi_jenis: null,
       alokasi_nilai: null,
       sifat: null,
@@ -12,7 +18,9 @@ describe('alokasi helpers', () => {
   });
 
   it('normalisasi beralokasi default boleh_pinjam false', () => {
-    expect(normalisasiAlokasi({ jenis: 'tetap', nilai: '500', sifat: 'reserved', boleh_pinjam: null })).toEqual({
+    expect(
+      normalisasiAlokasi({ jenis: 'tetap', nilai: '500', sifat: 'reserved', boleh_pinjam: null }),
+    ).toEqual({
       alokasi_jenis: 'exact',
       alokasi_nilai: 500,
       sifat: 'reserved',
@@ -29,8 +37,14 @@ describe('alokasi helpers', () => {
   });
 
   it('ringkas alokasi', () => {
-    expect(ringkasAlokasi({ jenis: 'none', nilai: null, sifat: null, boleh_pinjam: false })).toBe('Tanpa alokasi');
-    expect(ringkasAlokasi({ jenis: 'tetap', nilai: 500, sifat: 'reserved', boleh_pinjam: false })).toBe('500 · reserved');
-    expect(ringkasAlokasi({ jenis: 'persentase', nilai: 30, sifat: 'shareable', boleh_pinjam: true })).toBe('30% · shareable · boleh pinjam');
+    expect(ringkasAlokasi({ jenis: 'none', nilai: null, sifat: null, boleh_pinjam: false })).toBe(
+      'Tanpa alokasi',
+    );
+    expect(
+      ringkasAlokasi({ jenis: 'tetap', nilai: 500, sifat: 'reserved', boleh_pinjam: false }),
+    ).toBe('500 · reserved');
+    expect(
+      ringkasAlokasi({ jenis: 'persentase', nilai: 30, sifat: 'shareable', boleh_pinjam: true }),
+    ).toBe('30% · shareable · boleh pinjam');
   });
 });
