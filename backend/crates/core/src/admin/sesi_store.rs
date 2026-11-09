@@ -30,7 +30,13 @@ use super::sesi::{
 use super::token::HashToken;
 
 /// Satu baris `admin_session`: sesi, pengguna, dibuat, terakhir aktif, dan stempel MFA.
-type BarisSesi = (Uuid, Uuid, DateTime<Utc>, DateTime<Utc>, Option<DateTime<Utc>>);
+type BarisSesi = (
+    Uuid,
+    Uuid,
+    DateTime<Utc>,
+    DateTime<Utc>,
+    Option<DateTime<Utc>>,
+);
 
 /// A session as read back: the owner, plus the two instants the rules need.
 #[derive(Debug, Clone, PartialEq, Eq)]
