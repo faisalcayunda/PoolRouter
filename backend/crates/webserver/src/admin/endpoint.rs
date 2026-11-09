@@ -199,7 +199,10 @@ async fn baca_metadata(
     .map_err(|e| galat_db(&e))
 }
 
-async fn baca_endpoint(conn: &mut sqlx::PgConnection, id: Uuid) -> Result<Option<Endpoint>, Galat> {
+pub(super) async fn baca_endpoint(
+    conn: &mut sqlx::PgConnection,
+    id: Uuid,
+) -> Result<Option<Endpoint>, Galat> {
     let baris: Vec<BarisEndpoint> =
         sqlx::query_as(select_endpoint!(" WHERE e.downstream_endpoint_id = $1"))
             .bind(id)

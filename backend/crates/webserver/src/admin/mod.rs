@@ -5,6 +5,7 @@ pub mod allowlist;
 pub mod endpoint;
 pub mod gerbang;
 pub mod k20;
+pub mod k20_entitas;
 pub mod klien;
 pub mod kredensial;
 pub mod listener;

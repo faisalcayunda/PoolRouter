@@ -35,8 +35,8 @@ use tower_http::set_header::SetResponseHeaderLayer;
 
 use super::pembatas::PembatasLogin;
 use super::{
-    allowlist, endpoint, k20, klien, kredensial, log, login, me, mfa, pool, provider, secret,
-    webhook,
+    allowlist, endpoint, k20, k20_entitas, klien, kredensial, log, login, me, mfa, pool, provider,
+    secret, webhook,
 };
 
 use crate::api::problem::{ProblemKodeAdmin, ValidasiErrorAdmin};
@@ -236,6 +236,55 @@ pub fn router(state: AdminState) -> Router {
         .route(
             "/admin/v1/webhook-allowlist/{domain}",
             put(allowlist::put_allowlist_entry).delete(allowlist::delete_allowlist_entry),
+        )
+        // ARC-168: K-20 endpoint, downstream pool, upstream pool, provider.
+        .route(
+            "/admin/v1/endpoints/{id}/pratinjau-nonaktif",
+            get(k20_entitas::pratinjau_nonaktifkan_endpoint),
+        )
+        .route(
+            "/admin/v1/endpoints/{id}/nonaktifkan",
+            post(k20_entitas::nonaktifkan_endpoint),
+        )
+        .route(
+            "/admin/v1/endpoints/{id}/aktifkan",
+            post(k20_entitas::aktifkan_endpoint),
+        )
+        .route(
+            "/admin/v1/downstream-pools/{id}/pratinjau-nonaktif",
+            get(k20_entitas::pratinjau_nonaktifkan_downstream_pool),
+        )
+        .route(
+            "/admin/v1/downstream-pools/{id}/nonaktifkan",
+            post(k20_entitas::nonaktifkan_downstream_pool),
+        )
+        .route(
+            "/admin/v1/downstream-pools/{id}/aktifkan",
+            post(k20_entitas::aktifkan_downstream_pool),
+        )
+        .route(
+            "/admin/v1/upstream-pools/{id}/pratinjau-nonaktif",
+            get(k20_entitas::pratinjau_nonaktifkan_upstream_pool),
+        )
+        .route(
+            "/admin/v1/upstream-pools/{id}/nonaktifkan",
+            post(k20_entitas::nonaktifkan_upstream_pool),
+        )
+        .route(
+            "/admin/v1/upstream-pools/{id}/aktifkan",
+            post(k20_entitas::aktifkan_upstream_pool),
+        )
+        .route(
+            "/admin/v1/providers/{id}/pratinjau-nonaktif",
+            get(k20_entitas::pratinjau_nonaktifkan_provider),
+        )
+        .route(
+            "/admin/v1/providers/{id}/nonaktifkan",
+            post(k20_entitas::nonaktifkan_provider),
+        )
+        .route(
+            "/admin/v1/providers/{id}/aktifkan",
+            post(k20_entitas::aktifkan_provider),
         )
         .with_state(state)
         .layer(RequestBodyLimitLayer::new(16 * 1024))
