@@ -44,16 +44,6 @@ jobs:
           persist-credentials: false
           fetch-depth: 0 # commit baseline (OASDIFF_BASE) harus tersedia
 
-      # DIAGNOSTIK SEMENTARA (SHAA-275): dihapus setelah akar exit 2 terbukti.
-      # Tanpa env/printenv/set -x; hanya ekor ~20 baris output make.
-      - name: diagnostik ref dan arsitektur (sementara)
-        shell: bash
-        run: |
-          uname -m
-          git branch -a || echo "git branch rc=$?"
-          git ls-remote --heads origin main || echo "ls-remote rc=$?"
-          git status --porcelain -- openapi; echo "git-status-openapi rc=$?"
-
       - name: openapi-check
         shell: bash
         env:
