@@ -327,7 +327,9 @@ async fn slot_pool(
 /// The column is a jsonb document without a database constraint on its shape
 /// (see `docs/db/skema-f0.md`), so a wrong shape is reported here rather than
 /// silently rebuilt as "no rate limit": fail-closed (ADR-0001 section 5).
-fn jendela_rate(parameter: &serde_json::Value) -> Result<Vec<JendelaRate>, GalatPemulihan> {
+/// Dipakai juga jalur sync webserver (ARC-66) supaya token sync membaca
+/// jendela rate dengan aturan yang sama dengan rebuild.
+pub fn jendela_rate(parameter: &serde_json::Value) -> Result<Vec<JendelaRate>, GalatPemulihan> {
     let Some(rate) = parameter.get("rate") else {
         return Ok(Vec::new());
     };
