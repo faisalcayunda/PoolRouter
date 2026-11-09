@@ -23,7 +23,7 @@ use std::pin::Pin;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use apalis::prelude::{AbortError, BoxDynError, WorkerBuilder};
+use apalis::prelude::{AbortError, BoxDynError, WorkerBuilder, WorkerContext};
 use apalis_amqp::{AmqpBackend, AmqpTask, Config as KonfigurasiAmqp};
 use apalis_core::backend::ext::with_codec::WithCodec;
 use futures::Sink;
@@ -168,19 +168,31 @@ where
     .map_err(transport)?;
     let backend = WithCodec::new(backend, KodekRequestId);
 
-    let worker = WorkerBuilder::new(format!("poolrouter-{queue}"))
+    // Konteks dipegang sendiri (klon berbagi state) supaya shutdown bisa
+    // dipicu dari luar. `run_until` tidak dipakai: bila broker menutup
+    // channel atau mengirim `basic.cancel`, stream consumer lapin berakhir
+    // bersih (`None`), worker selesai `Ok`, dan `run_until` tetap menunggu
+    // sinyal shutdown selamanya tanpa menyambung ulang.
+    let konteks = WorkerContext::from(format!("poolrouter-{queue}"));
+    let worker = WorkerBuilder::new(&konteks)
         .backend(backend)
         .build(move |request_id: Uuid| {
             let handler = Arc::clone(&handler);
             async move { handler(request_id).await.map_err(galat_apalis) }
         });
-    worker
-        .run_until(async move {
-            berhenti.cancelled().await;
-            Ok::<(), std::io::Error>(())
-        })
-        .await
-        .map_err(transport)
+    let jalan = worker.run();
+    tokio::pin!(jalan);
+    tokio::select! {
+        biased;
+        // Stream berakhir atau galat: kembali ke loop W3.
+        hasil = &mut jalan => return hasil.map_err(transport),
+        _ = berhenti.cancelled() => {}
+    }
+    // Shutdown: berhenti mengambil pesan, tunggu handler yang berjalan.
+    if let Err(galat) = konteks.stop() {
+        tracing::debug!(error = %galat, "worker apalis sudah berhenti");
+    }
+    jalan.await.map_err(transport)
 }
 
 /// Konfigurasi `apalis-amqp`: argumen antrean identik dengan deklarasi lapin
