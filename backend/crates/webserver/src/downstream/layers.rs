@@ -5,7 +5,7 @@ use axum::http::{HeaderValue, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use tower_http::set_header::SetResponseHeaderLayer;
 
-use crate::api::problem::{Problem, ProblemKodeDown};
+use crate::api::problem::{JumlahNamaTidakCocok, Problem, ProblemKodeDown, ValidasiErrorDown};
 
 const PROBLEM_JSON: &str = "application/problem+json";
 
@@ -71,6 +71,31 @@ impl ApiError {
 
     pub fn status(&self) -> StatusCode {
         StatusCode::from_u16(self.problem.status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR)
+    }
+
+    /// `Retry-After` this error will carry, if any.
+    pub fn retry_after_secs(&self) -> Option<u64> {
+        self.retry_after
+    }
+
+    /// For tests only: get inner problem for serialization check.
+    #[cfg(test)]
+    pub fn problem(&self) -> &Problem {
+        &self.problem
+    }
+
+    /// Field-level validation detail for the two 422 validation codes. Both are
+    /// omitted when empty, so a bare 400 never grows an `errors` member.
+    pub fn errors(
+        mut self,
+        errors: Vec<ValidasiErrorDown>,
+        jumlah: Option<JumlahNamaTidakCocok>,
+    ) -> Self {
+        if !errors.is_empty() {
+            self.problem.errors = Some(errors);
+        }
+        self.problem.jumlah_nama_tidak_cocok = jumlah;
+        self
     }
 }
 
