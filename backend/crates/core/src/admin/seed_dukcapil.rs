@@ -62,14 +62,13 @@ fn dokumen_provider() -> Value {
     })
 }
 
+/// `sql` wajib literal `SELECT <id> FROM <tabel> WHERE nama = $1` (sqlx 0.9 menolak SQL dinamis).
 async fn id_menurut_nama(
     tx: &mut Transaction<'static, Postgres>,
-    tabel: &'static str,
-    kolom_id: &'static str,
+    sql: &'static str,
     nama: &str,
 ) -> Result<Option<Uuid>, sqlx::Error> {
-    // Nama tabel dan kolom hanya literal dari pemanggil di modul ini, bukan masukan pengguna.
-    sqlx::query_scalar(&format!("SELECT {kolom_id} FROM {tabel} WHERE nama = $1"))
+    sqlx::query_scalar(sql)
         .bind(nama)
         .fetch_optional(&mut **tx)
         .await
@@ -114,13 +113,20 @@ pub async fn seed_dukcapil(
         .execute(&mut *tx)
         .await?;
 
-    let pelaku: Uuid = sqlx::query_scalar("SELECT pengguna_id FROM admin_user WHERE username = $1")
-        .bind(SEED_PLATFORM_ADMIN)
-        .fetch_optional(&mut *tx)
-        .await?
-        .ok_or(GalatKelola::SeedPenggunaBelumAda)?;
+    let pelaku =
+        sqlx::query_scalar::<_, Uuid>("SELECT pengguna_id FROM admin_user WHERE username = $1")
+            .bind(SEED_PLATFORM_ADMIN)
+            .fetch_optional(&mut *tx)
+            .await?
+            .ok_or(GalatKelola::SeedPenggunaBelumAda)?;
 
-    let provider = match id_menurut_nama(&mut tx, "provider", "provider_id", SEED_PROVIDER).await? {
+    let provider = match id_menurut_nama(
+        &mut tx,
+        "SELECT provider_id FROM provider WHERE nama = $1",
+        SEED_PROVIDER,
+    )
+    .await?
+    {
         Some(id) => id,
         None => {
             let id = Uuid::now_v7();
@@ -165,8 +171,7 @@ pub async fn seed_dukcapil(
 
     let upstream = match id_menurut_nama(
         &mut tx,
-        "upstream_pool",
-        "upstream_pool_id",
+        "SELECT upstream_pool_id FROM upstream_pool WHERE nama = $1",
         SEED_UPSTREAM,
     )
     .await?
@@ -200,8 +205,7 @@ pub async fn seed_dukcapil(
 
     let downstream = match id_menurut_nama(
         &mut tx,
-        "downstream_pool",
-        "downstream_pool_id",
+        "SELECT downstream_pool_id FROM downstream_pool WHERE nama = $1",
         SEED_DOWNSTREAM,
     )
     .await?
@@ -241,8 +245,7 @@ pub async fn seed_dukcapil(
 
     if id_menurut_nama(
         &mut tx,
-        "downstream_endpoint",
-        "downstream_endpoint_id",
+        "SELECT downstream_endpoint_id FROM downstream_endpoint WHERE nama = $1",
         SEED_ENDPOINT,
     )
     .await?
