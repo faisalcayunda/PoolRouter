@@ -167,7 +167,7 @@ uji-pg: check-label $(CHECK_DISK)
 
 uji-pg-cargo: BUILD_LOCK_OPTS += --network host -e POOLROUTER_TEST_DATABASE_URL -e POOLROUTER_TEST_DATABASE_URL_API -e POOLROUTER_TEST_DATABASE_URL_SU -e POOLROUTER_TEST_DATABASE_URL_CONTROLLER -e POOLROUTER_TEST_DATABASE_URL_WEBHOOK -e POOLROUTER_TEST_REDIS
 uji-pg-cargo: check-label $(CHECK_DISK)
-	$(HEAVY) cargo test --locked -p poolrouter-core --test sesi_store_pg --test mfa_store_pg --test rencana_alokasi -p poolrouter-webserver --test admin_sesi_pg --test admin_secret_pg --test admin_client_pg --test admin_provider_pg --test admin_log_pg --test admin_k20_pg --test admin_mfa_pg --test downstream_permintaan_pg -- --ignored --test-threads=1 --nocapture
+	$(HEAVY) cargo test --locked -p poolrouter-core --test sesi_store_pg --test mfa_store_pg --test rencana_alokasi -p poolrouter-webserver --test admin_sesi_pg --test admin_secret_pg --test admin_client_pg --test admin_provider_pg --test admin_log_pg --test admin_k20_pg --test admin_mfa_pg --test admin_k20_client_http_pg --test downstream_permintaan_pg -- --ignored --test-threads=1 --nocapture
 	$(HEAVY) cargo test --locked -p poolrouter-webserver --test downstream_konfigurasi_pg -- --test-threads=1 --nocapture
 	$(HEAVY) cargo test --locked -p poolrouter-controller -- --ignored --test-threads=1 --nocapture
 

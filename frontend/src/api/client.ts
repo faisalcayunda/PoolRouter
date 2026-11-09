@@ -43,12 +43,15 @@ export interface EksporBerkas {
 export class ApiError extends Error {
   readonly status: number;
   readonly problem: Problem | null;
+  /** Seconds from the `Retry-After` header, when the server sent one (ADR-0003 3.6 throttle). */
+  readonly retryAfterDetik: number | null;
 
-  constructor(status: number, problem: Problem | null) {
+  constructor(status: number, problem: Problem | null, retryAfterDetik: number | null = null) {
     super(problem?.kode ?? problem?.title ?? `HTTP ${status}`);
     this.name = 'ApiError';
     this.status = status;
     this.problem = problem;
+    this.retryAfterDetik = retryAfterDetik;
   }
 
   /** Stable code from the problem body, or a synthetic `http_<status>` when the body had none. */
@@ -110,6 +113,22 @@ export interface ApiClient {
   updateProvider(id: string, body: ProviderConfig, options?: RequestOptions): Promise<Provider>;
 }
 
+/** A 401 from any endpoint ends the shell session; screens do not each need their own wiring. */
+function announce401(response: Response): void {
+  if (response.status === 401 && typeof window !== 'undefined') {
+    window.dispatchEvent(new Event(SESI_BERAKHIR_EVENT));
+  }
+}
+
+/** `Retry-After` is either delta-seconds or an HTTP date; screens only show whole seconds. */
+function retryAfterFrom(response: Response): number | null {
+  const raw = response.headers.get('Retry-After')?.trim();
+  if (!raw) return null;
+  if (/^\d+$/.test(raw)) return Number(raw);
+  const at = Date.parse(raw);
+  return Number.isFinite(at) ? Math.max(0, Math.ceil((at - Date.now()) / 1000)) : null;
+}
+
 function problemFrom(status: number, body: unknown): Problem | null {
   if (body && typeof body === 'object') {
     const obj = body as Record<string, unknown>;
@@ -138,6 +157,9 @@ function digestFrom(header: string | null): string | null {
   return match?.[1] ?? null;
 }
 
+/** Any screen's 401 means the shell's session is gone; the client announces it once, here. */
+export const SESI_BERAKHIR_EVENT = 'pr:sesi-berakhir';
+
 export function createApiClient(options: ApiClientOptions = {}): ApiClient {
   const origin =
     options.origin ??
@@ -161,8 +183,14 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
     opts.alasan === undefined ? {} : { 'X-Alasan': opts.alasan };
 
   const ok = <T>(result: { data?: T; error?: unknown; response: Response }): T => {
-    if (!result.response.ok)
-      throw new ApiError(result.response.status, problemFrom(result.response.status, result.error));
+    if (!result.response.ok) {
+      announce401(result.response);
+      throw new ApiError(
+        result.response.status,
+        problemFrom(result.response.status, result.error),
+        retryAfterFrom(result.response),
+      );
+    }
     return result.data as T;
   };
 
@@ -255,6 +283,7 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
         parseAs: 'blob',
       });
       if (!result.response.ok) {
+        announce401(result.response);
         throw new ApiError(
           result.response.status,
           problemFrom(result.response.status, result.error),
