@@ -20,6 +20,7 @@ export type Me = Schemas['Me'];
 export type SesiStatus = Schemas['SesiStatus'];
 export type Provider = Schemas['Provider'];
 export type ProviderConfig = Schemas['ProviderConfig'];
+export type SecretRingkas = Schemas['SecretRingkas'];
 
 const ADMIN_PREFIX = '/admin/v1';
 
@@ -111,6 +112,12 @@ export interface ApiClient {
   createProvider(body: ProviderConfig, options?: RequestOptions): Promise<Provider>;
   /** PUT /providers/{id} — update; old versions stay intact (V-03). */
   updateProvider(id: string, body: ProviderConfig, options?: RequestOptions): Promise<Provider>;
+  /** GET /secrets — nama secret saja; nilainya tidak pernah dikirim server (US-02). */
+  listSecrets(options?: RequestOptions): Promise<SecretRingkas[]>;
+  /** PUT /secrets/{nama} — simpan atau ganti nilai (write-only, 204 tanpa isi). */
+  putSecret(nama: string, nilai: string, options?: RequestOptions): Promise<void>;
+  /** DELETE /secrets/{nama} — 409 `secret_dipakai` selama provider aktif merujuknya. */
+  deleteSecret(nama: string, options?: RequestOptions): Promise<void>;
 }
 
 /** A 401 from any endpoint ends the shell session; screens do not each need their own wiring. */
@@ -137,6 +144,8 @@ function problemFrom(status: number, body: unknown): Problem | null {
       title: typeof obj.title === 'string' ? obj.title : undefined,
       status,
       kode: typeof obj.kode === 'string' ? obj.kode : undefined,
+      // `detail` tidak pernah memuat nilai input atau secret (R-16); 409 `secret_dipakai` memakainya.
+      detail: typeof obj.detail === 'string' ? obj.detail : undefined,
       errors: Array.isArray(obj.errors) ? (obj.errors as ValidasiErrorAdmin[]) : undefined,
     };
   }
@@ -357,6 +366,35 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
           signal: opts.signal,
         }),
       ),
+
+    listSecrets: async (opts = {}) =>
+      ok(
+        await client.GET(`${ADMIN_PREFIX}/secrets`, {
+          headers: headers(opts),
+          signal: opts.signal,
+        }),
+      ),
+
+    async putSecret(nama, nilai, opts = {}) {
+      ok(
+        await client.PUT(`${ADMIN_PREFIX}/secrets/{nama}`, {
+          params: { path: { nama } },
+          body: { nilai },
+          headers: headers(opts),
+          signal: opts.signal,
+        }),
+      );
+    },
+
+    async deleteSecret(nama, opts = {}) {
+      ok(
+        await client.DELETE(`${ADMIN_PREFIX}/secrets/{nama}`, {
+          params: { path: { nama } },
+          headers: headers(opts),
+          signal: opts.signal,
+        }),
+      );
+    },
   };
 }
 

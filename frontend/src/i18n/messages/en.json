@@ -255,6 +255,77 @@
     },
     "snackbar": {
       "saved": "Provider saved"
+    },
+    "list": {
+      "col": {
+        "name": "Name",
+        "version": "Version",
+        "method": "Method",
+        "status": "Status",
+        "actions": "Actions"
+      },
+      "inactive": "Inactive",
+      "edit_aria": "Edit provider {{nama}}"
+    },
+    "form": {
+      "title_edit": "Edit provider {{nama}}",
+      "subtitle": "Each save creates a new version from all the fields below. Earlier versions are kept, and requests already queued use the version in force when they entered the queue.",
+      "back": "Back to providers",
+      "url_help": "Must start with https://.",
+      "tls": {
+        "label": "TLS trust",
+        "system": "System certificates",
+        "ca_kustom": "Custom CA",
+        "pin_spki": "SPKI pin"
+      },
+      "log_mode": {
+        "label": "Log mode",
+        "metadata_only": "Metadata only",
+        "full_payload": "Full payload"
+      },
+      "version": {
+        "label": "Configuration schema version",
+        "v1": "Version 1 (F0)",
+        "v2": "Version 2 (F1, with return data)"
+      },
+      "parameters": {
+        "label": "Parameters and rules (JSON)",
+        "help": "A list of objects with a name, a value, and a rule. Rule types: regex, enum, panjang (length), format_tanggal (date format)."
+      },
+      "data_balikan": {
+        "heading": "Return data",
+        "label": "Return data block (JSON)",
+        "help": "Required for schema version 2. The block is saved in full every time the provider is saved."
+      },
+      "reason": {
+        "heading": "Reason",
+        "label": "Reason for the change",
+        "help": "{{jumlah}}/{{batas}} characters, at least 10. Recorded in the configuration audit and not kept in the form."
+      },
+      "save_new": "Save provider",
+      "save_edit": "Save changes",
+      "saving": "Saving…",
+      "saved_version": "Provider {{nama}} saved as version {{versi}}.",
+      "error": {
+        "summary": "Check the {{jumlah}} highlighted fields.",
+        "umum": "This field isn't valid yet (code {{kode}}, location {{lokasi}}).",
+        "wajib": "Required.",
+        "https_wajib": "The address must start with https://.",
+        "json_tidak_sah": "The JSON isn't valid. Check the quotes, commas, and brackets.",
+        "json_bukan_daftar": "This must be a JSON list (starting with a square bracket).",
+        "json_bukan_objek": "This must be a JSON object (starting with a curly brace).",
+        "alasan_rentang": "A reason is required, 10–500 characters.",
+        "template_tidak_seimbang": "The placeholder braces in the template aren't balanced.",
+        "template_tidak_seimbang_posisi": "The placeholder braces aren't balanced at line {{baris}}, column {{kolom}}.",
+        "template_parameter_tidak_ada": "The template refers to parameter {{nama}}, which isn't in the parameter list.",
+        "template_placeholder_tidak_dikenal": "Unknown placeholder. Known prefixes: input, endpoint, and secret.",
+        "sudah_dipakai": "Another provider already uses this name.",
+        "required_untuk_versi_2": "Return data is required for schema version 2.",
+        "data_balikan_tidak_sah": "The return data isn't valid: {{nama}}",
+        "data_balikan_skema_terlalu_tua": "The return data schema version is too old.",
+        "data_balikan_skema_terlalu_baru": "The return data schema version isn't supported yet.",
+        "config_schema_version_tidak_didukung": "This configuration schema version isn't supported."
+      }
     }
   },
   "secret": {
@@ -275,21 +346,47 @@
     "replace": {
       "title": "Replace secret {{nama}}",
       "new_value": "New value",
-      "body": "The old value can't be viewed. The new value replaces it right away."
+      "body": "The old value can't be viewed. The new value replaces it right away.",
+      "confirm": "Replace value"
     },
     "delete": {
       "blocked": {
         "title": "Secret is still in use",
-        "body": "{{nama}} is still used by active providers: {{daftar}}. Deactivate or change those providers first, then delete this secret."
-      }
+        "body": "{{nama}} is still used by active providers: {{daftar}}. Deactivate or change those providers first, then delete this secret.",
+        "short": "{{nama}} is still used by an active provider. Change or deactivate that provider first, then delete this secret."
+      },
+      "title": "Delete secret {{nama}}?",
+      "body": "The secret is deleted permanently. Templates that refer to it will be rejected when saved.",
+      "confirm": "Delete secret"
     },
     "snackbar": {
-      "saved": "Secret saved"
+      "saved": "Secret saved",
+      "saved_named": "Secret {{nama}} saved.",
+      "replaced": "The value of secret {{nama}} has been replaced.",
+      "deleted": "Secret {{nama}} deleted."
     },
     "empty": {
       "title": "No secrets yet",
       "body": "A secret stores a provider credential, such as USER_ID and PASSWORD. Add a secret before you create a provider template."
-    }
+    },
+    "masked": "Masked",
+    "unused": "Not in use",
+    "row": {
+      "replace_aria": "Replace the value of secret {{nama}}",
+      "delete_aria": "Delete secret {{nama}}"
+    },
+    "add": {
+      "name_help": "Starts with a letter, then letters, digits, or underscores. Templates refer to it as secret.NAME.",
+      "value": "Value",
+      "save": "Save secret"
+    },
+    "error": {
+      "name_format": "The name starts with a letter, followed by letters, digits, or underscores, up to 64 characters.",
+      "name_exists": "A secret with this name already exists. Use Replace to change its value.",
+      "value_required": "A value is required."
+    },
+    "used_by_one": "{{count, number}} provider",
+    "used_by_other": "{{count, number}} providers"
   },
   "upstream": {
     "page": {
@@ -772,10 +869,10 @@
         "submit": "Verify",
         "verifying": "Verifying…",
         "recovery_title": "Enter a recovery code",
-      "recovery_subtitle": "Use one of the 10-character recovery codes you saved when registering. Each code works only once.",
-      "recovery_field_label": "Recovery code",
-      "use_totp": "Use authenticator code",
-      "use_recovery": "Use a recovery code",
+        "recovery_subtitle": "Use one of the 10-character recovery codes you saved when registering. Each code works only once.",
+        "recovery_field_label": "Recovery code",
+        "use_totp": "Use authenticator code",
+        "use_recovery": "Use a recovery code",
         "back_to_login": "Back to login"
       },
       "registration": {

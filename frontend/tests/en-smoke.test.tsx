@@ -5,7 +5,10 @@ import type { ApiClient } from '../src/api/client';
 import { AuditScreen } from '../src/features/audit-akses/AuditScreen';
 import { NikSearchScreen } from '../src/features/auditor/NikSearchScreen';
 import { LogPageScreen } from '../src/features/log/LogPageScreen';
+import { ProviderFormScreen } from '../src/features/provider/ProviderFormScreen';
+import { ProviderListScreen } from '../src/features/provider/ProviderListScreen';
 import { QuotaScreen } from '../src/features/quota/QuotaScreen';
+import { SecretScreen } from '../src/features/secret/SecretScreen';
 import { createI18n, loadLanguage } from '../src/i18n/i18n';
 import { renderWithI18n } from './render';
 
@@ -30,6 +33,10 @@ function stubClient(overrides: Partial<ApiClient> = {}): ApiClient {
     cariAuditAkses: vi.fn().mockResolvedValue(EMPTY_PAGE),
     kuota: vi.fn().mockResolvedValue([]),
     upstreamPools: vi.fn().mockResolvedValue([]),
+    listProviders: vi.fn().mockResolvedValue([]),
+    listSecrets: vi
+      .fn()
+      .mockResolvedValue([{ nama: 'USER_ID', tersamar: true, dipakai_oleh_provider_count: 2 }]),
     ...overrides,
   } as ApiClient;
 }
@@ -66,5 +73,20 @@ describe('en smoke', () => {
     renderWithI18n(<QuotaScreen client={stubClient()} />, { instance: en });
 
     expect(await screen.findByRole('heading', { level: 1 })).toHaveTextContent('Quota');
+  });
+
+  it('renders S02 providers, the provider form and S05 secrets in en without a missing key', async () => {
+    const client = stubClient();
+    const list = renderWithI18n(<ProviderListScreen client={client} />, { instance: en });
+    expect(await screen.findByText('No providers yet')).toBeInTheDocument();
+    list.unmount();
+
+    const form = renderWithI18n(<ProviderFormScreen client={client} />, { instance: en });
+    expect(screen.getByLabelText('Body template (JSON)')).toBeInTheDocument();
+    form.unmount();
+
+    renderWithI18n(<SecretScreen client={client} />, { instance: en });
+    expect(await screen.findByText('2 providers')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Secrets');
   });
 });
