@@ -3,11 +3,16 @@
 # (SHAA-278 D1-D6, SHAA-279; oasdiff ter-pin, backend/Makefile): downstream-api
 # gagal jika breaking, admin-api hanya ::warning::. `gen-api-check` dan `tsc`
 # berjalan di frontend.yml (SHAA-281), yang juga terpicu oleh perubahan admin-api.yaml.
-# Trigger pull_request belum ada. Kalau ditambahkan nanti, baseline-nya
-# `github.event.pull_request.base.sha`.
+# Trigger pull_request (ARC-212): baseline oasdiff-nya `github.event.pull_request.base.sha`.
 name: contract
 
 on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "backend/**"
+      - "frontend/**"
+      - ".github/workflows/contract.yml"
   push:
     branches: [main]
     paths:
@@ -26,7 +31,8 @@ permissions:
 
 concurrency:
   group: contract-${{ github.ref }}
-  cancel-in-progress: false
+  # PR: run lama untuk PR yang sama dibatalkan; push ke main tidak pernah dibatalkan.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   openapi-check:
@@ -47,8 +53,8 @@ jobs:
       - name: openapi-check
         shell: bash
         env:
-          OASDIFF_BASE: ${{ github.event_name == 'workflow_dispatch' && inputs.oasdiff_base || github.event.before }}
-          OASDIFF_BASE_SOURCE: ${{ github.event_name == 'workflow_dispatch' && 'dispatch' || 'push.before' }}
+          OASDIFF_BASE: ${{ github.event_name == 'workflow_dispatch' && inputs.oasdiff_base || github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+          OASDIFF_BASE_SOURCE: ${{ github.event_name == 'workflow_dispatch' && 'dispatch' || github.event_name == 'pull_request' && 'pull_request.base.sha' || 'push.before' }}
         run: |
           set -o pipefail
           git config --global --add safe.directory "$(pwd)"
