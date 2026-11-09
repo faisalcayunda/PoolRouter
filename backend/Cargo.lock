@@ -3105,8 +3105,13 @@ version = "0.1.0"
 dependencies = [
  "apalis",
  "apalis-amqp",
+ "apalis-core",
+ "futures",
  "lapin",
  "poolrouter-core",
+ "tokio",
+ "tokio-util",
+ "tracing",
  "uuid",
 ]
 
@@ -3152,8 +3157,10 @@ dependencies = [
  "chrono",
  "poolrouter-adapter-provider",
  "poolrouter-core",
+ "poolrouter-queue-apalis",
  "redis",
  "reqwest",
+ "secrecy",
  "serde_json",
  "sqlx",
  "tokio",

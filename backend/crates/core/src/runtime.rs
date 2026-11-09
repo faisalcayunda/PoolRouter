@@ -17,7 +17,7 @@ use tokio::net::TcpListener;
 use tokio_util::sync::CancellationToken;
 use tracing_subscriber::EnvFilter;
 
-use crate::config::{Component, Config};
+use crate::config::{Component, Config, RabbitmqConfig};
 
 /// Initialise JSON logging. The filter comes from `RUST_LOG` (default `info`).
 ///
@@ -163,14 +163,7 @@ impl DependencyReadiness {
             .rabbitmq
             .as_ref()
             .ok_or_else(|| "rabbitmq configuration missing".to_owned())?;
-        let broker_uri = format!(
-            "amqp://{}:{}@{}:{}/{}",
-            uri_escape(&broker.user),
-            uri_escape(broker.password.expose_secret()),
-            broker.host,
-            broker.port,
-            uri_escape(&broker.vhost),
-        );
+        let broker_uri = amqp_uri(broker);
         Ok(Self {
             pg,
             redis,
@@ -217,8 +210,23 @@ impl Readiness for DependencyReadiness {
     }
 }
 
+/// URI AMQP dari konfigurasi broker, dipakai readiness, worker, dan
+/// controller supaya ketiganya mem-parse kredensial yang sama. User, password,
+/// dan vhost di-percent-encode: secret hasil generate sering memuat
+/// `/ @ : # ? %`, dan vhost bawaan `/` harus menjadi `%2F`.
+pub fn amqp_uri(broker: &RabbitmqConfig) -> String {
+    format!(
+        "amqp://{}:{}@{}:{}/{}",
+        uri_escape(&broker.user),
+        uri_escape(broker.password.expose_secret()),
+        broker.host,
+        broker.port,
+        uri_escape(&broker.vhost),
+    )
+}
+
 /// AMQP URI requires user, password and vhost percent-encoded.
-fn uri_escape(raw: &str) -> String {
+pub fn uri_escape(raw: &str) -> String {
     let mut out = String::with_capacity(raw.len());
     for byte in raw.bytes() {
         if byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.' | b'~') {
@@ -230,14 +238,55 @@ fn uri_escape(raw: &str) -> String {
     out
 }
 
+/// Status hidup proses untuk `/healthz`. Hanya worker yang memasangnya
+/// (ADR-0004 bagian 4.3 W3); controller dan webserver tetap memakai
+/// liveness statis.
+pub trait Liveness: Send + Sync + 'static {
+    fn alive(&self) -> bool;
+}
+
+#[derive(Clone)]
+struct ProbeState {
+    ready: Arc<dyn Readiness>,
+    live: Option<Arc<dyn Liveness>>,
+}
+
+fn admin_addr() -> String {
+    std::env::var("POOLROUTER_ADMIN_ADDR").unwrap_or_else(|_| "0.0.0.0:9090".to_owned())
+}
+
 /// Expose the local readiness endpoint used by the container probe.
 pub fn spawn_ready_server(ready: Arc<dyn Readiness>) {
-    let addr = std::env::var("POOLROUTER_ADMIN_ADDR").unwrap_or_else(|_| "0.0.0.0:9090".to_owned());
-    spawn_ready_server_on(&addr, ready);
+    spawn_ready_server_on(&admin_addr(), ready);
 }
 
 /// Bind the probe/metrics listener on `addr` (used by tests with an explicit address).
 pub fn spawn_ready_server_on(addr: &str, ready: Arc<dyn Readiness>) {
+    spawn_probe_server(addr, ProbeState { ready, live: None });
+}
+
+/// Seperti [`spawn_ready_server`], tetapi `/healthz` menjawab 503 selama
+/// `live` melaporkan proses tidak hidup.
+pub fn spawn_ready_server_with_liveness(ready: Arc<dyn Readiness>, live: Arc<dyn Liveness>) {
+    spawn_ready_server_with_liveness_on(&admin_addr(), ready, live);
+}
+
+/// [`spawn_ready_server_with_liveness`] pada `addr` eksplisit (untuk uji).
+pub fn spawn_ready_server_with_liveness_on(
+    addr: &str,
+    ready: Arc<dyn Readiness>,
+    live: Arc<dyn Liveness>,
+) {
+    spawn_probe_server(
+        addr,
+        ProbeState {
+            ready,
+            live: Some(live),
+        },
+    );
+}
+
+fn spawn_probe_server(addr: &str, state: ProbeState) {
     let addr = addr.to_owned();
     tokio::spawn(async move {
         let Ok(listener) = TcpListener::bind(&addr).await else {
@@ -246,7 +295,7 @@ pub fn spawn_ready_server_on(addr: &str, ready: Arc<dyn Readiness>) {
         let metrics = PrometheusBuilder::new().build_recorder().handle();
         let metrics_handle = metrics.clone();
         let app = Router::new()
-            .route("/healthz", get(|| async { "ok" }))
+            .route("/healthz", get(healthz))
             .route("/readyz", get(readyz))
             .route(
                 "/metrics",
@@ -262,15 +311,28 @@ pub fn spawn_ready_server_on(addr: &str, ready: Arc<dyn Readiness>) {
                     }
                 }),
             )
-            .with_state(ready);
+            .with_state(state);
         let _ = axum::serve(listener, app).await;
     });
 }
 
-/// Readiness: every dependency must answer. Liveness (`/healthz`) stays static
-/// so an outage cannot trigger cascading restarts.
-async fn readyz(State(ready): State<Arc<dyn Readiness>>) -> Response {
-    match tokio::time::timeout(READY_BUDGET, ready.check()).await {
+/// Liveness: statis untuk controller dan webserver, supaya gangguan
+/// dependensi tidak memicu restart berantai. Worker memasang [`Liveness`]
+/// karena loop consumer yang tidak pernah tersambung hanya pulih lewat
+/// restart (ADR-0004 bagian 4.3 W3).
+async fn healthz(State(state): State<ProbeState>) -> Response {
+    match &state.live {
+        Some(live) if !live.alive() => {
+            tracing::warn!("liveness failed");
+            (StatusCode::SERVICE_UNAVAILABLE, "not alive").into_response()
+        }
+        _ => (StatusCode::OK, "ok").into_response(),
+    }
+}
+
+/// Readiness: every dependency must answer.
+async fn readyz(State(state): State<ProbeState>) -> Response {
+    match tokio::time::timeout(READY_BUDGET, state.ready.check()).await {
         Ok(Ok(())) => (StatusCode::OK, "ok").into_response(),
         Ok(Err(reason)) => {
             tracing::warn!(reason = %reason, "readiness failed");
@@ -345,6 +407,67 @@ mod tests {
             .await
             .unwrap();
         assert!(healthz.status().is_success());
+    }
+
+    struct Mati;
+    impl Liveness for Mati {
+        fn alive(&self) -> bool {
+            false
+        }
+    }
+
+    #[tokio::test]
+    async fn healthz_gagal_bila_liveness_terpasang_melaporkan_mati() {
+        let addr = "127.0.0.1:19194";
+        spawn_ready_server_with_liveness_on(addr, Arc::new(Ready), Arc::new(Mati));
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        let healthz = reqwest::get(format!("http://{addr}/healthz"))
+            .await
+            .unwrap();
+        assert_eq!(healthz.status(), reqwest::StatusCode::SERVICE_UNAVAILABLE);
+        assert_eq!(
+            healthcheck_at(addr).await,
+            ExitCode::SUCCESS,
+            "readyz terpisah"
+        );
+
+        // Status consumer tanpa loop terdaftar (belum ada pool) tetap hidup.
+        let addr = "127.0.0.1:19195";
+        let status = crate::queue::StatusKonsumen::baru(Duration::from_secs(90));
+        spawn_ready_server_with_liveness_on(addr, Arc::new(Ready), status);
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        let healthz = reqwest::get(format!("http://{addr}/healthz"))
+            .await
+            .unwrap();
+        assert!(healthz.status().is_success());
+    }
+
+    /// Temuan review ARC-68: password hasil generate dengan karakter khusus
+    /// harus kembali utuh setelah URI di-parse klien AMQP.
+    #[test]
+    fn amqp_uri_mengembalikan_kredensial_semula() {
+        use std::str::FromStr;
+        let broker = RabbitmqConfig {
+            host: "rabbitmq".to_owned(),
+            port: 5672,
+            vhost: "/".to_owned(),
+            user: "pool router@x".to_owned(),
+            password: secrecy::SecretString::from("a/b@c:d#e?f%g h".to_owned()),
+        };
+        let uri = amqp_uri(&broker);
+        let parsed = lapin::uri::AMQPUri::from_str(&uri).expect("URI AMQP valid");
+        assert_eq!(parsed.authority.userinfo.username, "pool router@x");
+        assert_eq!(parsed.authority.userinfo.password, "a/b@c:d#e?f%g h");
+        assert_eq!(parsed.authority.host, "rabbitmq");
+        assert_eq!(parsed.authority.port, 5672);
+        assert_eq!(parsed.vhost, "/");
+
+        let broker = RabbitmqConfig {
+            vhost: "pr/prod".to_owned(),
+            ..broker
+        };
+        let parsed = lapin::uri::AMQPUri::from_str(&amqp_uri(&broker)).expect("URI AMQP valid");
+        assert_eq!(parsed.vhost, "pr/prod");
     }
 
     #[tokio::test]
