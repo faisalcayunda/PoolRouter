@@ -7,6 +7,7 @@
 
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use axum::Router;
 use axum::body::{Body, to_bytes};
@@ -50,6 +51,8 @@ impl PengenalDownstream for PengenalTetap {
 struct PemanggilTetap {
     hasil: HasilPanggilan,
     jumlah: Mutex<u32>,
+    /// Latensi tiruan provider.
+    tunda: Duration,
 }
 
 impl PemanggilProvider for PemanggilTetap {
@@ -59,6 +62,9 @@ impl PemanggilProvider for PemanggilTetap {
     ) -> poolrouter_webserver::downstream::downstream_sesi::Fut<'_, HasilPanggilan> {
         Box::pin(async move {
             *self.jumlah.lock().unwrap() += 1;
+            if !self.tunda.is_zero() {
+                tokio::time::sleep(self.tunda).await;
+            }
             self.hasil.clone()
         })
     }
@@ -129,6 +135,10 @@ impl Uji {
     }
 
     fn dengan(hasil: Option<HasilPanggilan>) -> Self {
+        Self::dengan_tunda(hasil, Duration::ZERO)
+    }
+
+    fn dengan_tunda(hasil: Option<HasilPanggilan>, tunda: Duration) -> Self {
         let klien = SesiKlien {
             client_id: Uuid::now_v7(),
             credential_id: Uuid::now_v7(),
@@ -141,6 +151,7 @@ impl Uji {
             Arc::new(PemanggilTetap {
                 hasil: h,
                 jumlah: Mutex::new(0),
+                tunda,
             })
         });
         let operasi = Arc::new(OperasiDownstream {
@@ -701,6 +712,25 @@ async fn sync_kuota_token_habis_429_kuota_habis() {
     assert_eq!(v["kode"], "kuota_habis");
     assert_eq!(h.get(header::RETRY_AFTER).unwrap(), "42");
     assert_eq!(*u.pemanggil.as_ref().unwrap().jumlah.lock().unwrap(), 0);
+}
+
+#[tokio::test]
+async fn sync_client_putus_tidak_membatalkan_panggilan() {
+    // AC-29: client memutus koneksi sebelum jawaban; panggilan upstream dan
+    // transaksi kedua tetap selesai, slot dilepas.
+    let u = Uji::dengan_tunda(Some(hasil_sesuai()), Duration::from_millis(100));
+    let putus =
+        tokio::time::timeout(Duration::from_millis(20), u.sinkron(&body_sah(), None)).await;
+    assert!(putus.is_err(), "client harus memutus sebelum jawaban");
+    tokio::time::sleep(Duration::from_millis(400)).await;
+    let semua = u.permintaan.semua();
+    assert_eq!(semua.len(), 1);
+    let r = &semua[0].1;
+    assert_eq!(r.status, StatusInternal::Done);
+    assert_eq!(r.log.len(), 1);
+    assert_eq!(r.log[0].1, Some("berhasil"));
+    assert_eq!(u.kuota.hitung.lock().unwrap().lepas, 1);
+    assert_eq!(*u.pemanggil.as_ref().unwrap().jumlah.lock().unwrap(), 1);
 }
 
 // ------------------------------------------------------------------ AC-4

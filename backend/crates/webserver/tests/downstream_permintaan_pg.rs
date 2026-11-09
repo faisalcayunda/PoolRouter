@@ -95,6 +95,9 @@ impl PengenalDownstream for PengenalTetap {
 struct MockProvider {
     hasil: HasilPanggilan,
     jumlah: Mutex<u32>,
+    /// Latensi tetap mock dan latensi yang terukur di dalam mock (AC-32).
+    tunda: Duration,
+    latensi: Mutex<Vec<Duration>>,
 }
 
 impl PemanggilProvider for MockProvider {
@@ -104,6 +107,11 @@ impl PemanggilProvider for MockProvider {
     ) -> poolrouter_webserver::downstream::downstream_sesi::Fut<'_, HasilPanggilan> {
         Box::pin(async move {
             *self.jumlah.lock().unwrap() += 1;
+            if !self.tunda.is_zero() {
+                let t = Instant::now();
+                tokio::time::sleep(self.tunda).await;
+                self.latensi.lock().unwrap().push(t.elapsed());
+            }
             self.hasil.clone()
         })
     }
@@ -135,6 +143,10 @@ struct Uji {
 
 impl Uji {
     async fn baru(kuota_harian: i32, hasil: HasilPanggilan) -> Self {
+        Self::baru_tunda(kuota_harian, hasil, Duration::ZERO).await
+    }
+
+    async fn baru_tunda(kuota_harian: i32, hasil: HasilPanggilan, tunda: Duration) -> Self {
         let su = kolam(&env("POOLROUTER_TEST_DATABASE_URL_SU")).await;
         let api = kolam(&env("POOLROUTER_TEST_DATABASE_URL_API")).await;
         let uid = Uuid::now_v7().simple().to_string();
@@ -189,6 +201,8 @@ impl Uji {
         let mock = Arc::new(MockProvider {
             hasil,
             jumlah: Mutex::new(0),
+            tunda,
+            latensi: Mutex::new(Vec::new()),
         });
         let operasi = Arc::new(OperasiDownstream {
             permintaan: PgPermintaan::baru(api),
@@ -607,5 +621,31 @@ async fn smoke_p95_enqueue_async() {
         "ARC-63 AC-31 smoke/relatif: 1000 enqueue async, p95 = {:.1} ms, p50 = {:.1} ms",
         p95.as_secs_f64() * 1000.0,
         durasi[499].as_secs_f64() * 1000.0
+    );
+}
+
+/// AC-32 (NFR-01, smoke/relatif): overhead sync = p95 end-to-end dikurangi
+/// rata-rata latensi mock (metode `docs/perf/rencana-uji-beban.md`).
+#[tokio::test]
+#[ignore]
+async fn smoke_overhead_sync() {
+    redis_siap().await;
+    let u = Uji::baru_tunda(1_000_000, hasil_sesuai(), Duration::from_millis(20)).await;
+    let mut durasi: Vec<Duration> = Vec::with_capacity(200);
+    for _ in 0..200 {
+        let t = Instant::now();
+        let (s, v) = u.sinkron(&body_sah()).await;
+        durasi.push(t.elapsed());
+        assert_eq!(s, StatusCode::OK, "{v}");
+    }
+    durasi.sort();
+    let p95 = durasi[189].as_secs_f64() * 1000.0;
+    let latensi = u.mock.latensi.lock().unwrap().clone();
+    let rata = latensi.iter().map(Duration::as_secs_f64).sum::<f64>() * 1000.0
+        / latensi.len().max(1) as f64;
+    println!(
+        "ARC-66 AC-32 smoke/relatif: 200 sync, p95 end-to-end = {p95:.1} ms, \
+         rata-rata mock = {rata:.1} ms, overhead = {:.1} ms",
+        p95 - rata
     );
 }
