@@ -28,9 +28,7 @@ export function MfaCodeScreen({
   const [code, setCode] = useState('');
   // S17b menormalkan sebelum kirim: TOTP membuang spasi, kode pemulihan juga membesarkan huruf.
   const normalized =
-    mode === 'totp'
-      ? code.replace(/\s+/g, '')
-      : code.toUpperCase().replace(/[\s-]/g, '');
+    mode === 'totp' ? code.replace(/\s+/g, '') : code.toUpperCase().replace(/[\s-]/g, '');
   const valid = normalized.length === (mode === 'totp' ? 6 : 10);
 
   const switchMode = () => {
