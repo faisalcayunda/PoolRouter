@@ -18,6 +18,10 @@ description = "Contoh sintetis yang sudah dinilai: token contoh OpenAPI/Rust dan
 #    backend/openapi/downstream-api.yaml dan backend/crates/webserver/src/api/downstream.rs, jadi aman ditulis utuh.
 regexes = [
   '''^eyJhbGciOiJFUzI1NiJ9\.eyJzdWIiOiJjbGllbnQifQ\.c2lnbmF0dXJl$''',
+  # 3) Fixture MFA sintetis (ARC-202): kunci uji RFC 6238 ("12345678901234567890" dalam base32) di totp.rs,
+  #    dan secret contoh di frontend/tests/mfa-screens.test.tsx. Literal utuh, tanpa wildcard.
+  '''^GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ$''',
+  '''^CONTOHSECRETSINTETISBUKANASLI234$''',
 ]
 # 2) Fixture pelanggaran lint compose (sengaja salah; berisi digest, bukan kredensial). Satu berkas saja.
 paths = [

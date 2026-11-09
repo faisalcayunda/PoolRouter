@@ -22,6 +22,7 @@ mod item;
 mod konfigurasi;
 mod pemicu;
 mod pengirim;
+mod penyusun;
 
 pub use item::ItemDataBalikan;
 pub use konfigurasi::{
@@ -34,3 +35,4 @@ pub use pengirim::{
     BatchKeluar, HasilAck, HasilDiprogam, HasilKirimBatch, KelasGagal, PengirimDataBalikan,
     PengirimTiruan, RekamanKirim,
 };
+pub use penyusun::{GalatPenyusun, jalankan_job_balikan};

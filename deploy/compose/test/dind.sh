@@ -138,7 +138,8 @@ if [ "$s_rc" != 0 ]; then
 fi
 log "== V3: compose up --wait ($PROFILES) =="
 # shellcheck disable=SC2086
-if cli compose $COMPOSE_ARGS $PROFILE_ARGS up -d --wait >> "$LOG" 2>&1; then
+# Hanya service infra: service app memakai image dengan digest nyata dari CI, tidak ada di harness.
+if cli compose $COMPOSE_ARGS $PROFILE_ARGS up -d --wait postgres redis rabbitmq >> "$LOG" 2>&1; then
   log "compose_up_exit=0"
 else
   log "compose_up_exit=$?"; cli compose $COMPOSE_ARGS $PROFILE_ARGS ps >> "$LOG" 2>&1 || true; exit 1

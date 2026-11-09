@@ -46,6 +46,13 @@ impl Peran {
         }
     }
 
+    /// Whether holding this role makes the TOTP step compulsory
+    /// (ADR-0006 §9, AC-9): `auditor` and `platform_admin`.
+    #[must_use]
+    pub const fn wajib_mfa(self) -> bool {
+        matches!(self, Self::PlatformAdmin | Self::Auditor)
+    }
+
     /// Every role, in contract order. Used by the CLI to validate `--peran`
     /// and by tests to prove the list matches the database check constraint.
     pub const SEMUA: [Self; 4] = [
@@ -113,6 +120,8 @@ pub enum Aksi {
     UbahPeran,
     AksesDitolak,
     PakaiKodePemulihan,
+    /// Enrollment started or confirmed (AC-12, AC-13).
+    DaftarMfa,
 }
 
 impl Aksi {
@@ -128,10 +137,11 @@ impl Aksi {
             Self::UbahPeran => "ubah_peran",
             Self::AksesDitolak => "akses_ditolak",
             Self::PakaiKodePemulihan => "pakai_kode_pemulihan",
+            Self::DaftarMfa => "daftar_mfa",
         }
     }
 
-    pub const SEMUA: [Self; 10] = [
+    pub const SEMUA: [Self; 11] = [
         Self::LihatLog,
         Self::CariLog,
         Self::CariNik,
@@ -142,6 +152,7 @@ impl Aksi {
         Self::UbahPeran,
         Self::AksesDitolak,
         Self::PakaiKodePemulihan,
+        Self::DaftarMfa,
     ];
 }
 
@@ -315,6 +326,9 @@ pub struct AksesBaru {
     pub alasan: Option<Alasan>,
     pub sumber_ip: Option<String>,
     pub sesi_id: Option<String>,
+    /// Required by the `chk_audit_target_pengguna` constraint for the account
+    /// actions (`daftar_mfa`, `terbit_kode_daftar`, `reset_mfa*`, ...).
+    pub target_pengguna_id: Option<Uuid>,
 }
 
 impl AksesBaru {
@@ -332,6 +346,7 @@ impl AksesBaru {
             alasan: None,
             sumber_ip: None,
             sesi_id: None,
+            target_pengguna_id: None,
         }
     }
 
@@ -346,6 +361,13 @@ impl AksesBaru {
             hasil: Hasil::Ditolak,
             ..Self::berhasil(pelaku, Aksi::AksesDitolak)
         }
+    }
+
+    /// Point the row at the account the action was taken on, which the
+    /// `chk_audit_target_pengguna` constraint requires for `daftar_mfa`.
+    pub const fn dengan_target_pengguna(mut self, target: Uuid) -> Self {
+        self.target_pengguna_id = Some(target);
+        self
     }
 
     pub fn dengan_tampilan_nik(mut self, tampilan: TampilanNik) -> Self {
@@ -542,8 +564,8 @@ impl<'tx> Penulis<'tx> {
         sqlx::query(
             "INSERT INTO audit_akses \
              (audit_id, pengguna_id, peran, aksi, tampilan_nik, filter_kueri, nik_hmac, nik_tersamar, \
-              jumlah_record, alasan, hasil, sumber_ip, sesi_id) \
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)",
+              jumlah_record, alasan, hasil, sumber_ip, sesi_id, target_pengguna_id) \
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)",
         )
         .bind(audit_id)
         .bind(baris.pelaku.pengguna_id)
@@ -558,6 +580,7 @@ impl<'tx> Penulis<'tx> {
         .bind(baris.hasil.as_str())
         .bind(baris.sumber_ip)
         .bind(baris.sesi_id)
+        .bind(baris.target_pengguna_id)
         .execute(&mut **self.tx)
         .await?;
 
@@ -742,7 +765,8 @@ mod tests {
                 "restore_arsip",
                 "ubah_peran",
                 "akses_ditolak",
-                "pakai_kode_pemulihan"
+                "pakai_kode_pemulihan",
+                "daftar_mfa"
             ]
         );
     }

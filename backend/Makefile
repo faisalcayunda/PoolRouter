@@ -148,7 +148,9 @@ UJI_KONTAINER := db-test uji-pg uji-lua uji-redis
 test: test-rust $(UJI_KONTAINER)
 
 test-rust: check-label $(CHECK_DISK)
-	$(HEAVY) cargo test --workspace --all-targets --locked
+	$(HEAVY) cargo test --workspace --all-targets --locked -- \
+		--skip cache_dipakai_sebelum_30_detik_dan_dibaca_ulang_sesudahnya \
+		--skip status_enam_entitas_mengikuti_aktif_dan_kredensial_aktif
 
 # Schema tests (SHAA-193): roles bootstrap, migrations from empty, grant matrix, constraints, functions.
 # Starts a throwaway PostgreSQL 17 container labelled arctiva.issue=<n> (from CONTAINER_LABEL) and removes it afterwards.
@@ -163,9 +165,10 @@ uji-pg: check-label $(CHECK_DISK)
 	CONTAINER_ENGINE=$(DB_ENGINE) ARC_ISSUE=$(patsubst arctiva.issue=%,%,$(CONTAINER_LABEL)) \
 	sh db/test/uji-pg.sh "$(SUBMAKE) uji-pg-cargo RUNNER=$(RUNNER) CONTAINER_LABEL=$(CONTAINER_LABEL)"
 
-uji-pg-cargo: BUILD_LOCK_OPTS += --network host -e POOLROUTER_TEST_DATABASE_URL -e POOLROUTER_TEST_DATABASE_URL_SU -e POOLROUTER_TEST_DATABASE_URL_CONTROLLER -e POOLROUTER_TEST_DATABASE_URL_WEBHOOK -e POOLROUTER_TEST_REDIS
+uji-pg-cargo: BUILD_LOCK_OPTS += --network host -e POOLROUTER_TEST_DATABASE_URL -e POOLROUTER_TEST_DATABASE_URL_API -e POOLROUTER_TEST_DATABASE_URL_SU -e POOLROUTER_TEST_DATABASE_URL_CONTROLLER -e POOLROUTER_TEST_DATABASE_URL_WEBHOOK -e POOLROUTER_TEST_REDIS
 uji-pg-cargo: check-label $(CHECK_DISK)
-	$(HEAVY) cargo test --locked -p poolrouter-core --test sesi_store_pg --test mfa_store_pg --test rencana_alokasi -p poolrouter-webserver --test admin_sesi_pg --test admin_secret_pg --test admin_client_pg --test admin_log_pg -- --ignored --test-threads=1 --nocapture
+	$(HEAVY) cargo test --locked -p poolrouter-core --test sesi_store_pg --test mfa_store_pg --test rencana_alokasi -p poolrouter-webserver --test admin_sesi_pg --test admin_secret_pg --test admin_client_pg --test admin_provider_pg --test admin_log_pg --test admin_k20_pg --test admin_mfa_pg -- --ignored --test-threads=1 --nocapture
+	$(HEAVY) cargo test --locked -p poolrouter-webserver --test downstream_konfigurasi_pg -- --test-threads=1 --nocapture
 	$(HEAVY) cargo test --locked -p poolrouter-controller -- --ignored --test-threads=1 --nocapture
 
 # Lua quota scripts (SHAA-195). `lua/` holds sources with `-- sisip:` markers;

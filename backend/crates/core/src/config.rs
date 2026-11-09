@@ -99,6 +99,9 @@ const JWT: &str = "POOLROUTER_JWT_SIGNING_KEY";
 const NIK_HMAC: &str = "POOLROUTER_NIK_HMAC_KEY";
 const IDEMPOTENCY_HMAC: &str = "POOLROUTER_IDEMPOTENCY_HMAC_KEY";
 const SEED_PASSWORD: &str = "POOLROUTER_SEED_PASSWORD";
+/// Force the two-step login on for `auditor` and `platform_admin`
+/// (ADR-0006 §9, K-37). Defaults to on; cannot be turned off in production.
+const MFA_WAJIB: &str = "POOLROUTER_MFA_WAJIB";
 const REDIS_PASSWORD: &str = "POOLROUTER_REDIS_PASSWORD";
 const RABBITMQ_PASSWORD: &str = "POOLROUTER_RABBITMQ_PASSWORD";
 
@@ -258,6 +261,9 @@ pub struct Config {
     pub secrets: BTreeMap<&'static str, SecretString>,
     /// Admin CLI seed password, dev and ci only.
     pub seed_password: Option<SecretString>,
+    /// Whether `auditor` and `platform_admin` must pass the TOTP step
+    /// (ADR-0006 §9). Default on; see [`Config::mfa_wajib`].
+    pub mfa_wajib: bool,
 }
 
 impl Config {
@@ -298,6 +304,7 @@ impl Config {
         }
 
         let seed_password = r.seed(component, env);
+        let mfa_wajib = r.mfa_wajib(component, env);
 
         if !r.problems.is_empty() {
             return Err(ConfigError {
@@ -320,6 +327,7 @@ impl Config {
             ui_origin,
             secrets,
             seed_password,
+            mfa_wajib,
         })
     }
 }
@@ -467,6 +475,31 @@ impl Reader<'_> {
             return None;
         }
         self.secret(SEED_PASSWORD)
+    }
+
+    /// Read `POOLROUTER_MFA_WAJIB`. Unset means on — the safe default, since
+    /// the whole point of ADR-0006 §9 is that forgetting the switch cannot
+    /// leave an MFA-required role on password-only login.
+    ///
+    /// Production may set it to `true` or leave it unset, but not `false`:
+    /// K-37 makes the two-step login a production gate, not a preference.
+    fn mfa_wajib(&mut self, component: Component, env: Option<Environment>) -> bool {
+        let Some(raw) = self.nonempty(MFA_WAJIB) else {
+            return true;
+        };
+        let nilai = match raw.trim().to_ascii_lowercase().as_str() {
+            "1" | "true" | "ya" => true,
+            "0" | "false" | "tidak" => false,
+            _ => {
+                self.problems.push(Problem::Invalid(MFA_WAJIB.into()));
+                return true;
+            }
+        };
+        let produksi = matches!(env, Some(Environment::Poc) | Some(Environment::Prod));
+        if !nilai && produksi && matches!(component, Component::Webserver | Component::Cli) {
+            self.problems.push(Problem::NotAllowed(MFA_WAJIB.into()));
+        }
+        nilai
     }
 }
 

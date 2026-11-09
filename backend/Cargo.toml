@@ -2,6 +2,7 @@
 resolver = "3"
 members = [
     "crates/core",
+    "crates/adapter-provider",
     "crates/webserver",
     "crates/controller",
     "crates/worker",
@@ -104,3 +105,4 @@ wiremock = "0.6.5"
 
 # Internal crates
 poolrouter-core = { path = "crates/core" }
+poolrouter-queue-apalis = { path = "crates/queue-apalis" }

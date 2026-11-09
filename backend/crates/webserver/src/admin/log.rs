@@ -32,7 +32,7 @@ use serde_json::Value;
 use uuid::Uuid;
 
 use super::gerbang::{Peminta, galat_validasi, masuk};
-use super::sesi::{AdminState, Galat};
+use super::sesi::{AdminState, Galat, periksa_origin};
 
 use crate::api::admin::{
     AuditAksesBaris, AuditAksesPage, AuditCariRequest, EksporRequest, FieldError, LogBaris,
@@ -72,6 +72,7 @@ pub(super) async fn search_log(
     body: Result<Json<LogCariRequest>, axum::extract::rejection::JsonRejection>,
 ) -> Result<Response, Galat> {
     let peminta = masuk(&s, &method, &headers, peer, PERAN_LOG, "searchLog").await?;
+    periksa_origin(&method, &headers, &s.asal)?;
 
     // The body is extracted before the handler runs, so a malformed one
     // must not shadow the 401/403 the gate just decided: unwrap it only now.

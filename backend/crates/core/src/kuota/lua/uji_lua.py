@@ -62,7 +62,9 @@ RAKIT = AKAR / "scripts" / "rakit-lua.sh"
 # yang lupa dirakit akan gagal saat dimuat, bukan diam-diam dilewati.
 NAMA_SKRIP = {
     "intake": "kuota_intake.lua",
+    "intake_alokasi": "kuota_intake_alokasi.lua",
     "token": "kuota_ambil_token.lua",
+    "token_alokasi": "kuota_ambil_token_alokasi.lua",
     "klaim": "slot_klaim.lua",
     "lepas": "slot_lepas.lua",
     "tambah": "attempts_tambah.lua",
@@ -366,6 +368,301 @@ class Uji:
         h = self.alokasi(297, a, rute=None, terpakai_rute=0, terpakai_pool=9999)
         self.periksa("Q terlampaui: batas 0, bukan negatif", h[-1] == 0, str(h))
 
+    # -- T2a: skrip alokasi + hook (ARC-169) ------------------------------
+
+    def _pasangan(self, siap, **kw) -> tuple[list, list]:
+        """Jalankan F0 dan skrip alokasi pada state yang di-seed identik."""
+        self.reset()
+        siap()
+        return (self.token(skrip="token", **kw),
+                self.token(skrip="token_alokasi", **kw))
+
+    def uji_pasangan_alokasi(self) -> None:
+        """AC-5: penolakan tahap global sama persis dengan F0 pada state sama."""
+        print("pasangan alokasi: setiap penolakan global identik dengan F0")
+
+        a, b = self._pasangan(lambda: self.r.cmd("DEL", "pr:siap"))
+        self.periksa("belum_siap sama", a == b and a[0] == "belum_siap", str(a))
+
+        def run_lain():
+            self.siapkan_run("run-lain")
+
+        a, b = self._pasangan(run_lain, run="run-1")
+        self.periksa("belum_siap (run lain) sama",
+                     a == b and a[0] == "belum_siap", str(a))
+
+        def kuota_habis():
+            self.siapkan_run("run-1")
+            self.r.cmd("SET", self.k_attempts("p2", 0), "5")
+
+        a, b = self._pasangan(kuota_habis, pool="p2", mode="kalender", kuota=5)
+        self.periksa("kuota_habis sama", a == b and a[0] == "kuota_habis", str(a))
+
+        def konkurensi_penuh():
+            self.siapkan_run("run-1")
+            skor = self.mikrodetik() + 7_200_000_000
+            for i in range(3):
+                self.r.cmd("ZADD", self.k_slot("p3"), skor, f"m{i}:1")
+
+        a, b = self._pasangan(konkurensi_penuh, pool="p3", maks=3)
+        self.periksa("konkurensi_penuh sama",
+                     a == b and a[0] == "konkurensi_penuh", str(a))
+
+        def retry_budget_habis():
+            self.siapkan_run("run-1")
+
+        a, b = self._pasangan(retry_budget_habis, nomor=2, rasio="0", retry_min=0)
+        self.periksa("retry_budget_habis sama",
+                     a == b and a[0] == "retry_budget_habis", str(a))
+
+        def rate_limit():
+            self.siapkan_run("run-1")
+            self.r.cmd("SET", self.k_rl("w0", "p4"),
+                       str(self.mikrodetik() + 1_000_000))
+
+        a, b = self._pasangan(rate_limit, pool="p4", kuota=1000)
+        # `tunggu` dihitung dari Redis TIME yang bergerak di antara dua panggilan;
+        # selisih mikrodetik bukan penyimpangan perilaku.
+        self.periksa("rate_limit sama (selain tunggu)",
+                     a[0] == b[0] == "rate_limit"
+                     and a[1:4] == b[1:4] and a[5:] == b[5:]
+                     and abs(a[4] - b[4]) < 50_000, f"{a} vs {b}")
+
+    def uji_hook_alokasi(self) -> None:
+        """Hook opsional dipanggil sesudah semua gerbang F0 dan sebelum tulis."""
+        print("hook alokasi: sesudah gerbang F0, sebelum tulis")
+        sumber = ("local bersama = (function()\n"
+                  + (HERE / "potongan" / "bersama.lua").read_text()
+                  + "\nend)()\nlocal ambil_token = (function()\n"
+                  + (HERE / "potongan" / "ambil_token.lua").read_text()
+                  + "\nend)()\n")
+        # Pembungkus uji: `o` berbentuk sama dengan milik skrip alokasi, ditambah
+        # dua hook yang mencatat pemanggilannya. Yang diuji potongan asli, bukan
+        # salinannya.
+        pembungkus = """
+local dipanggil = {}
+local function sekarang()
+  local t = redis.call('TIME')
+  return tonumber(t[1]) * 1000000 + tonumber(t[2])
+end
+local o = {
+  a = { mode = 'kalender', kuota_efektif = tonumber(ARGV[1]), jumlah_ember = 145, no_ember = 1000 },
+  sync = '0', maks = 8, ttl = 80000000, rasio_retry = 0.1, retry_min = 0,
+  porsi = 0.2, nomor = 1, request_id = 'hook-uji', sekarang = sekarang,
+  jendela = { { t = 200000, burst = 5, kunci = KEYS[6], kunci_sync = KEYS[7] } },
+}
+o.pilih_sumber = function(KEYS, o)
+  dipanggil[#dipanggil + 1] = 'pilih'
+  if ARGV[2] == 'tolak' then
+    return { kode = 'anggaran_habis', tabel = { 'anggaran_habis' } }
+  end
+end
+o.kunci_slot_sumber = function(KEYS, o, member)
+  dipanggil[#dipanggil + 1] = 'kunci'
+end
+local hasil = ambil_token.ambil_token(KEYS, o)
+return { hasil.kode, table.concat(dipanggil, ','), redis.call('ZCARD', KEYS[4]),
+         redis.call('EXISTS', KEYS[6]), redis.call('EXISTS', KEYS[5]) }
+"""
+        keys = ["pr:siap", self.k_attempts(), self.k_ember(), self.k_slot(),
+                self.k_retry(), self.k_rl("w0")]
+        sha = self.r.cmd("SCRIPT", "LOAD", sumber + pembungkus)
+
+        def hook(kuota: int, aksi: str, terpakai: int = 0) -> list:
+            self.reset()
+            self.r.cmd("SET", keys[1], str(terpakai))
+            return self.r.evalsha(sha, keys, [str(kuota), aksi])
+
+        h = hook(10, "tolak", terpakai=10)
+        self.periksa("gerbang F0 menolak: hook tidak dipanggil",
+                     h[0] == "kuota_habis" and h[1] == "", str(h))
+        h = hook(10, "tolak")
+        self.periksa("hook menolak sesudah gerbang F0",
+                     h[0] == "anggaran_habis" and h[1] == "pilih", str(h))
+        self.periksa("penolakan hook tanpa tulis",
+                     h[2] == 0 and h[3] == 0 and h[4] == 0, str(h))
+        h = hook(10, "lolos")
+        self.periksa("hook lolos: pilih lalu kunci",
+                     h[0] == "ok" and h[1] == "pilih,kunci", str(h))
+        self.periksa("hook lolos: tulis terjadi",
+                     h[2] == 1 and h[3] == 1 and h[4] == 1, str(h))
+
+    # -- T2b: tahap anggaran di skrip alokasi (ARC-170) --------------------
+
+    def _beban(self, pool="p1") -> dict[str, int]:
+        """`u_x` seperti yang dilihat skrip: commit di jendela + slot aktif."""
+        u: dict[str, int] = {}
+        isi = self.r.cmd("HGETALL", self.k_anggaran(pool)) or []
+        for i in range(0, len(isi), 2):
+            sumber = isi[i].rsplit(":", 1)[0]
+            u[sumber] = u.get(sumber, 0) + int(isi[i + 1])
+        sumber_slot = self.r.cmd("HGETALL", self.k_slot_sumber(pool)) or []
+        for i in range(0, len(sumber_slot), 2):
+            member = sumber_slot[i]
+            sumber = sumber_slot[i + 1]
+            if self.r.cmd("ZSCORE", self.k_slot(pool), member) is not None:
+                u[sumber] = u.get(sumber, 0) + 1
+        return u
+
+    def uji_anggaran_pilih(self) -> None:
+        print("anggaran: sumber pertama yang punya ruang, lalu anggaran_habis (AC-6)")
+        self.reset()
+        urutan = [("A", 10), ("B", 10)]
+
+        h = self.token(skrip="token_alokasi", request_id="r1", urutan=urutan)
+        self.periksa("token diberikan", h[0] == "ok", str(h))
+        self.periksa("sumber pertama dicatat di slot_sumber",
+                     self.r.cmd("HGET", self.k_slot_sumber(), "r1:1") == "A")
+
+        # A penuh oleh commit: percobaan berikut pindah ke B.
+        self.r.cmd("HSET", self.k_anggaran(), "A:1000", "10")
+        h = self.token(skrip="token_alokasi", request_id="r2", urutan=urutan)
+        self.periksa("A penuh: pindah ke B", h[0] == "ok"
+                     and self.r.cmd("HGET", self.k_slot_sumber(), "r2:1") == "B",
+                     str(h))
+
+        # Keduanya penuh: anggaran_habis tanpa slot baru. Commit tertua
+        # 1000 berada di jendela, sehingga Retry-After mengikuti jendela 24 jam.
+        self.r.cmd("HSET", self.k_anggaran(), "B:1000", "10")
+        sebelum = self.r.cmd("ZCARD", self.k_slot())
+        h = self.token(skrip="token_alokasi", request_id="r3", urutan=urutan)
+        self.periksa("semua penuh: anggaran_habis", h[0] == "anggaran_habis", str(h))
+        self.periksa("Retry-After tidak negatif",
+                     h[4] >= 0, str(h))
+        self.periksa("penolakan anggaran tanpa slot baru",
+                     self.r.cmd("ZCARD", self.k_slot()) == sebelum
+                     and self.r.cmd("HGET", self.k_slot_sumber(), "r3:1") is None)
+
+        # Gerbang F0 tetap lebih dulu: kuota habis, bukan anggaran_habis.
+        h = self.token(skrip="token_alokasi", request_id="r4", urutan=urutan,
+                       kuota=2)
+        self.periksa("F0 lebih dulu daripada anggaran", h[0] == "kuota_habis", str(h))
+
+    def uji_anggaran_jendela(self) -> None:
+        print("anggaran: jendela 24 jam dan slot aktif menjadi beban (AC-6)")
+        self.reset()
+        self.r.cmd("HSET", self.k_anggaran(), "A:800", "99")
+        h = self.token(skrip="token_alokasi", request_id="r1", urutan=[("A", 1)])
+        self.tambah(member="r1:1", alokasi=True)
+        self.periksa("commit di luar jendela dipangkas sesudah commit",
+                     h[0] == "ok"
+                     and self.r.cmd("HGET", self.k_anggaran(), "A:800") is None, str(h))
+
+        # Slot r1:1 membebani A: batas 1 sudah terpakai, jadi pindah ke B.
+        h = self.token(skrip="token_alokasi", request_id="r2", urutan=[("A", 1), ("B", 1)])
+        self.periksa("slot aktif membebani sumbernya",
+                     h[0] == "ok"
+                     and self.r.cmd("HGET", self.k_slot_sumber(), "r2:1") == "B", str(h))
+
+        # Slot kedaluwarsa dibersihkan lengkap dengan entri sumbernya.
+        self.reset()
+        self.r.cmd("ZADD", self.k_slot(), str(self.mikrodetik() - 1), "mati:1")
+        self.r.cmd("HSET", self.k_slot_sumber(), "mati:1", "A")
+        h = self.token(skrip="token_alokasi", request_id="r1", urutan=[("A", 1)])
+        self.periksa("slot kedaluwarsa tidak lagi membebani",
+                     h[0] == "ok" and h[1] >= 0, str(h))
+        self.periksa("entri slot_sumber slot kedaluwarsa dihapus",
+                     self.r.cmd("HGET", self.k_slot_sumber(), "mati:1") is None)
+
+    def uji_anggaran_beban(self) -> None:
+        print("anggaran: satu percobaan satu beban, commit menggantikan slot (AC-6/AC-7)")
+        self.reset()
+        self.token(skrip="token_alokasi", request_id="r1", urutan=[("A", 2)])
+
+        h = self.tambah(member="r1:1", alokasi=True)
+        self.periksa("attempts tetap tercatat", h[0] == "ok", str(h))
+        self.periksa("commit = 1 beban di anggaran A:1000",
+                     self.r.cmd("HGET", self.k_anggaran(), "A:1000") == "1")
+        self.periksa("entri slot_sumber dihapus: beban tidak dobel",
+                     self.r.cmd("HGET", self.k_slot_sumber(), "r1:1") is None)
+        self.periksa("slot tetap aktif untuk konkurensi",
+                     self.r.cmd("ZCARD", self.k_slot()) == 1)
+
+        self.lepas(member="r1:1")
+        self.periksa("beban bertahan sesudah slot dilepas",
+                     self.r.cmd("HGET", self.k_anggaran(), "A:1000") == "1")
+
+        self.r.cmd("HSET", self.k_anggaran(), "A:800", "5")
+        self.token(skrip="token_alokasi", request_id="r2", urutan=[("A", 2)])
+        self.tambah(member="r2:1", alokasi=True)
+        self.periksa("commit kedua menambah beban dan memangkas jendela",
+                     self.r.cmd("HGET", self.k_anggaran(), "A:1000") == "2"
+                     and self.r.cmd("HGET", self.k_anggaran(), "A:800") is None)
+
+        h = self.token(skrip="token_alokasi", request_id="r3", urutan=[("A", 2)])
+        self.periksa("A di batas: anggaran_habis",
+                     h[0] == "anggaran_habis", str(h))
+
+        # Tanpa kunci alokasi, jalur F0 tidak menyentuh anggaran sama sekali.
+        self.reset()
+        self.token(skrip="token_alokasi", request_id="f0", urutan=[("A", 2)])
+        self.tambah(member="f0:1")
+        self.periksa("pool tanpa alokasi tidak membebani anggaran",
+                     self.r.cmd("HLEN", self.k_anggaran()) == 0)
+        self.periksa("pool tanpa alokasi tidak menyentuh slot_sumber",
+                     self.r.cmd("HLEN", self.k_slot_sumber()) == 1)
+
+        # HGET slot_sumber tanpa entri → false; harus jatuh ke ARGV[7] (pool).
+        self.reset()
+        self.token(skrip="token_alokasi", request_id="r9", urutan=[("A", 2)])
+        self.r.cmd("HDEL", self.k_slot_sumber(), "r9:1")
+        h = self.tambah(member="r9:1", alokasi=True)
+        self.periksa("tanpa slot_sumber: ok", h[0] == "ok", str(h))
+        self.periksa("tanpa slot_sumber: beban ke sumber cadangan p1:1000",
+                     self.r.cmd("HGET", self.k_anggaran(), "p1:1000") == "1")
+
+    def uji_properti_anggaran(self, iterasi: int) -> None:
+        """AC-7: u_x <= a_x, satu beban per percobaan, sumber pertama beruang."""
+        print(f"properti anggaran: {iterasi} urutan acak (AC-7)")
+        rng = random.Random(170)
+        batas = {"A": 3, "B": 2, "sisa": 2}
+        urutan = list(batas.items())
+        lancar = 0
+        for _ in range(iterasi):
+            self.reset()
+            n = 0
+            for _ in range(12):
+                aksi = rng.choice(["token", "token", "commit", "lepas"])
+                if aksi == "token":
+                    n += 1
+                    member = f"r{n}:1"
+                    u = self._beban()
+                    harap = next((s for s, a in urutan if u.get(s, 0) < a), None)
+                    h = self.token(skrip="token_alokasi", request_id=f"r{n}",
+                                   urutan=urutan, maks=1000, kuota=10_000,
+                                   jendela=((1, 10**9),))
+                    if harap is None:
+                        if h[0] != "anggaran_habis":
+                            self.periksa("tanpa ruang: anggaran_habis", False, str(h))
+                            return
+                    elif h[0] != "ok" or self.r.cmd(
+                            "HGET", self.k_slot_sumber(), member) != harap:
+                        self.periksa("sumber dengan ruang pertama menang", False,
+                                     f"harap={harap} {h}")
+                        return
+                elif aksi == "commit":
+                    kandidat = self.r.cmd("HKEYS", self.k_slot_sumber()) or []
+                    if not kandidat:
+                        continue
+                    member = rng.choice(kandidat)
+                    self.tambah(member=member, alokasi=True, kuota=10_000)
+                else:
+                    slot = [m for m, _ in self.slot()]
+                    if not slot:
+                        continue
+                    self.lepas(member=rng.choice(slot))
+
+                u = self._beban()
+                for s, a in urutan:
+                    if u.get(s, 0) > a:
+                        self.periksa(f"u_{s} <= a_{s}", False, f"{u} batas {batas}")
+                        return
+                if sum(u.values()) > sum(batas.values()):
+                    self.periksa("Sigma u <= Sigma a", False, str(u))
+                    return
+                lancar += 1
+        self.periksa(f"invarian anggaran {lancar} langkah", True)
+
     # -- kunci (D1.7) -----------------------------------------------------
 
     @staticmethod
@@ -394,6 +691,14 @@ class Uji:
         return f"pr:rl:{{{pool}}}:{jenis}{akhiran}"
 
     @staticmethod
+    def k_anggaran(pool: str = "p1") -> str:
+        return f"pr:anggaran:{{{pool}}}"
+
+    @staticmethod
+    def k_slot_sumber(pool: str = "p1") -> str:
+        return f"pr:slot_sumber:{{{pool}}}"
+
+    @staticmethod
     def k_tolak(client: str = "c1") -> str:
         return f"pr:tolak:{{{client}}}"
 
@@ -415,7 +720,7 @@ class Uji:
     def token(self, *, pool="p1", run="run-1", request_id="req-1", nomor=1,
               mode="bergulir", sync=False, kuota=100, no_ember=1000,
               maks=8, ttl=80_000_000, rasio="0.1", retry_min=20, share="0.2",
-              jendela=((200_000, 5),), periode=0):
+              jendela=((200_000, 5),), periode=0, skrip="token", urutan=None):
         keys = ["pr:siap", self.k_attempts(pool, periode), self.k_ember(pool),
                 self.k_slot(pool), self.k_retry(pool)]
         for i, _ in enumerate(jendela):
@@ -426,13 +731,26 @@ class Uji:
                 str(ttl), str(rasio), str(retry_min), share, str(len(jendela))]
         for t, burst in jendela:
             argv += [str(t), str(burst)]
-        return self.panggil("token", keys, argv)
+        if skrip == "token_alokasi":
+            # `urutan` = daftar (sumber, batas) sesuai keputusan Rust; bawaannya
+            # satu sumber longgar supaya uji pasangan F0 tidak tersentuh anggaran.
+            if urutan is None:
+                urutan = [(pool, 10**9)]
+            keys += [self.k_anggaran(pool), self.k_slot_sumber(pool)]
+            argv.append(str(len(urutan)))
+            for sumber, batas in urutan:
+                argv += [str(sumber), str(batas)]
+            argv.append(str(MENIT_EMBER_DETIK))
+        return self.panggil(skrip, keys, argv)
 
     def tambah(self, *, member="req-1:1", pool="p1", run="run-1",
-               mode="bergulir", kuota=100, no_ember=1000, periode=0):
+               mode="bergulir", kuota=100, no_ember=1000, periode=0, alokasi=False):
         keys = ["pr:siap", self.k_attempts(pool, periode), self.k_ember(pool),
                 self.k_slot(pool)]
         argv = [run, member, mode, str(kuota), str(JUMLAH_EMBER), str(no_ember)]
+        if alokasi:
+            keys += [self.k_anggaran(pool), self.k_slot_sumber(pool)]
+            argv.append(pool)
         return self.panggil("tambah", keys, argv)
 
     def klaim(self, *, member="req-1:1", pool="p1", run="run-1",
@@ -1125,6 +1443,12 @@ class Uji:
         self.uji_alokasi_bagian()
         self.uji_alokasi_tidak_sah()
         self.uji_alokasi_batas_rute()
+        self.uji_pasangan_alokasi()
+        self.uji_hook_alokasi()
+        self.uji_anggaran_pilih()
+        self.uji_anggaran_jendela()
+        self.uji_anggaran_beban()
+        self.uji_properti_anggaran(iterasi)
         self.uji_gerbang_siap()
         self.uji_penolakan()
         self.uji_argumen_tidak_sah()

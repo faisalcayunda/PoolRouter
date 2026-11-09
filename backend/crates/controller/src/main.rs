@@ -24,6 +24,7 @@ use secrecy::ExposeSecret;
 use sqlx::postgres::{PgConnectOptions, PgPoolOptions, PgSslMode};
 use tokio_util::sync::CancellationToken;
 
+use poolrouter_controller::balikan::Balikan;
 use poolrouter_controller::jadwal::{INTERVAL_SIKLUS, Pekerjaan, SumberLeader, jalankan_loop};
 use poolrouter_controller::leader::KotakFutur;
 use poolrouter_controller::leader::{Leader, PemegangLeader};
@@ -33,6 +34,7 @@ use poolrouter_controller::webhook::Webhook;
 use poolrouter_core::config::{Component, Config, DbRole};
 use poolrouter_core::kuota::sumber_pg::SumberPostgres;
 use poolrouter_core::secret::Brankas;
+use poolrouter_queue_apalis::ApalisQueue;
 
 /// How long one acquire may wait before `/readyz` sees the database as down.
 const TIMEOUT_AKUISISI: Duration = Duration::from_secs(5);
@@ -40,6 +42,9 @@ const TIMEOUT_AKUISISI: Duration = Duration::from_secs(5);
 #[tokio::main]
 async fn main() -> std::process::ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
+    if args.first().map(String::as_str) == Some("healthcheck") {
+        return poolrouter_core::runtime::healthcheck().await;
+    }
     if args.iter().any(|a| a == "--check") {
         return poolrouter_core::runtime::start("controller", Component::Controller, &args).await;
     }
@@ -52,6 +57,18 @@ async fn main() -> std::process::ExitCode {
             return std::process::ExitCode::from(2);
         }
     };
+
+    let readiness = match poolrouter_core::runtime::DependencyReadiness::from_config(
+        Component::Controller,
+        &cfg,
+    ) {
+        Ok(readiness) => readiness,
+        Err(err) => {
+            tracing::error!(component = "controller", error = %err, "readiness setup failed");
+            return std::process::ExitCode::from(2);
+        }
+    };
+    poolrouter_core::runtime::spawn_ready_server(std::sync::Arc::new(readiness));
 
     match jalankan(&cfg).await {
         Ok(()) => std::process::ExitCode::SUCCESS,
@@ -86,10 +103,14 @@ async fn jalankan(cfg: &Config) -> Result<(), String> {
         .get("POOLROUTER_KEK")
         .ok_or("POOLROUTER_KEK_FILE missing")?;
     let brankas = Brankas::dari_isi_kek(kek.expose_secret()).map_err(|e| e.to_string())?;
+    let antrean = ApalisQueue::connect(&rabbitmq_uri(cfg)?)
+        .await
+        .map_err(|e| e.to_string())?;
     let pekerjaan: Vec<Box<dyn Pekerjaan>> = vec![
         Box::new(Rebuild::baru(redis.clone(), sumber_rebuild)),
         Box::new(Snapshot::baru(SumberSnapshotPg::baru(pool.clone()))),
         Box::new(Webhook::baru(pg_pool_webhook(cfg)?, brankas)),
+        Box::new(Balikan::baru(pool.clone(), antrean)),
     ];
 
     // The first leader was acquired above; the source hands it over once and
@@ -155,6 +176,23 @@ fn pg_pool_role(cfg: &Config, role: DbRole) -> Result<sqlx::PgPool, String> {
 fn ssl_mode(raw: &str) -> Result<PgSslMode, String> {
     raw.parse()
         .map_err(|_| "POOLROUTER_DB_SSLMODE is not a PostgreSQL ssl mode".to_owned())
+}
+
+/// AMQP URI for [`ApalisQueue::connect`] (ADR-0001 §6, ADR-0004 §4.3). The
+/// password is never logged: it only exists inside the returned `String`.
+fn rabbitmq_uri(cfg: &Config) -> Result<String, String> {
+    let r = cfg
+        .rabbitmq
+        .as_ref()
+        .ok_or_else(|| "rabbitmq configuration missing".to_owned())?;
+    Ok(format!(
+        "amqp://{}:{}@{}:{}/{}",
+        r.user,
+        r.password.expose_secret(),
+        r.host,
+        r.port,
+        r.vhost
+    ))
 }
 
 fn redis_client(cfg: &Config) -> Result<redis::Client, String> {

@@ -85,9 +85,25 @@ pub fn kunci_antre(pool: &str) -> String {
     format!("pr:antre:{{{pool}}}")
 }
 
+/// `pr:antre:dp:{<pool>}:<downstream_pool_id>`.
+pub fn kunci_antre_dp(pool: &str, downstream_pool_id: i64) -> String {
+    format!("pr:antre:dp:{{{pool}}}:{downstream_pool_id}")
+}
+
 /// `pr:slot:{<pool>}`.
 pub fn kunci_slot(pool: &str) -> String {
     format!("pr:slot:{{{pool}}}")
+}
+
+/// `pr:anggaran:{<pool>}`, burden per budget source (AC-6). Fields are
+/// `<sumber>:<ember>` and hold the number of committed attempts.
+pub fn kunci_anggaran(pool: &str) -> String {
+    format!("pr:anggaran:{{{pool}}}")
+}
+
+/// `pr:slot_sumber:{<pool>}`, slot member → budget source (AC-6).
+pub fn kunci_slot_sumber(pool: &str) -> String {
+    format!("pr:slot_sumber:{{{pool}}}")
 }
 
 /// `pr:retry:{<pool>}`.

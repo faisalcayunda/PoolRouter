@@ -50,6 +50,11 @@ SELECT t.jalan('SELECT request_id, webhook_not_before FROM request', 'WR-07: pr_
 SELECT t.jalan($$UPDATE request SET webhook_not_before = now() WHERE false$$, 'WR-07: pr_webhook updates webhook_not_before');
 SELECT t.gagal('SELECT 1 FROM pengguna_mfa', '42501', 'pr_webhook: no MFA tables');
 SELECT t.gagal('SELECT * FROM arsip_pulih.transaction_log', '42501', 'pr_webhook: no arsip_pulih');
+-- WB2a (ARC-120): pr_webhook reads the retry policy, never writes it.
+SELECT t.jalan('SELECT kunci, nilai FROM konfigurasi_platform', 'WB2a: pr_webhook reads konfigurasi_platform');
+SELECT t.gagal($$UPDATE konfigurasi_platform SET nilai = '1'::jsonb WHERE kunci = 'webhook_batas_percobaan'$$, '42501', 'WB2a: pr_webhook cannot write konfigurasi_platform');
+SELECT t.gagal($$INSERT INTO konfigurasi_platform (kunci, nilai) VALUES ('x', '1'::jsonb)$$, '42501', 'WB2a: pr_webhook cannot insert konfigurasi_platform');
+SELECT t.jalan('SELECT fn_konfigurasi_int(''webhook_batas_percobaan'', 6)', 'ARC-120: pr_webhook executes fn_konfigurasi_int');
 ROLLBACK;
 BEGIN;
 SET LOCAL ROLE pr_worker;
@@ -108,6 +113,10 @@ SELECT t.jalan('SELECT 1 FROM data_balikan_item', 'pr_job_balikan: reads items')
 SELECT t.jalan($$UPDATE data_balikan_batch SET attempt_count = attempt_count WHERE false$$, 'pr_job_balikan: updates batches');
 SELECT t.jalan($$UPDATE data_balikan_item SET aktif = aktif WHERE false$$, 'pr_job_balikan: updates items');
 SELECT t.gagal($$UPDATE request SET status = status$$, '42501', 'pr_job_balikan: cannot write request');
+SELECT t.jalan($$UPDATE request SET data_balikan_tersusun = true WHERE request_id = ANY ('{}'::uuid[]) AND NOT data_balikan_tersusun$$,
+  'pr_job_balikan: sets the composed marker (ARC-199)');
+SELECT t.gagal($$UPDATE request SET data_balikan_tersusun = true, webhook_status = webhook_status WHERE false$$, '42501',
+  'pr_job_balikan: the marker is the only request column it writes (ARC-199)');
 SELECT t.gagal($$UPDATE transaction_log SET archived_at = now()$$, '42501', 'pr_job_balikan: cannot write the log');
 SELECT t.gagal($$DELETE FROM data_balikan_item$$, '42501', 'pr_job_balikan: no DELETE on items (job does not delete anything)');
 SELECT t.gagal($$DELETE FROM data_balikan_batch$$, '42501', 'pr_job_balikan: no DELETE on batches');

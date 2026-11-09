@@ -61,10 +61,23 @@ $ENGINE exec -e POOLROUTER_SECRETS_DIR=/tmp/sec -e PGUSER=postgres -e PGHOST=127
 echo "bootstrap: ok (run twice)"
 
 echo "==> migrations from empty"
-# apply_migrations <database> [glob]: every migration (or those matching the glob) as one transaction, as poolrouter_owner
+# apply_migrations <database> [glob]: every migration (or those matching the glob), as poolrouter_owner
+# Migrasi diterapkan berurutan sebagai poolrouter_owner. Berkas berbaris pertama `-- no-transaction`
+# (CREATE INDEX CONCURRENTLY, ARC-199) diterapkan sendiri di luar `psql -1`; berkas lain dikumpulkan
+# menjadi satu transaksi per rangkaian.
+terapkan_tx() { db=$1; shift; { echo "SET ROLE poolrouter_owner;"; for m; do echo "-- $(basename "$m")"; cat "$m"; echo; done; } | psql_su -d "$db" -1; }
 apply_migrations() {
-  { echo "SET ROLE poolrouter_owner;"; for f in "$mig_dir"/${2:-*}.sql; do echo "-- $(basename "$f")"; cat "$f"; echo; done; } \
-    | psql_su -d "$1" -1
+  db_tujuan=$1; pola=${2:-*}
+  set --
+  for f in "$mig_dir"/$pola.sql; do
+    if head -n 1 "$f" | grep -qx -- '-- no-transaction'; then
+      [ $# -eq 0 ] || { terapkan_tx "$db_tujuan" "$@"; set --; }
+      { echo "SET ROLE poolrouter_owner;"; cat "$f"; } | psql_su -d "$db_tujuan"
+    else
+      set -- "$@" "$f"
+    fi
+  done
+  [ $# -eq 0 ] || terapkan_tx "$db_tujuan" "$@"
 }
 apply_migrations poolrouter_test
 echo "migrations: ok"

@@ -20,7 +20,7 @@ use chrono::{DateTime, FixedOffset, NaiveDate, NaiveDateTime, NaiveTime, TimeZon
 pub const MENIT_EMBER: i64 = 10;
 
 /// Bucket width in seconds.
-const DETIK_EMBER: i64 = MENIT_EMBER * 60;
+pub const DETIK_EMBER: i64 = MENIT_EMBER * 60;
 
 /// Number of buckets that cover 24 hours, plus the running bucket: 144 full
 /// buckets and the one that is being filled right now. The rolling window sums

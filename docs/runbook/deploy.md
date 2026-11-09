@@ -210,9 +210,7 @@ Bagian ini belum final. Keputusan berikut menunggu owner dan ADR infrastruktur l
 ## Batasan saat ini
 
 - Service backend, frontend, dan mock Dukcapil sudah didefinisikan, tetapi image-nya dibangun di Bagian 2 (SHAA-207 Containerfile). Sampai itu, profile `app` dan `mock` tidak bisa dinyalakan.
-- **Profile `app` (sementara, Bagian 1 saja):** diterima Shu (D-1) karena image backend dan frontend belum ada. Wajib dicabut di Bagian 2 pada commit yang memasang digest image backend dan frontend di env. Setelah itu `compose-up` biasa menaikkan stack penuh (Addendum §8 V2). Dependensi app ke service infra harus tetap valid saat `bundled-infra` mati (managed).
 - Subcommand `webserver healthcheck` dan konvensi `*_FILE` ada di lingkup backend SHAA-175 (Flik). Sampai ada, healthcheck backend tidak akan `healthy`.
-- Role database `pr_*` dan `poolrouter_owner` belum dibuat oleh stack bundled. Stack hanya membuat `POSTGRES_USER`. Pembuatan role dan password dari file secret ada di SHAA-193.
 - Service `backend-cli` (ADR-0003 §3.6c, role `ADMIN_API`) belum didefinisikan. Menunggu image di Bagian 2.
 - Nama variabel `POOLROUTER_DB_*`, `POOLROUTER_REDIS_*`, dan `POOLROUTER_RABBITMQ_*` mengikuti kontrak env backend v1 (final, Shu). Perubahannya hanya lewat revisi kontrak.
 - Job CI V4 (`compose-portability`) diserahkan ke Tessai.

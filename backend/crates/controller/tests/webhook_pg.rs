@@ -410,6 +410,12 @@ async fn ac26_klaim_cas_satu_kali_kirim() {
     f.izinkan(DOMAIN).await;
     let request_id = f.request("menunggu", 0, None).await;
 
+    // Set webhook_batas_percobaan=1 so first failure marks status as 'gagal', not 'menunggu'.
+    sqlx::query("UPDATE konfigurasi_platform SET nilai = '1'::jsonb WHERE kunci = 'webhook_batas_percobaan'")
+        .execute(&su)
+        .await
+        .expect("set webhook_batas_percobaan=1");
+
     let webhook_pool =
         pool(&url("POOLROUTER_TEST_DATABASE_URL_WEBHOOK").expect("url webhook")).await;
     // TEST-NET-3 tidak bisa dirutekan: jalur kirim berakhir `gagal_jaringan`,
@@ -436,6 +442,12 @@ async fn ac26_klaim_cas_satu_kali_kirim() {
         .await
         .expect("hitung log");
     assert_eq!(total, 1, "satu request hanya sekali kirim");
+
+    // Restore webhook_batas_percobaan to default (6) so other tests are not affected.
+    sqlx::query("UPDATE konfigurasi_platform SET nilai = '6'::jsonb WHERE kunci = 'webhook_batas_percobaan'")
+        .execute(&su)
+        .await
+        .expect("restore webhook_batas_percobaan");
 }
 
 /// AC-28 / CW9: rotasi versi secret berlaku untuk pengiriman berikutnya. Job
@@ -662,7 +674,7 @@ async fn ac27_body_dari_baris_nyata() {
 
     let baris: Baris = sqlx::query_as(
         "SELECT v.request_id, r.client_id, v.status, v.attempt_count, v.cancel_reason,
-                v.failure_reason, v.output_payload, v.webhook_attempt_count
+                v.failure_reason, v.output_payload, v.webhook_attempt_count, v.webhook_not_before
            FROM v_request_webhook v JOIN request r ON r.request_id = v.request_id
           WHERE v.request_id = $1",
     )
@@ -681,4 +693,100 @@ async fn ac27_body_dari_baris_nyata() {
 #[allow(dead_code)]
 fn _arc() -> Arc<()> {
     Arc::new(())
+}
+
+/// AC-5: klaim n -> n+1 lewat `fn_klaim_webhook`. Dua panggilan bersamaan atas
+/// baris yang sama hanya satu yang menang per percobaan (CAS). 100 ulangan
+/// pada attempt_count independen membuktikan tidak ada race di bawah beban.
+#[tokio::test]
+#[ignore = "butuh PostgreSQL uji; jalankan lewat make uji-pg"]
+async fn ac5_klaim_n_ke_n_plus_1_cas_konkuren() {
+    let Some(url_su) = url("POOLROUTER_TEST_DATABASE_URL_SU") else {
+        return;
+    };
+    let su = pool(&url_su).await;
+    let f = Fixture::baru(su.clone()).await;
+    let webhook_pool =
+        pool(&url("POOLROUTER_TEST_DATABASE_URL_WEBHOOK").expect("url webhook")).await;
+
+    for n in 0..100i32 {
+        let request_id = f.request("menunggu", n, None).await;
+        let sekarang = Utc::now();
+
+        let a = webhook_pool.clone();
+        let b = webhook_pool.clone();
+        let (menang_a, menang_b) = tokio::join!(
+            sqlx::query_scalar::<_, i32>(
+                "SELECT fn_klaim_webhook($1, $2, NULL::integer, NULL::text, $3::integer)"
+            )
+            .bind(request_id)
+            .bind(sekarang)
+            .bind(n)
+            .fetch_one(&a),
+            sqlx::query_scalar::<_, i32>(
+                "SELECT fn_klaim_webhook($1, $2, NULL::integer, NULL::text, $3::integer)"
+            )
+            .bind(request_id)
+            .bind(sekarang)
+            .bind(n)
+            .fetch_one(&b),
+        );
+        let total = menang_a.expect("klaim a") + menang_b.expect("klaim b");
+        assert_eq!(total, 1, "tepat satu klaim menang pada percobaan n={n}");
+
+        let (_, jumlah, _) = status_webhook(&su, request_id).await;
+        assert_eq!(jumlah, n + 1, "attempt_count naik tepat satu kali, n={n}");
+    }
+}
+
+/// AC-5: klaim ditolak bila `webhook_not_before` belum lewat, dan berhasil
+/// setelah waktunya tiba (jam diinjeksi lewat parameter `p_sekarang`).
+#[tokio::test]
+#[ignore = "butuh PostgreSQL uji; jalankan lewat make uji-pg"]
+async fn ac5_klaim_menunggu_not_before() {
+    let Some(url_su) = url("POOLROUTER_TEST_DATABASE_URL_SU") else {
+        return;
+    };
+    let su = pool(&url_su).await;
+    let f = Fixture::baru(su.clone()).await;
+    let request_id = f.request("menunggu", 1, None).await;
+    let not_before = Utc::now() + Duration::seconds(30);
+    sqlx::query("UPDATE request SET webhook_not_before = $2 WHERE request_id = $1")
+        .bind(request_id)
+        .bind(not_before)
+        .execute(&su)
+        .await
+        .expect("set not_before");
+
+    let webhook_pool =
+        pool(&url("POOLROUTER_TEST_DATABASE_URL_WEBHOOK").expect("url webhook")).await;
+
+    // Sebelum jatuh tempo: klaim gagal (0 baris).
+    let sebelum: i32 = sqlx::query_scalar(
+        "SELECT fn_klaim_webhook($1, $2, NULL::integer, NULL::text, 1::integer)",
+    )
+    .bind(request_id)
+    .bind(not_before - Duration::seconds(5))
+    .fetch_one(&webhook_pool)
+    .await
+    .expect("klaim sebelum jatuh tempo");
+    assert_eq!(sebelum, 0, "klaim ditolak sebelum webhook_not_before");
+
+    // Setelah jatuh tempo: klaim berhasil, attempt_count naik, not_before dikosongkan.
+    let setelah: i32 = sqlx::query_scalar(
+        "SELECT fn_klaim_webhook($1, $2, NULL::integer, NULL::text, 1::integer)",
+    )
+    .bind(request_id)
+    .bind(not_before + Duration::seconds(1))
+    .fetch_one(&webhook_pool)
+    .await
+    .expect("klaim setelah jatuh tempo");
+    assert_eq!(
+        setelah, 1,
+        "klaim berhasil setelah webhook_not_before lewat"
+    );
+
+    let (status, jumlah, _) = status_webhook(&su, request_id).await;
+    assert_eq!(status, "menunggu");
+    assert_eq!(jumlah, 2);
 }

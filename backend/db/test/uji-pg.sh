@@ -70,11 +70,28 @@ $ENGINE cp "$db_dir/bootstrap.sh" "$NAME:/tmp/db/bootstrap.sh"
 psql_su -d postgres -c 'CREATE DATABASE poolrouter_test'
 $ENGINE exec -e POOLROUTER_SECRETS_DIR=/tmp/sec -e PGUSER=postgres -e PGHOST=127.0.0.1 -e PGPASSWORD="$SU_PW" \
   "$NAME" sh /tmp/db/bootstrap.sh poolrouter_test
-{ echo "SET ROLE poolrouter_owner;"; for f in "$mig_dir"/*.sql; do echo "-- $(basename "$f")"; cat "$f"; echo; done; } \
-  | psql_su -d poolrouter_test -1
+# Migrasi diterapkan berurutan sebagai poolrouter_owner. Berkas berbaris pertama `-- no-transaction`
+# (CREATE INDEX CONCURRENTLY, ARC-199) diterapkan sendiri di luar `psql -1`; berkas lain dikumpulkan
+# menjadi satu transaksi per rangkaian.
+terapkan_tx() { db=$1; shift; { echo "SET ROLE poolrouter_owner;"; for m; do echo "-- $(basename "$m")"; cat "$m"; echo; done; } | psql_su -d "$db" -1; }
+terapkan_migrasi() {
+  set --
+  for f in "$mig_dir"/*.sql; do
+    if head -n 1 "$f" | grep -qx -- '-- no-transaction'; then
+      [ $# -eq 0 ] || { terapkan_tx poolrouter_test "$@"; set --; }
+      { echo "SET ROLE poolrouter_owner;"; cat "$f"; } | psql_su -d poolrouter_test
+    else
+      set -- "$@" "$f"
+    fi
+  done
+  [ $# -eq 0 ] || terapkan_tx poolrouter_test "$@"
+}
+terapkan_migrasi
 
 PW=$($ENGINE exec "$NAME" cat /tmp/sec/pr_admin_api)
 export POOLROUTER_TEST_DATABASE_URL="postgres://pr_admin_api:$PW@127.0.0.1:$PORT/poolrouter_test"
+API_PW=$($ENGINE exec "$NAME" cat /tmp/sec/pr_api)
+export POOLROUTER_TEST_DATABASE_URL_API="postgres://pr_api:$API_PW@127.0.0.1:$PORT/poolrouter_test"
 export POOLROUTER_TEST_REDIS="redis://127.0.0.1:$RPORT"
 export POOLROUTER_TEST_DATABASE_URL_SU="postgres://postgres:$SU_PW@127.0.0.1:$PORT/poolrouter_test"
 # The controller tests run as the role the controller itself uses (ARC-69): the
