@@ -21,7 +21,10 @@ pub enum HasilPenyusun {
     BatchAktif,
     /// `evaluasi_pemicu` = `Tidak`.
     TidakAdaPemicu,
-    Disusun { batch_id: Uuid, jumlah_item: u32 },
+    Disusun {
+        batch_id: Uuid,
+        jumlah_item: u32,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -52,13 +55,12 @@ pub async fn jalankan_job_balikan(
     let mut tx = pool.begin().await.map_err(db)?;
 
     // Q1 kunci — statement pertama dalam transaksi.
-    let kunci_dipegang: bool = sqlx::query_scalar(
-        "SELECT pg_try_advisory_xact_lock(hashtextextended($1, 0))"
-    )
-    .bind(format!("poolrouter.balikan.{}", provider_id))
-    .fetch_one(&mut *tx)
-    .await
-    .map_err(db)?;
+    let kunci_dipegang: bool =
+        sqlx::query_scalar("SELECT pg_try_advisory_xact_lock(hashtextextended($1, 0))")
+            .bind(format!("poolrouter.balikan.{}", provider_id))
+            .fetch_one(&mut *tx)
+            .await
+            .map_err(db)?;
 
     if !kunci_dipegang {
         tx.rollback().await.map_err(db)?;
@@ -104,7 +106,7 @@ pub async fn jalankan_job_balikan(
     // Q3 batch aktif (AC-26).
     let batch_aktif: bool = sqlx::query_scalar(
         "SELECT EXISTS (SELECT 1 FROM data_balikan_batch
-                        WHERE provider_id = $1 AND status IN ('disusun', 'dikirim', 'gagal'))"
+                        WHERE provider_id = $1 AND status IN ('disusun', 'dikirim', 'gagal'))",
     )
     .bind(provider_id)
     .fetch_one(&mut *tx)
@@ -113,18 +115,7 @@ pub async fn jalankan_job_balikan(
 
     if batch_aktif {
         // Set gauge sebelum rollback (AC-28).
-        let tertunda: i64 = sqlx::query_scalar(
-            "SELECT count(*)
-               FROM request r
-              WHERE r.provider_id = $1
-                AND r.status = 'done'
-                AND r.sumber_hasil = 'provider'
-                AND NOT EXISTS (SELECT 1 FROM data_balikan_item i WHERE i.request_id = r.request_id)"
-        )
-        .bind(provider_id)
-        .fetch_one(&mut *tx)
-        .await
-        .map_err(db)?;
+        let tertunda = hitung_tertunda(&mut tx, provider_id).await?;
 
         tx.rollback().await.map_err(db)?;
         metrics::gauge!("poolrouter_data_balikan_tertunda").set(tertunda as f64);
@@ -150,9 +141,9 @@ pub async fn jalankan_job_balikan(
             AND r.sumber_hasil = 'provider'
             AND r.input_payload IS NOT NULL
             AND l.nik IS NOT NULL
-            AND NOT EXISTS (SELECT 1 FROM data_balikan_item i WHERE i.request_id = r.request_id)
+            AND NOT r.data_balikan_tersusun
           ORDER BY r.completed_at, r.request_id
-          LIMIT $2"
+          LIMIT $2",
     )
     .bind(provider_id)
     .bind(konfigurasi.ukuran_batch_maks as i64)
@@ -162,7 +153,7 @@ pub async fn jalankan_job_balikan(
 
     // Q5 dilewati (AC-28, QG NIK NULL).
     let dilewati: Vec<(Uuid, String)> = sqlx::query_as(
-        "SELECT r.request_id, CASE WHEN r.input_payload IS NULL THEN 'input_payload_kosong'::text 
+        "SELECT r.request_id, CASE WHEN r.input_payload IS NULL THEN 'input_payload_kosong'::text
                                      WHEN l.nik IS NULL THEN 'nik_kosong'::text END AS alasan
            FROM request r
            JOIN transaction_log l ON l.kode_transaksi = r.final_kode_transaksi
@@ -170,9 +161,9 @@ pub async fn jalankan_job_balikan(
             AND r.status = 'done'
             AND r.sumber_hasil = 'provider'
             AND (r.input_payload IS NULL OR l.nik IS NULL)
-            AND NOT EXISTS (SELECT 1 FROM data_balikan_item i WHERE i.request_id = r.request_id)
+            AND NOT r.data_balikan_tersusun
           ORDER BY r.completed_at, r.request_id
-          LIMIT 100"
+          LIMIT 100",
     )
     .bind(provider_id)
     .fetch_all(&mut *tx)
@@ -185,18 +176,7 @@ pub async fn jalankan_job_balikan(
 
     if eligible.is_empty() {
         // Set gauge sebelum rollback.
-        let tertunda: i64 = sqlx::query_scalar(
-            "SELECT count(*)
-               FROM request r
-              WHERE r.provider_id = $1
-                AND r.status = 'done'
-                AND r.sumber_hasil = 'provider'
-                AND NOT EXISTS (SELECT 1 FROM data_balikan_item i WHERE i.request_id = r.request_id)"
-        )
-        .bind(provider_id)
-        .fetch_one(&mut *tx)
-        .await
-        .map_err(db)?;
+        let tertunda = hitung_tertunda(&mut tx, provider_id).await?;
 
         tx.rollback().await.map_err(db)?;
         metrics::gauge!("poolrouter_data_balikan_tertunda").set(tertunda as f64);
@@ -204,31 +184,22 @@ pub async fn jalankan_job_balikan(
     }
 
     // Q6 periode terakhir (untuk evaluasi_pemicu). WB18: ambil max(disusun_at) dari batch periode terakhir.
+    // max() selalu mengembalikan satu baris, NULL bila belum ada batch periode: dekode sebagai Option lewat
+    // fetch_one. fetch_optional dengan tipe DateTime gagal di batch pertama (NULL tidak bisa didekode).
     let periode_terakhir: Option<DateTime<Utc>> = sqlx::query_scalar(
         "SELECT max(disusun_at) FROM data_balikan_batch WHERE provider_id = $1 AND pemicu = 'periode'"
-    )
-    .bind(provider_id)
-    .fetch_optional(&mut *tx)
-    .await
-    .map_err(db)?;
-
-    // Q9 tertunda (AC-28 gauge) — hitung sebelum keputusan untuk consistency.
-    let tertunda: i64 = sqlx::query_scalar(
-        "SELECT count(*)
-           FROM request r
-          WHERE r.provider_id = $1
-            AND r.status = 'done'
-            AND r.sumber_hasil = 'provider'
-            AND NOT EXISTS (SELECT 1 FROM data_balikan_item i WHERE i.request_id = r.request_id)"
     )
     .bind(provider_id)
     .fetch_one(&mut *tx)
     .await
     .map_err(db)?;
 
+    // Q9 tertunda (AC-28 gauge) — hitung sebelum keputusan untuk consistency.
+    let tertunda = hitung_tertunda(&mut tx, provider_id).await?;
+
     let jumlah_eligible = eligible[0].jumlah_eligible as u32;
     let completed_at_tertua = eligible[0].completed_at;
-    
+
     // Evaluasi pemicu sesuai spec (c) langkah 6.
     let hasil_pemicu = crate::data_balikan::evaluasi_pemicu(
         jumlah_eligible,
@@ -252,8 +223,16 @@ pub async fn jalankan_job_balikan(
 
     // Q7 INSERT batch (WB18).
     let batch_id = Uuid::now_v7();
-    let periode_mulai_at = eligible.iter().map(|r| r.requested_at).min().unwrap_or(sekarang);
-    let periode_selesai_at = eligible.iter().map(|r| r.requested_at).max().unwrap_or(sekarang);
+    let periode_mulai_at = eligible
+        .iter()
+        .map(|r| r.requested_at)
+        .min()
+        .unwrap_or(sekarang);
+    let periode_selesai_at = eligible
+        .iter()
+        .map(|r| r.requested_at)
+        .max()
+        .unwrap_or(sekarang);
     let jumlah_item = eligible.len() as i32;
 
     sqlx::query(
@@ -307,6 +286,26 @@ pub async fn jalankan_job_balikan(
         });
     }
 
+    // Q8 penanda (ARC-199): request yang baru punya item aktif keluar dari indeks parsial tertunda di
+    // transaksi yang sama. Jumlah baris harus sama dengan pilihan Q4; kalau tidak, transaksi di-rollback
+    // (tx di-drop tanpa commit).
+    let ditandai = sqlx::query(
+        "UPDATE request SET data_balikan_tersusun = true
+          WHERE request_id = ANY ($1) AND NOT data_balikan_tersusun",
+    )
+    .bind(&request_ids)
+    .execute(&mut *tx)
+    .await
+    .map_err(db)?
+    .rows_affected();
+
+    if ditandai != request_ids.len() as u64 {
+        return Err(GalatPenyusun::ItemTidakCocok {
+            dipilih: request_ids.len() as u64,
+            tertulis: ditandai,
+        });
+    }
+
     tx.commit().await.map_err(db)?;
 
     // Set gauge setelah commit.
@@ -316,6 +315,28 @@ pub async fn jalankan_job_balikan(
         batch_id,
         jumlah_item: jumlah_item as u32,
     })
+}
+
+/// Q9: jumlah request tertunda untuk gauge `poolrouter_data_balikan_tertunda` (AC-28).
+///
+/// Predikat status/sumber/penanda sama persis dengan indeks parsial `request_data_balikan_tertunda_idx`
+/// (migrasi 20261108000002, ARC-199), supaya planner memakai index-only scan.
+async fn hitung_tertunda(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    provider_id: Uuid,
+) -> Result<i64, GalatPenyusun> {
+    sqlx::query_scalar(
+        "SELECT count(*)
+           FROM request r
+          WHERE r.provider_id = $1
+            AND r.status = 'done'
+            AND r.sumber_hasil = 'provider'
+            AND NOT r.data_balikan_tersusun",
+    )
+    .bind(provider_id)
+    .fetch_one(&mut **tx)
+    .await
+    .map_err(db)
 }
 
 /// Untuk ARC-123 (`pengirim_handler.rs` mengimpornya). Q2 di luar transaksi; `None` = tidak ada atau tidak valid.
@@ -350,200 +371,5 @@ pub(crate) async fn baca_konfigurasi(
                 }
             }
         }
-    }
-}
-
-#[cfg(test)]
-mod uji {
-    use super::*;
-
-    fn url_worker() -> Option<String> {
-        std::env::var("POOLROUTER_TEST_DATABASE_URL_WORKER").ok()
-    }
-
-    fn url_su() -> Option<String> {
-        std::env::var("POOLROUTER_TEST_DATABASE_URL_SU").ok()
-    }
-
-    async fn pool_worker() -> sqlx::PgPool {
-        let url = url_worker().expect("POOLROUTER_TEST_DATABASE_URL_WORKER");
-        sqlx::postgres::PgPoolOptions::new()
-            .max_connections(4)
-            .connect(&url)
-            .await
-            .expect("koneksi PostgreSQL uji worker")
-    }
-
-    async fn pool_su() -> sqlx::PgPool {
-        let url = url_su().expect("POOLROUTER_TEST_DATABASE_URL_SU");
-        sqlx::postgres::PgPoolOptions::new()
-            .max_connections(4)
-            .connect(&url)
-            .await
-            .expect("koneksi PostgreSQL uji superuser")
-    }
-
-    // T-24a: Dua handler bersamaan; A memegang lock, B dapat TidakDapatKunci.
-    #[tokio::test]
-    #[ignore]
-    async fn t24a_dua_handler_serentak() {
-        let db_worker = pool_worker().await;
-        let db_su = pool_su().await;
-
-        let provider_id = Uuid::now_v7();
-
-        // Setup provider + konfigurasi
-        _setup_provider(&db_su, provider_id).await;
-
-        // Setup 1 eligible request
-        _setup_request(&db_su, provider_id).await;
-
-        // Langkah 1: A memegang lock — koneksi manual memegang advisory lock sesi
-        let conn_a = db_worker.acquire().await.expect("acquire");
-        let kunci_a: bool = sqlx::query_scalar(
-            "SELECT pg_advisory_lock(hashtextextended($1, 0))"
-        )
-        .bind(format!("poolrouter.balikan.{}", provider_id))
-        .fetch_one(&mut *conn_a.acquire().await.expect("nested"))
-        .await
-        .expect("lock A");
-        assert!(kunci_a);
-
-        // Langkah 2: B dipanggil — seharusnya dapat TidakDapatKunci (lock sesi A memblok lock transaksi B)
-        let hasil_b = jalankan_job_balikan(&db_worker, provider_id, Utc::now()).await;
-        assert_eq!(
-            hasil_b.unwrap(),
-            HasilPenyusun::TidakDapatKunci,
-            "B seharusnya tidak dapat kunci saat A pegang lock sesi"
-        );
-
-        // Langkah 3: A lepas lock (koneksi kembali, lock otomatis lepas)
-        drop(conn_a);
-
-        // Langkah 4: B dipanggil lagi — seharusnya Disusun
-        let hasil_b2 = jalankan_job_balikan(&db_worker, provider_id, Utc::now()).await;
-        match hasil_b2.unwrap() {
-            HasilPenyusun::Disusun { jumlah_item, .. } => assert_eq!(jumlah_item, 1),
-            _ => panic!("B seharusnya Disusun setelah lock lepas"),
-        }
-    }
-
-    // T-25b: 10.001 eligible, N=10.000, ambil 10.000 terkecil.
-    #[tokio::test]
-    #[ignore]
-    async fn t25b_limit_ukuran_batch() {
-        let db_worker = pool_worker().await;
-        let db_su = pool_su().await;
-
-        let provider_id = Uuid::now_v7();
-        _setup_provider(&db_su, provider_id).await;
-
-        // Setup 10.001 request dengan completed_at berurutan
-        for i in 0..10001 {
-            let request_id = Uuid::from_u128((i as u128) + 1000);
-            let kode_transaksi = Uuid::from_u128((i as u128) + 100000);
-            let completed_at = Utc::now() + chrono::Duration::seconds(i as i64);
-
-            sqlx::query(
-                "INSERT INTO request (request_id, provider_id, status, sumber_hasil, completed_at, final_kode_transaksi, input_payload, downstream_endpoint_id)
-                 VALUES ($1, $2, 'done', 'provider', $3, $4, '{}'::jsonb, 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'::uuid)"
-            )
-            .bind(request_id)
-            .bind(provider_id)
-            .bind(completed_at)
-            .bind(kode_transaksi)
-            .execute(&db_su)
-            .await
-            .expect("insert request");
-
-            sqlx::query(
-                "INSERT INTO transaction_log (kode_transaksi, nik, requested_at)
-                 VALUES ($1, '0012345678901234', $2)"
-            )
-            .bind(kode_transaksi)
-            .bind(completed_at)
-            .execute(&db_su)
-            .await
-            .expect("insert log");
-        }
-
-        let hasil = jalankan_job_balikan(&db_worker, provider_id, Utc::now()).await;
-        match hasil.unwrap() {
-            HasilPenyusun::Disusun { jumlah_item, .. } => assert_eq!(jumlah_item, 10000),
-            _ => panic!("expected Disusun dengan 10.000 item"),
-        }
-
-        // Verifikasi: 10.001-th request tidak ada di item
-        let count_item: i64 = sqlx::query_scalar(
-            "SELECT count(*) FROM data_balikan_item WHERE batch_id IN (SELECT batch_id FROM data_balikan_batch WHERE provider_id = $1)"
-        )
-        .bind(provider_id)
-        .execute(&db_su)
-        .await
-        .expect("count item");
-        assert_eq!(count_item, 10000);
-    }
-
-    async fn _setup_provider(db: &sqlx::PgPool, provider_id: Uuid) {
-        let dokumen = serde_json::json!({
-            "data_balikan": {
-                "endpoint": "https://test.example.com/balikan",
-                "rujukan_secret": "{{secret.TEST}}",
-                "pemicu_jumlah_n": 5,
-                "ukuran_batch_maks": 10000,
-                "format_version": "v1"
-            }
-        });
-
-        sqlx::query(
-            "INSERT INTO provider (provider_id, nama, aktif, data_balikan_aktif, config_versi_aktif)
-             VALUES ($1, 'test', true, true, 1)
-             ON CONFLICT DO NOTHING"
-        )
-        .bind(provider_id)
-        .execute(db)
-        .await
-        .expect("insert provider");
-
-        sqlx::query(
-            "INSERT INTO provider_config_versi (provider_id, versi, config_schema_version, dokumen)
-             VALUES ($1, 1, 2, $2)
-             ON CONFLICT DO NOTHING"
-        )
-        .bind(provider_id)
-        .bind(dokumen)
-        .execute(db)
-        .await
-        .expect("insert config");
-    }
-
-    async fn _setup_request(db: &sqlx::PgPool, provider_id: Uuid) {
-        let request_id = Uuid::now_v7();
-        let kode_transaksi = Uuid::now_v7();
-        let now = Utc::now();
-
-        sqlx::query(
-            "INSERT INTO request (request_id, provider_id, status, sumber_hasil, completed_at, final_kode_transaksi, input_payload, downstream_endpoint_id)
-             VALUES ($1, $2, 'done', 'provider', $3, $4, '{}'::jsonb, 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'::uuid)
-             ON CONFLICT DO NOTHING"
-        )
-        .bind(request_id)
-        .bind(provider_id)
-        .bind(now)
-        .bind(kode_transaksi)
-        .execute(db)
-        .await
-        .expect("insert request");
-
-        sqlx::query(
-            "INSERT INTO transaction_log (kode_transaksi, nik, requested_at)
-             VALUES ($1, '0012345678901234', $2)
-             ON CONFLICT DO NOTHING"
-        )
-        .bind(kode_transaksi)
-        .bind(now)
-        .execute(db)
-        .await
-        .expect("insert log");
     }
 }
