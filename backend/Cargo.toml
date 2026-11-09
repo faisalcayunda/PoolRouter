@@ -69,6 +69,9 @@ futures = "0.3"
 # 4.3 Queue (adapter queue-apalis only)
 apalis = { version = "1.0.0", default-features = false, features = ["tracing"] }
 apalis-amqp = "=1.0.0"
+# Sudah ada di lock lewat apalis/apalis-amqp. Dipakai langsung hanya untuk
+# `WithCodec` (body pesan tetap teks `request_id`, ARC-68).
+apalis-core = { version = "1.0.0", default-features = false }
 lapin = { version = "4.12", default-features = false, features = ["tokio"] }
 
 # 4.4 Crypto and secrets
