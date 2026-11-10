@@ -169,8 +169,6 @@ export interface ApiClient {
   createProvider(body: ProviderConfig, options?: RequestOptions): Promise<Provider>;
   /** PUT /providers/{id} — update; old versions stay intact (V-03). */
   updateProvider(id: string, body: ProviderConfig, options?: RequestOptions): Promise<Provider>;
-  /** GET /downstream-pools — pilihan pool pada form endpoint. */
-  listDownstreamPools(options?: RequestOptions): Promise<DownstreamPool[]>;
   /** GET /endpoints — platform admin only. */
   listEndpoints(options?: RequestOptions): Promise<Endpoint[]>;
   /** GET /endpoints/{id} — detail untuk form sunting. */
@@ -597,14 +595,6 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
         await client.PUT(`${ADMIN_PREFIX}/providers/{id}`, {
           params: { path: { id } },
           body,
-          headers: headers(opts),
-          signal: opts.signal,
-        }),
-      ),
-
-    listDownstreamPools: async (opts = {}) =>
-      ok(
-        await client.GET(`${ADMIN_PREFIX}/downstream-pools`, {
           headers: headers(opts),
           signal: opts.signal,
         }),
