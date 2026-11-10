@@ -879,10 +879,19 @@ fn badan_sah(metode: &Method, path: &str) -> &'static str {
         r#"{"nama":"Klien Uji MFA"}"#
     } else if *metode == Method::PUT && path.starts_with("/admin/v1/webhook-allowlist/") {
         r#"{"aktif":true}"#
+    } else if (*metode == Method::POST && path == "/admin/v1/providers")
+        || (*metode == Method::PUT && path.starts_with("/admin/v1/providers/"))
+    {
+        BADAN_PROVIDER
     } else {
         "{}"
     }
 }
+
+/// Badan `ProviderConfig` yang lolos deserialisasi (`deny_unknown_fields`,
+/// semua field wajib terisi). Isinya tak perlu lolos validasi template: dengan
+/// MFA, 422 atau 404 sudah cukup membuktikan guard tidak menolak.
+const BADAN_PROVIDER: &str = r#"{"nama":"provider-uji-mfa","metode":"GET","base_url":"https://uji.example.test/api","body_template":"{}","parameters":[],"respons_skema":{},"tls_trust":"ca_kustom","log_mode":"metadata_only","config_schema_version":1,"alasan":"uji guard MFA provider"}"#;
 
 /// Kirim satu permintaan dengan cookie sesi dan `Origin` sah. Badannya JSON sah
 /// per operasi (lihat `badan_sah`) dengan Content-Type, karena handler yang
@@ -901,7 +910,7 @@ async fn minta(u: &Uji, metode: Method, path: &str, cookie: &str) -> StatusCode 
     u.app.clone().oneshot(req).await.unwrap().status()
 }
 
-/// AC-15: the 14 platform-admin and 4 auditor operations answer 403 for a
+/// AC-15: the 16 platform-admin and 4 auditor operations answer 403 for a
 /// session without `mfa_terverifikasi_at`, and not 403 once it carries one.
 async fn periksa_guard_kelas(peran: &str, operasi: &[(Method, String)]) {
     let u = siapkan(&[peran], true).await;
@@ -941,7 +950,7 @@ async fn periksa_guard_pada(u: &Uji, operasi: &[(Method, String)]) {
 
 #[tokio::test]
 #[ignore = "butuh PostgreSQL dan Redis; jalankan lewat make -C backend uji-pg"]
-async fn platform_admin_tanpa_mfa_ditolak_di_empat_belas_operasi() {
+async fn platform_admin_tanpa_mfa_ditolak_di_enam_belas_operasi() {
     let id = Uuid::now_v7();
     let operasi: Vec<(Method, String)> = vec![
         (Method::GET, "/admin/v1/secrets".into()),
@@ -967,6 +976,9 @@ async fn platform_admin_tanpa_mfa_ditolak_di_empat_belas_operasi() {
             Method::DELETE,
             "/admin/v1/webhook-allowlist/uji.example.test".into(),
         ),
+        // ARC-231: operasi tulis provider ikut dijaga.
+        (Method::POST, "/admin/v1/providers".into()),
+        (Method::PUT, format!("/admin/v1/providers/{id}")),
     ];
     periksa_guard_kelas("platform_admin", &operasi).await;
 }
@@ -1032,6 +1044,17 @@ async fn mfa_wajib_mati_guard_tidak_menolak() {
             minta(&u, Method::GET, path, &cookie).await,
             StatusCode::FORBIDDEN,
             "GET {path} dengan mfa_wajib=false tidak boleh 403"
+        );
+    }
+    let id = Uuid::now_v7();
+    for (metode, path) in [
+        (Method::POST, "/admin/v1/providers".to_owned()),
+        (Method::PUT, format!("/admin/v1/providers/{id}")),
+    ] {
+        assert_ne!(
+            minta(&u, metode.clone(), &path, &cookie).await,
+            StatusCode::FORBIDDEN,
+            "{metode} {path} dengan mfa_wajib=false tidak boleh 403"
         );
     }
 }

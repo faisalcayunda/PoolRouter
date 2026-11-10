@@ -137,6 +137,7 @@ pub(super) async fn create_provider(
         "createProvider",
     )
     .await?;
+    super::gerbang::periksa_guard_mfa(&peminta)?;
 
     let mut tx = s.pool.begin().await.map_err(|e| galat_db(&e))?;
 
@@ -212,6 +213,7 @@ pub(super) async fn update_provider(
         "updateProvider",
     )
     .await?;
+    super::gerbang::periksa_guard_mfa(&peminta)?;
 
     let mut tx = s.pool.begin().await.map_err(|e| galat_db(&e))?;
 

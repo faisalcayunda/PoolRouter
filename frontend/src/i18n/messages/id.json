@@ -403,7 +403,8 @@
       "add": "Tambah upstream pool",
       "deactivate": "Nonaktifkan pool",
       "quota_per_day": "{{jumlah, number}} / hari",
-      "deactivate_row": "Nonaktifkan"
+      "deactivate_row": "Nonaktifkan",
+      "subtitle": "Kuota harian, rate limit per jam, dan porsi sync per provider."
     },
     "tab": {
       "quota": "Kuota dan laju",
@@ -428,6 +429,77 @@
     "empty": {
       "title": "Belum ada upstream pool",
       "body": "Tambahkan upstream pool untuk menetapkan kuota harian dan rate limit per jam ke provider."
+    },
+    "status": {
+      "inactive": "Nonaktif"
+    },
+    "list": {
+      "activate": "Aktifkan",
+      "edit_aria": "Ubah upstream pool {{nama}}",
+      "activate_aria": "Aktifkan upstream pool {{nama}}",
+      "deactivate_aria": "Nonaktifkan upstream pool {{nama}}"
+    },
+    "activate": {
+      "done": "Upstream pool {{nama}} diaktifkan."
+    },
+    "deactivate": {
+      "title": "Nonaktifkan upstream pool?",
+      "done": "Upstream pool {{nama}} dinonaktifkan: {{dibatalkan, number}} dibatalkan, {{gagal, number}} digagalkan."
+    },
+    "form": {
+      "title_edit": "Ubah upstream pool {{nama}}",
+      "subtitle": "Penyimpanan mengganti seluruh konfigurasi; isian awal diambil dari konfigurasi saat ini.",
+      "back": "Kembali ke daftar",
+      "provider_placeholder": "Pilih provider",
+      "save_new": "Simpan upstream pool",
+      "save_edit": "Simpan perubahan",
+      "saved": "Upstream pool disimpan.",
+      "group": {
+        "general": "Umum",
+        "reset": "Reset kuota",
+        "retry": "Retry dan margin"
+      },
+      "jendela": {
+        "bergulir_24j": "24 jam bergulir",
+        "kalender": "Hari kalender"
+      },
+      "reason": {
+        "heading": "Alasan",
+        "label": "Alasan perubahan",
+        "optional": "Alasan (opsional)",
+        "help": "{{jumlah}} dari {{batas}} karakter. Wajib saat mengubah dan saat memakai hari kalender."
+      },
+      "field": {
+        "jendela_kuota": "Periode kuota",
+        "kuota_harian": "Kuota harian (request)",
+        "rate_limit_per_jam": "Rate limit per jam (request)",
+        "porsi_sync_persen": "Porsi sync (%)",
+        "ambang_berdampingan": "Ambang berdampingan (request)",
+        "jeda_min": "Jeda minimum (ms)",
+        "jeda_maks": "Jeda maksimum (ms)",
+        "reset_kuota_jam": "Jam reset (0 sampai 23)",
+        "reset_kuota_zona": "Zona waktu reset",
+        "batas_percobaan": "Percobaan per request (1 sampai 5)",
+        "retry_backoff_base_detik": "Dasar backoff (detik)",
+        "retry_backoff_cap_detik": "Batas atas backoff (detik)",
+        "retry_min_per_jam": "Anggaran retry minimum per jam",
+        "retry_rasio": "Rasio anggaran retry (0 sampai 0,5)",
+        "margin_kuota": "Margin kuota (0,001 sampai 0,2)"
+      },
+      "error": {
+        "summary": "{{jumlah}} isian perlu diperbaiki.",
+        "lainnya": "Server menolak {{jumlah}} isian lain yang tidak ada di form ini.",
+        "wajib": "Wajib diisi.",
+        "bilangan": "Tulis bilangan yang sah.",
+        "bilangan_bulat": "Tulis bilangan bulat.",
+        "minimal": "Minimal {{min}}.",
+        "rentang": "Harus antara {{min}} dan {{max}}.",
+        "jeda_terbalik": "Jeda maksimum tidak boleh lebih kecil dari jeda minimum.",
+        "jeda_melebihi_rate": "Jeda paling lama {{batas}} ms agar rate limit per jam tercapai.",
+        "cap_di_bawah_base": "Batas atas backoff tidak boleh lebih kecil dari {{batas}} detik (dasar backoff).",
+        "alasan_rentang": "Tulis alasan {{min}} sampai {{max}} karakter.",
+        "server": "Server menolak nilai ini."
+      }
     }
   },
   "antipattern": {
@@ -455,7 +527,8 @@
       "name": "Nama",
       "mode": "Mode",
       "upstream": "Upstream pool",
-      "ttl": "TTL antrean"
+      "ttl": "TTL antrean",
+      "alokasi": "Alokasi"
     },
     "mode": {
       "async": "Async",
@@ -463,11 +536,68 @@
     },
     "deactivate": {
       "title": "Nonaktifkan downstream pool?",
-      "done": "Downstream pool dinonaktifkan."
+      "done": "Downstream pool dinonaktifkan.",
+      "done_counts": "Downstream pool {{nama}} dinonaktifkan: {{dibatalkan, number}} dibatalkan, {{gagal, number}} digagalkan."
     },
     "empty": {
       "title": "Belum ada downstream pool",
       "body": "Tambahkan downstream pool dan kaitkan dengan satu upstream pool."
+    },
+    "activate": {
+      "done": "Downstream pool {{nama}} diaktifkan."
+    },
+    "list": {
+      "edit_aria": "Ubah downstream pool {{nama}}",
+      "activate_aria": "Aktifkan downstream pool {{nama}}",
+      "deactivate_aria": "Nonaktifkan downstream pool {{nama}}",
+      "no_alokasi": "Tanpa alokasi",
+      "alokasi_tetap": "{{nilai}} request per periode",
+      "alokasi_persen": "{{nilai}}% kuota efektif",
+      "boleh_pinjam": "boleh pinjam",
+      "ttl_hours": "{{jam}} jam"
+    },
+    "form": {
+      "title_edit": "Ubah downstream pool {{nama}}",
+      "back": "Kembali ke daftar",
+      "group": {
+        "general": "Umum",
+        "alokasi": "Alokasi anggaran"
+      },
+      "upstream_placeholder": "Pilih upstream pool",
+      "save_new": "Simpan downstream pool",
+      "save_edit": "Simpan perubahan",
+      "saved": "Downstream pool {{nama}} disimpan.",
+      "alokasi": {
+        "jenis": "Jenis alokasi",
+        "jenis_none": "Tanpa alokasi",
+        "jenis_tetap": "Jumlah tetap per periode",
+        "jenis_persentase": "Persen dari kuota efektif",
+        "nilai_tetap": "Jumlah request per periode",
+        "nilai_persen": "Persen kuota efektif (0,01 sampai 100)",
+        "sifat": "Sifat anggaran",
+        "sifat_placeholder": "Pilih sifat",
+        "sifat_reserved": "Reserved: hanya dipakai pemiliknya",
+        "sifat_shareable": "Shareable: boleh dipinjam downstream pool lain",
+        "boleh_pinjam": "Boleh meminjam sisa kuota dan anggaran shareable",
+        "none_help": "Tanpa alokasi, pool memakai sisa kuota dan boleh meminjam."
+      },
+      "reason": {
+        "heading": "Alasan",
+        "label": "Alasan perubahan",
+        "help": "{{jumlah}} dari {{batas}} karakter. Wajib saat mengubah."
+      },
+      "error": {
+        "summary": "{{jumlah}} isian perlu diperbaiki.",
+        "lainnya": "Server menolak {{jumlah}} isian lain yang tidak ada di form ini.",
+        "wajib": "Wajib diisi.",
+        "ttl_positif": "TTL harus bilangan lebih dari 0 jam, atau kosongkan.",
+        "tetap_bulat": "Tulis bilangan bulat, minimal 1.",
+        "rentang": "Harus antara {{min}} dan {{max}}.",
+        "alasan_rentang": "Tulis alasan {{min}} sampai {{max}} karakter.",
+        "alokasi_kelebihan": "Total alokasi melebihi kuota efektif sebanyak {{batas, number}} request.",
+        "alokasi_kelebihan_umum": "Total alokasi melebihi kuota efektif upstream pool.",
+        "server": "Server menolak nilai ini."
+      }
     }
   },
   "metadata": {
@@ -587,6 +717,126 @@
     },
     "empty": {
       "no_failures": "Tidak ada kegagalan dalam 24 jam terakhir."
+    }
+  },
+  "clients": {
+    "back": "Semua client",
+    "inactive": "Nonaktif",
+    "saved": "Perubahan client tersimpan.",
+    "page": {
+      "subtitle": "Aplikasi BGN yang memanggil PoolRouter, beserta kredensial dan webhook-nya."
+    },
+    "empty": {
+      "owner": "Belum ada client yang terhubung dengan akun Anda. Hubungi platform admin."
+    },
+    "col": {
+      "limiter": "Limiter penolakan"
+    },
+    "limiter": {
+      "value": "{{burst, number}} burst, isi ulang {{isi_ulang}} per detik"
+    },
+    "row": {
+      "manage": "Kelola",
+      "manage_aria": "Kelola client {{nama}}"
+    },
+    "tab": {
+      "aria": "Bagian client",
+      "detail": "Detail client",
+      "credentials": "Kredensial",
+      "webhook": "Webhook dan riwayat"
+    },
+    "detail": {
+      "subtitle": "Pengaturan, kredensial, dan webhook satu client.",
+      "settings": "Pengaturan client"
+    },
+    "form": {
+      "burst": "Burst limiter penolakan",
+      "burst_help": "Bilangan bulat {{min}} sampai {{maks}}. Kosong berarti bawaan {{bawaan}}.",
+      "refill": "Isi ulang limiter per detik",
+      "refill_help": "{{min}} sampai {{maks}} per detik. Kosong berarti bawaan {{bawaan}}.",
+      "reason": "Alasan perubahan limiter",
+      "reason_help": "Wajib bila limiter berubah, 10 sampai 500 karakter. Dicatat di audit konfigurasi."
+    },
+    "error": {
+      "name_required": "Nama client wajib diisi.",
+      "name_too_long": "Nama client paling panjang {{maks}} karakter.",
+      "burst_range": "Burst harus bilangan bulat {{min}} sampai {{maks}}.",
+      "refill_range": "Isi ulang harus {{min}} sampai {{maks}} per detik."
+    },
+    "activate": {
+      "action": "Aktifkan client",
+      "done": "Client diaktifkan."
+    },
+    "k20": {
+      "reason": "Alasan",
+      "reason_help": "10 sampai 500 karakter. Dicatat di audit konfigurasi.",
+      "preview_loading": "Menghitung perkiraan dampak…",
+      "result": "{{cancelled, number}} request dibatalkan dan {{failed, number}} ditandai gagal."
+    },
+    "webhook": {
+      "subtitle": "Alamat tujuan, secret tanda tangan, dan riwayat pengiriman webhook client ini.",
+      "not_configured": "Webhook belum diatur untuk client ini. Isi alamat https lalu simpan.",
+      "active": "Kirim webhook ke alamat ini",
+      "rejected": "Alamat ditolak. Gunakan https dan domain yang ada di allowlist.",
+      "secret_version": "Secret aktif: versi {{versi}}.",
+      "no_secret": "Belum ada secret tanda tangan.",
+      "hasil": {
+        "terkirim": "Terkirim",
+        "gagal_http": "Gagal: respons HTTP",
+        "gagal_jaringan": "Gagal: jaringan",
+        "ditolak_allowlist": "Ditolak allowlist",
+        "gagal_internal": "Gagal: internal"
+      },
+      "kelas": {
+        "timeout": "Waktu habis",
+        "koneksi": "Koneksi gagal",
+        "rate_limit_provider": "Rate limit tujuan",
+        "respons_tidak_valid": "Respons tidak valid",
+        "tls": "Galat TLS",
+        "provider_sementara": "Gangguan sementara di tujuan"
+      },
+      "log": {
+        "heading": "Riwayat pengiriman",
+        "filter": "Hasil pengiriman",
+        "failed_any": "Semua yang gagal",
+        "empty": "Belum ada pengiriman yang cocok.",
+        "first_page": "Menampilkan halaman pertama riwayat.",
+        "col": {
+          "request": "ID request",
+          "result": "Hasil",
+          "version": "Versi secret"
+        }
+      }
+    }
+  },
+  "credentials": {
+    "page": {
+      "title": "Kredensial · {{nama_client}}",
+      "subtitle": "Satu client maksimal punya 2 kredensial aktif. Secret hanya tampil sekali saat dibuat."
+    },
+    "table": "Daftar kredensial",
+    "revoke_aria": "Cabut kredensial {{id}}",
+    "no_expiry": "Tanpa batas",
+    "revoked_at": "Dicabut {{waktu}}",
+    "col": {
+      "id": "ID kredensial",
+      "expires": "Berlaku sampai"
+    },
+    "status": {
+      "aktif": "Aktif",
+      "kedaluwarsa": "Kedaluwarsa",
+      "dicabut": "Dicabut"
+    },
+    "empty": {
+      "title": "Belum ada kredensial",
+      "body": "Buat kredensial agar aplikasi client bisa memanggil PoolRouter."
+    },
+    "create": {
+      "title": "Buat kredensial",
+      "expiry": "Masa berlaku",
+      "days_other": "{{count, number}} hari",
+      "once": "Secret ditampilkan satu kali setelah kredensial dibuat.",
+      "max": "Client ini sudah punya 2 kredensial aktif. Cabut salah satu sebelum membuat yang baru."
     }
   },
   "quota": {
@@ -900,6 +1150,24 @@
         "copy_all": "Salin semua",
         "acknowledge": "Sudah saya simpan"
       }
+    }
+  },
+  "k20": {
+    "body": "Periksa dampak berikut sebelum menonaktifkan {{nama}}.",
+    "confirm": "Nonaktifkan",
+    "submitting": "Memproses…",
+    "preview": {
+      "heading": "Dampak penonaktifan",
+      "cancelled": "{{jumlah, number}} request antre akan dibatalkan.",
+      "failed": "{{jumlah, number}} request yang menunggu retry akan digagalkan.",
+      "downstream_count": "Dipakai oleh {{jumlah, number}} downstream pool.",
+      "computed": "Dihitung pada {{waktu}}.",
+      "last_active_heading": "Upstream aktif terakhir untuk downstream pool ini"
+    },
+    "reason": {
+      "label": "Alasan penonaktifan",
+      "help": "{{min}} sampai {{maks}} karakter. Alasan tercatat di audit.",
+      "error": "Tulis alasan {{min}} sampai {{maks}} karakter."
     }
   }
 }

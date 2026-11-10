@@ -6,7 +6,7 @@ import type { AdminRole } from '../features/common/RoleContext';
 import { AppShell } from './AppShell';
 import { RoutedScreens } from './routes';
 
-const ROLES: AdminRole[] = ['platform_admin', 'operator', 'auditor'];
+const ROLES: AdminRole[] = ['platform_admin', 'operator', 'auditor', 'client_owner'];
 
 /** Session identity is a list in the contract (section 8.1); the shell only knows the admin roles. */
 export function peranShell(peran: string[] | undefined): AdminRole | null {
