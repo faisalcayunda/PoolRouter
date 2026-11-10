@@ -1,5 +1,7 @@
 # Image backend PoolRouter (ADR-0001 Addendum A §3.1, §3.3, §6, §7).
-# Satu image memuat binary webserver, controller, dan worker. Compose memilih proses lewat `command:`.
+# Satu image memuat binary webserver, controller, worker, dan backend-cli. Compose memilih proses lewat `command:`;
+# backend-cli dijalankan lewat service backend-cli (profile cli, `compose run --rm`) atau `exec` di container backend
+# (ADR-0003 §3.6c, docs/runbook/deploy.md).
 # Build (dari akar repo): podman build -f backend/Containerfile backend   (atau docker build, konteks backend/)
 # Tanpa fitur khusus BuildKit: tanpa `# syntax=`, tanpa HEALTHCHECK/SHELL/ONBUILD, tanpa COPY --link/--parents/--exclude.
 # Pengecualian: `RUN --mount=type=cache` di stage build, diizinkan Addendum A §3.3 (didukung Buildah dan Docker 27).

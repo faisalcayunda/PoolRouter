@@ -1384,5 +1384,10 @@
       "help": "{{min}} to {{maks}} characters. The reason is recorded in the audit trail.",
       "error": "Write a reason of {{min}} to {{maks}} characters."
     }
+  },
+  "recovery": {
+    "warning": "Recovery codes left: {{n}}. Reset MFA to get new codes.",
+    "error": "You have no recovery codes left. Reset MFA.",
+    "info": "You signed in with a recovery code. Generate new recovery codes when you are ready."
   }
 }

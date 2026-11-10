@@ -101,11 +101,11 @@ image-postgres:
 SUBMAKE = $(MAKE)
 STACKS := backend $(if $(wildcard frontend/Makefile),frontend)
 
-.PHONY: help setup test lint fmt clean push-main test-dry-run test-label test-atribut
+.PHONY: help setup test lint fmt clean push-main test-dry-run test-label test-atribut test-image-cli
 
 help:
 	@echo "gate resmi: make setup test lint RUNNER=docker FRONTEND_RUNNER=docker CONTAINER_LABEL=arctiva.issue=ARC-<n>"
-	@echo "targets: setup test lint fmt clean (gate repo, delegasi ke stack); test-dry-run (uji regresi make -n, tanpa Docker); compose-up compose-down compose-ps compose-logs compose-config compose-migrate compose-seed compose-lint compose-test-dind image image-frontend"
+	@echo "targets: setup test lint fmt clean (gate repo, delegasi ke stack); test-dry-run (uji regresi make -n, tanpa Docker); test-image-cli (biner di image backend); compose-up compose-down compose-ps compose-logs compose-config compose-migrate compose-seed compose-lint compose-test-dind image image-frontend"
 	@echo "Push: tidak ada push langsung ke main. Branch agent/<ID>-<slug> -> PR ke main -> merge Operator (CLAUDE.md)."
 
 # push-main: sengaja menolak. Arctiva tidak mengizinkan push langsung ke main, dan jalur push
@@ -131,6 +131,12 @@ test-label:
 # test-atribut: uji regresi aturan repo Arctiva (push-main hanya penjaga, CLAUDE.md, tanpa label Shaal).
 test-atribut:
 	@sh scripts/test-atribut.sh
+
+# test-image-cli: image backend memuat webserver, controller, worker, dan backend-cli (ARC-236).
+# Tanpa IMAGE hanya memeriksa Containerfile (statis). Dengan IMAGE (hasil `make image`, tag $(IMAGE_TAG)) juga
+# menjalankan `backend-cli --help` di dalam image: make image test-image-cli IMAGE=localhost/poolrouter-backend:$(IMAGE_TAG)
+test-image-cli:
+	@IMAGE="$(IMAGE)" CONTAINER_ENGINE="$(CONTAINER_ENGINE)" CONTAINER_LABEL="$(CONTAINER_LABEL)" sh scripts/test-image-cli.sh
 
 setup test lint fmt clean:
 	@set -e; for s in $(STACKS); do \
