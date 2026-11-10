@@ -36,7 +36,9 @@ export function MfaFlow({ client, langkah, username, onSelesai, onKembali }: Pro
   const pesan = (jenis: 'kode' | 'daftar'): string | null => {
     if (!galat) return null;
     if (galat === 'invalid') {
-      return t(jenis === 'daftar' ? 'auth.mfa.error.invalid_registration' : 'auth.mfa.error.invalid');
+      return t(
+        jenis === 'daftar' ? 'auth.mfa.error.invalid_registration' : 'auth.mfa.error.invalid',
+      );
     }
     return t(`auth.mfa.error.${galat}`);
   };

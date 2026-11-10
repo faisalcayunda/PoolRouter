@@ -8,7 +8,10 @@ import { renderWithI18n } from './render';
 // Semua nilai sintetis dan jelas palsu; tidak ada kode TOTP atau secret nyata.
 const SECRET = 'CONTOHSECRETSINTETISBUKANASLI234';
 const URI = `otpauth://totp/PoolRouter:a?secret=${SECRET}&issuer=PoolRouter`;
-const KODE_PEMULIHAN = Array.from({ length: 10 }, (_, i) => `CONTOHPM${String(i).padStart(2, '0')}`);
+const KODE_PEMULIHAN = Array.from(
+  { length: 10 },
+  (_, i) => `CONTOHPM${String(i).padStart(2, '0')}`,
+);
 
 function stub(overrides: Partial<ApiClient> = {}): ApiClient {
   return {
@@ -35,7 +38,7 @@ describe('login dua langkah (AC-29)', () => {
 
     expect(await screen.findByRole('heading', { name: 'Verifikasi dua langkah' })).toBeVisible();
     expect(onBerhasil).not.toHaveBeenCalled();
-    await userEvent.type(screen.getByRole('textbox', { name: 'Kode authenticator' }), '123 456');
+    await userEvent.type(screen.getByRole('textbox', { name: 'Kode authenticator' }), '123456');
     await userEvent.click(screen.getByRole('button', { name: 'Verifikasi' }));
 
     expect(client.verifikasiMfa).toHaveBeenCalledWith({ kode: '123456' });
@@ -62,7 +65,10 @@ describe('login dua langkah (AC-29)', () => {
     const onBerhasil = vi.fn();
     renderWithI18n(<LoginScreen client={client} onBerhasil={onBerhasil} />);
     await masuk();
-    await userEvent.type(await screen.findByRole('textbox', { name: 'Kode authenticator' }), '000000');
+    await userEvent.type(
+      await screen.findByRole('textbox', { name: 'Kode authenticator' }),
+      '000000',
+    );
     await userEvent.click(screen.getByRole('button', { name: 'Verifikasi' }));
 
     expect(await screen.findByText(/Kode tidak cocok atau sesi sudah habis/)).toBeInTheDocument();
@@ -82,10 +88,15 @@ describe('login dua langkah (AC-29)', () => {
     });
     renderWithI18n(<LoginScreen client={client} onBerhasil={vi.fn()} />);
     await masuk();
-    await userEvent.type(await screen.findByRole('textbox', { name: 'Kode authenticator' }), '000000');
+    await userEvent.type(
+      await screen.findByRole('textbox', { name: 'Kode authenticator' }),
+      '000000',
+    );
     await userEvent.click(screen.getByRole('button', { name: 'Verifikasi' }));
 
-    expect(await screen.findByText('Terlalu banyak percobaan. Coba lagi beberapa saat lagi.')).toBeInTheDocument();
+    expect(
+      await screen.findByText('Terlalu banyak percobaan. Coba lagi beberapa saat lagi.'),
+    ).toBeInTheDocument();
   });
 });
 
@@ -108,7 +119,10 @@ describe('pendaftaran MFA dan kode pemulihan (AC-30/31)', () => {
 
     expect(client.daftarMfa).toHaveBeenCalledWith({ kode_pendaftaran: 'CONTOHDAFTAR' });
     expect(screen.getByText('CONT OHSE CRET SINT ETIS BUKA NASL I234')).toBeInTheDocument();
-    await userEvent.type(screen.getByRole('textbox', { name: 'Kode dari authenticator' }), '123456');
+    await userEvent.type(
+      screen.getByRole('textbox', { name: 'Kode dari authenticator' }),
+      '123456',
+    );
     await userEvent.click(screen.getByRole('button', { name: 'Konfirmasi' }));
 
     expect(client.konfirmasiMfa).toHaveBeenCalledWith({ kode_totp: '123456' });
@@ -146,7 +160,10 @@ describe('pendaftaran MFA dan kode pemulihan (AC-30/31)', () => {
       konfirmasiMfa: vi.fn().mockRejectedValue(new ApiError(500, null)),
     });
     await sampaiQr(client);
-    await userEvent.type(screen.getByRole('textbox', { name: 'Kode dari authenticator' }), '123456');
+    await userEvent.type(
+      screen.getByRole('textbox', { name: 'Kode dari authenticator' }),
+      '123456',
+    );
     await userEvent.click(screen.getByRole('button', { name: 'Konfirmasi' }));
 
     expect(await screen.findByText(/Belum bisa terhubung/)).toBeInTheDocument();
