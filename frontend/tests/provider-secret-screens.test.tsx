@@ -568,9 +568,10 @@ describe('S05 secret', () => {
     const dialog = await screen.findByRole('dialog');
     await user.click(within(dialog).getByLabelText('Nama'));
     await user.paste('TOKEN_UJI');
+    expect(within(dialog).getByLabelText('Nama')).toHaveAttribute('autocomplete', 'off');
     const nilai = within(dialog).getByLabelText('Nilai');
     expect(nilai).toHaveAttribute('type', 'password');
-    expect(nilai).toHaveAttribute('autocomplete', 'off');
+    expect(nilai).toHaveAttribute('autocomplete', 'new-password');
     await user.click(nilai);
     await user.paste(NILAI);
     await user.click(within(dialog).getByRole('button', { name: 'Simpan secret' }));
@@ -579,6 +580,8 @@ describe('S05 secret', () => {
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     expect(await screen.findByText('Secret TOKEN_UJI tersimpan.')).toBeInTheDocument();
     expect(document.body.innerHTML).not.toContain(NILAI);
+    expect(screen.queryByLabelText('Nilai')).toBeNull();
+    expect([...document.querySelectorAll('input')].every((el) => el.value !== NILAI)).toBe(true);
     await waitFor(() => expect(client.listSecrets).toHaveBeenCalledTimes(2));
   });
 
@@ -616,7 +619,10 @@ describe('S05 secret', () => {
 
     await user.click(await screen.findByRole('button', { name: 'Ganti nilai secret USER_ID' }));
     const dialog = await screen.findByRole('dialog', { name: 'Ganti secret USER_ID' });
-    await user.click(within(dialog).getByLabelText('Nilai baru'));
+    const nilaiBaru = within(dialog).getByLabelText('Nilai baru');
+    expect(nilaiBaru).toHaveAttribute('type', 'password');
+    expect(nilaiBaru).toHaveAttribute('autocomplete', 'new-password');
+    await user.click(nilaiBaru);
     await user.paste(NILAI);
     expect(
       within(dialog).getByText(
@@ -629,6 +635,8 @@ describe('S05 secret', () => {
     await waitFor(() => expect(client.putSecret).toHaveBeenCalledWith('USER_ID', NILAI));
     expect(await screen.findByText('Nilai secret USER_ID sudah diganti.')).toBeInTheDocument();
     expect(document.body.innerHTML).not.toContain(NILAI);
+    expect(screen.queryByLabelText('Nilai baru')).toBeNull();
+    expect([...document.querySelectorAll('input')].every((el) => el.value !== NILAI)).toBe(true);
   });
 
   it('opens "Secret masih dipakai" straight from Hapus when a provider uses it (S05)', async () => {
