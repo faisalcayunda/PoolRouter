@@ -149,10 +149,12 @@
   },
   "error": {
     "network": "Data belum bisa dimuat. Periksa koneksi, lalu coba lagi.",
+    "load_title": "Data belum bisa dimuat",
+    "load_hint": "Periksa koneksi jaringan dan coba lagi.",
     "http": {
       "403": {
-        "title": "Anda tidak punya akses ke halaman ini",
-        "body": "Peran Anda tidak mencakup halaman ini. Percobaan ini dicatat. Hubungi platform admin bila Anda perlu akses.",
+        "title": "Akses tidak diizinkan",
+        "body": "Percobaan ini dicatat. Hubungi platform admin bila butuh akses.",
         "action": "Ke halaman awal"
       }
     },
@@ -161,12 +163,16 @@
   },
   "login": {
     "page": {
-      "title": "Masuk ke PoolRouter",
-      "subtitle": "Gunakan akun yang diberikan Pusdatin BGN.",
+      "brand": "PoolRouter",
+      "env": "PoC · BGN",
+      "title": "Masuk ke akun",
+      "subtitle": "Gunakan kredensial yang diberikan oleh administrator Pusdatin.",
+      "help": "Butuh akses? Hubungi platform admin Pusdatin BGN.",
       "username": "Nama pengguna",
       "password": "Kata sandi",
       "submit": "Masuk",
-      "session_expired": "Sesi Anda berakhir. Masuk lagi untuk melanjutkan."
+      "session_expired_title": "Sesi Anda telah berakhir",
+      "session_expired_body": "Sesi tidak aktif selama lebih dari batas waktu."
     },
     "error": {
       "invalid": "Nama pengguna atau kata sandi tidak cocok.",

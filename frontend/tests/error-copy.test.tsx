@@ -16,7 +16,7 @@ describe('error copy resolution', () => {
       ),
     ).toEqual({
       // No per-code catalog line exists yet, so a 403 reads as the generic access-denied title.
-      message: 'Anda tidak punya akses ke halaman ini',
+      message: 'Akses tidak diizinkan',
       kode: 'pencarian_nik_dilarang',
     });
   });

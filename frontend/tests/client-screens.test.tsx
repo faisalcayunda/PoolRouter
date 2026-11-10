@@ -208,7 +208,7 @@ describe('S08 daftar client', () => {
     asRole(role, <ClientListScreen client={client} />);
 
     expect(
-      screen.getByRole('heading', { level: 1, name: 'Anda tidak punya akses ke halaman ini' }),
+      screen.getByRole('heading', { level: 1, name: 'Akses tidak diizinkan' }),
     ).toBeInTheDocument();
     expect(client.listClients).not.toHaveBeenCalled();
   });
@@ -327,7 +327,7 @@ describe('S08 daftar client', () => {
     await paste('Nama client', 'Aplikasi Baru', dialog);
     await user.click(dialog.getByRole('button', { name: 'Simpan client' }));
 
-    expect(await dialog.findByText('Anda tidak punya akses ke halaman ini')).toBeInTheDocument();
+    expect(await dialog.findByText('Akses tidak diizinkan')).toBeInTheDocument();
     expect(screen.getByRole('dialog')).toBeInTheDocument();
   });
 });
@@ -647,7 +647,7 @@ describe('S08b kredensial', () => {
 
     const lain = stubClient();
     asRole('operator', <CredentialsScreen clientId={CLIENT_ID} client={lain} />);
-    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Anda tidak punya akses');
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Akses tidak diizinkan');
     expect(lain.listCredentials).not.toHaveBeenCalled();
   });
 
@@ -657,7 +657,7 @@ describe('S08b kredensial', () => {
       'client_owner',
       <CredentialsScreen clientId={LAIN_ID} client={stubClient({ getClient })} />,
     );
-    expect(await screen.findByText('Anda tidak punya akses ke halaman ini')).toBeInTheDocument();
+    expect(await screen.findByText('Akses tidak diizinkan')).toBeInTheDocument();
     expect(screen.queryByRole('table')).toBeNull();
   });
 });
@@ -889,7 +889,7 @@ describe('S09 webhook', () => {
 
     const lain = stubClient();
     asRole('auditor', <WebhookScreen clientId={CLIENT_ID} client={lain} />);
-    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Anda tidak punya akses');
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Akses tidak diizinkan');
     expect(lain.getWebhookConfig).not.toHaveBeenCalled();
     expect(lain.listWebhookLog).not.toHaveBeenCalled();
   });

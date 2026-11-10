@@ -251,7 +251,7 @@ describe('S04b daftar endpoint', () => {
     asRole(role, <EndpointListScreen client={client} />);
 
     expect(
-      screen.getByRole('heading', { level: 1, name: 'Anda tidak punya akses ke halaman ini' }),
+      screen.getByRole('heading', { level: 1, name: 'Akses tidak diizinkan' }),
     ).toBeInTheDocument();
     expect(client.listEndpoints).not.toHaveBeenCalled();
   });
@@ -536,7 +536,7 @@ describe('S04b + S07b form endpoint', () => {
     asRole(role, <EndpointFormScreen client={client} />);
 
     expect(
-      screen.getByRole('heading', { level: 1, name: 'Anda tidak punya akses ke halaman ini' }),
+      screen.getByRole('heading', { level: 1, name: 'Akses tidak diizinkan' }),
     ).toBeInTheDocument();
     expect(client.listProviders).not.toHaveBeenCalled();
   });

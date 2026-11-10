@@ -1,5 +1,5 @@
 import { lazy, Suspense, type ReactNode } from 'react';
-import { useTranslation } from 'react-i18next';
+import { Forbidden } from '../features/provider/Forbidden';
 import { RoleProvider, type AdminRole } from '../features/common/RoleContext';
 import { LogPageScreen } from '../features/log/LogPageScreen';
 
@@ -75,15 +75,9 @@ const DownstreamFormScreen = lazy(() =>
   })),
 );
 
+/** The catalog has no dedicated 404 frame; Penpot S16 card 5 (403) is the closest existing one. */
 function NotFound(): ReactNode {
-  const { t } = useTranslation();
-  return (
-    <section className="flex flex-col gap-2">
-      {/* The catalog has no dedicated 404 line yet; the 403 wording is the closest existing one. */}
-      <h1 className="typescale-headline-small">{t('error.http.403.title')}</h1>
-      <p className="typescale-body-medium">{t('error.http.403.body')}</p>
-    </section>
-  );
+  return <Forbidden />;
 }
 
 /** `/log/<kode_transaksi>` — S11 opened on one transaction (section 7). */
