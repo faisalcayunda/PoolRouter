@@ -48,15 +48,31 @@ describe('S13 audit akses', () => {
 
     await userEvent.click(screen.getByRole('button', { name: 'Cari' }));
 
-    await screen.findByText('Cek aduan W-2026-07');
-    // Scope to the table: the result filter also renders "Ditolak" as an option.
+    await screen.findByText('budi');
+    // Scope to the table: the action filter also renders "Ditolak" as an option.
     const table = within(screen.getByRole('table'));
-    expect(table.getByText('Cek aduan W-2026-07')).toBeInTheDocument();
-    // The action and the result are rendered from the shared enum group (section 13.2).
-    expect(table.getByText('Ditolak')).toBeInTheDocument();
+    // Frame S13 columns, in order: Waktu, Pengguna, Peran, Aksi, Filter atau kueri, Jumlah record.
+    const headers = table.getAllByRole('columnheader').map((th) => th.textContent);
+    expect(headers).toEqual([
+      'Waktu',
+      'Pengguna',
+      'Peran',
+      'Aksi',
+      'Filter atau kueri',
+      'Jumlah record',
+    ]);
+    expect(table.getByText('budi')).toBeInTheDocument();
+    // The action is a chip from the shared enum group; a refused attempt also reads "Ditolak".
     expect(table.getByText('Lihat payload')).toBeInTheDocument();
-    // A missing reason is shown as an em dash, never the string "null".
-    expect(table.getByText('—')).toBeInTheDocument();
+    expect(table.getByText('Cari')).toBeInTheDocument();
+    expect(table.getByText('Ditolak')).toBeInTheDocument();
+    // Role, filter and record count are not in the API yet: placeholders, one per column and row.
+    expect(table.getAllByText('—')).toHaveLength(6);
+    // The reason is not a column in the frame, so it is not rendered.
+    expect(table.queryByText('Cek aduan W-2026-07')).not.toBeInTheDocument();
+    expect(
+      screen.getByText("Kolom 'Filter atau kueri' menampilkan jenis filter, bukan nilai NIK."),
+    ).toBeInTheDocument();
 
     const body = vi.mocked(client.cariAuditAkses).mock.calls[0]![0];
     // Default window is the last 24 hours, the same as S11: a first visit always has a range.
@@ -67,12 +83,23 @@ describe('S13 audit akses', () => {
     expect(body.aksi).toBeUndefined();
   });
 
+  it('sends the typed user as pengguna_id', async () => {
+    const cariAuditAkses = vi.fn().mockResolvedValue(AUDIT);
+    renderWithI18n(<AuditScreen client={stubClient({ cariAuditAkses })} />);
+
+    await userEvent.click(screen.getByLabelText('Pengguna'));
+    await userEvent.paste('budi');
+    await userEvent.click(screen.getByRole('button', { name: 'Cari' }));
+
+    await waitFor(() => expect(cariAuditAkses.mock.calls.at(-1)![0].pengguna_id).toBe('budi'));
+  });
+
   it('offers no edit or delete affordance on any row', async () => {
     const client = stubClient({ cariAuditAkses: vi.fn().mockResolvedValue(AUDIT) });
     renderWithI18n(<AuditScreen client={client} />);
 
     await userEvent.click(screen.getByRole('button', { name: 'Cari' }));
-    await screen.findByText('Cek aduan W-2026-07');
+    await screen.findByText('budi');
 
     expect(
       screen.queryByRole('button', { name: /ubah|hapus|edit|delete/i }),
@@ -100,7 +127,7 @@ describe('S13 audit akses', () => {
     renderWithI18n(<AuditScreen client={stubClient({ cariAuditAkses })} />);
 
     await userEvent.click(screen.getByRole('button', { name: 'Cari' }));
-    await screen.findByText('Cek aduan W-2026-07');
+    await screen.findByText('budi');
     const callsBefore = cariAuditAkses.mock.calls.length;
     await userEvent.click(screen.getByRole('button', { name: 'Halaman berikutnya' }));
 
@@ -113,7 +140,7 @@ describe('S13 audit akses', () => {
     renderWithI18n(<AuditScreen client={stubClient({ cariAuditAkses })} />);
 
     await userEvent.click(screen.getByRole('button', { name: 'Cari' }));
-    await screen.findByText('Cek aduan W-2026-07');
+    await screen.findByText('budi');
     await userEvent.click(screen.getByRole('button', { name: 'Halaman berikutnya' }));
     await waitFor(() => expect(cariAuditAkses.mock.calls.at(-1)![0].kursor).toBe('cur-2'));
 

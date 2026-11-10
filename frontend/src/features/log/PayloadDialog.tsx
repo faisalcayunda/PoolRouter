@@ -57,6 +57,8 @@ export interface PayloadDialogProps {
   /** Reason carried over from the NIK search; the user may edit it before opening. */
   initialReason: string;
   client?: ApiClient;
+  /** Copy of the reason step. Omitted, it keeps the S11 wording; S12b passes the frame's text. */
+  reasonCopy?: { body: string; fieldLabel: string; fieldHint: string; confirmLabel: string };
   onClose: () => void;
   /** Fired once a payload has actually been fetched, so the caller can re-run the audit list. */
   onOpened?: () => void;
@@ -72,6 +74,7 @@ export function PayloadDialog({
   kodeTransaksi,
   initialReason,
   client = api,
+  reasonCopy,
   onClose,
   onOpened,
 }: PayloadDialogProps): ReactNode {
@@ -172,10 +175,11 @@ export function PayloadDialog({
       <ReasonDialog
         isOpen={isOpen && phase === 'reason'}
         title={t('nik.payload.title')}
-        body={t('log.payload.reason.supporting')}
-        fieldLabel={t('nik.payload.title')}
+        body={reasonCopy?.body ?? t('log.payload.reason.supporting')}
+        fieldLabel={reasonCopy?.fieldLabel ?? t('nik.payload.title')}
+        fieldHint={reasonCopy?.fieldHint}
         initialReason={reasonDraft ?? initialReason}
-        confirmLabel={t('log.payload.open')}
+        confirmLabel={reasonCopy?.confirmLabel ?? t('log.payload.open')}
         isSubmitting={submitting}
         onConfirm={(next) => void open(next)}
         onCancel={() => {
