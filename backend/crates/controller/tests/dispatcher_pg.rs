@@ -593,3 +593,226 @@ async fn ac11_dua_dispatcher_paralel_tanpa_dispatch_ganda_dan_dalam_kuota() {
         );
     }
 }
+
+/// Graf kedua yang ikut upstream pool `g` lewat downstream pool dan endpoint
+/// baru (F0 mengizinkan banyak downstream pool ke satu upstream pool).
+async fn tambah_downstream_pool(su: &PgPool, g: &Graf) -> Graf {
+    let d = Graf {
+        dpool_id: Uuid::now_v7(),
+        endpoint_id: Uuid::now_v7(),
+        ..*g
+    };
+    sqlx::query(
+        "INSERT INTO downstream_pool (downstream_pool_id, nama, prioritas, ttl_antrean_detik)
+         VALUES ($1, $2, 1, 3600)",
+    )
+    .bind(d.dpool_id)
+    .bind(format!("arc229-{}", d.dpool_id.simple()))
+    .execute(su)
+    .await
+    .expect("downstream_pool");
+    buat_endpoint(su, &d, d.endpoint_id).await;
+    sqlx::query(
+        "INSERT INTO downstream_pool_rute (downstream_pool_id, upstream_pool_id) VALUES ($1, $2)",
+    )
+    .bind(d.dpool_id)
+    .bind(d.upool_id)
+    .execute(su)
+    .await
+    .expect("downstream_pool_rute");
+    d
+}
+
+#[tokio::test]
+#[ignore]
+async fn kandidat_urut_prioritas_lintas_downstream_pool_dan_hanya_milik_pool_ini() {
+    let su = pool_su().await;
+    let db = pool_controller().await;
+    let g1 = buat_graf(&su, &OpsiGraf::default()).await;
+    let g2 = tambah_downstream_pool(&su, &g1).await;
+    let lain = buat_graf(&su, &OpsiGraf::default()).await;
+
+    // Prioritas 2 di downstream pool pertama, prioritas 1 di yang kedua, dan
+    // satu request menunggu retry (upstream_pool_id terisi) prioritas 1.
+    let mut rendah = Vec::new();
+    for _ in 0..3 {
+        let r = Req {
+            prioritas: 2,
+            ..Req::queued()
+        };
+        rendah.push(buat_request(&su, &g1, &r).await);
+    }
+    let mut tinggi = Vec::new();
+    for _ in 0..3 {
+        tinggi.push(buat_request(&su, &g2, &Req::queued()).await);
+    }
+    let retry = buat_request(
+        &su,
+        &g1,
+        &Req {
+            attempt: 1,
+            ..Req::queued()
+        },
+    )
+    .await;
+    tinggi.push(retry);
+
+    // Bukan milik pool ini: antrean upstream pool lain, dan request yang
+    // menunggu retry di upstream pool lain walau downstream pool-nya sama.
+    let asing = buat_request(&su, &lain, &Req::queued()).await;
+    let g_campur = Graf {
+        upool_id: lain.upool_id,
+        provider_id: lain.provider_id,
+        ..g1
+    };
+    let retry_asing = buat_request(
+        &su,
+        &g_campur,
+        &Req {
+            attempt: 1,
+            ..Req::queued()
+        },
+    )
+    .await;
+
+    let kuota = siapkan_redis(&db).await;
+    let perekam = Perekam::default();
+    kirim_sampai(
+        &db,
+        &kuota,
+        &perekam,
+        &JedaTetap(0),
+        g1.upool_id,
+        7,
+        Duration::from_secs(10),
+    )
+    .await;
+
+    let terkirim = perekam.id();
+    assert_eq!(terkirim.len(), 7, "hanya tujuh request milik pool ini");
+    let himpunan = |ids: &[Uuid]| {
+        ids.iter()
+            .copied()
+            .collect::<std::collections::HashSet<Uuid>>()
+    };
+    assert_eq!(
+        himpunan(&terkirim[..4]),
+        himpunan(&tinggi),
+        "prioritas 1 lintas downstream pool dan retry habis dulu"
+    );
+    assert_eq!(himpunan(&terkirim[4..]), himpunan(&rendah));
+    for id in [asing, retry_asing] {
+        assert_eq!(baca(&su, id).await.status, "queued", "bukan milik pool ini");
+    }
+}
+
+/// Isi antrean `n` request `queued` untuk satu downstream pool lewat satu
+/// INSERT. Prioritas berputar 1..3. Tanpa history: dipakai di dalam transaksi
+/// yang di-rollback, jadi tidak ada sisa di database uji bersama.
+async fn isi_antrean(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    g: &Graf,
+    n: i64,
+    attempt: i32,
+) {
+    sqlx::query(
+        "INSERT INTO request
+                (request_id, client_id, credential_id, downstream_endpoint_id, downstream_pool_id,
+                 provider_id, upstream_pool_id, provider_config_version, endpoint_config_version,
+                 mode, prioritas, prioritas_efektif, status, metadata, input_payload, received_at,
+                 attempt_count, ttl_expires_at, dispatch_key)
+         SELECT gen_random_uuid(), $1, $2, $3, $4, $5, CASE WHEN $7::int > 0 THEN $6::uuid END, 1, 1,
+                'async', 1 + (i % 3), 1 + (i % 3), 'queued', '{}'::jsonb,
+                '{\"nik\": \"0012345678901234\"}'::jsonb, now(), $7::int, now() + interval '1 hour',
+                gen_random_uuid()
+           FROM generate_series(1, $8::bigint) AS i",
+    )
+    .bind(g.client_id)
+    .bind(g.kredensial_id)
+    .bind(g.endpoint_id)
+    .bind(g.dpool_id)
+    .bind(g.provider_id)
+    .bind(g.upool_id)
+    .bind(attempt)
+    .bind(n)
+    .execute(&mut **tx)
+    .await
+    .expect("isi antrean");
+}
+
+/// Rencana kueri kandidat, dibaca sebagai teks, untuk rencana khusus (nilai
+/// terikat) dan rencana generik (sqlx menyimpan statement per koneksi, dan
+/// PostgreSQL pindah ke rencana generik setelah lima eksekusi).
+async fn rencana_calon(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    mode: &str,
+    pool: Uuid,
+) -> String {
+    sqlx::query(sqlx::AssertSqlSafe(format!(
+        "SET LOCAL plan_cache_mode = {mode}"
+    )))
+    .execute(&mut **tx)
+    .await
+    .expect("plan_cache_mode");
+    sqlx::query(sqlx::AssertSqlSafe(format!(
+        "PREPARE calon_229 (uuid, timestamptz, uuid[]) AS {}",
+        poolrouter_controller::dispatcher::sql_calon()
+    )))
+    .execute(&mut **tx)
+    .await
+    .expect("prepare kueri kandidat");
+    // Literal, bukan parameter terikat: EXPLAIN adalah pernyataan utilitas.
+    let baris: Vec<(String,)> = sqlx::query_as(sqlx::AssertSqlSafe(format!(
+        "EXPLAIN EXECUTE calon_229('{pool}', now(), '{{}}')"
+    )))
+    .fetch_all(&mut **tx)
+    .await
+    .expect("explain");
+    sqlx::query("DEALLOCATE calon_229")
+        .execute(&mut **tx)
+        .await
+        .expect("dealocate");
+    baris
+        .into_iter()
+        .map(|(b,)| b)
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+#[tokio::test]
+#[ignore]
+async fn kandidat_memakai_request_dispatch_idx_pada_antrean_besar() {
+    let su = pool_su().await;
+    let g1 = buat_graf(&su, &OpsiGraf::default()).await;
+    let g2 = tambah_downstream_pool(&su, &g1).await;
+    let g3 = tambah_downstream_pool(&su, &g1).await;
+    let lain = buat_graf(&su, &OpsiGraf::default()).await;
+
+    // Semua di dalam satu transaksi superuser yang di-rollback: antrean besar
+    // (pool ini tiga downstream pool, ditambah antrean upstream pool lain
+    // yang lebih besar dan berprioritas sama) tidak tersisa di database bersama.
+    let mut tx = su.begin().await.expect("tx");
+    for g in [&g1, &g2, &g3] {
+        isi_antrean(&mut tx, g, 10_000, 0).await;
+    }
+    isi_antrean(&mut tx, &g1, 500, 1).await;
+    isi_antrean(&mut tx, &lain, 30_000, 0).await;
+    sqlx::query("ANALYZE request")
+        .execute(&mut *tx)
+        .await
+        .expect("analyze");
+
+    for mode in ["force_custom_plan", "force_generic_plan"] {
+        let rencana = rencana_calon(&mut tx, mode, g1.upool_id).await;
+        println!("--- rencana {mode}\n{rencana}");
+        assert!(
+            rencana.contains("request_dispatch_idx"),
+            "{mode}: indeks parsial dispatcher tidak dipakai:\n{rencana}"
+        );
+        assert!(
+            !rencana.contains("Seq Scan on request"),
+            "{mode}: seq scan pada request:\n{rencana}"
+        );
+    }
+    tx.rollback().await.expect("rollback");
+}

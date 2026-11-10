@@ -22,7 +22,9 @@
 //! 6. Panggilan upstream lewat [`PemanggilProvider`].
 //! 7. Satu transaksi: lengkapi log (`WHERE status_akses IS NULL`) + status
 //!    final atau `queued` (`WHERE status = 'in_flight'`) + `webhook_status`.
-//! 8. `slot_lepas.lua`, lalu ack.
+//! 8. Retry: `antre` naik satu lagi (klaim slot di langkah 3 sudah
+//!    menguranginya, sedangkan request kembali `queued`; AC-25, CW3).
+//!    `slot_lepas.lua`, lalu ack.
 //!
 //! Pemetaan ke port antrean: setiap hasil sesudah commit PostgreSQL adalah
 //! `Ok` (ack). `Err` hanya untuk kegagalan sebelum commit apa pun (database
@@ -164,7 +166,7 @@ const SQL_GERBANG_GAGAL: &str = concat!(
 
 const SQL_LENGKAPI_LOG: &str = "UPDATE transaction_log \
     SET responded_at = $2, duration_ms = $3, status_akses = $4, provider_http_status = $5, \
-        error_class = $6, response_payload = $7 \
+        error_class = $6, response_payload = $7, response_hash = $8 \
   WHERE kode_transaksi = $1 AND status_akses IS NULL";
 
 const SQL_DONE: &str = concat!(
@@ -500,6 +502,12 @@ where
             None
         };
 
+        // SHA-256 byte body mentah (sebelum parse dan penyamaran secret); NULL
+        // tanpa respons HTTP (transport gagal), juga untuk `chk_tls`. Kode
+        // respons provider (`provider_response_code`) tetap NULL: dokumen
+        // provider F0 tidak menunjuk field kode.
+        let response_hash = hasil.as_ref().ok().map(|r| r.sha256_hex());
+
         // Langkah 7: lengkapi log + status dalam satu transaksi.
         let mut tx = self.pool.begin().await.map_err(galat_pg)?;
         let log = sqlx::query(SQL_LENGKAPI_LOG)
@@ -510,6 +518,7 @@ where
             .bind(akhir.http_status.map(i32::from))
             .bind(akhir.error_class.map(|k| k.as_str()))
             .bind(response_payload)
+            .bind(response_hash)
             .execute(&mut *tx)
             .await
             .map_err(galat_pg)?
@@ -573,7 +582,10 @@ where
         tulis_history(&mut tx, request_id, "in_flight", ke, alasan, None).await?;
         tx.commit().await.map_err(galat_pg)?;
 
-        // Langkah 8: lepas slot, lalu ack.
+        // Langkah 8: retry mengembalikan request ke antrean, lalu lepas slot, lalu ack.
+        if matches!(hasil_akhir, Hasil::Retry(_)) {
+            self.antre_naik(&pool, &rid).await;
+        }
         self.lepas(&pool, &rid, nomor).await;
         tracing::info!(request_id = %request_id, kode_transaksi = %kode,
             status_akses = akhir.status_akses, status = ke, "worker: percobaan selesai");
@@ -667,6 +679,23 @@ where
             return Err(konfigurasi(format!("secret {hilang} tidak ada")));
         }
         Ok(peta)
+    }
+
+    /// Sesudah commit retry: klaim slot (langkah 3) sudah mengurangi `antre`,
+    /// padahal request kembali `queued`, jadi `antre` naik satu (AC-25, CW3;
+    /// pasangan koreksi `+1` reconciler). Best-effort: Redis gagal atau lambat
+    /// tidak membatalkan ack, karena rebuild menghitung ulang `antre` dari
+    /// PostgreSQL.
+    async fn antre_naik(&self, pool: &str, rid: &str) {
+        match tokio::time::timeout(BATAS_REDIS, self.kuota.ubah_antre(pool, 1)).await {
+            Ok(Ok(_)) => {}
+            Ok(Err(e)) => {
+                tracing::warn!(request_id = %rid, error = %e, "worker: koreksi antre gagal");
+            }
+            Err(_) => {
+                tracing::warn!(request_id = %rid, "worker: koreksi antre melewati 250 ms");
+            }
+        }
     }
 
     async fn lepas(&self, pool: &str, rid: &str, nomor: i64) {

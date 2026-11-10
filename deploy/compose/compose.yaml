@@ -224,12 +224,17 @@ services:
       POOLROUTER_DB_WORKER_PASSWORD_FILE: /run/secrets/pr_worker
       POOLROUTER_KEK_FILE: /run/secrets/poolrouter_kek
     secrets: [pr_worker, redis_password, rabbitmq_password, poolrouter_kek]
+    # Liveness (/healthz), bukan readiness (/readyz): gangguan Postgres atau Redis tidak boleh
+    # menandai worker unhealthy. Compose tidak me-restart container unhealthy; restart datang dari
+    # worker yang keluar non-nol saat consumer terputus lebih dari 90 detik (ARC-226), dengan
+    # `restart` di bawah (prod dan staging menimpanya dengan unless-stopped).
     healthcheck:
-      test: ["CMD", "worker", "healthcheck"]
+      test: ["CMD", "worker", "liveness"]
       interval: 10s
       timeout: 3s
       retries: 5
       start_period: 15s
+    restart: on-failure
     read_only: true
     tmpfs: [/tmp]
     cap_drop: [ALL]

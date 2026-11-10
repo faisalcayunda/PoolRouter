@@ -32,6 +32,9 @@ Aturan yang berlaku untuk semua perintah tulis:
 - Pelaku di CLI dinyatakan, tidak dibuktikan. Akses `exec` ke container dibatasi untuk petugas
   infrastruktur (risiko sisa ADR-0003 §3.6c, ditutup UI pengguna di F1).
 
+Opsi ditulis `--nama nilai` atau `--nama=nilai`. Nilai yang diawali `--` hanya diterima dalam
+bentuk `--nama=nilai`.
+
 | Perintah | Keterangan |
 |---|---|
 | `bootstrap --username <u> --alasan <teks>` | Platform admin pertama. Hanya berhasil saat tabel pengguna kosong. |
@@ -94,7 +97,9 @@ Pengguna yang dibuat, semuanya sintetis:
 | `seed-client-owner` | `client_owner`, terikat client `Client Sintetis Seed` |
 | `seed-admin-auditor` | `platform_admin` dan `auditor` |
 
-Seed idempoten: menjalankannya lagi tidak membuat baris baru.
+Seed idempoten: menjalankannya lagi tidak membuat baris baru. Bila salah satu pengguna seed sudah ada
+tetapi nonaktif, seed ditolak tanpa perubahan (keluar non-nol) dan tidak mengaktifkannya kembali;
+aktifkan lewat `pengguna aktifkan`.
 
 ### Seed dukcapil (dev dan ci)
 

@@ -102,9 +102,9 @@ export interface RequestOptions {
 
 /**
  * Langkah lanjutan setelah kata sandi benar untuk peran wajib-MFA (AC-9). Server menjawab 200
- * `{langkah}` dengan cookie pra-sesi `__Host-pr_mfa`; spec OpenAPI baru mendokumentasikan 204.
+ * `{langkah}` dengan cookie pra-sesi `__Host-pr_mfa`; peran lain mendapat 204.
  */
-export type LangkahLogin = 'mfa' | 'daftar_mfa';
+export type LangkahLogin = Schemas['Langkah'];
 
 export interface ApiClient {
   /**
@@ -344,8 +344,8 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
           headers: headers(opts),
           signal: opts.signal,
         }),
-      ) as { langkah?: unknown } | undefined;
-      return hasil?.langkah === 'mfa' || hasil?.langkah === 'daftar_mfa' ? hasil.langkah : null;
+      );
+      return hasil?.langkah ?? null;
     },
 
     async verifikasiMfa(body, opts = {}) {
