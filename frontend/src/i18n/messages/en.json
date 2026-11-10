@@ -476,7 +476,7 @@
         "kuota_harian": "Daily quota (requests)",
         "rate_limit_per_jam": "Hourly rate limit (requests)",
         "porsi_sync_persen": "Maximum sync share (%)",
-        "ambang_berdampingan": "Adjacent NIK threshold (requests)",
+        "ambang_berdampingan": "Concurrency threshold (requests)",
         "jeda_min": "Minimum delay (ms)",
         "jeda_maks": "Maximum delay (ms)",
         "reset_kuota_jam": "Reset hour (0 to 23)",
@@ -510,8 +510,8 @@
       "min_delay": "Minimum delay (ms)",
       "max_delay": "Maximum delay (ms)",
       "delay_help": "A random delay between sends is picked between the minimum and the maximum.",
-      "adjacent": "Adjacent NIK threshold (%)",
-      "adjacent_help": "Maximum share of consecutive NIKs that may be sent next to each other.",
+      "adjacent": "Concurrency threshold (requests)",
+      "adjacent_help": "Maximum number of requests that may run at the same time against this upstream.",
       "warn": "A delay that is too long can keep the rate limit of {{batas, number}}/hour from being reached. Check the load-test results before changing it."
     }
   },

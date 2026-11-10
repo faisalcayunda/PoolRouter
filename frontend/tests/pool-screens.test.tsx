@@ -347,7 +347,13 @@ describe('S06b form upstream pool', () => {
     ).toBeVisible();
     expect(panel.getByLabelText('Jeda minimum (ms)')).toHaveValue('200');
     expect(panel.getByLabelText('Jeda maksimum (ms)')).toHaveValue('800');
-    expect(panel.getByLabelText('Ambang NIK berdampingan (request)')).toHaveValue('4');
+    // Deviasi dari frame Penpot: frame menulis "NIK berdampingan (%)", padahal kontrak backend
+    // (pool.rs) menyimpannya ke maks_konkurensi, bilangan bulat request.
+    expect(panel.getByLabelText('Ambang konkurensi (request)')).toHaveValue('4');
+    expect(
+      panel.getByText('Jumlah maksimum request yang boleh berjalan bersamaan ke upstream ini.'),
+    ).toBeVisible();
+    expect(panel.queryByText(/NIK berdampingan/)).toBeNull();
     expect(
       panel.getByText('Jeda acak antar-pengiriman dipilih di antara minimum dan maksimum.'),
     ).toBeVisible();

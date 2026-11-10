@@ -9,8 +9,8 @@ export default interface Resources {
     },
     "antipattern": {
       "page": {
-        "adjacent": "Ambang NIK berdampingan (%)",
-        "adjacent_help": "Batas proporsi NIK berurutan yang boleh terkirim berdampingan.",
+        "adjacent": "Ambang konkurensi (request)",
+        "adjacent_help": "Jumlah maksimum request yang boleh berjalan bersamaan ke upstream ini.",
         "delay_help": "Jeda acak antar-pengiriman dipilih di antara minimum dan maksimum.",
         "max_delay": "Jeda maksimum (ms)",
         "min_delay": "Jeda minimum (ms)",
@@ -1173,7 +1173,7 @@ export default interface Resources {
           "wajib": "Wajib diisi."
         },
         "field": {
-          "ambang_berdampingan": "Ambang NIK berdampingan (request)",
+          "ambang_berdampingan": "Ambang konkurensi (request)",
           "batas_percobaan": "Percobaan per request (1 sampai 5)",
           "jeda_maks": "Jeda maksimum (ms)",
           "jeda_min": "Jeda minimum (ms)",

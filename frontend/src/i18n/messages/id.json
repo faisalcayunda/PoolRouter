@@ -475,7 +475,7 @@
         "kuota_harian": "Kuota harian (request)",
         "rate_limit_per_jam": "Rate limit per jam (request)",
         "porsi_sync_persen": "Porsi maksimal sync (%)",
-        "ambang_berdampingan": "Ambang NIK berdampingan (request)",
+        "ambang_berdampingan": "Ambang konkurensi (request)",
         "jeda_min": "Jeda minimum (ms)",
         "jeda_maks": "Jeda maksimum (ms)",
         "reset_kuota_jam": "Jam reset (0 sampai 23)",
@@ -509,8 +509,8 @@
       "min_delay": "Jeda minimum (ms)",
       "max_delay": "Jeda maksimum (ms)",
       "delay_help": "Jeda acak antar-pengiriman dipilih di antara minimum dan maksimum.",
-      "adjacent": "Ambang NIK berdampingan (%)",
-      "adjacent_help": "Batas proporsi NIK berurutan yang boleh terkirim berdampingan.",
+      "adjacent": "Ambang konkurensi (request)",
+      "adjacent_help": "Jumlah maksimum request yang boleh berjalan bersamaan ke upstream ini.",
       "warn": "Jeda yang terlalu besar bisa membuat rate limit {{batas, number}}/jam tidak tercapai. Cek hasil uji beban sebelum mengubah."
     }
   },
