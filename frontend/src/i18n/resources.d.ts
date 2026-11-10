@@ -594,6 +594,9 @@ export default interface Resources {
       "submitting": "Memproses…"
     },
     "log": {
+      "action": {
+        "detail": "Detail"
+      },
       "chip": {
         "client": "Client: {{nama}}"
       },
@@ -614,15 +617,24 @@ export default interface Resources {
       },
       "filter": {
         "client": "Client",
-        "code": "Kode transaksi",
-        "code_help": "Cari rekaman menggunakan kode transaksi.",
+        "client_all": "Semua client",
         "queue": "Queue ID",
-        "queue_help": "Masukkan queue_id untuk mencari transaksi.",
-        "range": "Rentang waktu"
+        "range": "Rentang tanggal",
+        "range_picker": "Pilih rentang tanggal",
+        "search_placeholder": "Cari kode transaksi atau queue_id"
+      },
+      "kpi": {
+        "failed": "Gagal",
+        "latency": "Rata-rata respons",
+        "pending": "Menunggu API",
+        "success": "Berhasil",
+        "today": "Transaksi hari ini"
       },
       "page": {
-        "nik_hint": "Pencarian per NIK hanya tersedia untuk auditor. Butuh NIK lengkap? Minta auditor.",
-        "subtitle": "Telusuri transaksi lewat kode transaksi, queue_id, client, atau waktu. NIK tampil 4 digit akhir.",
+        "next": "Berikutnya",
+        "nik_hint": "Pencarian per NIK hanya tersedia untuk auditor.",
+        "prev": "Sebelumnya",
+        "subtitle": "Telusuri lewat kode transaksi, queue_id, client, atau waktu. NIK ditampilkan 4 digit akhir.",
         "title": "Log transaksi"
       },
       "payload": {

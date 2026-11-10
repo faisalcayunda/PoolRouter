@@ -1007,16 +1007,28 @@
   "log": {
     "page": {
       "title": "Transaction logs",
-      "subtitle": "Trace transactions by transaction code, queue_id, client, or time. NIK shows the last 4 digits only.",
-      "nik_hint": "NIK search is available to auditors only. Need the full NIK? Ask an auditor."
+      "subtitle": "Trace by transaction code, queue_id, client, or time. NIK shows the last 4 digits only.",
+      "nik_hint": "NIK search is available to auditors only.",
+      "prev": "Previous",
+      "next": "Next"
     },
     "filter": {
-      "code": "Transaction code",
       "client": "Client",
-      "range": "Time range",
+      "client_all": "All clients",
+      "range": "Date range",
+      "range_picker": "Choose date range",
       "queue": "Queue ID",
-      "queue_help": "Enter the queue_id to search for transactions.",
-      "code_help": "Find a record using its transaction code."
+      "search_placeholder": "Search transaction code or queue_id"
+    },
+    "kpi": {
+      "today": "Transactions today",
+      "success": "Successful",
+      "failed": "Failed",
+      "latency": "Average response time",
+      "pending": "Awaiting API"
+    },
+    "action": {
+      "detail": "Details"
     },
     "chip": {
       "client": "Client: {{nama}}"

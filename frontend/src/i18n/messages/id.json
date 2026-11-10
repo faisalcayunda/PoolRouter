@@ -1002,16 +1002,28 @@
   "log": {
     "page": {
       "title": "Log transaksi",
-      "subtitle": "Telusuri transaksi lewat kode transaksi, queue_id, client, atau waktu. NIK tampil 4 digit akhir.",
-      "nik_hint": "Pencarian per NIK hanya tersedia untuk auditor. Butuh NIK lengkap? Minta auditor."
+      "subtitle": "Telusuri lewat kode transaksi, queue_id, client, atau waktu. NIK ditampilkan 4 digit akhir.",
+      "nik_hint": "Pencarian per NIK hanya tersedia untuk auditor.",
+      "prev": "Sebelumnya",
+      "next": "Berikutnya"
     },
     "filter": {
-      "code": "Kode transaksi",
       "client": "Client",
-      "range": "Rentang waktu",
+      "client_all": "Semua client",
+      "range": "Rentang tanggal",
+      "range_picker": "Pilih rentang tanggal",
       "queue": "Queue ID",
-      "queue_help": "Masukkan queue_id untuk mencari transaksi.",
-      "code_help": "Cari rekaman menggunakan kode transaksi."
+      "search_placeholder": "Cari kode transaksi atau queue_id"
+    },
+    "kpi": {
+      "today": "Transaksi hari ini",
+      "success": "Berhasil",
+      "failed": "Gagal",
+      "latency": "Rata-rata respons",
+      "pending": "Menunggu API"
+    },
+    "action": {
+      "detail": "Detail"
     },
     "chip": {
       "client": "Client: {{nama}}"

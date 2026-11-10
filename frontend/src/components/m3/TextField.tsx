@@ -23,6 +23,8 @@ export interface TextFieldProps extends Omit<RacTextFieldProps, 'className'> {
   /** Label content comes from the catalog at the usage site; it is never hardcoded here. */
   label?: ReactNode;
   description?: ReactNode;
+  /** Hint shown inside an empty field (Penpot S11 search box); never a substitute for the label. */
+  placeholder?: string;
   /** RAC renders FieldError only when validation fails (ADR-0003 7.6). */
   errorMessage?: ReactNode;
 }
@@ -32,13 +34,14 @@ export function TextField({
   label,
   description,
   errorMessage,
+  placeholder,
   className,
   ...props
 }: TextFieldProps) {
   return (
     <RacTextField {...props} className={cx('flex flex-col gap-1', className)}>
       {label ? <Label>{label}</Label> : null}
-      <Input className={FIELD} />
+      <Input className={FIELD} placeholder={placeholder} />
       {description ? <Text slot="description">{description}</Text> : null}
       <FieldError>{errorMessage}</FieldError>
     </RacTextField>
