@@ -96,7 +96,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Login (ADR-0003 section 3.6). Success sets `__Host-pr_session` cookie. */
+        /**
+         * Login (ADR-0003 section 3.6). Success sets `__Host-pr_session` cookie (204); a role that
+         *     must pass MFA gets 200 `{langkah}` and the `__Host-pr_mfa` pre-session cookie instead.
+         */
         post: operations["login"];
         delete?: never;
         options?: never;
@@ -1395,6 +1398,15 @@ export interface components {
             upstream_pool_id: string;
         };
         /**
+         * @description Langkah yang harus ditempuh client setelah kata sandi benar (AC-9).
+         * @enum {string}
+         */
+        Langkah: "mfa" | "daftar_mfa";
+        /** @description `POST /auth/login` 200: kata sandi benar tapi sesi belum terbit (AC-9). */
+        LangkahLogin: {
+            langkah: components["schemas"]["Langkah"];
+        };
+        /**
          * @description One log row (US-14). `nik` is masked by the server for OP; never the
          *     client (U-1).
          */
@@ -2403,6 +2415,19 @@ export interface operations {
             };
         };
         responses: {
+            /** @description Kata sandi benar tapi peran wajib MFA: cookie pra-sesi `__Host-pr_mfa` (5 menit) dan langkah berikutnya; belum ada sesi */
+            200: {
+                headers: {
+                    /** @description Selalu no-store (R-16) */
+                    "Cache-Control"?: string;
+                    /** @description __Host-pr_mfa=...; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=300 */
+                    "Set-Cookie"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LangkahLogin"];
+                };
+            };
             /** @description Login berhasil; cookie sesi diterbitkan */
             204: {
                 headers: {

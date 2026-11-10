@@ -32,6 +32,17 @@ impl fmt::Debug for ResponsMentah {
     }
 }
 
+impl ResponsMentah {
+    /// SHA-256 body mentah sebagai 64 hex huruf kecil, bentuk
+    /// `transaction_log.response_hash`. Dihitung atas byte yang diterima,
+    /// sebelum parse dan sebelum penyamaran secret, sehingga tetap berguna
+    /// sebagai bukti pada `log_mode = metadata_only` (body tidak disimpan).
+    pub fn sha256_hex(&self) -> String {
+        use sha2::{Digest, Sha256};
+        format!("{:x}", Sha256::digest(&self.body))
+    }
+}
+
 /// Hasil satu percobaan, siap ditulis ke `transaction_log`.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Akhir {
@@ -103,5 +114,30 @@ pub fn nilai_hasil(
         http_status: Some(respons.status),
         ada_respons: true,
         output: Some(Value::Object(output)),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn sha256_hex_atas_byte_mentah_huruf_kecil_64_karakter() {
+        let r = ResponsMentah {
+            status: 503,
+            body: b"abc".to_vec(),
+        };
+        assert_eq!(
+            r.sha256_hex(),
+            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+        );
+        let kosong = ResponsMentah {
+            status: 204,
+            body: Vec::new(),
+        };
+        assert_eq!(
+            kosong.sha256_hex(),
+            "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        );
     }
 }
