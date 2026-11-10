@@ -92,7 +92,7 @@ WORK_DIR := $(if $(filter podman docker,$(RUNNER)),/work,$(CURDIR))
 # Repo root on the execution side (/repo is the read-only mount in the podman container).
 REPO_DIR := $(if $(filter podman docker,$(RUNNER)),/repo,$(CURDIR)/..)
 
-.PHONY: help check-label check-disk clean-shared clean-cache-shared setup test test-rust test-nik db-test uji-pg uji-pg-cargo uji-pg-worker uji-pg-cargo-worker uji-lua uji-redis uji-redis-cargo uji-amqp uji-amqp-cargo lua-rakit lua-rakit-check lint fmt clean openapi openapi-check
+.PHONY: help check-label check-disk clean-shared clean-cache-shared setup test test-rust test-nik db-test uji-pg uji-pg-cargo uji-pg-worker uji-pg-cargo-worker uji-lua uji-redis uji-redis-cargo uji-amqp uji-amqp-cargo lua-rakit lua-rakit-check lint fmt clean openapi openapi-check uji-image-cli
 
 # Podman toolchain containers must carry the owning issue label, so untracked containers cannot appear (SHAA-222).
 # Docker lane: cek ruang kosong sebelum target apa pun yang memakai container (SHAA-373).
@@ -150,7 +150,12 @@ UJI_KONTAINER := db-test uji-pg uji-lua uji-redis uji-amqp
 test-nik:
 	sh ../scripts/cek-nik-sintetis.sh
 
-test: test-rust test-nik $(UJI_KONTAINER)
+test: uji-image-cli test-rust test-nik $(UJI_KONTAINER)
+
+# Containerfile membangun dan memasang semua biner termasuk backend-cli (ARC-236). Statis: tanpa engine,
+# jadi tidak tergantung RUNNER. Pemeriksaan di dalam image: `make test-image-cli IMAGE=...` dari akar repo.
+uji-image-cli:
+	sh ../scripts/test-image-cli.sh
 
 test-rust: check-label $(CHECK_DISK)
 	$(HEAVY) cargo test --workspace --all-targets --locked -- \
