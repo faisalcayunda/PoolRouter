@@ -250,10 +250,12 @@ where
 /// effect (`reset_kuota_berlaku_mulai`, which KP-02 pins to a period boundary),
 /// so the history handed to [`periode_untuk`] has at most two entries.
 ///
-/// The current rule has no start of its own, so it is anchored one day before
+/// The rule in force has no start of its own, so it is anchored one day before
 /// `sekarang`. That is always early enough: the period containing *now* began
 /// within the last 24 h of its own reset hour, so an anchor a day back precedes
-/// it, and [`periode_untuk`] walks forward from the first entry.
+/// it, and [`periode_untuk`] walks forward from the first entry. A scheduled
+/// change whose `berlaku_mulai` has passed is the rule in force, however long
+/// ago it took effect (see [`periode_dari_aturan`]).
 ///
 /// Public because the snapshot job (`poolrouter-controller`) has to write the
 /// same `periode_mulai` the rebuild later looks up; two implementations of this
@@ -268,20 +270,51 @@ pub fn periode_dari_baris(
     let jam_berikut = kolom::<Option<NaiveTime>>(baris, "reset_kuota_jam_berikut")?;
     let zona_berikut = kolom::<Option<String>>(baris, "reset_kuota_zona_berikut")?;
 
-    let mut riwayat = vec![AturanReset::baru(
-        sekarang - chrono::Duration::days(1),
+    periode_dari_aturan(
         jam,
-        zona_tetap(&zona)?,
-    )];
+        &zona,
+        berlaku,
+        jam_berikut,
+        zona_berikut.as_deref(),
+        sekarang,
+    )
+}
+
+/// Isi [`periode_dari_baris`] tanpa baris PostgreSQL, supaya aritmetikanya bisa
+/// diuji langsung.
+///
+/// Jadwal `*_berikut` yang `berlaku_mulai`-nya sudah lewat adalah aturan aktif,
+/// berapa pun umurnya (ARC-232): tidak ada job yang menaikkannya ke kolom aktif,
+/// jadi pembacalah yang menerapkannya. Hanya jadwal yang masih di masa depan
+/// yang menunggu.
+fn periode_dari_aturan(
+    jam: NaiveTime,
+    zona: &str,
+    berlaku: Option<DateTime<Utc>>,
+    jam_berikut: Option<NaiveTime>,
+    zona_berikut: Option<&str>,
+    sekarang: DateTime<Utc>,
+) -> Result<Periode, GalatPemulihan> {
+    let jangkar = sekarang - chrono::Duration::days(1);
+    let mut riwayat = vec![AturanReset::baru(jangkar, jam, zona_tetap(zona)?)];
 
     // KP-02 keeps the three `*_berikut`/`berlaku_mulai` columns all-or-none
     // (`reset_berikut_lengkap`), so a partially scheduled change cannot occur.
     if let (Some(berlaku), Some(jam_b), Some(zona_b)) = (berlaku, jam_berikut, zona_berikut) {
-        // A change already in the past has taken effect; `periode_untuk` would
-        // ignore an entry before its predecessor, so only a future change is
-        // appended. Ordering by `berlaku_mulai` is what the walk requires.
-        if berlaku > sekarang - chrono::Duration::days(1) {
-            riwayat.push(AturanReset::baru(berlaku, jam_b, zona_tetap(&zona_b)?));
+        let berikut = zona_tetap(zona_b)?;
+        if berlaku > jangkar {
+            // Perubahan di dalam 24 jam terakhir atau yang akan datang: jadi
+            // entri kedua, urut menurut `berlaku_mulai` seperti yang dituntut
+            // `periode_untuk`.
+            riwayat.push(AturanReset::baru(berlaku, jam_b, berikut));
+        } else {
+            // Perubahan yang sudah berlaku lebih dari sehari: aturan lama sudah
+            // tidak memegang periode mana pun yang relevan. Aturan baru yang
+            // menjangkar di sini sah karena reset pertamanya sesudah
+            // `berlaku_mulai` jatuh paling lama 24 jam kemudian, yaitu sebelum
+            // `sekarang`, jadi periode yang memuat `sekarang` dimulai pada
+            // reset sungguhan aturan baru.
+            riwayat[0] = AturanReset::baru(jangkar, jam_b, berikut);
         }
     }
 
@@ -534,5 +567,86 @@ mod uji_parameter {
         assert!(
             ParameterDispatch::dari_json(&serde_json::json!({ "maks_konkurensi": "x" })).is_err()
         );
+    }
+}
+
+#[cfg(test)]
+mod uji_periode {
+    use super::*;
+    use chrono::TimeZone;
+
+    fn utc(hari: u32, jam: u32, menit: u32) -> DateTime<Utc> {
+        Utc.with_ymd_and_hms(2026, 11, hari, jam, menit, 0).unwrap()
+    }
+
+    fn jam(h: u32) -> NaiveTime {
+        NaiveTime::from_hms_opt(h, 0, 0).unwrap()
+    }
+
+    /// Aturan lama 00:00 Jakarta (reset 17:00 UTC); aturan baru 12:00 Jakarta
+    /// (reset 05:00 UTC). Sekarang 10 Nov 09:30 UTC.
+    fn periode(berlaku: Option<DateTime<Utc>>) -> Periode {
+        let (jam_b, zona_b) =
+            berlaku.map_or((None, None), |_| (Some(jam(12)), Some("Asia/Jakarta")));
+        periode_dari_aturan(
+            jam(0),
+            "Asia/Jakarta",
+            berlaku,
+            jam_b,
+            zona_b,
+            utc(10, 9, 30),
+        )
+        .expect("periode sah")
+    }
+
+    #[test]
+    fn tanpa_jadwal_memakai_aturan_aktif() {
+        assert_eq!(periode(None).mulai, utc(9, 17, 0));
+        assert_eq!(periode(None).selesai, utc(10, 17, 0));
+    }
+
+    #[test]
+    fn jadwal_di_masa_depan_menunggu() {
+        let p = periode(Some(utc(10, 17, 0)));
+        assert_eq!(p.mulai, utc(9, 17, 0));
+        assert_eq!(p.selesai, utc(10, 17, 0));
+    }
+
+    #[test]
+    fn jadwal_yang_berlaku_dalam_24_jam_terakhir_dipakai() {
+        let p = periode(Some(utc(9, 17, 0)));
+        assert_eq!(p.mulai, utc(10, 5, 0));
+        assert_eq!(p.selesai, utc(11, 5, 0));
+    }
+
+    #[test]
+    fn jadwal_yang_sudah_berlaku_lebih_dari_sehari_dipakai() {
+        // ARC-232: dulu jatuh kembali ke aturan lama (periode 9 Nov 17:00).
+        let p = periode(Some(utc(7, 17, 0)));
+        assert_eq!(p.mulai, utc(10, 5, 0));
+        assert_eq!(p.selesai, utc(11, 5, 0));
+    }
+
+    #[test]
+    fn jadwal_tepat_sehari_lalu_dipakai() {
+        let p = periode(Some(utc(9, 9, 30)));
+        assert_eq!(p.mulai, utc(10, 5, 0));
+        assert_eq!(p.selesai, utc(11, 5, 0));
+    }
+
+    #[test]
+    fn jadwal_lama_sekali_dan_zona_berbeda_dipakai() {
+        // Aturan baru 06:00 UTC, berlaku sejak bulan lalu.
+        let p = periode_dari_aturan(
+            jam(0),
+            "Asia/Jakarta",
+            Some(utc(1, 17, 0)),
+            Some(jam(6)),
+            Some("UTC"),
+            utc(10, 9, 30),
+        )
+        .expect("periode sah");
+        assert_eq!(p.mulai, utc(10, 6, 0));
+        assert_eq!(p.selesai, utc(11, 6, 0));
     }
 }
