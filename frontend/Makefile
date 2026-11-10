@@ -64,7 +64,7 @@ PNPM = $(RUN) pnpm
 
 help:
 	@echo "targets: setup test lint fmt clean gen-api gen-api-check build build-e2e e2e i18n-check i18n-types"
-	@echo "gate resmi (dari akar): make setup test lint RUNNER=docker FRONTEND_RUNNER=docker CONTAINER_LABEL=arctiva.issue=ARC-<n>"
+	@echo "gate resmi (dari akar): make setup test lint RUNNER=<podman|docker> FRONTEND_RUNNER=<podman|docker> CONTAINER_LABEL=arctiva.issue=ARC-<n>"
 	@echo "lock:    build-lock-status build-lock-clean (K-41 heavy build lock, shared with backend)"
 
 # Every podman container must carry arctiva.issue=ARC-<n> (playbook section 6).

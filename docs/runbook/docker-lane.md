@@ -175,7 +175,7 @@ Push ke `main` tidak lagi punya jalur Makefile (CLAUDE.md): perubahan masuk lewa
 
 ```sh
 make push-main RUNNER=docker FRONTEND_RUNNER=docker CONTAINER_LABEL=arctiva.issue=ARC-<n>
-# make push-main tidak dipakai lagi: Arctiva melarang push langsung ke main (CLAUDE.md).
+# make push-main tidak dipakai lagi: push langsung ke main dilarang aturan repo (CLAUDE.md).
 # ... 4 langkah alur PR ... ; exit 2
 ```
 

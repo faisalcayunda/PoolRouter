@@ -1,15 +1,17 @@
 #!/bin/sh
-# Uji regresi aturan repo Arctiva (AC-3, ARC-2).
+# Uji regresi aturan repo (AC-3, ARC-2).
 #
-# Menjaga tiga hal yang bisa diam-diam kembali:
+# Menjaga hal-hal yang bisa diam-diam kembali:
 #   1. `make push-main` ada, tetapi hanya sebagai penjaga: menolak dengan exit 2 dan
 #      mencetak alur PR. Jalur push otomatis ke `main` (scripts/push-main.sh) tidak boleh ada.
-#   2. CLAUDE.md memuat butir aturan Arctiva: branch agent/, PR ke main, merge Operator,
+#   2. CLAUDE.md memuat butir aturan repo: branch agent/, PR ke main, merge Operator,
 #      tanpa force-push, tanpa secret, NIK sintetis, label gate arctiva.issue.
 #   3. Tidak ada lagi rujukan label Shaal (`shaal.issue`, `shaal.build`) di Makefile,
 #      skrip, atau workflow.
 #   4. Nama lane build bersama tetap `poolrouter-build`/`poolrouter.build` (AC-5):
 #      nama `arctiva` tidak boleh kembali di Makefile, skrip, runbook, atau workflow.
+#   5. Teks bantuan dan pesan `push-main` tidak memaksa `RUNNER=docker` sebagai satu-satunya
+#      gate resmi dan tidak menyebut pihak luar sebagai pemberi larangan (ARC-224).
 #
 # Tidak butuh Docker. Jalankan: make test-atribut (dari akar repo).
 set -eu
@@ -90,5 +92,20 @@ if [ -n "$sisa" ]; then
 else
 	ok "lane build bersama memakai poolrouter-build/poolrouter.build (AC-5)"
 fi
+
+# --- 5. teks gate mengikuti runner yang tersedia (ARC-224) -------------------
+# Pola disusun dari potongan supaya skrip ini sendiri tidak memuatnya utuh.
+pola_dilarang="RUNNER=dock""er|Arct""iva"
+for cmd in "make -s help" "make -s push-main" "make -s -C backend help" "make -s -C frontend help"; do
+	set +e
+	out=$(cd "$root" && $cmd 2>&1)
+	set -e
+	if printf '%s\n' "$out" | grep -Eq "$pola_dilarang"; then
+		bad "keluaran '$cmd' memaksa runner tertentu atau menyebut pemberi larangan luar:"
+		printf '%s\n' "$out" | grep -En "$pola_dilarang"
+	else
+		ok "keluaran '$cmd' mengikuti runner yang tersedia"
+	fi
+done
 
 exit "$fail"
