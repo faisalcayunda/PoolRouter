@@ -320,7 +320,6 @@ export default interface Resources {
         "done": "Downstream pool {{nama}} diaktifkan."
       },
       "col": {
-        "alokasi": "Alokasi",
         "mode": "Mode",
         "name": "Nama",
         "ttl": "TTL antrean",
@@ -380,12 +379,8 @@ export default interface Resources {
       },
       "list": {
         "activate_aria": "Aktifkan downstream pool {{nama}}",
-        "alokasi_persen": "{{nilai}}% kuota efektif",
-        "alokasi_tetap": "{{nilai}} request per periode",
-        "boleh_pinjam": "boleh pinjam",
         "deactivate_aria": "Nonaktifkan downstream pool {{nama}}",
         "edit_aria": "Ubah downstream pool {{nama}}",
-        "no_alokasi": "Tanpa alokasi",
         "ttl_hours": "{{jam}} jam"
       },
       "mode": {
@@ -491,7 +486,6 @@ export default interface Resources {
         "deskripsi": "Deskripsi",
         "empty": "Belum ada field metadata.",
         "group": "Field ke-{{nomor}}",
-        "info": "Kontrak metadata dicatat di log transaksi untuk data balikan. Request tanpa field wajib ditolak sebelum memakai kuota. Field Rahasia tidak pernah dicatat atau dikirim ke callback.",
         "kirim": "Kirim ke data balikan",
         "klasifikasi": "Klasifikasi",
         "klasifikasi_option": {
@@ -573,10 +567,12 @@ export default interface Resources {
       }
     },
     "k20": {
-      "body": "Periksa dampak berikut sebelum menonaktifkan {{nama}}.",
-      "confirm": "Nonaktifkan",
+      "confirm": "Nonaktifkan pool",
+      "impact": {
+        "queued": "<b>{{jumlah, number}} request</b> yang masih mengantre akan dibatalkan dengan alasan \"pool nonaktif\". Request tidak akan dikirim ke {{tujuan}} dan tidak memakai kuota.",
+        "sent": "Request yang sudah dikirim ke {{tujuan}} tidak berubah. Client yang punya webhook akan menerima status <b>Dibatalkan</b> (cancelled) satu kali."
+      },
       "preview": {
-        "cancelled": "{{jumlah, number}} request antre akan dibatalkan.",
         "computed": "Dihitung pada {{waktu}}.",
         "downstream_count": "Dipakai oleh {{jumlah, number}} downstream pool.",
         "failed": "{{jumlah, number}} request yang menunggu retry akan digagalkan.",
@@ -1162,7 +1158,6 @@ export default interface Resources {
         "title": "Belum ada upstream pool"
       },
       "form": {
-        "back": "Kembali ke daftar",
         "error": {
           "alasan_rentang": "Tulis alasan {{min}} sampai {{max}} karakter.",
           "bilangan": "Tulis bilangan yang sah.",
@@ -1178,14 +1173,14 @@ export default interface Resources {
           "wajib": "Wajib diisi."
         },
         "field": {
-          "ambang_berdampingan": "Ambang berdampingan (request)",
+          "ambang_berdampingan": "Ambang NIK berdampingan (request)",
           "batas_percobaan": "Percobaan per request (1 sampai 5)",
           "jeda_maks": "Jeda maksimum (ms)",
           "jeda_min": "Jeda minimum (ms)",
           "jendela_kuota": "Periode kuota",
           "kuota_harian": "Kuota harian (request)",
           "margin_kuota": "Margin kuota (0,001 sampai 0,2)",
-          "porsi_sync_persen": "Porsi sync (%)",
+          "porsi_sync_persen": "Porsi maksimal sync (%)",
           "rate_limit_per_jam": "Rate limit per jam (request)",
           "reset_kuota_jam": "Jam reset (0 sampai 23)",
           "reset_kuota_zona": "Zona waktu reset",
@@ -1210,11 +1205,8 @@ export default interface Resources {
           "label": "Alasan perubahan",
           "optional": "Alasan (opsional)"
         },
-        "save_edit": "Simpan perubahan",
-        "save_new": "Simpan upstream pool",
         "saved": "Upstream pool disimpan.",
-        "subtitle": "Penyimpanan mengganti seluruh konfigurasi; isian awal diambil dari konfigurasi saat ini.",
-        "title_edit": "Ubah upstream pool {{nama}}"
+        "title_edit": "Upstream pool · {{nama}}"
       },
       "list": {
         "activate": "Aktifkan",
@@ -1246,6 +1238,7 @@ export default interface Resources {
       },
       "tab": {
         "antipattern": "Anti-pola",
+        "aria": "Bagian konfigurasi upstream pool",
         "quota": "Kuota dan laju"
       }
     },

@@ -11,7 +11,6 @@ import { Button } from '../../components/m3/Button';
 import { Card } from '../../components/m3/Card';
 import { InlineAlert } from '../../components/m3/InlineAlert';
 import { StatusLabel } from '../../components/m3/StatusLabel';
-import { useFormatter } from '../../i18n/useFormatter';
 import { useDocumentTitle, useFocusOnMount } from '../common/a11y';
 import { errorMessage, LoadingState, PageHeader, QueryError } from '../common/page';
 import { useRole } from '../common/RoleContext';
@@ -30,13 +29,12 @@ const TH = 'border-b border-outline-variant px-4 py-3 font-medium';
 const TD = 'typescale-body-medium px-4 py-3 align-middle';
 
 /**
- * S06 daftar upstream pool (ARC-102). Hanya platform admin. Entitas upstream pool tidak punya
- * nama sendiri di kontrak, jadi baris dikenali lewat nama providernya; bila daftar provider gagal
- * dibaca, baris jatuh ke id pool supaya layar tetap bisa dipakai.
+ * S06 daftar upstream pool (ARC-102, ARC-247). Hanya platform admin. Entitas upstream pool belum
+ * punya nama sendiri di kontrak: kolom Nama tampil sebagai placeholder seperti frame, dan aksi
+ * baris memakai nama providernya; bila daftar provider gagal dibaca, jatuh ke id pool.
  */
 export function UpstreamListScreen({ client = api }: UpstreamListScreenProps): ReactNode {
   const { t, i18n } = useTranslation();
-  const fmt = useFormatter();
   const role = useRole();
   const titleRef = useFocusOnMount<HTMLHeadingElement>();
   const snackbar = useSnackbar();
@@ -128,16 +126,13 @@ export function UpstreamListScreen({ client = api }: UpstreamListScreenProps): R
                 <thead>
                   <tr className="typescale-title-small text-on-surface-variant">
                     <th scope="col" className={TH}>
+                      {t('upstream.col.name')}
+                    </th>
+                    <th scope="col" className={TH}>
                       {t('upstream.col.provider')}
                     </th>
                     <th scope="col" className={TH}>
                       {t('upstream.col.quota')}
-                    </th>
-                    <th scope="col" className={TH}>
-                      {t('upstream.page.hourly_limit')}
-                    </th>
-                    <th scope="col" className={TH}>
-                      {t('upstream.page.sync_share')}
                     </th>
                     <th scope="col" className={TH}>
                       {t('upstream.col.status')}
@@ -153,17 +148,14 @@ export function UpstreamListScreen({ client = api }: UpstreamListScreenProps): R
                       key={row.upstream_pool_id}
                       className="border-b border-outline-variant text-on-surface"
                     >
+                      <td data-label={t('upstream.col.name')} className={TD}>
+                        {'–'}
+                      </td>
                       <td data-label={t('upstream.col.provider')} className={TD}>
-                        {nameOf(row)}
+                        {providerNames.get(row.provider_id) ?? row.provider_id}
                       </td>
                       <td data-label={t('upstream.col.quota')} className={TD}>
                         {t('upstream.page.quota_per_day', { jumlah: row.kuota_harian })}
-                      </td>
-                      <td data-label={t('upstream.page.hourly_limit')} className={TD}>
-                        {fmt.angka(row.rate_limit_per_jam)}
-                      </td>
-                      <td data-label={t('upstream.page.sync_share')} className={TD}>
-                        {fmt.persen(row.porsi_sync)}
                       </td>
                       <td data-label={t('upstream.col.status')} className={TD}>
                         <StatusLabel tone={row.aktif ? 'success' : 'neutral'}>
@@ -211,7 +203,7 @@ export function UpstreamListScreen({ client = api }: UpstreamListScreenProps): R
       {dialog ? (
         <NonaktifkanDialog
           title={t('upstream.deactivate.title')}
-          objekNama={nameOf(dialog)}
+          tujuan={providerNames.get(dialog.provider_id) ?? dialog.provider_id}
           loadPreview={(signal) =>
             client.pratinjauNonaktifUpstreamPool(dialog.upstream_pool_id, { signal })
           }

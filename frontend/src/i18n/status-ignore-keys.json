@@ -44,6 +44,7 @@
       "settings.language.option.id",
       "upstream.col.provider",
       "upstream.col.status",
+      "upstream.form.title_edit",
       "upstream.page.provider",
       "upstream.page.status",
       "webhook.page.title",
