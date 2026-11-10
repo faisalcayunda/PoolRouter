@@ -324,6 +324,15 @@
         "ca_kustom": "CA kustom",
         "pin_spki": "Pin SPKI"
       },
+      "tls_ca_pem": {
+        "label": "Sertifikat CA kustom (PEM)",
+        "help": "Tempel satu sampai sepuluh blok CERTIFICATE, maksimal 64 KiB. Bukan secret: tersimpan di versi konfigurasi dan terlihat saat dibaca."
+      },
+      "tls_pin_spki": {
+        "label": "Pin SPKI (base64 SHA-256)",
+        "help": "Satu pin per baris, tepat 32 byte dalam base64. Dicocokkan dengan sertifikat leaf.",
+        "single": "Hanya ada satu pin. Disarankan dua pin (lama dan baru) supaya rotasi sertifikat tidak memutus provider."
+      },
       "log_mode": {
         "label": "Mode log",
         "metadata_only": "Metadata saja",
@@ -370,7 +379,13 @@
         "data_balikan_tidak_sah": "Data balikan belum sah: {{nama}}",
         "data_balikan_skema_terlalu_tua": "Versi skema data balikan terlalu lama.",
         "data_balikan_skema_terlalu_baru": "Versi skema data balikan belum didukung.",
-        "config_schema_version_tidak_didukung": "Versi skema konfigurasi tidak didukung."
+        "config_schema_version_tidak_didukung": "Versi skema konfigurasi tidak didukung.",
+        "tidak_untuk_mode": "Isian ini tidak dipakai oleh mode kepercayaan TLS yang dipilih.",
+        "pem_tidak_sah": "PEM belum sah: hanya blok CERTIFICATE yang diterima, 1 sampai 10 blok.",
+        "terlalu_besar": "Isian melebihi 64 KiB.",
+        "jumlah": "Jumlah pin melebihi 10.",
+        "pin_tidak_sah": "Pin belum sah: harus base64 dari 32 byte.",
+        "ganda": "Pin ini muncul lebih dari sekali."
       }
     },
     "api_pending": "Menunggu API",

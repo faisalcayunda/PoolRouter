@@ -1739,6 +1739,13 @@ export interface components {
             provider_id: string;
             /** @description Response schema used to map elements (US-05). */
             respons_skema: Record<string, never>;
+            /** @description CA bundle in PEM, set only when `tls_trust = ca_kustom`; otherwise null. */
+            tls_ca_pem?: string | null;
+            /**
+             * @description SHA-256 SPKI pins (base64), set only when `tls_trust = pin_spki`;
+             *     otherwise null.
+             */
+            tls_pin_spki?: string[] | null;
             /** @description TLS trust setting for the provider call (ADR-0002 D5). */
             tls_trust: components["schemas"]["TlsTrust"];
         };
@@ -1785,6 +1792,22 @@ export interface components {
             parameters: components["schemas"]["ParameterRule"][];
             /** @description Response schema used to map elements (US-05). */
             respons_skema: Record<string, never>;
+            /**
+             * @description CA certificate bundle in PEM for `tls_trust = ca_kustom` (ADR-0002 D5).
+             *     Required for `ca_kustom`, forbidden for every other mode (422
+             *     `tidak_untuk_mode`). Only `CERTIFICATE` blocks are accepted: 1 to 10
+             *     blocks, at most 64 KiB. Not a secret: stored in the provider config
+             *     version and returned by reads.
+             */
+            tls_ca_pem?: string | null;
+            /**
+             * @description SHA-256 SPKI pins for `tls_trust = pin_spki` (ADR-0002 D5): standard
+             *     base64 of exactly 32 bytes each, 1 to 10 distinct pins. The pin is
+             *     matched against the leaf certificate. Required for `pin_spki`,
+             *     forbidden for every other mode (422 `tidak_untuk_mode`). One pin is
+             *     accepted; two (old and new) are recommended for rotation.
+             */
+            tls_pin_spki?: string[] | null;
             /**
              * @description TLS trust setting for the provider call (ADR-0002 D5). Closed set: there
              *     is deliberately no "verify off" mode, not even in dev.

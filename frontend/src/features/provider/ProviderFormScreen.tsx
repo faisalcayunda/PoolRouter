@@ -28,6 +28,7 @@ import {
   firstInvalid,
   LOG_MODE,
   METODE,
+  parsePins,
   serverErrors,
   TLS_TRUST,
   toProviderConfig,
@@ -63,6 +64,8 @@ const FIELD_TAB: Record<DraftField, ProviderTab> = {
   base_url: 'umum',
   metode: 'umum',
   tls_trust: 'umum',
+  tls_ca_pem: 'umum',
+  tls_pin_spki: 'umum',
   log_mode: 'umum',
   config_schema_version: 'umum',
   alasan: 'umum',
@@ -420,6 +423,37 @@ function ProviderForm({ client, initial }: ProviderFormProps): ReactNode {
                     ))}
                   </Select>
                 </div>
+                {draft.tls_trust === 'ca_kustom' ? (
+                  <div data-field="tls_ca_pem" className="w-full">
+                    <TextArea
+                      label={t('provider.form.tls_ca_pem.label')}
+                      description={t('provider.form.tls_ca_pem.help')}
+                      value={draft.tls_ca_pem}
+                      onChange={(v) => set('tls_ca_pem', v)}
+                      rows={8}
+                      textAreaClassName="font-code"
+                      {...err('tls_ca_pem')}
+                    />
+                  </div>
+                ) : null}
+                {draft.tls_trust === 'pin_spki' ? (
+                  <div data-field="tls_pin_spki" className="flex w-full flex-col gap-3">
+                    <TextArea
+                      label={t('provider.form.tls_pin_spki.label')}
+                      description={t('provider.form.tls_pin_spki.help')}
+                      value={draft.tls_pin_spki}
+                      onChange={(v) => set('tls_pin_spki', v)}
+                      rows={4}
+                      textAreaClassName="font-code"
+                      {...err('tls_pin_spki')}
+                    />
+                    {parsePins(draft.tls_pin_spki).length === 1 ? (
+                      <InlineAlert tone="warning">
+                        {t('provider.form.tls_pin_spki.single')}
+                      </InlineAlert>
+                    ) : null}
+                  </div>
+                ) : null}
                 <div data-field="log_mode">
                   <Select
                     label={t('provider.form.log_mode.label')}

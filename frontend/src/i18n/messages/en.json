@@ -324,6 +324,15 @@
         "ca_kustom": "Custom CA",
         "pin_spki": "SPKI pin"
       },
+      "tls_ca_pem": {
+        "label": "Custom CA certificate (PEM)",
+        "help": "Paste one to ten CERTIFICATE blocks, at most 64 KiB. Not a secret: it is stored in the config version and visible on read."
+      },
+      "tls_pin_spki": {
+        "label": "SPKI pins (base64 SHA-256)",
+        "help": "One pin per line, exactly 32 bytes in base64. Matched against the leaf certificate.",
+        "single": "Only one pin is set. Two pins (old and new) are recommended so a certificate rotation does not cut the provider off."
+      },
       "log_mode": {
         "label": "Log mode",
         "metadata_only": "Metadata only",
@@ -370,7 +379,13 @@
         "data_balikan_tidak_sah": "The return data isn't valid: {{nama}}",
         "data_balikan_skema_terlalu_tua": "The return data schema version is too old.",
         "data_balikan_skema_terlalu_baru": "The return data schema version isn't supported yet.",
-        "config_schema_version_tidak_didukung": "This configuration schema version isn't supported."
+        "config_schema_version_tidak_didukung": "This configuration schema version isn't supported.",
+        "tidak_untuk_mode": "This field is not used by the selected TLS trust mode.",
+        "pem_tidak_sah": "The PEM isn't valid: only CERTIFICATE blocks are accepted, 1 to 10 blocks.",
+        "terlalu_besar": "This field is larger than 64 KiB.",
+        "jumlah": "There are more than 10 pins.",
+        "pin_tidak_sah": "The pin isn't valid: it must be base64 of 32 bytes.",
+        "ganda": "This pin appears more than once."
       }
     },
     "api_pending": "Waiting for API",
