@@ -4,6 +4,7 @@ import { ApiError, type ApiClient, type LangkahLogin } from '../../api/client';
 import { MfaCodeScreen } from './MfaCodeScreen';
 import { MfaQrScreen } from './MfaQrScreen';
 import { MfaRecoveryScreen } from './MfaRecoveryScreen';
+import { tandaiLoginPemulihan } from './RecoveryBanner';
 import { MfaRegistrationCodeScreen } from './MfaRegistrationCodeScreen';
 
 type Tahap = 'kode' | 'daftar' | 'qr' | 'pemulihan';
@@ -66,7 +67,10 @@ export function MfaFlow({ client, langkah, username, onSelesai, onKembali }: Pro
   const kirimKode = (kode: string) =>
     jalankan(async () => {
       // Panjang 6 = TOTP; selain itu kode pemulihan (MfaCodeScreen sudah menormalkan).
-      await client.verifikasiMfa(/^\d{6}$/.test(kode) ? { kode } : { kode_pemulihan: kode });
+      const totp = /^\d{6}$/.test(kode);
+      await client.verifikasiMfa(totp ? { kode } : { kode_pemulihan: kode });
+      // AC-32: login lewat kode pemulihan memicu banner info satu kali di shell.
+      if (!totp) tandaiLoginPemulihan();
       onSelesai();
     });
 
