@@ -607,7 +607,8 @@ async fn seed_pengguna_menolak_pengguna_seed_nonaktif() {
         .await
         .unwrap();
     assert!(teks.contains("0 pengguna baru, 0 peran baru"), "{teks}");
-} 
+}
+
 fn cabut_admin(username: &str, oleh: &str) -> Perintah {
     Perintah::PeranCabut {
         username: username.to_owned(),
