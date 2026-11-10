@@ -31,7 +31,7 @@ use uuid::Uuid;
 
 use super::pembatas::HasilPeriksa;
 use super::sesi::{AdminState, COOKIE_SESI, Galat, periksa_origin};
-use crate::api::admin::LoginRequest;
+use crate::api::admin::{Langkah, LangkahLogin, LoginRequest};
 use crate::api::problem::ProblemKodeAdmin;
 
 /// The pre-session cookie name (AC-9, MF2).
@@ -80,33 +80,6 @@ fn cookie_sesi(token: &TokenSesi) -> HeaderValue {
         token.sebagai_b64()
     ))
     .expect("token base64url selalu ASCII")
-}
-
-/// The step the client must take next. Serialised as `{langkah: "..."}` (AC-9).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum Langkah {
-    Mfa,
-    DaftarMfa,
-}
-
-impl Langkah {
-    const fn as_str(self) -> &'static str {
-        match self {
-            Self::Mfa => "mfa",
-            Self::DaftarMfa => "daftar_mfa",
-        }
-    }
-}
-
-impl serde::Serialize for Langkah {
-    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
-        s.serialize_str(self.as_str())
-    }
-}
-
-#[derive(Debug, serde::Serialize)]
-pub(super) struct LangkahBody {
-    pub langkah: Langkah,
 }
 
 /// `__Host-pr_mfa` (AC-9): same hardening as the session cookie, but 5 minutes.
@@ -265,7 +238,8 @@ pub(super) async fn login(
                         tracing::error!(error = %e, "admin: token pra-sesi gagal disimpan");
                         Galat::layanan()
                     })?;
-                let mut res = (StatusCode::OK, axum::Json(LangkahBody { langkah })).into_response();
+                let mut res =
+                    (StatusCode::OK, axum::Json(LangkahLogin { langkah })).into_response();
                 res.headers_mut()
                     .insert(header::SET_COOKIE, cookie_pra_sesi(&token));
                 return Ok(res);

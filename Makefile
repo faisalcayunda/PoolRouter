@@ -32,7 +32,7 @@ COMPOSE := $(COMPOSE_ENV) $(CONTAINER_ENGINE) compose -p $(PROJECT) $(COMPOSE_FI
 LINT_ENV_FILES := $(COMPOSE_DIR)/env/dev.env.example
 IMAGE_TAG ?= dev
 
-.PHONY: check-env compose-up compose-down compose-ps compose-logs compose-config compose-migrate compose-seed compose-lint compose-test-dind image image-frontend e2e-api-asli
+.PHONY: check-env compose-up compose-down compose-ps compose-logs compose-config compose-migrate compose-seed compose-lint compose-test-dind image image-frontend image-postgres e2e-api-asli
 
 check-env:
 	@case "$(ENV)" in dev|staging|prod) ;; *) echo "ENV harus dev, staging, atau prod" >&2; exit 2 ;; esac
@@ -101,6 +101,11 @@ image:
 image-frontend:
 	@test -f frontend/Containerfile || { echo "frontend/Containerfile tidak ada" >&2; exit 2; }
 	$(CONTAINER_ENGINE) build -f frontend/Containerfile -t localhost/poolrouter-frontend:$(IMAGE_TAG) frontend
+
+# image-postgres: image PostgreSQL 17 + pgBackRest (deploy/compose/backup/), konteks folder itu.
+# ARC_ISSUE (mis. ARC-215) memberi label arctiva.issue pada image.
+image-postgres:
+	$(CONTAINER_ENGINE) build $(if $(ARC_ISSUE),--label arctiva.issue=$(ARC_ISSUE)) -f $(COMPOSE_DIR)/backup/Containerfile -t localhost/poolrouter-postgres:$(IMAGE_TAG) $(COMPOSE_DIR)/backup
 
 # Repo gate (ADR-0003 section 5): `make setup test lint` from the repo root.
 # Each stack keeps its own Makefile; these targets only delegate. frontend/ is

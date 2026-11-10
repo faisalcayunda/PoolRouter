@@ -549,6 +549,66 @@ async fn seed_pengguna_hanya_dev_ci_dan_idempoten() {
     assert_eq!(hitung_semua(&u).await, setelah_pertama);
 }
 
+/// Seed hanya membuat yang belum ada. Pengguna seed yang sengaja dinonaktifkan (mis. lewat
+/// `pengguna nonaktifkan`) tidak boleh dipakai ulang diam-diam, dan tidak diaktifkan kembali: seed
+/// ditolak tanpa perubahan apa pun. Namanya diurutkan sesudah uji seed lain (lihat catatan di bawah).
+#[tokio::test]
+#[ignore]
+async fn seed_pengguna_menolak_pengguna_seed_nonaktif() {
+    let u = Uji::baru().await;
+    u.jalankan_di(Environment::Ci, Some(NILAI_UJI), Perintah::SeedPengguna)
+        .await
+        .unwrap();
+
+    for username in [
+        SEED_PLATFORM_ADMIN,
+        SEED_PENYETUJU,
+        SEED_OPERATOR,
+        SEED_AUDITOR,
+        SEED_CLIENT_OWNER,
+        SEED_ADMIN_AUDITOR,
+    ] {
+        let set_aktif = |aktif: bool| {
+            sqlx::query("UPDATE admin_user SET aktif = $2 WHERE username = $1")
+                .bind(username)
+                .bind(aktif)
+                .execute(&u.su)
+        };
+        set_aktif(false).await.unwrap();
+        let sebelum = hitung_semua(&u).await;
+        let hasil = u
+            .jalankan_di(Environment::Ci, Some(NILAI_UJI), Perintah::SeedPengguna)
+            .await;
+        let setelah = hitung_semua(&u).await;
+        let aktif: bool = sqlx::query_scalar("SELECT aktif FROM admin_user WHERE username = $1")
+            .bind(username)
+            .fetch_one(&u.su)
+            .await
+            .unwrap();
+        // Pulihkan dulu supaya kegagalan di bawah tidak merusak uji lain.
+        set_aktif(true).await.unwrap();
+
+        let e = hasil.expect_err(username);
+        assert!(
+            matches!(&e, GalatCli::Kelola(GalatKelola::SeedNonaktif(n)) if n == username),
+            "{username}: {e}"
+        );
+        assert_ne!(e.kode_keluar(), 0);
+        assert!(
+            !aktif,
+            "{username} tidak boleh diaktifkan kembali oleh seed"
+        );
+        assert_eq!(setelah, sebelum, "{username}: penolakan tanpa perubahan");
+    }
+
+    // Setelah dipulihkan, seed kembali idempoten.
+    let teks = u
+        .jalankan_di(Environment::Ci, Some(NILAI_UJI), Perintah::SeedPengguna)
+        .await
+        .unwrap();
+    assert!(teks.contains("0 pengguna baru, 0 peran baru"), "{teks}");
+}
+
 fn cabut_admin(username: &str, oleh: &str) -> Perintah {
     Perintah::PeranCabut {
         username: username.to_owned(),

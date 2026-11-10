@@ -18,8 +18,8 @@ use chrono::{DateTime, Duration, Utc};
 use poolrouter_core::admin::NilaiAman;
 use poolrouter_core::kuota::SumberDana;
 use poolrouter_core::kuota::pemulihan::{
-    GalatPemulihan, JendelaRate, KeadaanPool, SumberRebuild, baca_run_id, bangun_ulang, kunci_slot,
-    member_slot,
+    GalatPemulihan, JendelaRate, KeadaanPool, SumberRebuild, baca_run_id, bangun_ulang,
+    kunci_antre, kunci_slot, member_slot,
 };
 use poolrouter_core::kuota::store::{
     AsalLepas, Bacaan, GalatStore, HasilIntake, HasilKlaim, HasilPenolakan, HasilTambah,
@@ -547,13 +547,16 @@ struct BarisLog {
     request_payload: Option<String>,
     response_payload: Option<String>,
     nik: Option<String>,
+    response_hash: Option<String>,
+    provider_response_code: Option<String>,
 }
 
 async fn log_request(su: &PgPool, id: Uuid) -> Vec<BarisLog> {
     sqlx::query(
         "SELECT kode_transaksi, status_akses, error_class, provider_http_status,
                 responded_at IS NOT NULL AS responded, request_payload::text AS rq,
-                response_payload::text AS rs, nik::text AS nik
+                response_payload::text AS rs, nik::text AS nik,
+                response_hash, provider_response_code
            FROM transaction_log WHERE request_id = $1 ORDER BY attempt_no",
     )
     .bind(id)
@@ -570,6 +573,8 @@ async fn log_request(su: &PgPool, id: Uuid) -> Vec<BarisLog> {
         request_payload: b.get("rq"),
         response_payload: b.get("rs"),
         nik: b.get("nik"),
+        response_hash: b.get("response_hash"),
+        provider_response_code: b.get("provider_response_code"),
     })
     .collect()
 }
@@ -858,6 +863,88 @@ async fn retry_lalu_percobaan_baru_dengan_kode_baru() {
     assert_eq!(l.panggilan().await.len(), 2);
 }
 
+/// Nilai counter `pr:antre:{pool}` (kunci absen = 0).
+async fn antre(l: &Lingkungan, f: &Fixture) -> i64 {
+    let mut c = l.redis.clone();
+    let nilai: Option<i64> = redis::cmd("GET")
+        .arg(kunci_antre(&f.pool_redis()))
+        .query_async(&mut c)
+        .await
+        .expect("GET antre");
+    nilai.unwrap_or(0)
+}
+
+/// AC-25 (ARC-230): satu request di antrean. Klaim slot worker mengurangi
+/// `antre`; retry mengembalikan request ke `queued`, jadi `antre` naik lagi.
+/// Tanpa koreksi itu `antre` kurang satu per retry. Sesudah percobaan kedua
+/// selesai (`done`) request keluar dari antrean dan `antre` kembali 0.
+#[tokio::test]
+#[ignore = "butuh PostgreSQL + Redis: make -C backend uji-pg"]
+async fn antre_konsisten_setelah_satu_siklus_retry() {
+    let l = lingkungan().await;
+    let f = Fixture::baru(&l, 5).await;
+    l.pasang(503, json!({"error": "sibuk"}), 1, Some(1)).await;
+    l.pasang(200, respons_sukses(), 2, None).await;
+    let id = f.request(0, StdDuration::from_secs(3600)).await;
+    // Intake sudah menaikkan `antre` untuk request ini.
+    assert_eq!(l.store.ubah_antre(&f.pool_redis(), 1).await.unwrap(), 1);
+    pesan_slot(&l.store, &f, id, 1).await;
+
+    let h = l.handler(l.store.clone()).proses(id).await.expect("proses");
+    assert!(matches!(h, Hasil::Retry(_)), "{h:?}");
+    assert_eq!(baris_request(&l.su, id).await.status, "queued");
+    assert_eq!(antre(&l, &f).await, 1, "request queued masih terhitung");
+
+    f.dispatch(id).await;
+    pesan_slot(&l.store, &f, id, 2).await;
+    let h = l
+        .handler(l.store.clone())
+        .proses(id)
+        .await
+        .expect("proses ulang");
+    assert_eq!(h, Hasil::Done);
+    assert_eq!(antre(&l, &f).await, 0, "request selesai keluar dari antre");
+}
+
+/// ARC-230: `response_hash` = SHA-256 byte body mentah dari provider, juga
+/// untuk respons non-2xx; `provider_response_code` tetap NULL karena dokumen
+/// provider F0 tidak menunjuk field kode.
+#[tokio::test]
+#[ignore = "butuh PostgreSQL + Redis: make -C backend uji-pg"]
+async fn response_hash_sha256_body_mentah() {
+    // sha256 dihitung di luar kode: python3 hashlib.sha256(BODY).hexdigest().
+    const BODY: &str =
+        r#"{"content":[{"NAMA_LGKP":"Sesuai (90)","TMPT_LHR":"Tidak Sesuai","NIK":"Sesuai"}]}"#;
+    const HASH: &str = "76557b34fda4f404c144d2c341d96abbfe1d02ac102eb508dd5ea7337e686050";
+    const BODY_503: &str = r#"{"error":"sibuk"}"#;
+    const HASH_503: &str = "0667434f758b740f38582fd28cbd8f15c75eb0c2691113d125b4c0a558772805";
+    let l = lingkungan().await;
+    let f = Fixture::baru(&l, 5).await;
+    for (kode, body, prioritas, kali) in [(503, BODY_503, 1, Some(1)), (200, BODY, 2, None)] {
+        let mut m = Mock::given(method("POST"))
+            .and(path("/kesesuaian"))
+            .respond_with(ResponseTemplate::new(kode).set_body_raw(body, "application/json"))
+            .with_priority(prioritas);
+        if let Some(n) = kali {
+            m = m.up_to_n_times(n);
+        }
+        m.mount(&l.mock).await;
+    }
+    let id = f.request(0, StdDuration::from_secs(3600)).await;
+    pesan_slot(&l.store, &f, id, 1).await;
+    let h = l.handler(l.store.clone()).proses(id).await.expect("proses");
+    assert!(matches!(h, Hasil::Retry(_)), "{h:?}");
+    f.dispatch(id).await;
+    pesan_slot(&l.store, &f, id, 2).await;
+    let h = l.handler(l.store.clone()).proses(id).await.expect("proses");
+    assert_eq!(h, Hasil::Done);
+
+    let log = log_request(&l.su, id).await;
+    assert_eq!(log[0].response_hash.as_deref(), Some(HASH_503));
+    assert_eq!(log[1].response_hash.as_deref(), Some(HASH));
+    assert!(log.iter().all(|b| b.provider_response_code.is_none()));
+}
+
 /// AC-17: timeout upstream → `gagal_jaringan`/`timeout`, tanpa `responded_at`,
 /// lalu retry.
 #[tokio::test]
@@ -884,6 +971,7 @@ async fn timeout_upstream_gagal_jaringan_lalu_retry() {
     assert_eq!(log[0].error_class.as_deref(), Some("timeout"));
     assert!(!log[0].responded);
     assert_eq!(log[0].response_payload, None);
+    assert_eq!(log[0].response_hash, None, "tanpa respons, tanpa hash");
 }
 
 /// AC-18 (U-26): batas percobaan pool tercapai, atau `not_before` ≥ TTL →

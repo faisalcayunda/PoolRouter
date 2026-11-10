@@ -35,6 +35,22 @@ pub struct LoginRequest {
     pub password: String,
 }
 
+/// Langkah yang harus ditempuh client setelah kata sandi benar (AC-9).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum Langkah {
+    /// Akun sudah mendaftar MFA: kirim kode TOTP atau kode pemulihan ke `/auth/mfa`.
+    Mfa,
+    /// Akun wajib MFA tapi belum mendaftar: mulai dari `/auth/mfa/daftar`.
+    DaftarMfa,
+}
+
+/// `POST /auth/login` 200: kata sandi benar tapi sesi belum terbit (AC-9).
+#[derive(Debug, Clone, Copy, Serialize, ToSchema)]
+pub struct LangkahLogin {
+    pub langkah: Langkah,
+}
+
 /// Body of `POST /auth/mfa` (AC-10): exactly one of the two code kinds.
 #[derive(Debug, Clone, Deserialize, ToSchema)]
 pub struct KodeMfaRequest {
@@ -1172,7 +1188,8 @@ fn stub() -> (StatusCode, Json<Problem>) {
     (StatusCode::NOT_IMPLEMENTED, Json(Problem::stub()))
 }
 
-/// Login (ADR-0003 section 3.6). Success sets `__Host-pr_session` cookie.
+/// Login (ADR-0003 section 3.6). Success sets `__Host-pr_session` cookie (204); a role that
+/// must pass MFA gets 200 `{langkah}` and the `__Host-pr_mfa` pre-session cookie instead.
 #[utoipa::path(
     post,
     path = "/admin/v1/auth/login",
@@ -1180,6 +1197,11 @@ fn stub() -> (StatusCode, Json<Problem>) {
     tag = "admin",
     request_body(content = LoginRequest, content_type = "application/json"),
     responses(
+        (status = 200, description = "Kata sandi benar tapi peran wajib MFA: cookie pra-sesi `__Host-pr_mfa` (5 menit) dan langkah berikutnya; belum ada sesi", body = LangkahLogin, headers(
+            ("Set-Cookie" = String, description = "__Host-pr_mfa=...; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=300"),
+            ("Cache-Control" = String, description = "Selalu no-store (R-16)")
+        )
+        ),
         (status = 204, description = "Login berhasil; cookie sesi diterbitkan", headers(
             ("Set-Cookie" = String, description = "__Host-pr_session=...; HttpOnly; Secure; SameSite=Strict; Path=/"),
             ("Cache-Control" = String, description = "Selalu no-store (R-16)")
@@ -2887,7 +2909,7 @@ impl utoipa::Modify for SecurityAddon {
         search_log, get_log_entry, search_log_by_nik, open_payload, export_log_auditor, search_audit_akses
     ),
     components(schemas(
-        LoginRequest, Me, PreferensiUpdate, SesiStatus,
+        LoginRequest, Langkah, LangkahLogin, Me, PreferensiUpdate, SesiStatus,
         KodeMfaRequest, DaftarMfaRequest, KonfirmasiMfaRequest, MfaDaftar, MfaKonfirmasi, MeMfa,
         ProviderConfig, ParameterRule, RuleValidasi, Provider,
         SecretRingkas, SecretNilai,
