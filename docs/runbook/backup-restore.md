@@ -69,10 +69,11 @@ Skenario (a). Restore ke volume baru, tanpa menyentuh volume data yang berjalan.
 1. Tentukan `T_target` (format `YYYY-MM-DD HH:MM:SS+00`, waktu server, UTC). Pastikan `T_target` berada dalam jendela pemulihan yang tersedia (`info`: `wal archive min/max`).
 2. Restore ke volume baru. Nama volume unik per run:
    ```sh
-   ENGINE=docker DRILL_LABEL=arctiva.issue=ARC-<n> REPO_VOLUME=<volume repo> SECRETS_DIR=<dir secret> \
-   POSTGRES_USER=<user> POSTGRES_DB=<db> PGBACKREST_STANZA=poolrouter \
+   export ENGINE=docker DRILL_LABEL=arctiva.issue=ARC-<n> REPO_VOLUME=<volume repo> SECRETS_DIR=<dir secret> \
+          POSTGRES_USER=<user> POSTGRES_DB=<db> PGBACKREST_STANZA=poolrouter
    sh deploy/compose/backup/drill/pr-drill.sh restore <volume-data-baru> "<T_target>"
    ```
+   Langkah 3 sampai 5 dan bagian Drill (`sentinel-init`, `sentinel-write`, `checksum`, `serve`) dijalankan di shell yang sama dengan variabel itu sudah di-export. `pr-drill.sh` keluar dengan rc=1 bila `DRILL_LABEL`, `REPO_VOLUME`, atau `SECRETS_DIR` kosong, untuk semua perintah.
 3. Nyalakan server dari volume hasil restore. Server ini tanpa penjadwal dan tanpa arsip, sehingga tidak menulis ke repo:
    ```sh
    sh deploy/compose/backup/drill/pr-drill.sh serve <volume-data-baru> <kontainer-restore>
