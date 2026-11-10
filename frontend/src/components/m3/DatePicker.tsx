@@ -23,6 +23,10 @@ import { Icon, icons } from '../../icons';
 const FIELD =
   'm3-focus typescale-body-large flex h-14 w-full items-center gap-1 rounded-extra-small border border-outline bg-surface px-2 text-on-surface data-[focus-within]:border-2 data-[focus-within]:border-primary';
 
+// Rentang memuat dua tanggal dan tombol kalender; pada 320 px isinya lebih lebar dari kolom, jadi
+// tombol turun ke baris berikutnya alih-alih melebarkan dokumen.
+const RANGE_FIELD = FIELD.replace('h-14', 'min-h-14 flex-wrap py-1');
+
 const POPOVER = 'rounded-medium bg-surface-container p-2 shadow-level2';
 
 /** Shared calendar body; `cell` differs between single and range calendars. */
@@ -110,7 +114,7 @@ export function DateRangePicker({
   return (
     <RacDateRangePicker {...props} className={cx('flex flex-col gap-1', className)}>
       {label ? <Label>{label}</Label> : null}
-      <Group className={FIELD}>
+      <Group className={RANGE_FIELD}>
         <RacDateInput slot="start">{(segment) => <DateSegment segment={segment} />}</RacDateInput>
         {separator ? <span className="px-1 text-on-surface-variant">{separator}</span> : null}
         <RacDateInput slot="end">{(segment) => <DateSegment segment={segment} />}</RacDateInput>
