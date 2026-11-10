@@ -143,9 +143,7 @@ describe('S06 daftar upstream pool', () => {
   it('shows 403 for other roles and never calls the API', () => {
     const client = stubClient();
     asRole('operator', <UpstreamListScreen client={client} />);
-    expect(
-      screen.getByRole('heading', { name: 'Anda tidak punya akses ke halaman ini' }),
-    ).toBeVisible();
+    expect(screen.getByRole('heading', { name: 'Akses tidak diizinkan' })).toBeVisible();
     expect(client.upstreamPools).not.toHaveBeenCalled();
   });
 
@@ -342,9 +340,7 @@ describe('S06b form upstream pool', () => {
 
   it('shows the 403 state to other roles', () => {
     asRole('auditor', <UpstreamFormScreen client={stubClient()} poolId={UP_ID} />);
-    expect(
-      screen.getByRole('heading', { name: 'Anda tidak punya akses ke halaman ini' }),
-    ).toBeVisible();
+    expect(screen.getByRole('heading', { name: 'Akses tidak diizinkan' })).toBeVisible();
   });
 });
 
@@ -415,9 +411,7 @@ describe('S07 daftar downstream pool', () => {
     view.unmount();
     const client = stubClient();
     asRole('auditor', <DownstreamListScreen client={client} />);
-    expect(
-      screen.getByRole('heading', { name: 'Anda tidak punya akses ke halaman ini' }),
-    ).toBeVisible();
+    expect(screen.getByRole('heading', { name: 'Akses tidak diizinkan' })).toBeVisible();
     expect(client.listDownstreamPools).not.toHaveBeenCalled();
   });
 

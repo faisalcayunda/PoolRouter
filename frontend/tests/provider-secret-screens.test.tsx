@@ -110,7 +110,7 @@ describe('S02 daftar provider', () => {
     asRole(role, <ProviderListScreen client={client} />);
 
     expect(
-      screen.getByRole('heading', { level: 1, name: 'Anda tidak punya akses ke halaman ini' }),
+      screen.getByRole('heading', { level: 1, name: 'Akses tidak diizinkan' }),
     ).toBeInTheDocument();
     expect(client.listProviders).not.toHaveBeenCalled();
   });
@@ -257,7 +257,7 @@ describe('S03–S04 form provider', () => {
     const client = stubClient();
     asRole('operator', <ProviderFormScreen client={client} providerId={PROVIDER.provider_id} />);
     expect(
-      screen.getByRole('heading', { level: 1, name: 'Anda tidak punya akses ke halaman ini' }),
+      screen.getByRole('heading', { level: 1, name: 'Akses tidak diizinkan' }),
     ).toBeInTheDocument();
     expect(client.getProvider).not.toHaveBeenCalled();
   });
@@ -384,7 +384,7 @@ describe('S05 secret', () => {
     const client = stubClient();
     asRole('auditor', <SecretScreen client={client} />);
     expect(
-      screen.getByRole('heading', { level: 1, name: 'Anda tidak punya akses ke halaman ini' }),
+      screen.getByRole('heading', { level: 1, name: 'Akses tidak diizinkan' }),
     ).toBeInTheDocument();
     expect(client.listSecrets).not.toHaveBeenCalled();
   });

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { screen } from '@testing-library/react';
+import { screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { ApiError, type ApiClient } from '../src/api/client';
 import { LoginScreen } from '../src/features/auth/LoginScreen';
@@ -15,6 +15,26 @@ function stub(overrides: Partial<ApiClient> = {}): ApiClient {
 }
 
 describe('S01 masuk', () => {
+  it('follows the Penpot S01 card: brand, env label, heading, subtitle, fields and help line', () => {
+    renderWithI18n(<LoginScreen client={stub()} />);
+    const main = within(screen.getByRole('main'));
+
+    expect(main.getByText('PoolRouter')).toBeInTheDocument();
+    expect(main.getByText('PoC · BGN')).toBeInTheDocument();
+    expect(main.getByRole('separator')).toBeInTheDocument();
+    const judul = main.getByRole('heading', { level: 1, name: 'Masuk ke akun' });
+    // The heading carries the shared focus frame (it is focusable for skip-link targets).
+    expect(judul).toHaveClass('m3-focus');
+    expect(judul).toHaveAttribute('tabindex', '-1');
+    expect(
+      main.getByText('Gunakan kredensial yang diberikan oleh administrator Pusdatin.'),
+    ).toBeInTheDocument();
+    expect(main.getByLabelText('Nama pengguna')).toBeInTheDocument();
+    expect(main.getByLabelText('Kata sandi')).toHaveAttribute('type', 'password');
+    expect(main.getByRole('button', { name: 'Masuk' })).toHaveClass('w-full');
+    expect(main.getByText('Butuh akses? Hubungi platform admin Pusdatin BGN.')).toBeInTheDocument();
+  });
+
   it('sends the username and password once, then leaves the form', async () => {
     const client = stub();
     const onBerhasil = vi.fn();

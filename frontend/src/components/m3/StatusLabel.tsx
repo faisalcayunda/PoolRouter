@@ -16,7 +16,7 @@ export type StatusLabelTone = 'neutral' | 'info' | 'success' | 'warning' | 'erro
  * the status (§7.5), so colour is never the only signal.
  */
 const TONE: Record<StatusLabelTone, string> = {
-  neutral: 'bg-surface-container-highest text-on-surface-variant',
+  neutral: 'bg-surface-container-high text-on-surface',
   info: 'bg-secondary-container text-on-secondary-container',
   success: 'bg-tertiary-container text-on-tertiary-container',
   warning: 'bg-error-container text-on-error-container',
@@ -48,7 +48,7 @@ export function StatusLabel({
   return (
     <span
       className={cx(
-        'typescale-label-medium inline-flex items-center gap-1 whitespace-nowrap rounded-full px-2 py-0.5',
+        'typescale-label-medium inline-flex items-center gap-1 whitespace-nowrap rounded-small px-2 py-0.5',
         TONE[tone],
         className,
       )}

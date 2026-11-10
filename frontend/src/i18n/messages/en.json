@@ -149,10 +149,12 @@
   },
   "error": {
     "network": "Couldn't load the data. Check your connection, then try again.",
+    "load_title": "Couldn't load the data",
+    "load_hint": "Check your network connection and try again.",
     "http": {
       "403": {
-        "title": "You don't have access to this page",
-        "body": "Your role doesn't include this page. This attempt is recorded. Contact a platform admin if you need access.",
+        "title": "Access not allowed",
+        "body": "This attempt is recorded. Contact a platform admin if you need access.",
         "action": "Go to home page"
       }
     },
@@ -161,8 +163,11 @@
   },
   "login": {
     "page": {
-      "title": "Sign in to PoolRouter",
-      "subtitle": "Use the account issued by BGN Pusdatin.",
+      "brand": "PoolRouter",
+      "env": "PoC · BGN",
+      "title": "Sign in to your account",
+      "subtitle": "Use the credentials issued by the Pusdatin administrator.",
+      "help": "Need access? Contact the BGN Pusdatin platform admin.",
       "username": "Username",
       "password": "Password",
       "submit": "Sign in",

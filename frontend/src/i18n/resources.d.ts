@@ -556,10 +556,12 @@ export default interface Resources {
       "http": {
         "403": {
           "action": "Ke halaman awal",
-          "body": "Peran Anda tidak mencakup halaman ini. Percobaan ini dicatat. Hubungi platform admin bila Anda perlu akses.",
-          "title": "Anda tidak punya akses ke halaman ini"
+          "body": "Percobaan ini dicatat. Hubungi platform admin bila butuh akses.",
+          "title": "Akses tidak diizinkan"
         }
       },
+      "load_hint": "Periksa koneksi jaringan dan coba lagi.",
+      "load_title": "Data belum bisa dimuat",
       "network": "Data belum bisa dimuat. Periksa koneksi, lalu coba lagi.",
       "throttled_menit": "Terlalu banyak percobaan. Coba lagi dalam {{menit}} menit.",
       "throttled_retry": "Terlalu banyak percobaan. Coba lagi nanti."
@@ -655,11 +657,14 @@ export default interface Resources {
         "throttled_retry": "Terlalu banyak percobaan. Coba lagi dalam <b>{{detik}} detik</b>."
       },
       "page": {
+        "brand": "PoolRouter",
+        "env": "PoC · BGN",
+        "help": "Butuh akses? Hubungi platform admin Pusdatin BGN.",
         "password": "Kata sandi",
         "session_expired": "Sesi Anda berakhir. Masuk lagi untuk melanjutkan.",
         "submit": "Masuk",
-        "subtitle": "Gunakan akun yang diberikan Pusdatin BGN.",
-        "title": "Masuk ke PoolRouter",
+        "subtitle": "Gunakan kredensial yang diberikan oleh administrator Pusdatin.",
+        "title": "Masuk ke akun",
         "username": "Nama pengguna"
       }
     },

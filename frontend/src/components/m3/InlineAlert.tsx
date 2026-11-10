@@ -22,17 +22,16 @@ export interface InlineAlertProps {
 }
 
 /**
- * M3 baseline has no `info`/`warning`/`success` container roles. §7.1 names
- * `error-container`, `warning-container` and `info-container`; the first exists
- * as a token, the other two map onto `error-container` and
- * `secondary-container`. The icon and the message text carry the tone as well.
+ * Penpot S16 fills `info` and `success` with the `info-container` and `success-container`
+ * tokens (radius 12, padding 16). There is no `warning-container` token, so warning reuses
+ * `error-container`. The icon and the message text carry the tone as well.
  */
 const TONE: Record<
   NonNullable<InlineAlertProps['tone']>,
   { box: string; icon: keyof typeof icons }
 > = {
-  info: { box: 'bg-secondary-container text-on-secondary-container', icon: 'info' },
-  success: { box: 'bg-tertiary-container text-on-tertiary-container', icon: 'checkCircle' },
+  info: { box: 'bg-info-container text-on-info-container', icon: 'info' },
+  success: { box: 'bg-success-container text-on-success-container', icon: 'checkCircle' },
   warning: { box: 'bg-error-container text-on-error-container', icon: 'warning' },
   error: { box: 'bg-error-container text-on-error-container', icon: 'error' },
 };
@@ -51,7 +50,7 @@ export function InlineAlert({
       role="alert"
       aria-live={live}
       className={cx(
-        'typescale-body-medium flex items-start gap-2 rounded-small p-3',
+        'typescale-body-medium flex items-start gap-2 rounded-medium p-4',
         box,
         className,
       )}
