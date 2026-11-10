@@ -42,7 +42,9 @@ function DrawerNav({
     <nav aria-label={t('nav.drawer.aria')} className="flex flex-col gap-3">
       {navGroupsFor(role).map((group) => (
         <div key={group.id} className="flex flex-col gap-0.5">
-          <p className="typescale-label-small px-3 text-inverse-on-surface/70">{t(group.labelKey)}</p>
+          <p className="typescale-label-small px-3 text-inverse-on-surface/70">
+            {t(group.labelKey)}
+          </p>
           {group.items.map((item) => {
             const isActive = item.href === current;
             return (
@@ -133,7 +135,11 @@ export function AppShell({ pathname = '/', user, role = null, children }: AppShe
           isOpen={isModalDrawerOpen}
           onOpenChange={(open) => setDrawerOpen(open)}
         >
-          <DrawerNav pathname={pathname} role={role} onNavigate={isExpanded ? undefined : closeDrawer} />
+          <DrawerNav
+            pathname={pathname}
+            role={role}
+            onNavigate={isExpanded ? undefined : closeDrawer}
+          />
         </NavigationDrawer>
 
         <main id="main-content" tabIndex={-1} className="min-w-0 flex-1 p-4">
