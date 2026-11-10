@@ -3031,6 +3031,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "poolrouter-cli"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "poolrouter-core",
+ "secrecy",
+ "sqlx",
+ "thiserror",
+ "tokio",
+ "uuid",
+ "zeroize",
+]
+
+[[package]]
 name = "poolrouter-controller"
 version = "0.1.0"
 dependencies = [
