@@ -5,10 +5,13 @@
 //!
 //! 1. [`PemanggilProvider::siapkan`]: semua langkah yang bisa gagal karena
 //!    konfigurasi (dokumen provider/endpoint pada versi aktif, secret, render
-//!    template, klien TLS, allowlist) dijalankan **sebelum** kuota disentuh dan
-//!    sebelum baris apa pun ditulis. Gagal di sini = 503 tanpa baris dan tanpa
-//!    kuota, sama dengan worker yang menolak sebelum CAS (M-03: tidak ada baris
-//!    log untuk panggilan yang tidak pernah keluar).
+//!    template, klien TLS, allowlist) dijalankan **setelah** kuota intake dan
+//!    token sync (ADR-0001 bagian 4: validasi, cek kuota, token, render) dan
+//!    **sebelum** baris apa pun ditulis. Request yang ditolak 429 tidak membaca
+//!    secret, dan kuota habis dijawab 429 walau konfigurasinya rusak. Gagal di
+//!    sini = 503 tanpa baris dan tanpa INCR `attempts`; handler mengembalikan
+//!    slot dari token. Sama dengan worker yang menolak sebelum CAS (M-03: tidak
+//!    ada baris log untuk panggilan yang tidak pernah keluar).
 //! 2. [`PanggilanSiap::kirim`]: satu panggilan HTTP, dijalankan handler di
 //!    dalam `tokio::spawn` setelah log percobaan ter-commit (AC-27, AC-29).
 //!

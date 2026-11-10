@@ -65,6 +65,8 @@ struct PemanggilTetap {
     jumlah: Arc<Mutex<u32>>,
     /// Latensi tiruan provider.
     tunda: Duration,
+    /// Timeout total yang diterima `kirim` pada panggilan terakhir.
+    batas: Arc<Mutex<Option<Duration>>>,
 }
 
 impl PemanggilProvider for PemanggilTetap {
@@ -72,9 +74,11 @@ impl PemanggilProvider for PemanggilTetap {
         let hasil = self.hasil.clone();
         let jumlah = self.jumlah.clone();
         let tunda = self.tunda;
+        let rekam = self.batas.clone();
         Box::pin(async move {
-            let kirim: Kirim = Box::new(move |_batas| -> DFut<'static, HasilProvider> {
+            let kirim: Kirim = Box::new(move |batas| -> DFut<'static, HasilProvider> {
                 Box::pin(async move {
+                    *rekam.lock().unwrap() = Some(batas);
                     *jumlah.lock().unwrap() += 1;
                     if !tunda.is_zero() {
                         tokio::time::sleep(tunda).await;
@@ -167,6 +171,7 @@ impl Uji {
                 hasil: h,
                 jumlah: Arc::new(Mutex::new(0)),
                 tunda,
+                batas: Arc::new(Mutex::new(None)),
             })
         });
         let mut u = Self::rakit(
@@ -831,6 +836,8 @@ const SECRET: &str = "rahasia-provider-sintetis";
 struct SumberUji {
     dokumen: Value,
     secret: BTreeMap<String, String>,
+    /// Berapa kali `secret` dipanggil (ARC-241: penolakan tidak membacanya).
+    pembacaan_secret: Arc<Mutex<u32>>,
 }
 
 impl SumberPanggilan for SumberUji {
@@ -845,6 +852,7 @@ impl SumberPanggilan for SumberUji {
 
     fn secret(&self, nama: Vec<String>) -> DFut<'_, Hasil<BTreeMap<String, String>>> {
         let peta = self.secret.clone();
+        *self.pembacaan_secret.lock().unwrap() += 1;
         Box::pin(async move {
             nama.iter()
                 .map(|n| {
@@ -898,17 +906,28 @@ fn respons_dukcapil() -> Value {
 }
 
 fn pemanggil_http(server: &MockServer, secret: bool) -> PemanggilHttp<SumberUji, TransportUji> {
+    pemanggil_http_hitung(server, secret).0
+}
+
+/// Seperti [`pemanggil_http`], dengan penghitung pembacaan secret.
+fn pemanggil_http_hitung(
+    server: &MockServer,
+    secret: bool,
+) -> (PemanggilHttp<SumberUji, TransportUji>, Arc<Mutex<u32>>) {
     let mut peta = BTreeMap::new();
     if secret {
         peta.insert("USER_ID".to_owned(), SECRET.to_owned());
     }
-    PemanggilHttp::baru(
+    let pembacaan_secret = Arc::new(Mutex::new(0));
+    let p = PemanggilHttp::baru(
         SumberUji {
             dokumen: dokumen_provider(&server.uri()),
             secret: peta,
+            pembacaan_secret: pembacaan_secret.clone(),
         },
         TransportUji,
-    )
+    );
+    (p, pembacaan_secret)
 }
 
 fn uji_http(server: &MockServer, ubah: impl FnOnce(&mut RantaiEndpoint)) -> Uji {
@@ -1006,9 +1025,11 @@ async fn sync_http_gagal_dipetakan_502_504_tanpa_retry_after() {
 }
 
 #[tokio::test]
-async fn sync_http_konfigurasi_rusak_503_tanpa_baris_kuota_dan_panggilan() {
-    // Secret yang dirujuk template tidak ada: gagal sebelum kuota dan sebelum
-    // baris apa pun, sehingga tidak ada log tanpa panggilan (M-03).
+async fn sync_http_konfigurasi_rusak_503_tanpa_baris_dan_slot_dikembalikan() {
+    // Secret yang dirujuk template tidak ada. Urutan ADR-0001 bagian 4: kuota
+    // intake dan token sudah lolos sebelum render, jadi gagalnya render tidak
+    // menulis baris apa pun, tidak menaikkan `attempts`, dan mengembalikan slot
+    // yang sudah diambil tokennya (M-03).
     let server = MockServer::start().await;
     Mock::given(method("POST"))
         .respond_with(ResponseTemplate::new(200).set_body_json(respons_dukcapil()))
@@ -1021,9 +1042,72 @@ async fn sync_http_konfigurasi_rusak_503_tanpa_baris_kuota_dan_panggilan() {
     assert_eq!(u.jumlah_baris(), 0);
     {
         let hit = u.kuota.hitung.lock().unwrap();
-        assert_eq!(hit.intake + hit.token + hit.tambah, 0);
+        assert_eq!(hit.tambah, 0, "tidak ada INCR attempts");
+        assert_eq!(hit.token, 1);
+        assert_eq!(hit.lepas, hit.token, "slot dari token dikembalikan");
     }
     assert!(server.received_requests().await.unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn sync_kuota_habis_429_walau_konfigurasi_rusak_tanpa_baca_secret() {
+    // ARC-241 butir 3: kuota intake habis dijawab 429 (K-12), bukan 503 dari
+    // konfigurasi yang rusak, dan secret tidak dibaca untuk request yang akan
+    // ditolak.
+    let server = MockServer::start().await;
+    let (p, secret_dibaca) = pemanggil_http_hitung(&server, false);
+    let u = Uji::rakit(Some(Arc::new(p)), |_| {});
+    *u.kuota.kuota.lock().unwrap() = 0;
+    let (s, h, v) = u.sinkron(&body_sah(), None).await;
+    assert_eq!(s, StatusCode::TOO_MANY_REQUESTS, "{v}");
+    assert_eq!(v["kode"], "kuota_habis");
+    assert!(h.get(header::RETRY_AFTER).is_some());
+    assert_eq!(*secret_dibaca.lock().unwrap(), 0, "secret tidak dibaca");
+    let hit = u.kuota.hitung.lock().unwrap();
+    assert_eq!((hit.token, hit.tambah), (0, 0));
+}
+
+#[tokio::test]
+async fn sync_porsi_habis_429_walau_konfigurasi_rusak_tanpa_baca_secret() {
+    // Token sync ditolak (porsi habis atau kuota habis di skrip token): 429
+    // lebih dulu daripada render, dan secret tidak dibaca.
+    for (ditolak, kode) in [
+        (
+            HasilToken::PorsiSyncHabis(status_token(5_000_000)),
+            "porsi_sync_habis",
+        ),
+        (HasilToken::KuotaHabis(status_token(0)), "kuota_habis"),
+    ] {
+        let server = MockServer::start().await;
+        let (p, secret_dibaca) = pemanggil_http_hitung(&server, false);
+        let u = Uji::rakit(Some(Arc::new(p)), |_| {});
+        *u.kuota.token_ditolak.lock().unwrap() = Some(ditolak);
+        let (s, _, v) = u.sinkron(&body_sah(), None).await;
+        assert_eq!(s, StatusCode::TOO_MANY_REQUESTS, "{kode}: {v}");
+        assert_eq!(v["kode"], kode);
+        assert_eq!(*secret_dibaca.lock().unwrap(), 0, "{kode}: secret dibaca");
+        assert_eq!(u.kuota.hitung.lock().unwrap().tambah, 0);
+    }
+}
+
+#[tokio::test]
+async fn sync_batas_upstream_bawaan_20_detik_dan_mengikuti_pool() {
+    // ARC-241 butir 1: tanpa `timeout_total_upstream_detik` di pool, sync
+    // memakai 20 s (ADR-0001 bagian 5a.4), sama dengan worker dan sumber_pg.
+    let u = Uji::dengan(Some(hasil_sesuai()));
+    let (s, _, v) = u.sinkron(&body_sah(), None).await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    let batas = *u.pemanggil.as_ref().unwrap().batas.lock().unwrap();
+    assert_eq!(batas, Some(Duration::from_secs(20)));
+
+    let u = Uji::dengan(Some(hasil_sesuai()));
+    u.permintaan.ubah_rantai(|r| {
+        r.rute[0].parameter_dispatch = json!({"timeout_total_upstream_detik": 45});
+    });
+    let (s, _, v) = u.sinkron(&body_sah(), None).await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    let batas = *u.pemanggil.as_ref().unwrap().batas.lock().unwrap();
+    assert_eq!(batas, Some(Duration::from_secs(45)));
 }
 
 #[tokio::test]
