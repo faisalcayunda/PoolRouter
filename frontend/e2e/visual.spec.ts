@@ -123,17 +123,31 @@ async function shoot(page: Page, screen: string, width: number) {
     () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
   );
   expect(overflow, `dokumen melebar ${overflow}px pada ${width}px`).toBeLessThanOrEqual(0);
-  // Medan rentang tanggal hanya boleh membungkus pada lebar compact; di 1024 ke atas satu baris 56 px.
+  // Medan rentang tanggal hanya boleh membungkus pada lebar compact; di 1024 ke atas satu baris 56 px
+  // dan seluruh isinya (termasuk tombol kalender 48 px) berada di dalam batas medan.
   if (width >= 1024) {
-    const tinggi = await page.evaluate(() =>
-      Array.from(document.querySelectorAll('[class*="expanded:flex-nowrap"]')).map((el) =>
-        Math.round(el.getBoundingClientRect().height),
-      ),
+    const medan = await page.evaluate(() =>
+      Array.from(document.querySelectorAll('[data-testid="date-range-field"]')).map((el) => {
+        const g = el.getBoundingClientRect();
+        const t = el.querySelector('button')?.getBoundingClientRect();
+        return {
+          tinggi: Math.round(g.height),
+          tombolKanan: t ? t.right : Infinity,
+          grupKanan: g.right,
+          luap: el.scrollWidth - el.clientWidth,
+        };
+      }),
     );
-    expect(
-      tinggi.every((h) => h === 56),
-      `medan rentang ${tinggi.join(',')} px pada ${width}px`,
-    ).toBe(true);
+    if (screen.startsWith('log-') || screen === 'audit-akses') {
+      expect(medan.length, `tidak ada medan rentang pada ${screen}@${width}`).toBeGreaterThan(0);
+    }
+    for (const m of medan) {
+      expect(m.tinggi, `tinggi medan rentang pada ${width}px`).toBe(56);
+      expect(m.tombolKanan, `tombol kalender keluar medan pada ${width}px`).toBeLessThanOrEqual(
+        m.grupKanan,
+      );
+      expect(m.luap, `isi medan rentang meluap ${m.luap}px pada ${width}px`).toBeLessThanOrEqual(0);
+    }
   }
   await page.screenshot({
     path: `e2e/screenshots/${screen}@${width}.png`,

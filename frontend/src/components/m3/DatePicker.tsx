@@ -25,7 +25,8 @@ const FIELD =
 
 // Rentang memuat dua tanggal dan tombol kalender; pada 320 px isinya lebih lebar dari kolom, jadi
 // tombol turun ke baris berikutnya alih-alih melebarkan dokumen. Pada expanded kolom tetap satu baris
-// setinggi 56 px, sejajar dengan TextField dan Select di sebelahnya.
+// setinggi 56 px, sejajar dengan TextField dan Select di sebelahnya; tombol kalender memakai margin
+// kanan negatif (ikon trailing M3) dan segmen tanpa padding agar isinya muat di kolom 280 px.
 const RANGE_FIELD = FIELD.replace(
   'h-14',
   'min-h-14 flex-wrap py-1 expanded:h-14 expanded:flex-nowrap expanded:py-0',
@@ -51,9 +52,9 @@ function CalendarGridBody() {
 
 /** The calendar trigger; its accessible name comes from the catalog at the usage site. */
 // Icon-only, so it gets the tooltip-with-the-same-text treatment from IconButton (§7.5).
-function CalendarTrigger({ label }: { label: string }) {
+function CalendarTrigger({ label, className }: { label: string; className?: string }) {
   return (
-    <IconButton aria-label={label} className="ml-auto">
+    <IconButton aria-label={label} className={cx('ml-auto', className)}>
       <Icon icon={icons.calendarMonth} />
     </IconButton>
   );
@@ -63,7 +64,7 @@ function DateSegment({ segment }: { segment: Parameters<typeof RacDateSegment>[0
   return (
     <RacDateSegment
       segment={segment}
-      className="typescale-body-large rounded-sm px-0.5 text-on-surface caret-primary outline-none data-[placeholder]:text-on-surface-variant data-[focused]:bg-secondary-container"
+      className="typescale-body-large rounded-sm px-0.5 expanded:px-0 text-on-surface caret-primary outline-none data-[placeholder]:text-on-surface-variant data-[focused]:bg-secondary-container"
     />
   );
 }
@@ -118,11 +119,11 @@ export function DateRangePicker({
   return (
     <RacDateRangePicker {...props} className={cx('flex flex-col gap-1', className)}>
       {label ? <Label>{label}</Label> : null}
-      <Group className={RANGE_FIELD}>
+      <Group className={RANGE_FIELD} data-testid="date-range-field">
         <RacDateInput slot="start">{(segment) => <DateSegment segment={segment} />}</RacDateInput>
         {separator ? <span className="px-1 text-on-surface-variant">{separator}</span> : null}
         <RacDateInput slot="end">{(segment) => <DateSegment segment={segment} />}</RacDateInput>
-        <CalendarTrigger label={calendarLabel} />
+        <CalendarTrigger label={calendarLabel} className="expanded:-mr-2" />
       </Group>
       <Popover className={POPOVER}>
         <Dialog className="outline-none">
