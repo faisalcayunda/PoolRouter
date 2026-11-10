@@ -1347,6 +1347,12 @@
         "copy_failed": "Gagal menyalin. Pilih teks secara manual.",
         "copy_all": "Salin semua",
         "acknowledge": "Sudah saya simpan"
+      },
+      "error": {
+        "invalid": "Kode tidak cocok atau sesi sudah habis. Coba lagi, atau kembali ke login.",
+        "invalid_registration": "Kode pendaftaran tidak cocok atau sudah tidak berlaku. Coba lagi, atau kembali ke login.",
+        "throttled": "Terlalu banyak percobaan. Coba lagi beberapa saat lagi.",
+        "network": "Belum bisa terhubung. Periksa jaringan, lalu coba lagi."
       }
     }
   },
@@ -1369,5 +1375,10 @@
       "help": "{{min}} sampai {{maks}} karakter. Alasan tercatat di audit.",
       "error": "Tulis alasan {{min}} sampai {{maks}} karakter."
     }
+  },
+  "recovery": {
+    "warning": "Sisa kode pemulihan Anda tinggal {{n}}. Atur ulang MFA untuk membuat kode baru.",
+    "error": "Kode pemulihan Anda habis. Atur ulang MFA.",
+    "info": "Anda masuk menggunakan kode pemulihan. Buat kode pemulihan baru saat siap."
   }
 }

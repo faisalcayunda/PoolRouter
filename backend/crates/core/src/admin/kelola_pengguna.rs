@@ -87,6 +87,11 @@ pub enum GalatKelola {
     StatusSama(&'static str),
     #[error("pelaku tidak boleh menonaktifkan dirinya sendiri")]
     NonaktifkanDiriSendiri,
+    #[error(
+        "`{0}` adalah platform_admin aktif terakhir; mencabut peran atau menonaktifkannya \
+         mengunci sistem. Angkat platform_admin lain terlebih dahulu"
+    )]
+    AdminTerakhir(String),
     #[error("bootstrap hanya boleh saat tabel pengguna kosong")]
     BootstrapDitolak,
     #[error("seed hanya boleh di POOLROUTER_ENV dev atau ci")]
@@ -218,6 +223,55 @@ async fn target(conn: &mut PgConnection, username: &str) -> Result<BarisPengguna
     cari(conn, username)
         .await?
         .ok_or_else(|| GalatKelola::TargetTidakAda(username.to_owned()))
+}
+
+/// Serialisasikan semua operasi yang bisa mengurangi platform_admin aktif. Kunci diambil pada SEMUA
+/// baris pengguna aktif, berurutan menurut `pengguna_id` (urutan sama, tanpa deadlock), bukan hanya
+/// baris target: dua operasi pada dua admin berbeda tetap berebut kunci yang sama, jadi yang kedua
+/// menunggu, lalu membaca keadaan yang sudah di-commit yang pertama. Wajib dipanggil SEBELUM
+/// `pelaku_admin` dan sebagai pernyataan sendiri, karena snapshot pernyataan READ COMMITTED yang
+/// sudah berjalan tidak melihat commit yang ditunggunya. `FOR NO KEY UPDATE` tidak bentrok dengan
+/// `FOR KEY SHARE` milik FK audit.
+async fn kunci_admin_aktif(conn: &mut PgConnection) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "SELECT pengguna_id FROM admin_user WHERE aktif ORDER BY pengguna_id FOR NO KEY UPDATE",
+    )
+    .fetch_all(conn)
+    .await?;
+    Ok(())
+}
+
+/// Tolak bila `t` platform_admin aktif terakhir. Hitung platform_admin aktif LAIN dengan definisi
+/// "berlaku" yang sama seperti `peran_berlaku`. Dipanggil setelah [`kunci_admin_aktif`].
+async fn jaga_admin_terakhir(
+    conn: &mut PgConnection,
+    username: &str,
+    t: &BarisPengguna,
+    sekarang: DateTime<Utc>,
+) -> Result<(), GalatKelola> {
+    if !t.aktif
+        || !peran_berlaku(conn, t.pengguna_id, sekarang)
+            .await?
+            .contains(&Peran::PlatformAdmin)
+    {
+        return Ok(());
+    }
+    let lain: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM admin_user u \
+         WHERE u.aktif AND u.pengguna_id <> $1 AND EXISTS ( \
+           SELECT 1 FROM admin_user_peran p \
+           WHERE p.pengguna_id = u.pengguna_id AND p.peran = $3 AND p.dicabut_at IS NULL \
+             AND (p.berlaku_sampai IS NULL OR p.berlaku_sampai > $2))",
+    )
+    .bind(t.pengguna_id)
+    .bind(sekarang)
+    .bind(Peran::PlatformAdmin.as_str())
+    .fetch_one(conn)
+    .await?;
+    if lain == 0 {
+        return Err(GalatKelola::AdminTerakhir(username.to_owned()));
+    }
+    Ok(())
 }
 
 async fn sisipkan_pengguna(
@@ -531,11 +585,17 @@ pub async fn cabut_peran(
     sekarang: DateTime<Utc>,
 ) -> Result<(), GalatKelola> {
     let mut tx = pool.begin().await?;
+    if peran == Peran::PlatformAdmin {
+        kunci_admin_aktif(&mut tx).await?;
+    }
     let pelaku = pelaku_admin(&mut tx, oleh, sekarang).await?;
     let t = target(&mut tx, target_username).await?;
     let lama = peran_berlaku(&mut tx, t.pengguna_id, sekarang).await?;
     if !lama.contains(&peran) {
         return Err(GalatKelola::PeranTidakAda(peran));
+    }
+    if peran == Peran::PlatformAdmin {
+        jaga_admin_terakhir(&mut tx, target_username, &t, sekarang).await?;
     }
     sqlx::query(
         "UPDATE admin_user_peran SET dicabut_at = now() \
@@ -614,6 +674,9 @@ pub async fn ubah_aktif(
     sekarang: DateTime<Utc>,
 ) -> Result<(), GalatKelola> {
     let mut tx = pool.begin().await?;
+    if !aktif {
+        kunci_admin_aktif(&mut tx).await?;
+    }
     let pelaku = pelaku_admin(&mut tx, oleh, sekarang).await?;
     let t = target(&mut tx, target_username).await?;
     if !aktif && t.pengguna_id == pelaku {
@@ -625,6 +688,9 @@ pub async fn ubah_aktif(
         } else {
             "nonaktif"
         }));
+    }
+    if !aktif {
+        jaga_admin_terakhir(&mut tx, target_username, &t, sekarang).await?;
     }
     sqlx::query("UPDATE admin_user SET aktif = $2, diubah_at = now() WHERE pengguna_id = $1")
         .bind(t.pengguna_id)

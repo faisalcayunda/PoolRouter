@@ -204,7 +204,9 @@ impl Leader for LeaderBersama {
 
 /// Publisher yang mendeklarasikan queue (idempoten) sebelum publish pertama
 /// ke nama itu: queue per upstream pool baru diketahui saat dispatch, dan
-/// publish `mandatory` ke queue yang belum ada ditolak broker.
+/// publish `mandatory` ke queue yang belum ada ditolak broker. Kedua langkah
+/// (`declare` lalu `publish`) dibatasi `BATAS_CONFIRM` di `ApalisQueue`, jadi
+/// kunci `sudah` tidak terpegang tanpa batas saat broker tidak menjawab.
 struct PublisherDeklarasi {
     antrean: ApalisQueue,
     sudah: tokio::sync::Mutex<HashSet<String>>,

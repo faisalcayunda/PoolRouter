@@ -6,13 +6,14 @@
 //! hanya uji seed yang memakai nama tetap (`seed-*`).
 
 use std::io;
+use std::sync::Arc;
 
 use chrono::{DateTime, Duration, Utc};
 use poolrouter_cli::{GalatCli, Konteks, PembacaPassword, Perintah, jalankan};
 use poolrouter_core::admin::TokenSesi;
 use poolrouter_core::admin::kelola_pengguna::{
-    GalatKelola, SEED_ADMIN_AUDITOR, SEED_AUDITOR, SEED_CLIENT_OWNER, SEED_OPERATOR,
-    SEED_PENYETUJU, SEED_PLATFORM_ADMIN,
+    self as kelola, GalatKelola, SEED_ADMIN_AUDITOR, SEED_AUDITOR, SEED_CLIENT_OWNER,
+    SEED_OPERATOR, SEED_PENYETUJU, SEED_PLATFORM_ADMIN,
 };
 use poolrouter_core::admin::seed_dukcapil::{
     SEED_DOWNSTREAM, SEED_ENDPOINT, SEED_PROVIDER, SEED_UPSTREAM,
@@ -22,6 +23,7 @@ use poolrouter_core::audit::{Alasan, Peran};
 use poolrouter_core::config::Environment;
 use secrecy::SecretString;
 use sqlx::PgPool;
+use tokio::sync::Barrier;
 use uuid::Uuid;
 use zeroize::Zeroizing;
 
@@ -164,6 +166,31 @@ impl Uji {
         .fetch_all(&self.su)
         .await
         .unwrap()
+    }
+
+    /// Basis data uji dipakai bersama, jadi platform_admin aktif milik uji lain ikut terhitung oleh
+    /// penjaga. Nonaktifkan semuanya kecuali `tetap`; kembalikan id-nya untuk [`Self::pulihkan`].
+    async fn sisakan_admin(&self, tetap: &[Uuid]) -> Vec<Uuid> {
+        sqlx::query_scalar(
+            "UPDATE admin_user u SET aktif = false \
+             WHERE u.aktif AND u.pengguna_id <> ALL($1) AND EXISTS ( \
+               SELECT 1 FROM admin_user_peran p WHERE p.pengguna_id = u.pengguna_id \
+                 AND p.peran = 'platform_admin' AND p.dicabut_at IS NULL \
+                 AND (p.berlaku_sampai IS NULL OR p.berlaku_sampai > now())) \
+             RETURNING u.pengguna_id",
+        )
+        .bind(tetap)
+        .fetch_all(&self.su)
+        .await
+        .unwrap()
+    }
+
+    async fn pulihkan(&self, ids: &[Uuid]) {
+        sqlx::query("UPDATE admin_user SET aktif = true WHERE pengguna_id = ANY($1)")
+            .bind(ids)
+            .execute(&self.su)
+            .await
+            .unwrap();
     }
 
     async fn id(&self, username: &str) -> Uuid {
@@ -580,6 +607,167 @@ async fn seed_pengguna_menolak_pengguna_seed_nonaktif() {
         .await
         .unwrap();
     assert!(teks.contains("0 pengguna baru, 0 peran baru"), "{teks}");
+} 
+fn cabut_admin(username: &str, oleh: &str) -> Perintah {
+    Perintah::PeranCabut {
+        username: username.to_owned(),
+        peran: Peran::PlatformAdmin,
+        oleh: oleh.to_owned(),
+        alasan: alasan(),
+    }
+}
+
+#[tokio::test]
+#[ignore]
+async fn platform_admin_aktif_terakhir_tidak_bisa_dicabut_perannya() {
+    let u = Uji::baru().await;
+    let (a, nama_a) = u
+        .pengguna("pa-terakhir", &[Peran::PlatformAdmin], true)
+        .await;
+    let (b, nama_b) = u.pengguna("pa-lain", &[Peran::PlatformAdmin], true).await;
+    let dinonaktifkan = u.sisakan_admin(&[a, b]).await;
+    u.sesi(b).await;
+
+    // Hasil dikumpulkan dulu supaya admin uji lain dipulihkan sebelum assert apa pun.
+    let r_dua_admin = u.jalankan(cabut_admin(&nama_a, &nama_a)).await;
+    let peran_a = u.peran(&nama_a).await;
+    let r_terakhir = u.jalankan(cabut_admin(&nama_b, &nama_b)).await;
+    let peran_b = u.peran(&nama_b).await;
+    let sesi_b = u.jumlah_sesi(b).await;
+    let audit_b = u.jumlah_ubah_peran(b).await;
+    u.pulihkan(&dinonaktifkan).await;
+
+    r_dua_admin.expect("masih ada admin lain: pencabutan peran sendiri boleh");
+    assert!(peran_a.is_empty());
+    let e = r_terakhir.unwrap_err();
+    assert!(
+        matches!(e, GalatCli::Kelola(GalatKelola::AdminTerakhir(_))),
+        "{e}"
+    );
+    assert!(
+        e.to_string().contains("platform_admin aktif terakhir"),
+        "{e}"
+    );
+    assert_ne!(e.kode_keluar(), 0);
+    assert_eq!(peran_b, vec!["platform_admin".to_owned()], "peran utuh");
+    assert_eq!(sesi_b, 1, "sesi tidak dicabut oleh operasi yang ditolak");
+    assert_eq!(audit_b, 0, "penolakan tidak menulis audit");
+}
+
+/// Dua platform_admin saling menonaktifkan pada waktu yang sama: masing-masing melihat admin lain
+/// masih aktif, jadi tanpa serialisasi keduanya lolos dan sistem terkunci. Beberapa putaran dengan
+/// pasangan baru karena balapan ini tidak bisa dipaksa tanpa kait di dalam transaksi.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+#[ignore]
+async fn dua_penonaktifan_bersamaan_tidak_mengunci_sistem() {
+    let u = Uji::baru().await;
+    let mut dinonaktifkan = Vec::new();
+    let mut putaran = Vec::new();
+    for _ in 0..16 {
+        let (a, nama_a) = u.pengguna("pa-balap", &[Peran::PlatformAdmin], true).await;
+        let (b, nama_b) = u.pengguna("pa-balap", &[Peran::PlatformAdmin], true).await;
+        dinonaktifkan.extend(u.sisakan_admin(&[a, b]).await);
+        let gerbang = Arc::new(Barrier::new(2));
+        let nonaktifkan = |target: String, oleh: String| {
+            let (pool, gerbang) = (u.admin.clone(), gerbang.clone());
+            tokio::spawn(async move {
+                gerbang.wait().await;
+                kelola::ubah_aktif(&pool, &target, false, &oleh, &alasan(), Utc::now()).await
+            })
+        };
+        let t1 = nonaktifkan(nama_b.clone(), nama_a.clone());
+        let t2 = nonaktifkan(nama_a.clone(), nama_b.clone());
+        let (r1, r2) = (t1.await.unwrap(), t2.await.unwrap());
+        let aktif: i64 = sqlx::query_scalar(
+            "SELECT count(*) FROM admin_user WHERE pengguna_id = ANY($1) AND aktif",
+        )
+        .bind(vec![a, b])
+        .fetch_one(&u.su)
+        .await
+        .unwrap();
+        putaran.push((r1, r2, aktif));
+    }
+    u.pulihkan(&dinonaktifkan).await;
+
+    for (i, (r1, r2, aktif)) in putaran.into_iter().enumerate() {
+        assert_eq!(
+            [r1.is_ok(), r2.is_ok()].iter().filter(|b| **b).count(),
+            1,
+            "putaran {i}: tepat satu berhasil ({r1:?} / {r2:?})"
+        );
+        assert_eq!(aktif, 1, "putaran {i}: tepat satu admin tetap aktif");
+        let ditolak = r1.err().or(r2.err()).unwrap();
+        assert!(
+            matches!(
+                ditolak,
+                GalatKelola::PelakuTidakAktif(_) | GalatKelola::AdminTerakhir(_)
+            ),
+            "putaran {i}: {ditolak}"
+        );
+    }
+}
+
+/// Dua platform_admin mencabut peran platform_admin miliknya sendiri pada waktu yang sama. Pelaku
+/// tetap aktif di jalur ini, jadi hanya `jaga_admin_terakhir` di bawah kunci yang bisa menolak
+/// salah satunya; tanpa serialisasi keduanya melihat admin lain masih berperan dan sama-sama lolos.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+#[ignore]
+async fn dua_pencabutan_peran_bersamaan_tidak_mengunci_sistem() {
+    let u = Uji::baru().await;
+    let mut dinonaktifkan = Vec::new();
+    let mut putaran = Vec::new();
+    for _ in 0..16 {
+        let (a, nama_a) = u.pengguna("pa-cabut", &[Peran::PlatformAdmin], true).await;
+        let (b, nama_b) = u.pengguna("pa-cabut", &[Peran::PlatformAdmin], true).await;
+        dinonaktifkan.extend(u.sisakan_admin(&[a, b]).await);
+        let gerbang = Arc::new(Barrier::new(2));
+        let cabut = |nama: String| {
+            let (pool, gerbang) = (u.admin.clone(), gerbang.clone());
+            tokio::spawn(async move {
+                gerbang.wait().await;
+                kelola::cabut_peran(
+                    &pool,
+                    &nama,
+                    Peran::PlatformAdmin,
+                    &nama,
+                    &alasan(),
+                    Utc::now(),
+                )
+                .await
+            })
+        };
+        let t1 = cabut(nama_a.clone());
+        let t2 = cabut(nama_b.clone());
+        let (r1, r2) = (t1.await.unwrap(), t2.await.unwrap());
+        let masih_berperan: i64 = sqlx::query_scalar(
+            "SELECT count(DISTINCT pengguna_id) FROM admin_user_peran \
+             WHERE pengguna_id = ANY($1) AND peran = 'platform_admin' AND dicabut_at IS NULL \
+               AND (berlaku_sampai IS NULL OR berlaku_sampai > now())",
+        )
+        .bind(vec![a, b])
+        .fetch_one(&u.su)
+        .await
+        .unwrap();
+        putaran.push((r1, r2, masih_berperan));
+    }
+    u.pulihkan(&dinonaktifkan).await;
+
+    for (i, (r1, r2, masih_berperan)) in putaran.into_iter().enumerate() {
+        assert_eq!(
+            [r1.is_ok(), r2.is_ok()].iter().filter(|b| **b).count(),
+            1,
+            "putaran {i}: tepat satu berhasil ({r1:?} / {r2:?})"
+        );
+        assert_eq!(
+            masih_berperan, 1,
+            "putaran {i}: tepat satu tetap platform_admin"
+        );
+        let ditolak = r1.err().or(r2.err()).unwrap();
+        assert!(
+            matches!(ditolak, GalatKelola::AdminTerakhir(_)),
+            "putaran {i}: {ditolak}"
+        );
+    }
 }
 
 async fn hitung_rantai_dukcapil(u: &Uji) -> (i64, i64, i64, i64, i64, i64, i64) {
