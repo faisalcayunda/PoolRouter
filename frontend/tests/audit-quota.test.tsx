@@ -183,15 +183,38 @@ describe('quota tracker', () => {
     ...overrides,
   });
 
-  it('prints the numbers beside the bar and marks a nearly empty quota', async () => {
+  it('prints the numbers beside the bar and marks a nearly used sync share', async () => {
+    const client = stubClient({
+      kuota: vi.fn().mockResolvedValue([quota({ terpakai_sync_jam_berjalan: 90 })]),
+    });
+    renderWithI18n(<QuotaScreen client={client} />);
+
+    // Chip mengikuti frame Penpot: label status di kepala kartu "Porsi sync".
+    const sync = within(
+      (await screen.findByRole('heading', { name: 'Porsi sync' })).parentElement!.parentElement!,
+    );
+    expect(sync.getByText('Hampir habis')).toBeInTheDocument();
+    expect(sync.getByText(/Sync terpakai 90 dari batas 90%/)).toBeInTheDocument();
+    // Colour is never the only signal: the percentage and remaining count are text.
+    const today = within(screen.getByRole('heading', { name: 'Hari ini' }).parentElement!);
+    expect(today.getByText('700')).toBeInTheDocument();
+    expect(today.getByText('dari 800')).toBeInTheDocument();
+    expect(today.getByText(/Terpakai 88%, sisa 100 · reset/)).toBeInTheDocument();
+  });
+
+  it('shows the current-hour card and the green "Aman" chip on a healthy sync share', async () => {
     const client = stubClient({ kuota: vi.fn().mockResolvedValue([quota()]) });
     renderWithI18n(<QuotaScreen client={client} />);
 
-    expect(await screen.findByText('Hampir habis')).toBeInTheDocument();
-    // Colour is never the only signal: the percentage and remaining count are text.
-    expect(screen.getByText(/Terpakai 88%, sisa 100/)).toBeInTheDocument();
-    // 50 of a 100 sync allowance renders through the catalog's percentage phrasing.
-    expect(screen.getByText(/Sync terpakai 50 dari batas 50%/)).toBeInTheDocument();
+    const hour = within(
+      (await screen.findByRole('heading', { name: /^Jam berjalan \(/ })).parentElement!,
+    );
+    expect(hour.getByText('700')).toBeInTheDocument();
+    expect(hour.getByText('dari 1.000')).toBeInTheDocument();
+    expect(hour.getByText('Terpakai 70%, sisa 300')).toBeInTheDocument();
+    const chip = screen.getByText('Aman');
+    expect(chip.className).toContain('bg-success-container');
+    expect(chip.className).toContain('text-on-success-container');
   });
 
   it('fills the bar and reports the same percentage as the text (0–100 scale)', async () => {
@@ -204,17 +227,30 @@ describe('quota tracker', () => {
     expect(Number(bar.getAttribute('aria-valuenow'))).toBeCloseTo(87.5);
     expect(bar).toHaveAttribute('aria-valuemin', '0');
     expect(bar).toHaveAttribute('aria-valuemax', '100');
-    expect(screen.getByText('88%')).toBeInTheDocument();
   });
 
-  it('says the figures come from the database, not Redis', async () => {
+  it('shows the 7-day history as a placeholder until the API provides it', async () => {
     const client = stubClient({ kuota: vi.fn().mockResolvedValue([quota()]) });
     renderWithI18n(<QuotaScreen client={client} />);
 
-    // Once, not twice: the caveat sits under the title and is not repeated under the cards.
-    expect(
-      await screen.findAllByText(/Angka dihitung dari jumlah percobaan ke Dukcapil/),
-    ).toHaveLength(1);
+    const trend = within(
+      (await screen.findByRole('heading', { name: 'Pemakaian 7 hari' })).parentElement!
+        .parentElement!,
+    );
+    expect(trend.getByText('% dari kuota harian')).toBeInTheDocument();
+    const title = trend.getByText('Menunggu API riwayat kuota');
+    expect(title.parentElement!.className).toContain('border-dashed');
+    expect(trend.getByText(/getQuotaTracker menyediakan riwayat harian/)).toBeInTheDocument();
+  });
+
+  it('puts pool and update time under the title and the caveat in the sync card, once', async () => {
+    const client = stubClient({ kuota: vi.fn().mockResolvedValue([quota()]) });
+    renderWithI18n(<QuotaScreen client={client} />);
+
+    expect(await screen.findByText(/^Pool: Pool upstream · Diperbarui /)).toBeInTheDocument();
+    // The h1 is only focused by script, so it never draws a focus frame.
+    expect(screen.getByRole('heading', { level: 1 }).className).not.toContain('m3-focus');
+    expect(screen.getAllByText(/Angka dihitung dari jumlah percobaan ke Dukcapil/)).toHaveLength(1);
   });
 
   it('filters by pool and reloads on demand', async () => {
@@ -255,13 +291,13 @@ describe('quota tracker', () => {
     });
     renderWithI18n(<QuotaScreen client={client} />);
 
-    expect(await screen.findByText(/Terpakai/)).toBeInTheDocument();
+    expect(await screen.findByText(/Terpakai 88%/)).toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: 'Muat ulang' }));
 
     // The error shows, and the previous numbers stay on screen with their timestamp.
     expect(await screen.findByText(/Data belum bisa dimuat/)).toBeInTheDocument();
     expect(screen.getByText(/Data lama ditampilkan/)).toBeInTheDocument();
-    expect(screen.getByText(/Terpakai/)).toBeInTheDocument();
+    expect(screen.getByText(/Terpakai 88%/)).toBeInTheDocument();
   });
 
   it('surfaces a quota read failure with a retry', async () => {

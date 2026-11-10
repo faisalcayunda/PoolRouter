@@ -189,7 +189,7 @@ export function MetadataFieldsEditor({
         );
       })}
       <div>
-        <Button variant="outlined" onPress={() => onChange([...rows, emptyRow()])}>
+        <Button variant="filled-tonal" onPress={() => onChange([...rows, emptyRow()])}>
           {t('endpoint.metadata.add')}
         </Button>
       </div>

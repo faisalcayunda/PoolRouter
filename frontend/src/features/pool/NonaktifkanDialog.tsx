@@ -1,5 +1,5 @@
 import { useRef, useState, type FormEvent, type ReactNode } from 'react';
-import { useTranslation } from 'react-i18next';
+import { Trans, useTranslation } from 'react-i18next';
 import type { HasilK20, PratinjauK20 } from '../../api/client';
 import { Button } from '../../components/m3/Button';
 import { Dialog } from '../../components/m3/Dialog';
@@ -16,8 +16,8 @@ export const ALASAN_K20_MAKS = 500;
 export interface NonaktifkanDialogProps {
   /** Judul dialog (kalimat katalog milik pemanggil, mis. "Nonaktifkan upstream pool?"). */
   title: string;
-  /** Nama objek yang ditampilkan di badan dialog. */
-  objekNama: string;
+  /** Tujuan request (nama provider) yang disebut di kalimat dampak. */
+  tujuan: string;
   /** GET `pratinjau-nonaktif`; dibaca sekali begitu dialog dibuka. */
   loadPreview: (signal: AbortSignal) => Promise<PratinjauK20>;
   /** POST `nonaktifkan` dengan alasan yang sudah dipangkas. */
@@ -35,7 +35,7 @@ export interface NonaktifkanDialogProps {
  */
 export function NonaktifkanDialog({
   title,
-  objekNama,
+  tujuan,
   loadPreview,
   onConfirm,
   onClose,
@@ -86,15 +86,13 @@ export function NonaktifkanDialog({
           <Button variant="text" onPress={onClose}>
             {t('common.action.cancel')}
           </Button>
-          <Button isDisabled={saving || !ready} onPress={() => void submit()}>
+          <Button destructive isDisabled={saving || !ready} onPress={() => void submit()}>
             {saving ? t('k20.submitting') : t('k20.confirm')}
           </Button>
         </>
       }
     >
       <form noValidate onSubmit={(e) => void submit(e)} className="flex flex-col gap-4 pt-2">
-        <p>{t('k20.body', { nama: objekNama })}</p>
-
         {preview.status === 'loading' ? (
           <p role="status" aria-live="polite">
             {t('common.state.loading')}
@@ -109,8 +107,17 @@ export function NonaktifkanDialog({
             <h3 id="k20-dampak" className="typescale-title-small text-on-surface">
               {t('k20.preview.heading')}
             </h3>
+            <p>
+              <Trans
+                i18nKey="k20.impact.queued"
+                values={{ jumlah: data.akan_cancelled, tujuan }}
+                components={{ b: <strong /> }}
+              />
+            </p>
+            <p>
+              <Trans i18nKey="k20.impact.sent" values={{ tujuan }} components={{ b: <strong /> }} />
+            </p>
             <ul className="list-disc pl-5">
-              <li>{t('k20.preview.cancelled', { jumlah: data.akan_cancelled })}</li>
               <li>{t('k20.preview.failed', { jumlah: data.akan_failed })}</li>
               {typeof data.dipakai_oleh_downstream_pool_count === 'number' ? (
                 <li>

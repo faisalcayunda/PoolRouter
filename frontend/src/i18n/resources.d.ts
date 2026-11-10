@@ -9,8 +9,8 @@ export default interface Resources {
     },
     "antipattern": {
       "page": {
-        "adjacent": "Ambang NIK berdampingan (%)",
-        "adjacent_help": "Batas proporsi NIK berurutan yang boleh terkirim berdampingan.",
+        "adjacent": "Ambang konkurensi (request)",
+        "adjacent_help": "Jumlah maksimum request yang boleh berjalan bersamaan ke upstream ini.",
         "delay_help": "Jeda acak antar-pengiriman dipilih di antara minimum dan maksimum.",
         "max_delay": "Jeda maksimum (ms)",
         "min_delay": "Jeda minimum (ms)",
@@ -128,14 +128,16 @@ export default interface Resources {
         "pool_help": "Client hanya bisa memakai pool yang ditautkan.",
         "save": "Simpan client",
         "title": "Tambah client",
-        "webhook": "Alamat webhook (opsional)"
+        "webhook": "Alamat webhook (opsional)",
+        "webhook_help": "Harus diawali https://"
       },
       "page": {
         "add": "Tambah client",
         "title": "Client dan kredensial"
       },
       "snackbar": {
-        "saved": "Client tersimpan"
+        "saved": "Client tersimpan",
+        "saved_webhook_failed": "Client tersimpan, tetapi webhook belum tersimpan. Atur lewat halaman webhook client."
       },
       "type": {
         "api_key": "API key",
@@ -183,9 +185,10 @@ export default interface Resources {
         "value": "{{burst, number}} burst, isi ulang {{isi_ulang}} per detik"
       },
       "page": {
-        "subtitle": "Aplikasi BGN yang memanggil PoolRouter, beserta kredensial dan webhook-nya."
+        "subtitle": "Aplikasi BGN yang memanggil PoolRouter. Secret hanya tampil sekali saat dibuat."
       },
       "row": {
+        "credential_aria": "Buat kredensial untuk client {{nama}}",
         "manage": "Kelola",
         "manage_aria": "Kelola client {{nama}}"
       },
@@ -322,7 +325,6 @@ export default interface Resources {
         "done": "Downstream pool {{nama}} diaktifkan."
       },
       "col": {
-        "alokasi": "Alokasi",
         "mode": "Mode",
         "name": "Nama",
         "ttl": "TTL antrean",
@@ -382,12 +384,8 @@ export default interface Resources {
       },
       "list": {
         "activate_aria": "Aktifkan downstream pool {{nama}}",
-        "alokasi_persen": "{{nilai}}% kuota efektif",
-        "alokasi_tetap": "{{nilai}} request per periode",
-        "boleh_pinjam": "boleh pinjam",
         "deactivate_aria": "Nonaktifkan downstream pool {{nama}}",
         "edit_aria": "Ubah downstream pool {{nama}}",
-        "no_alokasi": "Tanpa alokasi",
         "ttl_hours": "{{jam}} jam"
       },
       "mode": {
@@ -493,7 +491,6 @@ export default interface Resources {
         "deskripsi": "Deskripsi",
         "empty": "Belum ada field metadata.",
         "group": "Field ke-{{nomor}}",
-        "info": "Kontrak metadata dicatat di log transaksi untuk data balikan. Request tanpa field wajib ditolak sebelum memakai kuota. Field Rahasia tidak pernah dicatat atau dikirim ke callback.",
         "kirim": "Kirim ke data balikan",
         "klasifikasi": "Klasifikasi",
         "klasifikasi_option": {
@@ -575,10 +572,12 @@ export default interface Resources {
       }
     },
     "k20": {
-      "body": "Periksa dampak berikut sebelum menonaktifkan {{nama}}.",
-      "confirm": "Nonaktifkan",
+      "confirm": "Nonaktifkan pool",
+      "impact": {
+        "queued": "<b>{{jumlah, number}} request</b> yang masih mengantre akan dibatalkan dengan alasan \"pool nonaktif\". Request tidak akan dikirim ke {{tujuan}} dan tidak memakai kuota.",
+        "sent": "Request yang sudah dikirim ke {{tujuan}} tidak berubah. Client yang punya webhook akan menerima status <b>Dibatalkan</b> (cancelled) satu kali."
+      },
       "preview": {
-        "cancelled": "{{jumlah, number}} request antre akan dibatalkan.",
         "computed": "Dihitung pada {{waktu}}.",
         "downstream_count": "Dipakai oleh {{jumlah, number}} downstream pool.",
         "failed": "{{jumlah, number}} request yang menunggu retry akan digagalkan.",
@@ -934,9 +933,9 @@ export default interface Resources {
       "page": {
         "empty_action": "Atur upstream pool",
         "hour": "Jam berjalan ({{rentang}})",
+        "limit_of": "dari {{total, number}}",
         "meta": "Pool: {{nama_pool}} · Diperbarui {{waktu}}",
-        "note": "Angka dihitung dari jumlah percobaan ke Dukcapil, termasuk percobaan ulang dan panggilan gagal. Selisih dengan log transaksi dapat terjadi.",
-        "of_total": "{{terpakai, number}} dari {{total, number}}",
+        "note": "Angka dihitung dari jumlah percobaan ke Dukcapil. Selisih kecil dengan log transaksi bisa terjadi.",
         "pool_filter": "Pool",
         "pool_unknown": "Pool upstream",
         "reload": "Muat ulang",
@@ -946,6 +945,10 @@ export default interface Resources {
         "sync_used": "Sync terpakai {{terpakai, number}} dari batas {{persen, number}}%",
         "title": "Kuota",
         "today": "Hari ini",
+        "trend_heading": "Pemakaian 7 hari",
+        "trend_pending_body": "Chart pemakaian 7 hari ditunda sampai getQuotaTracker menyediakan riwayat harian.",
+        "trend_pending_title": "Menunggu API riwayat kuota",
+        "trend_unit": "% dari kuota harian",
         "used_left": "Terpakai {{persen, number}}%, sisa {{sisa, number}}"
       }
     },
@@ -1022,6 +1025,7 @@ export default interface Resources {
         "save": "Simpan secret",
         "value": "Nilai"
       },
+      "changed_unknown": "Belum tersedia",
       "col": {
         "actions": "Aksi",
         "changed": "Diubah",
@@ -1031,6 +1035,7 @@ export default interface Resources {
       },
       "delete": {
         "blocked": {
+          "ack": "Mengerti",
           "body": "{{nama}} masih dipakai oleh provider aktif: {{daftar}}. Nonaktifkan atau ubah provider itu dulu, lalu hapus secret ini.",
           "short": "{{nama}} masih dipakai provider aktif. Ubah atau nonaktifkan provider itu dulu, lalu hapus secret ini.",
           "title": "Secret masih dipakai"
@@ -1057,8 +1062,7 @@ export default interface Resources {
         "write_only": "Nilai tersamar. Setelah disimpan, nilai tidak bisa dilihat atau disalin."
       },
       "replace": {
-        "body": "Nilai lama tidak bisa dilihat. Nilai baru langsung menggantikannya.",
-        "confirm": "Ganti nilai",
+        "confirm": "Simpan",
         "new_value": "Nilai baru",
         "title": "Ganti secret {{nama}}"
       },
@@ -1164,7 +1168,6 @@ export default interface Resources {
         "title": "Belum ada upstream pool"
       },
       "form": {
-        "back": "Kembali ke daftar",
         "error": {
           "alasan_rentang": "Tulis alasan {{min}} sampai {{max}} karakter.",
           "bilangan": "Tulis bilangan yang sah.",
@@ -1180,14 +1183,14 @@ export default interface Resources {
           "wajib": "Wajib diisi."
         },
         "field": {
-          "ambang_berdampingan": "Ambang berdampingan (request)",
+          "ambang_berdampingan": "Ambang konkurensi (request)",
           "batas_percobaan": "Percobaan per request (1 sampai 5)",
           "jeda_maks": "Jeda maksimum (ms)",
           "jeda_min": "Jeda minimum (ms)",
           "jendela_kuota": "Periode kuota",
           "kuota_harian": "Kuota harian (request)",
           "margin_kuota": "Margin kuota (0,001 sampai 0,2)",
-          "porsi_sync_persen": "Porsi sync (%)",
+          "porsi_sync_persen": "Porsi maksimal sync (%)",
           "rate_limit_per_jam": "Rate limit per jam (request)",
           "reset_kuota_jam": "Jam reset (0 sampai 23)",
           "reset_kuota_zona": "Zona waktu reset",
@@ -1212,11 +1215,8 @@ export default interface Resources {
           "label": "Alasan perubahan",
           "optional": "Alasan (opsional)"
         },
-        "save_edit": "Simpan perubahan",
-        "save_new": "Simpan upstream pool",
         "saved": "Upstream pool disimpan.",
-        "subtitle": "Penyimpanan mengganti seluruh konfigurasi; isian awal diambil dari konfigurasi saat ini.",
-        "title_edit": "Ubah upstream pool {{nama}}"
+        "title_edit": "Upstream pool · {{nama}}"
       },
       "list": {
         "activate": "Aktifkan",
@@ -1248,6 +1248,7 @@ export default interface Resources {
       },
       "tab": {
         "antipattern": "Anti-pola",
+        "aria": "Bagian konfigurasi upstream pool",
         "quota": "Kuota dan laju"
       }
     },
@@ -1258,6 +1259,7 @@ export default interface Resources {
       },
       "col": {
         "note": "Catatan",
+        "queue_id": "queue_id",
         "reason": "Alasan gagal",
         "request_status": "Status request",
         "time": "Waktu"
@@ -1286,11 +1288,13 @@ export default interface Resources {
       },
       "rotate": {
         "body": "Secret lama langsung tidak berlaku. Aplikasi {{nama_client}} akan gagal memverifikasi webhook sampai secret baru dipasang di aplikasinya.",
+        "once": "Secret baru tampil satu kali setelah Anda memilih rotasi.",
         "title": "Rotasi secret webhook?"
       },
       "secret": {
+        "active_desc": "Dibuat oleh sistem dan hanya tampil sekali, tidak bisa dilihat lagi. Versi aktif: {{versi}}.",
         "create": "Buat secret",
-        "desc": "Dibuat oleh sistem dan hanya tampil sekali. Pasang di aplikasi Anda untuk memverifikasi webhook.",
+        "desc": "Belum ada secret. Dibuat oleh sistem dan hanya tampil sekali. Pasang di aplikasi Anda untuk memverifikasi webhook.",
         "heading": "Secret tanda tangan",
         "rotate": "Rotasi secret"
       },
