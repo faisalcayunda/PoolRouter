@@ -1,6 +1,7 @@
-import { useMemo, useState, type ReactNode } from 'react';
+import { useMemo, useState, type FormEvent, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-aria-components';
+import { today, type DateValue } from '@internationalized/date';
 import {
   api,
   type ApiClient,
@@ -9,9 +10,9 @@ import {
   type LogPage,
 } from '../../api/client';
 import { Button } from '../../components/m3/Button';
-import { InlineAlert } from '../../components/m3/InlineAlert';
 import { Card } from '../../components/m3/Card';
 import { Chip } from '../../components/m3/Chip';
+import { DateRangePicker } from '../../components/m3/DatePicker';
 import { IconButton } from '../../components/m3/IconButton';
 import { Pagination } from '../../components/m3/Pagination';
 import { Select, SelectItem } from '../../components/m3/Select';
@@ -21,14 +22,7 @@ import { TextField } from '../../components/m3/TextField';
 import { Icon, icons } from '../../icons';
 import { useFormatter } from '../../i18n/useFormatter';
 import { enumLabel } from '../../i18n/enums';
-import {
-  DateRangeField,
-  formatTypedDate,
-  validateTypedRange,
-  type DateRange,
-  type DateRangeFieldErrors,
-} from '../common/DateRangeField';
-import { PageHeader, EmptyState, QueryError } from '../common/page';
+import { EmptyState, QueryError } from '../common/page';
 import { useQuery } from '../common/useQuery';
 import { useDocumentTitle, useFocusOnMount } from '../common/a11y';
 import { MaskedNik } from '../common/MaskedNik';
@@ -38,37 +32,54 @@ import { SnackbarRegion, useSnackbar } from '../common/useSnackbar';
 import { accessTone } from './accessTone';
 import { PayloadDialog } from './PayloadDialog';
 
-/** Default window a first visit shows: the last 24 hours, so the table is never silently empty. */
-function lastDay(): DateRange {
-  const now = new Date();
-  const start = new Date(now.getTime() - 24 * 3600 * 1000);
-  const iso = (d: Date) => {
-    const wib = new Date(d.getTime() + 7 * 3600 * 1000);
-    return {
-      date: wib.toISOString().slice(0, 10),
-      time: wib.toISOString().slice(11, 16),
-    };
-  };
-  const s = iso(start);
-  const e = iso(now);
-  return {
-    from: `${s.date}T${s.time}:00+07:00`,
-    to: `${e.date}T${e.time}:59+07:00`,
-    startDate: s.date,
-    startTime: s.time,
-    endDate: e.date,
-    endTime: e.time,
-  };
+/** Satu-satunya zona waktu layar ini (WIB); rentang tanggal dikirim sebagai hari penuh WIB. */
+const ZONE = 'Asia/Jakarta';
+
+/** Rentang dua tanggal; bentuknya sama dengan `RangeValue` milik React Aria. */
+interface DayRange {
+  start: DateValue;
+  end: DateValue;
 }
 
-/** A client offered by the filter; the list comes from the rows already loaded. */
+/** Default kunjungan pertama: hari ini (WIB), seperti rentang di frame Penpot. */
+function todayRange(): DayRange {
+  const day = today(ZONE);
+  return { start: day, end: day };
+}
+
+/** `queue_id` di API berupa UUID; isian lain dicari sebagai kode transaksi. */
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function buildRequest(term: string, clientId: string | null, range: DayRange): LogCariRequest {
+  const body: LogCariRequest = {
+    dari: `${range.start.toString()}T00:00:00+07:00`,
+    sampai: `${range.end.toString()}T23:59:59+07:00`,
+  };
+  const q = term.trim();
+  if (q) {
+    if (UUID.test(q)) body.queue_id = q;
+    else body.kode_transaksi = q;
+  }
+  if (clientId) body.client_id = clientId;
+  return body;
+}
+
+/** Kode panjang tampil ringkas seperti di frame ("018f…c4e1"); kode lengkap ada di tautan Detail. */
+function shortCode(code: string): string {
+  return code.length > 12 ? `${code.slice(0, 4)}…${code.slice(-4)}` : code;
+}
+
+/** A client offered by the filter. */
 interface ClientOption {
   id: string;
   nama: string;
 }
 
-/** How many rows one page shows (section 13.2: "Baris per halaman" select). */
-const PAGE_SIZES = [10, 25, 50, 100];
+/** Baris per halaman; frame Penpot tidak punya pilihan ukuran halaman ("1–25 dari ..."). */
+const PAGE_SIZE = 25;
+
+/** Kartu ringkasan di frame; API belum punya agregatnya, jadi nilainya placeholder. */
+const KPI_KEYS = ['today', 'success', 'failed', 'latency'] as const;
 
 export interface LogPageScreenProps {
   client?: ApiClient;
@@ -80,15 +91,13 @@ export interface LogPageScreenProps {
 }
 
 /**
- * S11 — Log transaksi (operator, auditor). Filters go in the POST body so they never reach the
- * access log (section 18.3); the table shows the NIK masked by the server and the operator never
- * gets a payload affordance.
+ * S11 — Log transaksi (operator, auditor), disusun mengikuti frame Penpot "F0 / S11-log-transaksi".
+ * Filters go in the POST body so they never reach the access log (section 18.3); the table shows
+ * the NIK masked by the server and the operator never gets a payload affordance.
  *
  * Responsive rules (section 4): below 600 px every row becomes a card, in the medium class
- * (600–839 px) the low-priority columns (queue_id, Client) are hidden so the masked NIK and the
- * time still fit, and above 840 px the full table shows. The markup stays a semantic table at
- * every width — `display: block` on the table only changes how it wraps, not what assistive tech
- * sees.
+ * (600–839 px) the low-priority column (Client) is hidden so the masked NIK and the time still
+ * fit, and above 840 px the full table shows. The markup stays a semantic table at every width.
  */
 export function LogPageScreen({
   client = api,
@@ -106,396 +115,343 @@ export function LogPageScreen({
   useDocumentTitle(t('title.page.log'));
   const snackbar = useSnackbar();
 
-  const [code, setCode] = useState(initialCode);
-  const [queueId, setQueueId] = useState('');
+  const [term, setTerm] = useState(initialCode);
   const [clientId, setClientId] = useState<string | null>(null);
-  const [range, setRange] = useState<DateRange>(lastDay);
-  const [typed, setTyped] = useState(() => {
-    const r = lastDay();
-    return { start: formatTypedDate(r.startDate), end: formatTypedDate(r.endDate) };
-  });
-  const [codeError, setCodeError] = useState<string | null>(null);
-  const [rangeErrors, setRangeErrors] = useState<DateRangeFieldErrors>({});
-  const [rangeMessage, setRangeMessage] = useState<string | null>(null);
+  const [range, setRange] = useState<DayRange>(todayRange);
   const [payloadFor, setPayloadFor] = useState<LogBaris | null>(null);
   const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(25);
 
   /**
-   * The submitted filters. Only the range changes it on its own: a new window should show results
-   * immediately, while typing in a text field must not fire a request per keystroke. A deep link
-   * (`/log/<kode>`) seeds the code as a filter too — filling the field without filtering would show
-   * every client's rows for the window and look like the link did nothing.
+   * The submitted filters. Client and range apply at once (a select or a calendar pick is a
+   * deliberate choice); the search text applies on Enter so typing never fires a request per
+   * keystroke. A deep link (`/log/<kode>`) seeds the code as a filter too — filling the field
+   * without filtering would show every client's rows for the day and look like the link did nothing.
    */
-  const [applied, setApplied] = useState<LogCariRequest>(() => {
-    const initial = lastDay();
-    const seeded: LogCariRequest = { dari: initial.from, sampai: initial.to };
-    const linked = initialCode.trim();
-    if (linked) seeded.kode_transaksi = linked;
-    return seeded;
-  });
-  /**
-   * Bumped whenever the operator asks for the same filters again. The key carries it, so "Cari" on
-   * an unchanged form re-reads the window instead of silently keeping the previous snapshot.
-   */
+  const [applied, setApplied] = useState<LogCariRequest>(() =>
+    buildRequest(initialCode, null, todayRange()),
+  );
+  /** Bumped whenever the operator asks for the same filters again, so Enter re-reads the window. */
   const [run, setRun] = useState(0);
   const filters = useQuery<LogPage>(
     (signal) => client.cariLog(applied, { signal }),
     `${JSON.stringify(applied)}#${run}`,
   );
-  const appliedRange = `${applied.dari}|${applied.sampai}`;
-
-  // Track the range the query last ran with, and re-run once when the pickers move.
-  const [rangeInUse, setRangeInUse] = useState(appliedRange);
-  if (`${range.from}|${range.to}` !== rangeInUse) {
-    const nextFrom = range.from;
-    const nextTo = range.to;
-    setRangeInUse(`${nextFrom}|${nextTo}`);
-    if (nextFrom && nextTo)
-      setApplied((current) => ({ ...current, dari: nextFrom, sampai: nextTo }));
-  }
 
   const rows = useMemo(() => filters.data?.baris ?? [], [filters.data]);
 
-  /** Clients seen in this result, for the client filter and its chip (section 7). */
-  const clients = useMemo<ClientOption[]>(() => {
-    const seen = new Map<string, string>();
-    for (const row of rows) seen.set(row.client_id, row.client_nama);
-    return [...seen].map(([id, nama]) => ({ id, nama }));
-  }, [rows]);
+  /**
+   * Clients seen so far, for the select and its chip. Filtering to one client shrinks the result to
+   * that client, so the list keeps what earlier results showed instead of collapsing to one option.
+   */
+  const [known, setKnown] = useState<ClientOption[]>([]);
+  const missing = rows.filter((r) => !known.some((c) => c.id === r.client_id));
+  if (missing.length > 0) {
+    const next = [...known];
+    for (const row of missing) {
+      if (!next.some((c) => c.id === row.client_id))
+        next.push({ id: row.client_id, nama: row.client_nama });
+    }
+    setKnown(next);
+  }
+  const selectedClient = known.find((c) => c.id === clientId) ?? null;
 
-  const selectedClient = clients.find((c) => c.id === clientId) ?? null;
+  const [rangeError, setRangeError] = useState<string | null>(null);
 
-  function submit(event: React.FormEvent) {
+  function submit(event: FormEvent) {
     event.preventDefault();
-    // Section 15.1: both ends are validated before anything is sent, and the messages are per
-    // field so the reader can see which date is wrong. Without this an inverted or half-typed
-    // range was silently ignored and the previous window's rows stayed on screen.
-    const checked = validateTypedRange(range, typed, {
-      format: t('common.date.format_error'),
-      order: t('common.date.order_error'),
-    });
-    setRangeErrors(checked.errors);
-    setRangeMessage(checked.errorMessage);
+    setPage(1);
+    setApplied(buildRequest(term, clientId, range));
+    setRun((n) => n + 1);
+  }
 
-    // The code field is short; a code with spaces is almost certainly a paste slip.
-    if (code.trim() !== '' && /\s/.test(code.trim())) {
-      setCodeError(t('log.filter.code_help'));
+  function changeClient(next: string | null) {
+    setClientId(next);
+    setPage(1);
+    setApplied(buildRequest(term, next, range));
+  }
+
+  function changeRange(next: DayRange | null) {
+    if (!next) return;
+    // A picked end before the start never reaches the request; the field says why.
+    if (next.end.compare(next.start) < 0) {
+      setRangeError(t('common.date.order_error'));
       return;
     }
-    setCodeError(null);
-    if (!checked.ok) return;
+    setRangeError(null);
+    setRange(next);
     setPage(1);
-    const next: LogCariRequest = { dari: range.from, sampai: range.to };
-    if (code.trim()) next.kode_transaksi = code.trim();
-    if (queueId.trim()) next.queue_id = queueId.trim();
-    if (clientId) next.client_id = clientId;
-    setApplied(next);
-    setRun((n) => n + 1);
+    setApplied(buildRequest(term, clientId, next));
   }
 
   function clearFilters() {
-    const base: LogCariRequest = { dari: range.from, sampai: range.to };
-    setCode('');
-    setQueueId('');
+    setTerm('');
     setClientId(null);
-    setCodeError(null);
-    setRangeErrors({});
-    setRangeMessage(null);
+    setRangeError(null);
     setPage(1);
-    setApplied(base);
+    setApplied(buildRequest('', null, range));
     setRun((n) => n + 1);
   }
 
-  const pageStart = (page - 1) * pageSize;
-  const visible = rows.slice(pageStart, pageStart + pageSize);
-  const pageCount = Math.max(1, Math.ceil(rows.length / pageSize));
+  const pageStart = (page - 1) * PAGE_SIZE;
+  const visible = rows.slice(pageStart, pageStart + PAGE_SIZE);
+  const pageCount = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
   const rangeLabel =
     rows.length === 0
       ? t('common.pagination.page_range', { dari: 0, sampai: 0, total: 0 })
       : t('common.pagination.page_range', {
           dari: pageStart + 1,
-          sampai: Math.min(pageStart + pageSize, rows.length),
+          sampai: Math.min(pageStart + PAGE_SIZE, rows.length),
           total: rows.length,
         });
 
-  const hasFilters = code !== '' || queueId !== '' || clientId !== null;
+  const hasFilters = term !== '' || clientId !== null;
+  const thClass = 'typescale-label-small border-b border-outline-variant px-5 py-3 font-medium';
+  const tdClass = 'typescale-body-medium px-5 py-3 align-middle';
 
   return (
     <section className="flex w-full flex-col gap-6">
-      <PageHeader title={t('log.page.title')} subtitle={t('log.page.subtitle')} titleRef={titleRef}>
-        {/* Section 7: an operator is told where a full-NIK search lives instead of hunting for it. */}
-        {payloadAllowed ? null : (
-          <InlineAlert tone="info" live="polite">
-            {t('log.page.nik_hint')}
-          </InlineAlert>
-        )}
-      </PageHeader>
+      {/* Judul tanpa bingkai fokus: frame Penpot tidak menggambarnya. Fokus programatik tetap
+          dipindah ke sini saat layar dibuka supaya pembaca layar mulai dari judul. */}
+      <div className="flex max-w-[620px] flex-col gap-2">
+        <h1
+          ref={titleRef}
+          tabIndex={-1}
+          className="typescale-headline-small text-on-surface outline-none"
+        >
+          {t('log.page.title')}
+        </h1>
+        <p className="typescale-body-medium text-on-surface-variant">{t('log.page.subtitle')}</p>
+      </div>
 
-      {/* aria-label and no `form` role kept out of the landmark list: a named form would add a
-          landmark per screen (non-blocking note in the SHAA-203 design review). */}
-      <form className="flex flex-col gap-4" onSubmit={submit}>
-        <div className="flex flex-col gap-4 md:flex-row">
+      {/* Kartu ringkasan: API belum punya agregat harian, jadi nilainya placeholder "Menunggu API". */}
+      <ul className="grid grid-cols-2 gap-4 expanded:grid-cols-4">
+        {KPI_KEYS.map((key) => (
+          <li key={key} className="flex">
+            <Card variant="outlined" className="flex w-full flex-col gap-2 rounded-large! p-5!">
+              <p className="typescale-title-small text-on-surface-variant">{t(`log.kpi.${key}`)}</p>
+              <p className="typescale-headline-small text-on-surface" aria-hidden="true">
+                —
+              </p>
+              <p className="typescale-body-medium text-on-surface-variant">
+                {t('log.kpi.pending')}
+              </p>
+            </Card>
+          </li>
+        ))}
+      </ul>
+
+      <Card variant="outlined" className="flex flex-col rounded-large! p-0!">
+        <form
+          className="flex flex-col gap-3 p-5 expanded:flex-row expanded:items-start"
+          onSubmit={submit}
+        >
+          {/* Frame Penpot tidak punya tombol "Cari": Enter di kolom cari mengirim form. Tombol
+              tersembunyi ini menjadikan pengiriman dengan Enter pasti, apa pun isi form-nya. */}
+          <button type="submit" hidden />
           <TextField
-            label={t('log.filter.code')}
-            description={t('log.filter.code_help')}
-            value={code}
-            onChange={setCode}
-            isInvalid={codeError !== null}
-            errorMessage={codeError ?? undefined}
-            className="md:flex-1"
-          />
-          <TextField
-            label={t('log.filter.queue')}
-            description={t('log.filter.queue_help')}
-            value={queueId}
-            onChange={setQueueId}
-            className="md:flex-1"
+            label={t('common.action.search')}
+            placeholder={t('log.filter.search_placeholder')}
+            value={term}
+            onChange={setTerm}
+            className="expanded:w-80"
           />
           <Select
             label={t('log.filter.client')}
             selectedKey={clientId ?? 'semua'}
             onSelectionChange={(key) => {
               if (key === null) return;
-              setClientId(String(key) === 'semua' ? null : String(key));
-              setPage(1);
+              changeClient(String(key) === 'semua' ? null : String(key));
             }}
-            className="md:w-64"
+            className="expanded:w-60 [&>button]:w-full"
           >
             {/* A select whose empty state has no option of its own shows the framework's English
-                "Select an item"; the catalog already names "all" (common.action.all). */}
-            <SelectItem id="semua">{t('common.action.all')}</SelectItem>
-            {clients.map((c) => (
+                "Select an item"; the catalog names the "all" option. */}
+            <SelectItem id="semua">{t('log.filter.client_all')}</SelectItem>
+            {known.map((c) => (
               <SelectItem key={c.id} id={c.id}>
                 {c.nama}
               </SelectItem>
             ))}
           </Select>
-        </div>
-        <DateRangeField
-          legend={t('log.filter.range')}
-          value={range}
-          typed={typed}
-          onTypedChange={setTyped}
-          errors={rangeErrors}
-          errorMessage={rangeMessage}
-          onChange={(next) => {
-            if (!next) return;
-            setRange(next);
-            setRangeErrors({});
-            setRangeMessage(null);
-          }}
-        />
-        <div className="flex flex-wrap gap-2">
-          <Button type="submit">{t('common.action.search')}</Button>
-          <Button variant="text" onPress={clearFilters}>
+          <div className="flex flex-col gap-1 expanded:w-[280px]">
+            <DateRangePicker
+              label={t('log.filter.range')}
+              calendarLabel={t('log.filter.range_picker')}
+              separator="–"
+              value={range}
+              onChange={changeRange}
+              isInvalid={rangeError !== null}
+            />
+            {rangeError ? (
+              <p role="alert" className="typescale-body-small text-error">
+                {rangeError}
+              </p>
+            ) : null}
+          </div>
+          <Button variant="outlined" onPress={clearFilters} className="expanded:mt-2 self-start">
             {t('common.action.clear_filters')}
           </Button>
-        </div>
-      </form>
+        </form>
 
-      {selectedClient ? (
-        <div className="flex flex-wrap items-center gap-2">
-          <Chip
-            variant="input"
-            onRemove={() => {
-              setClientId(null);
-              setPage(1);
-            }}
-            removeLabel={t('common.action.clear_filters')}
-          >
-            {t('log.chip.client', { nama: selectedClient.nama })}
-          </Chip>
-        </div>
-      ) : null}
+        {selectedClient ? (
+          <div className="flex flex-wrap items-center gap-2 px-5 pb-4">
+            <Chip
+              variant="input"
+              onRemove={() => changeClient(null)}
+              removeLabel={t('common.action.clear_filters')}
+            >
+              {t('log.chip.client', { nama: selectedClient.nama })}
+            </Chip>
+          </div>
+        ) : null}
 
-      {filters.status === 'loading' ? (
-        <Card variant="outlined" className="flex flex-col gap-2">
-          <p className="sr-only">{t('common.state.loading')}</p>
-          {[0, 1, 2, 3, 4].map((i) => (
-            <Skeleton key={i} className="h-10 w-full rounded-extra-small" />
-          ))}
-        </Card>
-      ) : null}
-
-      {filters.status === 'error' ? (
-        <QueryError error={filters.error} onRetry={filters.reload} />
-      ) : null}
-
-      {filters.status === 'success' && rows.length === 0 ? (
-        <>
-          <EmptyState title={t('common.empty.logs.title')} body={t('common.empty.logs.body')} />
-          {hasFilters ? (
-            <div>
-              <Button variant="text" onPress={clearFilters}>
-                {t('common.action.clear_filters')}
-              </Button>
+        <div className="border-t border-surface-container-highest">
+          {filters.status === 'loading' ? (
+            <div className="flex flex-col gap-2 p-5">
+              <p className="sr-only">{t('common.state.loading')}</p>
+              {[0, 1, 2, 3, 4].map((i) => (
+                <Skeleton key={i} className="h-10 w-full rounded-extra-small" />
+              ))}
             </div>
           ) : null}
-        </>
-      ) : null}
 
-      {rows.length > 0 ? (
-        <>
-          <Card variant="outlined" className="p-0">
-            <ScrollArea label={t('log.page.title')}>
-              <div className="table-card">
-                <table className="w-full border-collapse text-left">
-                  <caption className="sr-only">{t('log.page.title')}</caption>
-                  <thead>
-                    <tr className="typescale-title-small text-on-surface-variant">
-                      <th
-                        scope="col"
-                        className="border-b border-outline-variant px-4 py-3 font-medium"
-                      >
-                        {t('log.col.time')}
-                      </th>
-                      <th
-                        scope="col"
-                        className="border-b border-outline-variant px-4 py-3 font-medium"
-                      >
-                        {t('log.col.code')}
-                      </th>
-                      <th
-                        scope="col"
-                        className="hide-md border-b border-outline-variant px-4 py-3 font-medium"
-                      >
-                        {t('log.filter.queue')}
-                      </th>
-                      <th
-                        scope="col"
-                        className="hide-md border-b border-outline-variant px-4 py-3 font-medium"
-                      >
-                        {t('log.col.client')}
-                      </th>
-                      <th
-                        scope="col"
-                        className="border-b border-outline-variant px-4 py-3 font-medium"
-                      >
-                        {t('log.col.nik')}
-                      </th>
-                      <th
-                        scope="col"
-                        className="border-b border-outline-variant px-4 py-3 font-medium"
-                      >
-                        {t('log.col.access')}
-                      </th>
-                      {payloadAllowed ? (
-                        <th
-                          scope="col"
-                          className="border-b border-outline-variant px-4 py-3 font-medium"
-                        >
-                          {t('log.payload.open')}
+          {filters.status === 'error' ? (
+            <div className="p-5">
+              <QueryError error={filters.error} onRetry={filters.reload} />
+            </div>
+          ) : null}
+
+          {filters.status === 'success' && rows.length === 0 ? (
+            <>
+              <EmptyState title={t('common.empty.logs.title')} body={t('common.empty.logs.body')} />
+              {hasFilters ? (
+                <div className="px-5 pb-5">
+                  <Button variant="text" onPress={clearFilters}>
+                    {t('common.action.clear_filters')}
+                  </Button>
+                </div>
+              ) : null}
+            </>
+          ) : null}
+
+          {rows.length > 0 ? (
+            <>
+              <ScrollArea label={t('log.page.title')}>
+                <div className="table-card">
+                  <table className="w-full border-collapse text-left">
+                    <caption className="sr-only">{t('log.page.title')}</caption>
+                    <thead>
+                      <tr className="bg-surface text-on-surface-variant">
+                        <th scope="col" className={thClass}>
+                          {t('log.col.time')}
                         </th>
-                      ) : null}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {visible.map((row) => {
-                      const payloadRowId = `payload-${row.kode_transaksi}`;
-                      return (
-                        <tr
-                          key={row.kode_transaksi}
-                          className="border-b border-outline-variant text-on-surface"
-                        >
-                          <td
-                            data-label={t('log.col.time')}
-                            className="typescale-body-medium px-4 py-3 align-middle"
+                        <th scope="col" className={thClass}>
+                          {t('log.col.code')}
+                        </th>
+                        <th scope="col" className={`hide-md ${thClass}`}>
+                          {t('log.col.client')}
+                        </th>
+                        <th scope="col" className={thClass}>
+                          {t('log.col.nik')}
+                        </th>
+                        <th scope="col" className={thClass}>
+                          {t('log.col.access')}
+                        </th>
+                        <th scope="col" className={thClass}>
+                          <span className="sr-only">{t('log.action.detail')}</span>
+                        </th>
+                        {payloadAllowed ? (
+                          <th scope="col" className={thClass}>
+                            {t('log.payload.open')}
+                          </th>
+                        ) : null}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {visible.map((row) => {
+                        const payloadRowId = `payload-${row.kode_transaksi}`;
+                        return (
+                          <tr
+                            key={row.kode_transaksi}
+                            className="h-14 border-b border-surface-container text-on-surface"
                           >
-                            {format.tanggalWaktu(row.requested_at)}
-                          </td>
-                          <td
-                            data-label={t('log.col.code')}
-                            className="typescale-body-medium px-4 py-3 align-middle"
-                          >
-                            <Link
-                              href={`/log/${encodeURIComponent(row.kode_transaksi)}`}
-                              className="m3-focus text-primary underline-offset-2 hover:underline"
+                            <td
+                              data-label={t('log.col.time')}
+                              className={`${tdClass} text-on-surface-variant`}
                             >
-                              {row.kode_transaksi}
-                            </Link>
-                          </td>
-                          <td
-                            data-label={t('log.filter.queue')}
-                            className="hide-md typescale-body-medium px-4 py-3 align-middle"
-                          >
-                            {row.queue_id}
-                          </td>
-                          <td
-                            data-label={t('log.col.client')}
-                            className="hide-md typescale-body-medium px-4 py-3 align-middle"
-                          >
-                            {row.client_nama}
-                          </td>
-                          <td
-                            data-label={t('log.col.nik')}
-                            className="typescale-body-medium px-4 py-3 align-middle"
-                          >
-                            <MaskedNik value={row.nik} />
-                          </td>
-                          <td
-                            data-label={t('log.col.access')}
-                            className="typescale-body-medium px-4 py-3 align-middle"
-                          >
-                            <StatusLabel tone={accessTone(row.status_akses)}>
-                              {enumLabel(i18n, 'status_akses', row.status_akses)}
-                            </StatusLabel>
-                          </td>
-                          {/* The action cell carries no data-label: its single button names itself. */}
-                          {payloadAllowed ? (
-                            <td className="typescale-body-medium px-4 py-3 align-middle">
-                              <IconButton
-                                aria-label={`${t('log.payload.open')} — ${row.kode_transaksi}`}
-                                aria-describedby={payloadRowId}
-                                onPress={() =>
-                                  onOpenPayload ? onOpenPayload(row) : setPayloadFor(row)
-                                }
-                              >
-                                <Icon icon={icons.visibility} />
-                              </IconButton>
-                              <span id={payloadRowId} className="sr-only">
-                                {row.kode_transaksi}
+                              {format.tanggal(row.requested_at)}, {format.jam(row.requested_at)}
+                            </td>
+                            <td data-label={t('log.col.code')} className={tdClass}>
+                              <span title={row.kode_transaksi}>
+                                {shortCode(row.kode_transaksi)}
                               </span>
                             </td>
-                          ) : null}
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            </ScrollArea>
-          </Card>
+                            <td data-label={t('log.col.client')} className={`hide-md ${tdClass}`}>
+                              {row.client_nama}
+                            </td>
+                            <td data-label={t('log.col.nik')} className={tdClass}>
+                              <MaskedNik value={row.nik} />
+                            </td>
+                            <td data-label={t('log.col.access')} className={tdClass}>
+                              <StatusLabel tone={accessTone(row.status_akses)}>
+                                {enumLabel(i18n, 'status_akses', row.status_akses)}
+                              </StatusLabel>
+                            </td>
+                            {/* Tombol teks "Detail" di frame; namanya memuat kode lengkap. */}
+                            <td className={`${tdClass} expanded:text-right`}>
+                              <Link
+                                href={`/log/${encodeURIComponent(row.kode_transaksi)}`}
+                                aria-label={t('log.row.aria', { kode: row.kode_transaksi })}
+                                className="m3-state m3-focus typescale-label-large inline-flex h-10 items-center justify-center rounded-full px-3 text-primary"
+                              >
+                                {t('log.action.detail')}
+                              </Link>
+                            </td>
+                            {/* The action cell carries no data-label: its single button names itself. */}
+                            {payloadAllowed ? (
+                              <td className={tdClass}>
+                                <IconButton
+                                  aria-label={`${t('log.payload.open')} — ${row.kode_transaksi}`}
+                                  aria-describedby={payloadRowId}
+                                  onPress={() =>
+                                    onOpenPayload ? onOpenPayload(row) : setPayloadFor(row)
+                                  }
+                                >
+                                  <Icon icon={icons.visibility} />
+                                </IconButton>
+                                <span id={payloadRowId} className="sr-only">
+                                  {row.kode_transaksi}
+                                </span>
+                              </td>
+                            ) : null}
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </ScrollArea>
 
-          <div className="flex flex-wrap items-center justify-between gap-4">
-            <Select
-              label={t('common.pagination.rows_per_page')}
-              selectedKey={String(pageSize)}
-              onSelectionChange={(key) => {
-                if (key === null) return;
-                setPageSize(Number(key));
-                setPage(1);
-              }}
-              className="w-56"
-            >
-              {PAGE_SIZES.map((n) => (
-                <SelectItem key={String(n)} id={String(n)}>
-                  {String(n)}
-                </SelectItem>
-              ))}
-            </Select>
-            <Pagination
-              page={page}
-              pageCount={pageCount}
-              onPageChange={setPage}
-              prevLabel={t('common.pagination.prev_page')}
-              nextLabel={t('common.pagination.next_page')}
-              label={`${t('common.pagination.page_number', { ke: page, total: pageCount })}`}
-              rangeText={rangeLabel}
-            />
-          </div>
-        </>
-      ) : null}
+              <Pagination
+                variant="text"
+                className="border-t border-surface-container-highest p-5"
+                page={page}
+                pageCount={pageCount}
+                onPageChange={setPage}
+                prevLabel={t('log.page.prev')}
+                nextLabel={t('log.page.next')}
+                label={t('common.pagination.page_number', { ke: page, total: pageCount })}
+                rangeText={rangeLabel}
+              />
+            </>
+          ) : null}
+        </div>
+      </Card>
+
+      {/* Section 7: an operator is told where a full-NIK search lives instead of hunting for it. */}
+      {payloadAllowed ? null : (
+        <p className="typescale-body-medium text-on-surface-variant">{t('log.page.nik_hint')}</p>
+      )}
 
       {/* Section 18.3: the opening is confirmed in a snackbar and recorded in the access audit. */}
       <PayloadDialog

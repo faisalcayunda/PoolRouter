@@ -84,21 +84,18 @@ async function stubS11(page: Page): Promise<Recorded[]> {
 }
 
 test.describe('S11 log transaksi (auditor)', () => {
-  test('keeps the NIK and drops queue_id and Client in the medium window class', async ({
-    page,
-  }) => {
+  test('keeps the NIK and drops Client in the medium window class', async ({ page }) => {
     await stubS11(page);
-    // 768 px is `medium` (600–839): section 4 hides queue_id and Client, and keeps the masked NIK
+    // 768 px is `medium` (600–839): section 4 hides Client, and keeps the masked NIK
     // and the requested time, which are what identify a row.
     await page.setViewportSize({ width: 768, height: 900 });
     await page.goto('/?peran=auditor');
 
-    await expect(page.getByRole('link', { name: 'TRX-2026-0077' })).toBeVisible();
+    await expect(page.getByRole('link', { name: 'Detail transaksi TRX-2026-0077' })).toBeVisible();
     const header = (name: string) => page.getByRole('columnheader', { name, includeHidden: true });
-    await expect(header('Queue ID')).toBeHidden();
     await expect(header('Client')).toBeHidden();
     await expect(page.getByRole('columnheader', { name: 'NIK' })).toBeVisible();
-    await expect(page.getByRole('columnheader', { name: 'Diminta pada' })).toBeVisible();
+    await expect(page.getByRole('columnheader', { name: 'Waktu' })).toBeVisible();
     await expect(page.getByRole('cell', { name: '3175********0001' })).toBeVisible();
   });
 
@@ -113,10 +110,10 @@ test.describe('S11 log transaksi (auditor)', () => {
     await expectNoAxeViolations(page);
 
     // 1. Search by transaction code. The filter must travel in the POST body.
-    await page.getByRole('textbox', { name: 'Kode transaksi' }).fill('TRX-2026-0077');
-    await page.getByRole('button', { name: 'Cari' }).click();
+    await page.getByRole('textbox', { name: 'Cari' }).fill('TRX-2026-0077');
+    await page.getByRole('textbox', { name: 'Cari' }).press('Enter');
 
-    await expect(page.getByRole('link', { name: 'TRX-2026-0077' })).toBeVisible();
+    await expect(page.getByRole('link', { name: 'Detail transaksi TRX-2026-0077' })).toBeVisible();
     // Both clients appear: an auditor's S11 is not scoped to one client.
     await expect(page.getByRole('cell', { name: 'Kemensos Demo' })).toBeVisible();
     await expectNoAxeViolations(page);
@@ -171,8 +168,8 @@ test.describe('S11 log transaksi (auditor)', () => {
     // survive in localStorage, sessionStorage or IndexedDB, and closing the dialog drops it.
     await stubS11(page);
     await page.goto('/?peran=auditor');
-    await page.getByRole('textbox', { name: 'Kode transaksi' }).fill('TRX-2026-0077');
-    await page.getByRole('button', { name: 'Cari' }).click();
+    await page.getByRole('textbox', { name: 'Cari' }).fill('TRX-2026-0077');
+    await page.getByRole('textbox', { name: 'Cari' }).press('Enter');
     await page.getByRole('button', { name: 'Lihat payload — TRX-2026-0077' }).click();
 
     const dialog = page.getByRole('dialog');
