@@ -1,11 +1,21 @@
 import { useState, type FormEvent, type ReactNode } from 'react';
+import { flushSync } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import type { i18n as I18n } from 'i18next';
-import { api, ApiError, type ApiClient, type Provider, type UpstreamPool } from '../../api/client';
+import {
+  api,
+  ApiError,
+  type ApiClient,
+  type HasilK20,
+  type Provider,
+  type UpstreamPool,
+} from '../../api/client';
 import { Button } from '../../components/m3/Button';
 import { Card } from '../../components/m3/Card';
 import { InlineAlert } from '../../components/m3/InlineAlert';
 import { Select, SelectItem } from '../../components/m3/Select';
+import { StatusLabel } from '../../components/m3/StatusLabel';
+import { Tab, TabList, TabPanel, Tabs } from '../../components/m3/Tabs';
 import { TextArea, TextField } from '../../components/m3/TextField';
 import { useDocumentTitle, useFocusOnMount } from '../common/a11y';
 import { errorMessage, LoadingState, PageHeader, QueryError } from '../common/page';
@@ -14,6 +24,7 @@ import { useQuery } from '../common/useQuery';
 import { SnackbarRegion, useSnackbar } from '../common/useSnackbar';
 import { Forbidden } from '../provider/Forbidden';
 import { LinkButton } from '../provider/LinkButton';
+import { NonaktifkanDialog } from './NonaktifkanDialog';
 import {
   ALASAN_MAKS,
   draftFromPool,
@@ -45,19 +56,16 @@ function focusField(field: DraftField): void {
     ?.focus();
 }
 
-/** Kartu per kelompok; urutan field di dalamnya sama dengan `FIELD_ORDER`. */
+type TabId = 'quota' | 'antipattern';
+
+/** Field tab Kuota dan laju (S06), urutan sama dengan frame. */
+const QUOTA_FIELDS: NumberField[] = ['kuota_harian', 'rate_limit_per_jam', 'porsi_sync_persen'];
+
+/** Field tab Anti-pola (S06b), urutan sama dengan frame. */
+const ANTIPATTERN_FIELDS: NumberField[] = ['jeda_min', 'jeda_maks', 'ambang_berdampingan'];
+
+/** Kartu tambahan di tab Kuota dan laju untuk field kontrak yang tidak digambar di frame. */
 const GROUPS: { heading: string; fields: NumberField[] }[] = [
-  {
-    heading: 'upstream.tab.quota',
-    fields: [
-      'kuota_harian',
-      'rate_limit_per_jam',
-      'porsi_sync_persen',
-      'ambang_berdampingan',
-      'jeda_min',
-      'jeda_maks',
-    ],
-  },
   {
     heading: 'upstream.form.group.reset',
     fields: ['reset_kuota_jam'],
@@ -74,6 +82,12 @@ const GROUPS: { heading: string; fields: NumberField[] }[] = [
     ],
   },
 ];
+
+/** Tab yang memuat field itu; `null` untuk field di luar tab (alasan). */
+function tabOf(field: DraftField): TabId | null {
+  if (field === 'alasan') return null;
+  return (ANTIPATTERN_FIELDS as readonly string[]).includes(field) ? 'antipattern' : 'quota';
+}
 
 interface UpstreamFormProps {
   client: ApiClient;
@@ -92,6 +106,8 @@ function UpstreamForm({ client, providers, initial }: UpstreamFormProps): ReactN
   );
   const [errors, setErrors] = useState<DraftErrors>({});
   const [lainnya, setLainnya] = useState(0);
+  const [tab, setTab] = useState<TabId>('quota');
+  const [deactivating, setDeactivating] = useState(false);
   const [failure, setFailure] = useState<unknown>(null);
   const [saving, setSaving] = useState(false);
 
@@ -109,9 +125,26 @@ function UpstreamForm({ client, providers, initial }: UpstreamFormProps): ReactN
   }
 
   function showErrors(next: DraftErrors) {
-    setErrors(next);
     const first = firstInvalid(next);
-    if (first) queueMicrotask(() => focusField(first));
+    const target = first ? tabOf(first) : null;
+    // Panel tab yang tidak aktif tidak terpasang: pindah tab dulu, baru fokus ke field salah.
+    flushSync(() => {
+      setErrors(next);
+      if (target) setTab(target);
+    });
+    if (first) focusField(first);
+  }
+
+  function deactivated(pool: UpstreamPool, hasil: HasilK20) {
+    setDeactivating(false);
+    setCurrent({ ...pool, aktif: false });
+    snackbar.notify(
+      t('upstream.deactivate.done', {
+        nama: providerName(pool.provider_id),
+        dibatalkan: hasil.jumlah_cancelled,
+        gagal: hasil.jumlah_failed,
+      }),
+    );
   }
 
   async function submit(event: FormEvent) {
@@ -164,6 +197,7 @@ function UpstreamForm({ client, providers, initial }: UpstreamFormProps): ReactN
   };
   const providerName = (id: string) => providers.find((p) => p.provider_id === id)?.nama ?? id;
   const alasanWajib = mode === 'update' || draft.jendela_kuota === 'kalender';
+  const rateLimit = Number(draft.rate_limit_per_jam);
 
   return (
     <section className="flex flex-col gap-4">
@@ -173,13 +207,7 @@ function UpstreamForm({ client, providers, initial }: UpstreamFormProps): ReactN
             ? t('upstream.form.title_edit', { nama: providerName(current.provider_id) })
             : t('upstream.page.add')
         }
-        subtitle={t('upstream.form.subtitle')}
         titleRef={titleRef}
-        actions={
-          <LinkButton href="/upstream" variant="text">
-            {t('upstream.form.back')}
-          </LinkButton>
-        }
       />
 
       {invalidCount > 0 ? (
@@ -197,59 +225,67 @@ function UpstreamForm({ client, providers, initial }: UpstreamFormProps): ReactN
       ) : null}
 
       <form noValidate onSubmit={(e) => void submit(e)} className="flex flex-col gap-4">
-        <Card variant="outlined" className="flex flex-col gap-4">
-          <h2 className="typescale-title-medium">{t('upstream.form.group.general')}</h2>
-          <div data-field="provider_id">
-            <Select
-              label={t('upstream.page.provider')}
-              selectedKey={draft.provider_id === '' ? null : draft.provider_id}
-              onSelectionChange={(key) => {
-                const found = providers.find((p) => p.provider_id === key);
-                if (found) set('provider_id', found.provider_id);
-              }}
-              placeholder={t('upstream.form.provider_placeholder')}
-              isInvalid={errors.provider_id !== undefined}
-            >
-              {providers.map((p) => (
-                <SelectItem key={p.provider_id} id={p.provider_id} textValue={p.nama}>
-                  {p.nama}
-                </SelectItem>
-              ))}
-            </Select>
-            {errors.provider_id ? (
-              <p className="typescale-body-small text-error">{err('provider_id').errorMessage}</p>
-            ) : (
-              <p className="typescale-body-small text-on-surface-variant">
-                {t('upstream.provider.help')}
-              </p>
-            )}
-          </div>
-          <div data-field="jendela_kuota">
-            <Select
-              label={t('upstream.form.field.jendela_kuota')}
-              selectedKey={draft.jendela_kuota}
-              onSelectionChange={(key) => {
-                const found = JENDELA_KUOTA.find((v) => v === key);
-                if (found) set('jendela_kuota', found);
-              }}
-            >
-              {JENDELA_KUOTA.map((v) => (
-                <SelectItem key={v} id={v}>
-                  {tDynamic(i18n, `upstream.form.jendela.${v}`)}
-                </SelectItem>
-              ))}
-            </Select>
-          </div>
-        </Card>
+        <Tabs
+          selectedKey={tab}
+          onSelectionChange={(key) => setTab(key === 'antipattern' ? 'antipattern' : 'quota')}
+        >
+          <TabList aria-label={t('upstream.tab.aria')}>
+            <Tab id="quota">{t('upstream.tab.quota')}</Tab>
+            <Tab id="antipattern">{t('upstream.tab.antipattern')}</Tab>
+          </TabList>
 
-        {GROUPS.map((group) => (
-          <Card key={group.heading} variant="outlined" className="flex flex-col gap-4">
-            <h2 className="typescale-title-medium">{tDynamic(i18n, group.heading)}</h2>
+          <TabPanel id="quota" className="flex flex-col gap-4">
             <div className="grid gap-4 sm:grid-cols-2">
-              {group.fields.map((field) => (
+              <div data-field="provider_id">
+                <Select
+                  label={t('upstream.page.provider')}
+                  selectedKey={draft.provider_id === '' ? null : draft.provider_id}
+                  onSelectionChange={(key) => {
+                    const found = providers.find((p) => p.provider_id === key);
+                    if (found) set('provider_id', found.provider_id);
+                  }}
+                  placeholder={t('upstream.form.provider_placeholder')}
+                  isInvalid={errors.provider_id !== undefined}
+                >
+                  {providers.map((p) => (
+                    <SelectItem key={p.provider_id} id={p.provider_id} textValue={p.nama}>
+                      {p.nama}
+                    </SelectItem>
+                  ))}
+                </Select>
+                {errors.provider_id ? (
+                  <p className="typescale-body-small text-error">
+                    {err('provider_id').errorMessage}
+                  </p>
+                ) : (
+                  <p className="typescale-body-small text-on-surface-variant">
+                    {t('upstream.provider.help')}
+                  </p>
+                )}
+              </div>
+              {current ? (
+                <div className="flex flex-col gap-1">
+                  <span className="typescale-body-small text-on-surface-variant">
+                    {t('upstream.page.status')}
+                  </span>
+                  <div className="flex h-14 items-center">
+                    <StatusLabel tone={current.aktif ? 'success' : 'neutral'}>
+                      {current.aktif ? t('common.state.active') : t('upstream.status.inactive')}
+                    </StatusLabel>
+                  </div>
+                </div>
+              ) : null}
+              {QUOTA_FIELDS.map((field) => (
                 <div key={field} data-field={field}>
                   <TextField
                     label={tDynamic(i18n, `upstream.form.field.${field}`)}
+                    description={
+                      field === 'kuota_harian'
+                        ? t('upstream.daily_quota.help')
+                        : field === 'porsi_sync_persen'
+                          ? t('upstream.sync_share.help')
+                          : undefined
+                    }
                     value={draft[field]}
                     onChange={(v) => set(field, v)}
                     inputMode="decimal"
@@ -258,20 +294,88 @@ function UpstreamForm({ client, providers, initial }: UpstreamFormProps): ReactN
                   />
                 </div>
               ))}
-              {group.heading === 'upstream.form.group.reset' ? (
-                <div data-field="reset_kuota_zona">
+              <div data-field="jendela_kuota">
+                <Select
+                  label={t('upstream.form.field.jendela_kuota')}
+                  selectedKey={draft.jendela_kuota}
+                  onSelectionChange={(key) => {
+                    const found = JENDELA_KUOTA.find((v) => v === key);
+                    if (found) set('jendela_kuota', found);
+                  }}
+                >
+                  {JENDELA_KUOTA.map((v) => (
+                    <SelectItem key={v} id={v}>
+                      {tDynamic(i18n, `upstream.form.jendela.${v}`)}
+                    </SelectItem>
+                  ))}
+                </Select>
+              </div>
+            </div>
+
+            {GROUPS.map((group) => (
+              <Card key={group.heading} variant="outlined" className="flex flex-col gap-4">
+                <h2 className="typescale-title-medium">{tDynamic(i18n, group.heading)}</h2>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  {group.fields.map((field) => (
+                    <div key={field} data-field={field}>
+                      <TextField
+                        label={tDynamic(i18n, `upstream.form.field.${field}`)}
+                        value={draft[field]}
+                        onChange={(v) => set(field, v)}
+                        inputMode="decimal"
+                        autoComplete="off"
+                        {...err(field)}
+                      />
+                    </div>
+                  ))}
+                  {group.heading === 'upstream.form.group.reset' ? (
+                    <div data-field="reset_kuota_zona">
+                      <TextField
+                        label={t('upstream.form.field.reset_kuota_zona')}
+                        value={draft.reset_kuota_zona}
+                        onChange={(v) => set('reset_kuota_zona', v)}
+                        autoComplete="off"
+                        {...err('reset_kuota_zona')}
+                      />
+                    </div>
+                  ) : null}
+                </div>
+              </Card>
+            ))}
+          </TabPanel>
+
+          <TabPanel id="antipattern" className="flex flex-col gap-4">
+            <p className="typescale-body-medium text-on-surface-variant">
+              {t('antipattern.page.subtitle')}
+            </p>
+            <div className="grid gap-4 sm:grid-cols-2">
+              {ANTIPATTERN_FIELDS.map((field) => (
+                <div key={field} data-field={field}>
                   <TextField
-                    label={t('upstream.form.field.reset_kuota_zona')}
-                    value={draft.reset_kuota_zona}
-                    onChange={(v) => set('reset_kuota_zona', v)}
+                    label={tDynamic(i18n, `upstream.form.field.${field}`)}
+                    description={
+                      field === 'jeda_min'
+                        ? t('antipattern.page.delay_help')
+                        : field === 'ambang_berdampingan'
+                          ? t('antipattern.page.adjacent_help')
+                          : undefined
+                    }
+                    value={draft[field]}
+                    onChange={(v) => set(field, v)}
+                    inputMode="decimal"
                     autoComplete="off"
-                    {...err('reset_kuota_zona')}
+                    {...err(field)}
                   />
                 </div>
-              ) : null}
+              ))}
             </div>
-          </Card>
-        ))}
+            {rateLimit > 0 ? (
+              <InlineAlert tone="warning">
+                {t('antipattern.page.warn', { batas: rateLimit })}
+              </InlineAlert>
+            ) : null}
+          </TabPanel>
+        </Tabs>
 
         <Card variant="outlined" className="flex flex-col gap-4">
           <h2 className="typescale-title-medium">{t('upstream.form.reason.heading')}</h2>
@@ -293,19 +397,33 @@ function UpstreamForm({ client, providers, initial }: UpstreamFormProps): ReactN
           </div>
         </Card>
 
-        <div className="flex flex-wrap justify-end gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <Button type="submit" isDisabled={saving}>
+            {saving ? t('provider.form.saving') : t('common.action.save')}
+          </Button>
           <LinkButton href="/upstream" variant="text">
             {t('common.action.cancel')}
           </LinkButton>
-          <Button type="submit" isDisabled={saving}>
-            {saving
-              ? t('provider.form.saving')
-              : mode === 'update'
-                ? t('upstream.form.save_edit')
-                : t('upstream.form.save_new')}
-          </Button>
+          {current?.aktif ? (
+            <Button variant="outlined" className="sm:ml-auto" onPress={() => setDeactivating(true)}>
+              {t('upstream.page.deactivate')}
+            </Button>
+          ) : null}
         </div>
       </form>
+
+      {deactivating && current ? (
+        <NonaktifkanDialog
+          title={t('upstream.deactivate.title')}
+          tujuan={providerName(current.provider_id)}
+          loadPreview={(signal) =>
+            client.pratinjauNonaktifUpstreamPool(current.upstream_pool_id, { signal })
+          }
+          onConfirm={(alasan) => client.nonaktifkanUpstreamPool(current.upstream_pool_id, alasan)}
+          onClose={() => setDeactivating(false)}
+          onDone={(hasil) => deactivated(current, hasil)}
+        />
+      ) : null}
       <SnackbarRegion queue={snackbar.queue} />
     </section>
   );
@@ -317,7 +435,7 @@ export interface UpstreamFormScreenProps {
   poolId?: string;
 }
 
-/** S06b form upstream pool: buat baru atau sunting konfigurasi saat ini (ARC-102). */
+/** S06 + S06b form upstream pool: buat baru atau sunting konfigurasi saat ini (ARC-102, ARC-247). */
 export function UpstreamFormScreen({ client = api, poolId }: UpstreamFormScreenProps) {
   const { t } = useTranslation();
   const role = useRole();

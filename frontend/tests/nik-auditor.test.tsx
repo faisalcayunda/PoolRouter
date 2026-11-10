@@ -157,6 +157,80 @@ describe('S12 pencarian log per NIK', () => {
   });
 });
 
+describe('S12 layout from the Penpot frame', () => {
+  it('shows the field help, orders the columns and lists Payload as an inline action', async () => {
+    renderWithI18n(<NikSearchScreen client={stubClient()} />);
+
+    expect(
+      screen.getByText('Wajib 16 digit angka. Tidak tersimpan di riwayat, URL, atau filter.'),
+    ).toBeInTheDocument();
+    // No export before a search has produced results (frame S12c).
+    expect(screen.queryByRole('button', { name: 'Ekspor hasil' })).not.toBeInTheDocument();
+
+    await fillNikAndSearch();
+    const table = within(await screen.findByRole('table'));
+    expect(table.getAllByRole('columnheader').map((th) => th.textContent)).toEqual([
+      'Waktu',
+      'NIK',
+      'Status akses',
+      'Kode transaksi',
+      'Client',
+      'Aksi',
+    ]);
+    const row = within(table.getAllByRole('row')[1]!);
+    expect(row.getByRole('button', { name: /TRX-2026-0042/ })).toHaveTextContent('Payload');
+    expect(screen.getByRole('button', { name: 'Ekspor hasil' })).toBeEnabled();
+    expect(screen.getByText('1–1 dari 1')).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        'Data di luar retensi online belum bisa dicari. Pencarian arsip tersedia di F1.',
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it('explains that a range alone is not enough next to the NIK error', async () => {
+    renderWithI18n(<NikSearchScreen client={stubClient()} />);
+    expect(
+      screen.queryByText('Pencarian rentang waktu saja tidak tersedia; NIK wajib diisi.'),
+    ).not.toBeInTheDocument();
+
+    await user.click(screen.getByLabelText('NIK (16 digit)'));
+    await user.paste('3175');
+    await user.click(screen.getByRole('button', { name: 'Cari' }));
+
+    expect(await screen.findByText('Masukkan NIK 16 digit.')).toBeInTheDocument();
+    expect(
+      screen.getByText('Pencarian rentang waktu saja tidak tersedia; NIK wajib diisi.'),
+    ).toBeInTheDocument();
+  });
+
+  it('opens the payload with the frame copy for the reason step (S12b)', async () => {
+    const bukaPayload = vi.fn().mockResolvedValue({
+      request_id: '0b6f2a1e-0000-4000-8000-000000000000',
+      kode_transaksi: 'TRX-2026-0042',
+      status_akses: 'ok',
+      requested_at: '2026-11-03T07:30:00.000Z',
+      input: { nik: NIK },
+      metadata: null,
+      hasil: null,
+    });
+    renderWithI18n(<NikSearchScreen client={stubClient({ bukaPayload })} />);
+
+    await fillNikAndSearch('Audit aduan W-2026-07');
+    await user.click(await screen.findByRole('button', { name: /TRX-2026-0042/ }));
+
+    const dialog = await screen.findByRole('dialog');
+    const scoped = within(dialog);
+    expect(scoped.getByText('Alasan membuka payload')).toBeInTheDocument();
+    expect(scoped.getByLabelText('Alasan (minimal 10 karakter)')).toHaveValue(
+      'Audit aduan W-2026-07',
+    );
+    expect(scoped.getByText('Terisi dari alasan pencarian. Boleh diubah.')).toBeInTheDocument();
+    await user.click(scoped.getByRole('button', { name: 'Buka payload' }));
+    await waitFor(() => expect(bukaPayload).toHaveBeenCalled());
+  });
+});
+
 describe('payload dialog', () => {
   const payload = {
     request_id: '0b6f2a1e-0000-4000-8000-000000000000',

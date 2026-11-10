@@ -361,12 +361,12 @@
     "replace": {
       "title": "Replace secret {{nama}}",
       "new_value": "New value",
-      "body": "The old value can't be viewed. The new value replaces it right away.",
-      "confirm": "Replace value"
+      "confirm": "Save"
     },
     "delete": {
       "blocked": {
         "title": "Secret is still in use",
+        "ack": "Got it",
         "body": "{{nama}} is still used by active providers: {{daftar}}. Deactivate or change those providers first, then delete this secret.",
         "short": "{{nama}} is still used by an active provider. Change or deactivate that provider first, then delete this secret."
       },
@@ -385,6 +385,7 @@
       "body": "A secret stores a provider credential, such as USER_ID and PASSWORD. Add a secret before you create a provider template."
     },
     "masked": "Masked",
+    "changed_unknown": "Not available yet",
     "unused": "Not in use",
     "row": {
       "replace_aria": "Replace the value of secret {{nama}}",
@@ -418,6 +419,7 @@
       "subtitle": "Daily quota, hourly rate limit and sync share per provider."
     },
     "tab": {
+      "aria": "Upstream pool configuration sections",
       "quota": "Quota and rate",
       "antipattern": "Anti-pattern"
     },
@@ -458,12 +460,8 @@
       "done": "Upstream pool {{nama}} deactivated: {{dibatalkan, number}} cancelled, {{gagal, number}} failed."
     },
     "form": {
-      "title_edit": "Edit upstream pool {{nama}}",
-      "subtitle": "Saving replaces the whole configuration; the fields start from the current configuration.",
-      "back": "Back to the list",
+      "title_edit": "Upstream pool · {{nama}}",
       "provider_placeholder": "Choose a provider",
-      "save_new": "Save upstream pool",
-      "save_edit": "Save changes",
       "saved": "Upstream pool saved.",
       "group": {
         "general": "General",
@@ -484,7 +482,7 @@
         "jendela_kuota": "Quota period",
         "kuota_harian": "Daily quota (requests)",
         "rate_limit_per_jam": "Hourly rate limit (requests)",
-        "porsi_sync_persen": "Sync share (%)",
+        "porsi_sync_persen": "Maximum sync share (%)",
         "ambang_berdampingan": "Concurrency threshold (requests)",
         "jeda_min": "Minimum delay (ms)",
         "jeda_maks": "Maximum delay (ms)",
@@ -519,8 +517,8 @@
       "min_delay": "Minimum delay (ms)",
       "max_delay": "Maximum delay (ms)",
       "delay_help": "A random delay between sends is picked between the minimum and the maximum.",
-      "adjacent": "Adjacent NIK threshold (%)",
-      "adjacent_help": "Maximum share of consecutive NIKs that may be sent next to each other.",
+      "adjacent": "Concurrency threshold (requests)",
+      "adjacent_help": "Maximum number of requests that may run at the same time against this upstream.",
       "warn": "A delay that is too long can keep the rate limit of {{batas, number}}/hour from being reached. Check the load-test results before changing it."
     }
   },
@@ -539,8 +537,7 @@
       "name": "Name",
       "mode": "Mode",
       "upstream": "Upstream pool",
-      "ttl": "Queue TTL",
-      "alokasi": "Allocation"
+      "ttl": "Queue TTL"
     },
     "mode": {
       "async": "Async",
@@ -562,10 +559,6 @@
       "edit_aria": "Edit downstream pool {{nama}}",
       "activate_aria": "Activate downstream pool {{nama}}",
       "deactivate_aria": "Deactivate downstream pool {{nama}}",
-      "no_alokasi": "No allocation",
-      "alokasi_tetap": "{{nilai}} requests per period",
-      "alokasi_persen": "{{nilai}}% of effective quota",
-      "boleh_pinjam": "may borrow",
       "ttl_hours": "{{jam}} h"
     },
     "form": {
@@ -701,7 +694,6 @@
       }
     },
     "metadata": {
-      "info": "The metadata contract is recorded in the transaction log for data balikan. A request missing a required field is rejected before it uses quota. Rahasia fields are never logged or sent to callbacks.",
       "empty": "No metadata fields yet.",
       "group": "Field {{nomor}}",
       "add": "Add field",
@@ -785,10 +777,12 @@
       "pool": "Downstream pool",
       "pool_help": "A client can only use the pool it is linked to.",
       "webhook": "Webhook address (optional)",
+      "webhook_help": "Must start with https://",
       "save": "Save client"
     },
     "snackbar": {
-      "saved": "Client saved"
+      "saved": "Client saved",
+      "saved_webhook_failed": "Client saved, but the webhook was not saved. Set it on the client webhook page."
     },
     "empty": {
       "title": "No clients yet",
@@ -815,13 +809,15 @@
     },
     "secret": {
       "heading": "Signing secret",
-      "desc": "Created by the system and shown only once. Install it in your application to verify webhooks.",
+      "desc": "No secret yet. Created by the system and shown only once. Install it in your application to verify webhooks.",
+      "active_desc": "Created by the system and shown only once; it cannot be viewed again. Active version: {{versi}}.",
       "create": "Create secret",
       "rotate": "Rotate secret"
     },
     "rotate": {
       "title": "Rotate webhook secret?",
-      "body": "The old secret stops working immediately. The {{nama_client}} application will fail to verify webhooks until the new secret is installed in it."
+      "body": "The old secret stops working immediately. The {{nama_client}} application will fail to verify webhooks until the new secret is installed in it.",
+      "once": "The new secret is shown once after you choose to rotate."
     },
     "created": {
       "title": "New webhook secret for {{nama_client}}",
@@ -834,6 +830,7 @@
     },
     "col": {
       "time": "Time",
+      "queue_id": "queue_id",
       "request_status": "Request status",
       "reason": "Failure reason",
       "note": "Note"
@@ -857,7 +854,7 @@
     "inactive": "Inactive",
     "saved": "Client changes saved.",
     "page": {
-      "subtitle": "BGN applications that call PoolRouter, with their credentials and webhooks."
+      "subtitle": "BGN applications that call PoolRouter. The secret is shown only once, when it is created."
     },
     "empty": {
       "owner": "No client is linked to your account yet. Contact a platform admin."
@@ -870,7 +867,8 @@
     },
     "row": {
       "manage": "Manage",
-      "manage_aria": "Manage client {{nama}}"
+      "manage_aria": "Manage client {{nama}}",
+      "credential_aria": "Create a credential for client {{nama}}"
     },
     "tab": {
       "aria": "Client sections",
@@ -978,13 +976,17 @@
       "title": "Quota",
       "meta": "Pool: {{nama_pool}} · Updated {{waktu}}",
       "today": "Today",
-      "of_total": "{{terpakai, number}} of {{total, number}}",
       "used_left": "{{persen, number}}% used, {{sisa, number}} left",
       "reset_at": "resets {{waktu}}",
       "hour": "Current hour ({{rentang}})",
       "sync_heading": "Sync share",
       "sync_used": "Sync used {{terpakai, number}} of the {{persen, number}}% limit",
-      "note": "Figures are counted from attempts to Dukcapil, including retries and failed calls. Differences from the transaction log can occur.",
+      "note": "Figures are counted from attempts to Dukcapil. Small differences from the transaction log can occur.",
+      "limit_of": "of {{total, number}}",
+      "trend_heading": "7-day usage",
+      "trend_unit": "% of daily quota",
+      "trend_pending_title": "Waiting for the quota history API",
+      "trend_pending_body": "The 7-day usage chart waits until getQuotaTracker provides daily history.",
       "reload": "Reload",
       "pool_filter": "Pool",
       "pool_unknown": "Upstream pool",
@@ -1063,7 +1065,7 @@
       "title": "Search logs by NIK",
       "subtitle": "Every search, payload view, and export is recorded in the access audit.",
       "field": "NIK (16 digits)",
-      "field_help": "Digits only.",
+      "field_help": "Required, 16 digits. Not kept in history, URL, or filters.",
       "error": "Enter a 16-digit NIK.",
       "range_only_note": "Searching by time range alone isn't available; a NIK is required.",
       "export": "Export results",
@@ -1103,6 +1105,8 @@
     },
     "filter": {
       "user": "User",
+      "user_help": "Enter the user ID as a UUID.",
+      "user_error": "The user ID must be a UUID, for example 123e4567-e89b-12d3-a456-426614174000.",
       "action": "Action",
       "nik_range": "NIK + range {{rentang}}",
       "nik_search": "NIK search",
@@ -1110,7 +1114,7 @@
       "range_only": "Range {{rentang}}",
       "range": "Time range",
       "range_help": "Choose a time range to show access audit records.",
-      "note": "The filter applies to access audit records."
+      "note": "The 'Filter or query' column shows the filter type, not the NIK value."
     },
     "col": {
       "user": "User",
@@ -1292,12 +1296,14 @@
     }
   },
   "k20": {
-    "body": "Review the impact below before deactivating {{nama}}.",
-    "confirm": "Deactivate",
+    "confirm": "Deactivate pool",
+    "impact": {
+      "queued": "<b>{{jumlah, number}} requests</b> that are still queued will be cancelled with the reason \"pool inactive\". The requests will not be sent to {{tujuan}} and will not use quota.",
+      "sent": "Requests already sent to {{tujuan}} are unchanged. Clients with a webhook will receive the status <b>Cancelled</b> once."
+    },
     "submitting": "Processing…",
     "preview": {
       "heading": "Impact of deactivation",
-      "cancelled": "{{jumlah, number}} queued requests will be cancelled.",
       "failed": "{{jumlah, number}} requests waiting for retry will be failed.",
       "downstream_count": "Used by {{jumlah, number}} downstream pools.",
       "computed": "Computed at {{waktu}}.",

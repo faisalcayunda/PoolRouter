@@ -54,7 +54,11 @@ export function QueryError({ error, onRetry }: { error: unknown; onRetry: () => 
   );
 }
 
-/** Single `h1` per screen with its subtitle; `tabIndex=-1` so navigation can move focus here. */
+/**
+ * Single `h1` per screen with its subtitle; `tabIndex=-1` so navigation can move focus here.
+ * Tanpa `m3-focus`: fokus ke judul hanya programatik (tidak ada di urutan Tab), jadi bingkai fokus
+ * hanya muncul sebagai kotak aneh setelah klik atau navigasi, dan frame Penpot tidak menggambarnya.
+ */
 export function PageHeader({
   title,
   subtitle,
@@ -74,7 +78,7 @@ export function PageHeader({
         <h1
           ref={titleRef}
           tabIndex={-1}
-          className="typescale-headline-small m3-focus rounded-small text-on-surface outline-none"
+          className="typescale-headline-small text-on-surface outline-none"
         >
           {title}
         </h1>

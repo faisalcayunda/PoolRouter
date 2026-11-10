@@ -17,14 +17,16 @@ import { useDocumentTitle, useFocusOnMount } from '../common/a11y';
 type Level = 'ok' | 'low' | 'out';
 
 /**
- * Quota level thresholds. The number is always printed beside the bar — colour never carries the
- * status alone (section 8, "Kuota: persen di teks, bukan hanya warna").
+ * Sync-share level thresholds. The number is always printed beside the bar — colour never carries
+ * the status alone (section 8, "Kuota: persen di teks, bukan hanya warna").
  */
-const LOW_WATERMARK = 0.2;
+const HIGH_WATERMARK = 0.8;
 
-function levelOf(kuotaEfektif: number, sisa: number): Level {
-  if (sisa <= 0) return 'out';
-  return sisa / Math.max(1, kuotaEfektif) <= LOW_WATERMARK ? 'low' : 'ok';
+function levelOf(used: number, limit: number): Level {
+  if (!limit) return 'ok';
+  const fraction = used / limit;
+  if (fraction >= 1) return 'out';
+  return fraction >= HIGH_WATERMARK ? 'low' : 'ok';
 }
 
 const TONE: Record<Level, 'success' | 'warning' | 'error'> = {
@@ -42,83 +44,124 @@ function toPercent(fraction: number): number {
   return Math.min(100, Math.max(0, fraction * 100));
 }
 
-function PoolQuotaCard({ row, poolName }: { row: KuotaTracker; poolName?: string }) {
+/** Kartu pada frame Penpot: `Card / outlined`, padding 24, radius 16, isi putih (`surface-container-lowest`). */
+const CARD = 'flex flex-col gap-3 rounded-large! bg-surface-container-lowest! p-6!';
+
+/** `Metric` pada frame: label, angka besar + "dari N", bilah 8 px, lalu satu baris keterangan. */
+function MetricCard({
+  label,
+  used,
+  total,
+  caption,
+}: {
+  label: string;
+  used: number;
+  total: number;
+  caption: string;
+}) {
   const { t } = useTranslation();
   const format = useFormatter();
-  const level = levelOf(row.kuota_efektif, row.sisa_periode);
-  const usedFraction = row.kuota_efektif
-    ? (row.kuota_efektif - row.sisa_periode) / row.kuota_efektif
-    : 0;
+  return (
+    <Card variant="outlined" className={CARD}>
+      <h3 className="typescale-title-small text-on-surface-variant">{label}</h3>
+      <p className="flex flex-wrap items-baseline gap-x-2">
+        <span className="text-[28px] leading-[41px] [font-weight:500] expanded:text-[32px] expanded:leading-[46px]">
+          {format.angka(used)}
+        </span>
+        <span className="typescale-body-medium text-on-surface-variant">
+          {t('quota.page.limit_of', { total })}
+        </span>
+      </p>
+      <LinearProgress size="large" value={toPercent(total ? used / total : 0)} aria-label={label} />
+      <p className="typescale-body-medium text-on-surface-variant">{caption}</p>
+    </Card>
+  );
+}
+
+function PoolQuota({ row }: { row: KuotaTracker }) {
+  const { t } = useTranslation();
+  const format = useFormatter();
+  const used = row.kuota_efektif - row.sisa_periode;
+  const usedFraction = row.kuota_efektif ? used / row.kuota_efektif : 0;
   const syncLimit = row.porsi_sync_maks;
+  const syncFraction = syncLimit ? row.terpakai_sync_jam_berjalan / syncLimit : 0;
+  const level = levelOf(row.terpakai_sync_jam_berjalan, syncLimit);
+  const hourLeft = Math.max(0, row.rate_limit_per_jam - row.terpakai_jam_berjalan);
+  const hourFraction = row.rate_limit_per_jam
+    ? row.terpakai_jam_berjalan / row.rate_limit_per_jam
+    : 0;
   // The current hour is the one the row reports (`periode_mulai` is its start, WIB).
   const startOfHour = new Date(row.periode_mulai);
   const endOfHour = new Date(startOfHour.getTime() + 3600_000);
 
   return (
-    <Card variant="outlined" className="flex flex-col gap-3">
-      <div className="flex flex-wrap items-start justify-between gap-2">
-        <div className="flex flex-col">
-          {/* Section 13.2: a card heading is a name, never a truncated UUID. Without a pool name
-              from the API the heading falls back to the catalog's generic pool label. */}
-          <h2 className="typescale-title-medium">{poolName ?? t('quota.page.pool_unknown')}</h2>
-          <p className="typescale-body-small text-on-surface-variant">
-            {t('quota.page.meta', {
-              nama_pool: poolName ?? t('quota.page.pool_unknown'),
-              waktu: format.tanggalWaktu(row.dihitung_pada),
-            })}
-          </p>
-        </div>
-        <StatusLabel tone={TONE[level]}>{t(`quota.level.${level}` as MessageId)}</StatusLabel>
-      </div>
-
-      <div className="flex flex-col gap-1">
-        <h3 className="typescale-title-small">{t('quota.page.today')}</h3>
-        <p className="typescale-body-medium">
-          {t('quota.page.used_left', {
+    <div className="flex flex-col gap-6">
+      <div className="grid grid-cols-1 gap-4 expanded:grid-cols-2">
+        <MetricCard
+          label={t('quota.page.today')}
+          used={used}
+          total={row.kuota_efektif}
+          caption={`${t('quota.page.used_left', {
             persen: Math.round(usedFraction * 100),
             sisa: row.sisa_periode,
+          })} · ${t('quota.page.reset_at', { waktu: format.jam(row.periode_selesai) })}`}
+        />
+        <MetricCard
+          label={t('quota.page.hour', { rentang: format.hourRange(startOfHour, endOfHour) })}
+          used={row.terpakai_jam_berjalan}
+          total={row.rate_limit_per_jam}
+          caption={t('quota.page.used_left', {
+            persen: Math.round(hourFraction * 100),
+            sisa: hourLeft,
           })}
-        </p>
-        <LinearProgress value={toPercent(usedFraction)} aria-label={t('quota.page.today')} />
-        <p className="typescale-body-small text-on-surface-variant">
-          {t('quota.page.reset_at', {
-            waktu: format.jam(row.periode_selesai),
-          })}
-        </p>
-      </div>
-
-      <div className="flex flex-col gap-1">
-        <h3 className="typescale-title-small">{t('quota.page.sync_heading')}</h3>
-        <p className="typescale-body-medium">
-          {t('quota.page.sync_used', {
-            terpakai: row.terpakai_sync_jam_berjalan,
-            persen: syncLimit ? Math.round((row.terpakai_sync_jam_berjalan / syncLimit) * 100) : 0,
-          })}
-        </p>
-        <LinearProgress
-          value={toPercent(syncLimit ? row.terpakai_sync_jam_berjalan / syncLimit : 0)}
-          aria-label={t('quota.page.sync_heading')}
         />
       </div>
 
-      <div className="flex flex-col gap-1">
-        <h3 className="typescale-title-small">
-          {t('quota.page.hour', { rentang: format.hourRange(startOfHour, endOfHour) })}
-        </h3>
-        <p className="typescale-body-medium">
-          {t('quota.page.of_total', {
-            terpakai: row.terpakai_jam_berjalan,
-            total: row.rate_limit_per_jam,
-          })}
-        </p>
-        <LinearProgress
-          value={toPercent(
-            row.rate_limit_per_jam ? row.terpakai_jam_berjalan / row.rate_limit_per_jam : 0,
-          )}
-          aria-label={t('quota.page.hour', { rentang: format.hourRange(startOfHour, endOfHour) })}
-        />
+      <div className="grid grid-cols-1 items-start gap-4 expanded:grid-cols-2">
+        <Card variant="outlined" className={CARD}>
+          <div className="flex items-center justify-between gap-2">
+            <h3 className="typescale-title-medium text-on-surface">
+              {t('quota.page.sync_heading')}
+            </h3>
+            <StatusLabel tone={TONE[level]} icon={null}>
+              {t(`quota.level.${level}` as MessageId)}
+            </StatusLabel>
+          </div>
+          <p className="typescale-body-medium text-on-surface-variant">
+            {t('quota.page.sync_used', {
+              terpakai: row.terpakai_sync_jam_berjalan,
+              persen: Math.round(syncFraction * 100),
+            })}
+          </p>
+          <LinearProgress
+            size="large"
+            value={toPercent(syncFraction)}
+            aria-label={t('quota.page.sync_heading')}
+          />
+          <p className="typescale-body-medium text-on-surface-variant">{t('quota.page.note')}</p>
+        </Card>
+
+        {/* Riwayat 7 hari belum ada di API (ADR-0008 2.6): placeholder seperti frame Penpot. */}
+        <Card variant="outlined" className={CARD}>
+          <div className="flex items-center justify-between gap-2">
+            <h3 className="typescale-title-medium text-on-surface">
+              {t('quota.page.trend_heading')}
+            </h3>
+            <span className="typescale-body-medium text-on-surface-variant">
+              {t('quota.page.trend_unit')}
+            </span>
+          </div>
+          <div className="flex h-40 flex-col items-center justify-center gap-1 rounded-medium border border-dashed border-outline bg-surface-container-low px-6 text-center expanded:h-[200px]">
+            <p className="typescale-title-small text-on-surface">
+              {t('quota.page.trend_pending_title')}
+            </p>
+            <p className="typescale-body-medium max-w-[420px] text-on-surface-variant">
+              {t('quota.page.trend_pending_body')}
+            </p>
+          </div>
+        </Card>
       </div>
-    </Card>
+    </div>
   );
 }
 
@@ -164,7 +207,14 @@ export function QuotaScreen({ client = api }: QuotaScreenProps): ReactNode {
     <section className="flex flex-col gap-4">
       <PageHeader
         title={t('quota.page.title')}
-        subtitle={t('quota.page.note')}
+        subtitle={
+          rows.length === 1
+            ? t('quota.page.meta', {
+                nama_pool: t('quota.page.pool_unknown'),
+                waktu: format.tanggalWaktu(rows[0]!.dihitung_pada),
+              })
+            : undefined
+        }
         titleRef={titleRef}
         actions={
           <Button
@@ -210,9 +260,22 @@ export function QuotaScreen({ client = api }: QuotaScreenProps): ReactNode {
       ) : null}
 
       {rows.length > 0 ? (
-        <div className="grid grid-cols-1 gap-3 expanded:grid-cols-2">
+        <div className="flex flex-col gap-8">
           {rows.map((row) => (
-            <PoolQuotaCard key={`${row.upstream_pool_id}-${row.periode_mulai}`} row={row} />
+            <div
+              key={`${row.upstream_pool_id}-${row.periode_mulai}`}
+              className="flex flex-col gap-4"
+            >
+              {rows.length > 1 ? (
+                <h2 className="typescale-title-medium">
+                  {t('quota.page.meta', {
+                    nama_pool: t('quota.page.pool_unknown'),
+                    waktu: format.tanggalWaktu(row.dihitung_pada),
+                  })}
+                </h2>
+              ) : null}
+              <PoolQuota row={row} />
+            </div>
           ))}
         </div>
       ) : quota.status === 'success' ? (
