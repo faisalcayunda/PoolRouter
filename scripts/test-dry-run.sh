@@ -32,6 +32,8 @@ V="RUNNER=docker FRONTEND_RUNNER=docker CONTAINER_LABEL=arctiva.issue=ARC-398"
 run "setup test lint" setup test lint $V
 # shellcheck disable=SC2086
 run "backend uji-redis check-disk" -C backend uji-redis $V
+# e2e-api-asli (ARC-251): resep memakai $(SUBMAKE), jadi `make -n` tidak menjalankan harness.
+run "e2e-api-asli" e2e-api-asli CONTAINER_LABEL=arctiva.issue=ARC-398
 # push-main sekarang ada sebagai penjaga: ia menolak dengan exit 2 dan menjelaskan alur PR (AC-3),
 # tanpa menyentuh engine. `make -n` pada target ini juga tidak boleh memanggil docker/podman.
 set +e
