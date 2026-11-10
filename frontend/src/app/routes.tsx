@@ -34,6 +34,16 @@ const SecretScreen = lazy(() =>
   import('../features/secret/SecretScreen').then((m) => ({ default: m.SecretScreen })),
 );
 
+const EndpointListScreen = lazy(() =>
+  import('../features/endpoint/EndpointListScreen').then((m) => ({
+    default: m.EndpointListScreen,
+  })),
+);
+const EndpointFormScreen = lazy(() =>
+  import('../features/endpoint/EndpointFormScreen').then((m) => ({
+    default: m.EndpointFormScreen,
+  })),
+);
 const ClientListScreen = lazy(() =>
   import('../features/client/ClientListScreen').then((m) => ({ default: m.ClientListScreen })),
 );
@@ -82,6 +92,8 @@ const LOG_DETAIL = /^\/log\/([^/]+)$/;
 /** `/provider/<id>` — form sunting provider (S03–S04, ARC-101); `/provider/baru` membuat baru. */
 const PROVIDER_DETAIL = /^\/provider\/([^/]+)$/;
 
+/** `/endpoint/<id>` — form endpoint + kontrak metadata (ARC-103); `/endpoint/baru` membuat baru. */
+const ENDPOINT_DETAIL = /^\/endpoint\/([^/]+)$/;
 /** `/client/<id>[/kredensial|/webhook]` — S08, S08b, S09 dan S09a (ARC-104). */
 const CLIENT_DETAIL = /^\/client\/([^/]+)(?:\/(kredensial|webhook))?$/;
 /** `/upstream/<id>` dan `/downstream/<id>` — form pool (S06b, S07, ARC-102); `baru` membuat baru. */
@@ -100,6 +112,11 @@ export function ScreenForPath({ pathname }: { pathname: string }): ReactNode {
   if (providerDetail) {
     const id = decodeURIComponent(providerDetail[1] ?? '');
     return <ProviderFormScreen providerId={id === 'baru' ? undefined : id} />;
+  }
+  const endpointDetail = ENDPOINT_DETAIL.exec(clean);
+  if (endpointDetail) {
+    const id = decodeURIComponent(endpointDetail[1] ?? '');
+    return <EndpointFormScreen endpointId={id === 'baru' ? undefined : id} />;
   }
   const clientDetail = CLIENT_DETAIL.exec(clean);
   if (clientDetail) {
@@ -129,6 +146,8 @@ export function ScreenForPath({ pathname }: { pathname: string }): ReactNode {
       return <QuotaScreen />;
     case '/provider':
       return <ProviderListScreen />;
+    case '/endpoint':
+      return <EndpointListScreen />;
     case '/secret':
       return <SecretScreen />;
     case '/client':

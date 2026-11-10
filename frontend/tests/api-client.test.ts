@@ -254,4 +254,41 @@ describe('admin API client: secret (ARC-101)', () => {
     expect(error).toMatchObject({ status: 409, kode: 'secret_dipakai' });
     expect((error as ApiError).problem?.detail).toBe('Masih dipakai 1 provider aktif.');
   });
+
+  it('PUTs the whole endpoint config to the endpoint id', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(jsonResponse({ endpoint_config_version: 2 }));
+    const body = {
+      provider_id: '00000000-0000-4000-8000-0000000000a1',
+      downstream_pool_id: '00000000-0000-4000-8000-0000000000b1',
+      parameter_literal: { TRESHOLD: '90' },
+      log_mode: 'metadata_only' as const,
+      metadata_fields: [],
+      config_schema_version: 1,
+      alasan: 'Perbaikan kontrak metadata.',
+    };
+    await client(fetchImpl).updateEndpoint('00000000-0000-4000-8000-0000000000c1', body);
+
+    const [url, init] = firstCall(fetchImpl);
+    expect(url).toBe('/admin/v1/endpoints/00000000-0000-4000-8000-0000000000c1');
+    expect(init.method).toBe('PUT');
+    expect(await requestJson(fetchImpl)).toEqual(body);
+  });
+
+  it('sends the K-20 reason when deactivating an endpoint, never in the URL', async () => {
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValue(
+        jsonResponse({ jumlah_cancelled: 1, jumlah_failed: 0, dilakukan_pada: 'x' }),
+      );
+    await client(fetchImpl).nonaktifkanEndpoint(
+      '00000000-0000-4000-8000-0000000000c1',
+      'Kontrak client berakhir.',
+    );
+
+    const [url, init] = firstCall(fetchImpl);
+    expect(url).toBe('/admin/v1/endpoints/00000000-0000-4000-8000-0000000000c1/nonaktifkan');
+    expect(url).not.toContain('Kontrak');
+    expect(init.method).toBe('POST');
+    expect(await requestJson(fetchImpl)).toEqual({ alasan: 'Kontrak client berakhir.' });
+  });
 });

@@ -172,7 +172,7 @@ describe('AppShell — menu per role', () => {
       navGroupsFor(role).map((g) => [g.id, g.items.map((i) => i.href)]);
     expect(shape('platform_admin')).toEqual([
       ['monitoring', ['/kuota']],
-      ['config', ['/provider', '/secret', '/upstream', '/downstream']],
+      ['config', ['/provider', '/endpoint', '/secret', '/upstream', '/downstream']],
       ['client', ['/client']],
       ['account', ['/settings']],
     ]);
@@ -299,6 +299,16 @@ describe('crumbsFor', () => {
     ]);
     expect(crumbsFor('/provider/baru').at(-1)).toEqual({ labelKey: 'nav.breadcrumb.new' });
     expect(crumbsFor('/upstream/baru').at(-1)).toEqual({ labelKey: 'nav.breadcrumb.new' });
+    expect(crumbsFor('/endpoint').map((c) => c.labelKey)).toEqual([
+      'nav.group.config',
+      'nav.drawer.endpoint',
+    ]);
+    expect(crumbsFor('/endpoint/e1')).toEqual([
+      { labelKey: 'nav.group.config' },
+      { labelKey: 'nav.drawer.endpoint', href: '/endpoint' },
+      { text: 'e1' },
+    ]);
+    expect(crumbsFor('/endpoint/baru').at(-1)).toEqual({ labelKey: 'nav.breadcrumb.new' });
     expect(crumbsFor('/downstream/d1')).toEqual([
       { labelKey: 'nav.group.config' },
       { labelKey: 'nav.drawer.downstream', href: '/downstream' },

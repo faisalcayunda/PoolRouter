@@ -26,8 +26,9 @@
       "nik_search": "Pencarian log per NIK",
       "audit": "Audit akses",
       "open_menu": "Buka menu navigasi",
-    "close_menu": "Tutup menu",
-      "aria": "Navigasi utama"
+      "close_menu": "Tutup menu",
+      "aria": "Navigasi utama",
+      "endpoint": "Endpoint"
     },
     "env_label": "PoC",
   "skip_link": "Lompat ke konten"
@@ -603,6 +604,125 @@
       }
     }
   },
+  "endpoint": {
+    "page": {
+      "title": "Endpoint",
+      "subtitle": "Endpoint menghubungkan satu provider ke satu downstream pool, lengkap dengan parameter literal dan kontrak metadata yang wajib dikirim client.",
+      "add": "Tambah endpoint"
+    },
+    "list": {
+      "col": {
+        "provider": "Provider",
+        "pool": "Downstream pool",
+        "version": "Versi",
+        "metadata": "Metadata",
+        "status": "Status",
+        "actions": "Aksi"
+      },
+      "inactive": "Nonaktif",
+      "metadata_count_other": "{{count, number}} field",
+      "edit_aria": "Ubah endpoint {{nama}}",
+      "activate": "Aktifkan",
+      "activate_aria": "Aktifkan endpoint {{nama}}",
+      "deactivate": "Nonaktifkan",
+      "deactivate_aria": "Nonaktifkan endpoint {{nama}}"
+    },
+    "empty": {
+      "title": "Belum ada endpoint",
+      "body": "Tambahkan endpoint untuk menghubungkan provider ke downstream pool."
+    },
+    "activate": {
+      "done": "Endpoint {{nama}} diaktifkan. Berlaku untuk request yang masuk setelah ini."
+    },
+    "deactivate": {
+      "title": "Nonaktifkan endpoint {{nama}}?",
+      "body": "Request yang sedang mengantre pada endpoint ini akan dibatalkan atau digagalkan. Pratinjau di bawah dihitung saat dialog dibuka.",
+      "impact": "Dampak penonaktifan",
+      "cancelled": "{{jumlah, number}} request akan dibatalkan.",
+      "failed": "{{jumlah, number}} request akan digagalkan.",
+      "reason": {
+        "label": "Alasan penonaktifan"
+      },
+      "confirm": "Nonaktifkan endpoint",
+      "done": "Endpoint {{nama}} dinonaktifkan."
+    },
+    "form": {
+      "title_edit": "Ubah endpoint",
+      "subtitle": "Setiap simpan membuat versi baru dari seluruh isian di bawah. Versi lama tetap tersimpan.",
+      "back": "Kembali ke daftar endpoint",
+      "section": {
+        "target": "Tujuan",
+        "parameters": "Parameter literal",
+        "metadata": "Kontrak metadata"
+      },
+      "provider": "Provider",
+      "pool": "Downstream pool",
+      "choose": "Pilih…",
+      "log_mode": {
+        "label": "Mode log",
+        "metadata_only": "Metadata saja",
+        "full_payload": "Payload lengkap",
+        "help": "Tidak boleh lebih longgar dari mode log provider."
+      },
+      "parameters": {
+        "label": "Parameter literal",
+        "help": "Satu NAMA=nilai per baris, termasuk TRESHOLD. Contoh: TRESHOLD=90"
+      },
+      "reason": {
+        "heading": "Alasan",
+        "label": "Alasan perubahan",
+        "help": "{{jumlah}}/{{batas}} karakter, minimal 10. Dicatat di audit konfigurasi dan tidak disimpan di form."
+      },
+      "save_new": "Simpan endpoint",
+      "save_edit": "Simpan perubahan",
+      "saving": "Menyimpan…",
+      "saved_version": "Endpoint tersimpan sebagai versi {{versi}}.",
+      "error": {
+        "summary": "Periksa {{jumlah}} isian yang ditandai.",
+        "umum": "Isian ini belum sah (kode {{kode}}).",
+        "wajib": "Wajib diisi.",
+        "alasan_rentang": "Alasan wajib diisi, 10–500 karakter.",
+        "log_mode_lebih_longgar": "Mode log endpoint tidak boleh lebih longgar dari provider. Pilih Metadata saja atau ubah mode log provider.",
+        "parameter_format": "Tulis tiap parameter sebagai NAMA=nilai. Baris ini belum sesuai: {{nama}}",
+        "parameter_duplikat": "Parameter {{nama}} muncul lebih dari sekali.",
+        "nama_field_format": "Hanya huruf kecil, angka, dan garis bawah; diawali huruf; paling banyak {{batas}} karakter.",
+        "nama_field_duplikat": "Nama field {{nama}} sudah dipakai di baris lain.",
+        "nilai_diizinkan_wajib": "Isi minimal satu nilai untuk tipe enum.",
+        "wajib_hilang": "Endpoint Dukcapil wajib memuat field status_penerima_manfaat di kontrak metadata."
+      }
+    },
+    "metadata": {
+      "info": "Kontrak metadata dicatat di log transaksi untuk data balikan. Request tanpa field wajib ditolak sebelum memakai kuota. Field Rahasia tidak pernah dicatat atau dikirim ke callback.",
+      "empty": "Belum ada field metadata.",
+      "group": "Field ke-{{nomor}}",
+      "add": "Tambah field",
+      "remove": "Hapus field",
+      "nama_field": "Nama field",
+      "nama_field_help": "Huruf kecil, angka, garis bawah; maksimal {{batas}} karakter.",
+      "tipe": "Tipe",
+      "tipe_option": {
+        "string": "Teks",
+        "integer": "Bilangan bulat",
+        "boolean": "Ya/tidak",
+        "date": "Tanggal",
+        "enum": "Pilihan tetap"
+      },
+      "klasifikasi": "Klasifikasi",
+      "klasifikasi_option": {
+        "Internal": "Internal",
+        "Terbatas": "Terbatas",
+        "Rahasia": "Rahasia"
+      },
+      "nilai_diizinkan": "Nilai yang diizinkan",
+      "nilai_diizinkan_help": "Pisahkan dengan koma.",
+      "deskripsi": "Deskripsi",
+      "aturan_validasi": "Aturan validasi (opsional)",
+      "aturan_validasi_help": "Rujukan ke aturan validasi yang sudah ada.",
+      "wajib": "Wajib diisi client",
+      "kirim": "Kirim ke data balikan",
+      "rahasia_note": "Field Rahasia tidak pernah dikirim ke data balikan."
+    }
+  },
   "metadata": {
     "page": {
       "title": "Kontrak metadata",
@@ -1082,7 +1202,8 @@
       "quota": "Kuota · PoolRouter",
       "log": "Log transaksi · PoolRouter",
       "nik_search": "Pencarian log per NIK · PoolRouter",
-      "audit": "Audit akses · PoolRouter"
+      "audit": "Audit akses · PoolRouter",
+      "endpoint": "Endpoint · PoolRouter"
     }
   },
   "export": {

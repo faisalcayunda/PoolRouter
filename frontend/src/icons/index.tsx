@@ -15,6 +15,7 @@ import Remove from '@material-symbols/svg-400/outlined/remove.svg?react';
 import Visibility from '@material-symbols/svg-400/outlined/visibility.svg?react';
 import Download from '@material-symbols/svg-400/outlined/download.svg?react';
 import Refresh from '@material-symbols/svg-400/outlined/refresh.svg?react';
+import Api from '@material-symbols/svg-400/outlined/api.svg?react';
 import Apps from '@material-symbols/svg-400/outlined/apps.svg?react';
 import CloudDownload from '@material-symbols/svg-400/outlined/cloud_download.svg?react';
 import CloudUpload from '@material-symbols/svg-400/outlined/cloud_upload.svg?react';
@@ -46,6 +47,7 @@ export const icons = {
   visibility: Visibility,
   download: Download,
   refresh: Refresh,
+  api: Api,
   apps: Apps,
   cloudDownload: CloudDownload,
   cloudUpload: CloudUpload,

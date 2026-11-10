@@ -61,6 +61,12 @@ export const NAV_GROUPS: NavGroup[] = [
         icon: 'dns',
         roles: ['platform_admin'],
       },
+      {
+        href: '/endpoint',
+        labelKey: 'nav.drawer.endpoint',
+        icon: 'api',
+        roles: ['platform_admin'],
+      },
       { href: '/secret', labelKey: 'nav.drawer.secret', icon: 'key', roles: ['platform_admin'] },
       {
         href: '/upstream',
@@ -162,11 +168,13 @@ function crumbsForItem(href: string, tail: Crumb[] = []): Crumb[] {
 const DETAIL_BASE: Record<string, { base: string; hasNew: boolean }> = {
   log: { base: '/', hasNew: false },
   provider: { base: '/provider', hasNew: true },
+  endpoint: { base: '/endpoint', hasNew: true },
   upstream: { base: '/upstream', hasNew: true },
   downstream: { base: '/downstream', hasNew: true },
   client: { base: '/client', hasNew: false },
 };
-const DETAIL = /^\/(log|provider|upstream|downstream|client)\/([^/]+)(?:\/(kredensial|webhook))?$/;
+const DETAIL =
+  /^\/(log|provider|endpoint|upstream|downstream|client)\/([^/]+)(?:\/(kredensial|webhook))?$/;
 
 /**
  * Jejak breadcrumb untuk setiap rute yang dirender shell, termasuk detail dan not-found.
