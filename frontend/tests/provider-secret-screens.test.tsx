@@ -69,10 +69,15 @@ describe('S02 daftar provider', () => {
     asRole('platform_admin', <ProviderListScreen client={stubClient()} />);
 
     expect(await screen.findByRole('heading', { name: 'Belum ada provider' })).toBeVisible();
-    expect(screen.getByRole('link', { name: 'Tambah provider' })).toHaveAttribute(
-      'href',
-      '/provider/baru',
-    );
+    // S02: "Tambah provider" ada di kepala halaman dan di kartu kosong.
+    const tambah = screen.getAllByRole('link', { name: 'Tambah provider' });
+    expect(tambah).toHaveLength(2);
+    for (const link of tambah) expect(link).toHaveAttribute('href', '/provider/baru');
+    expect(
+      screen.getByText(
+        'Tambahkan provider untuk mulai menerima request dari aplikasi client. Siapkan dulu secret (USER_ID, PASSWORD, IP_USER) di menu Secret.',
+      ),
+    ).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Buka menu Secret' })).toHaveAttribute(
       'href',
       '/secret',
@@ -271,6 +276,15 @@ describe('S05 secret', () => {
     expect(table.getAllByText('Tersamar')).toHaveLength(2);
     expect(table.getByText('1 provider')).toBeInTheDocument();
     expect(table.getByText('Tidak dipakai')).toBeInTheDocument();
+    // Kolom S05 berurutan sesuai desain; "Diubah" belum punya data di API (celah).
+    expect(table.getAllByRole('columnheader').map((th) => th.textContent)).toEqual([
+      'Nama',
+      'Nilai',
+      'Dipakai oleh',
+      'Diubah',
+      'Aksi',
+    ]);
+    expect(table.getAllByText('Belum tersedia')).toHaveLength(2);
     expect(screen.queryByRole('button', { name: /lihat|salin|tampilkan/i })).toBeNull();
   });
 
@@ -332,11 +346,34 @@ describe('S05 secret', () => {
     const dialog = await screen.findByRole('dialog', { name: 'Ganti secret USER_ID' });
     await user.click(within(dialog).getByLabelText('Nilai baru'));
     await user.paste(NILAI);
-    await user.click(within(dialog).getByRole('button', { name: 'Ganti nilai' }));
+    expect(
+      within(dialog).getByText(
+        'Nilai tersamar. Setelah disimpan, nilai tidak bisa dilihat atau disalin.',
+      ),
+    ).toBeInTheDocument();
+    expect(within(dialog).getByRole('button', { name: 'Batal' })).toBeInTheDocument();
+    await user.click(within(dialog).getByRole('button', { name: 'Simpan' }));
 
     await waitFor(() => expect(client.putSecret).toHaveBeenCalledWith('USER_ID', NILAI));
     expect(await screen.findByText('Nilai secret USER_ID sudah diganti.')).toBeInTheDocument();
     expect(document.body.innerHTML).not.toContain(NILAI);
+  });
+
+  it('opens "Secret masih dipakai" straight from Hapus when a provider uses it (S05)', async () => {
+    const client = stubClient();
+    asRole('platform_admin', <SecretScreen client={client} />);
+
+    await user.click(await screen.findByRole('button', { name: 'Hapus secret USER_ID' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Secret masih dipakai' });
+    expect(
+      within(dialog).getByText(
+        'USER_ID masih dipakai oleh provider aktif: 1 provider. Nonaktifkan atau ubah provider itu dulu, lalu hapus secret ini.',
+      ),
+    ).toBeInTheDocument();
+    expect(within(dialog).queryByRole('button', { name: 'Hapus secret' })).toBeNull();
+    await user.click(within(dialog).getByRole('button', { name: 'Mengerti' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(client.deleteSecret).not.toHaveBeenCalled();
   });
 
   it('explains a 409 secret_dipakai and offers no delete button afterwards', async () => {
@@ -349,8 +386,8 @@ describe('S05 secret', () => {
     );
     asRole('platform_admin', <SecretScreen client={stubClient({ deleteSecret })} />);
 
-    await user.click(await screen.findByRole('button', { name: 'Hapus secret USER_ID' }));
-    const dialog = await screen.findByRole('dialog', { name: 'Hapus secret USER_ID?' });
+    await user.click(await screen.findByRole('button', { name: 'Hapus secret KUNCI_UJI' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Hapus secret KUNCI_UJI?' });
     await user.click(within(dialog).getByRole('button', { name: 'Hapus secret' }));
 
     expect(await within(dialog).findByText('Secret masih dipakai')).toBeInTheDocument();
