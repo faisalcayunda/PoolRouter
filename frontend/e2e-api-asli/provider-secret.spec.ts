@@ -8,7 +8,9 @@ const SUFIKS = Date.now().toString(36).toUpperCase();
 const NAMA_SECRET = `KUNCI_E2E_${SUFIKS}`;
 const NILAI_SECRET = `nilai-sintetis-e2e-${SUFIKS.toLowerCase()}`;
 const NAMA_PROVIDER = `provider-e2e-${SUFIKS.toLowerCase()}`;
-const TEMPLATE = `{"NIK":"{{input.NIK}}","UID":"{{secret.${NAMA_SECRET}}}"}`;
+// Hanya merujuk secret: `{{input.*}}` wajib punya baris di tabel parameter (validasi_template di
+// backend, 422 template_parameter_tidak_ada), dan form create mengirim parameters: [].
+const TEMPLATE = `{"UID":"{{secret.${NAMA_SECRET}}}"}`;
 
 test.describe('@api-asli provider dan secret', () => {
   test('@api-asli sesi uji diterima backend sebagai platform admin', async ({ page }) => {

@@ -12,12 +12,16 @@ export const test = base.extend({
   context: async ({ context, baseURL }, use) => {
     const token = process.env.E2E_SESSION_TOKEN;
     if (token && baseURL) {
-      // `__Host-` mewajibkan Secure, Path=/ dan tanpa Domain; Chromium menerima Secure pada loopback.
+      // `__Host-` mewajibkan Secure, Path=/ dan host-only. Bentuk `url` tidak dipakai: Playwright 1.64
+      // menimpa `secure` menjadi (protocol === 'https:'), jadi cookie ini jatuh pada http://127.0.0.1.
+      // Bentuk domain/path tidak menimpa `secure`. Apakah Chromium menerimanya di loopback http
+      // dibuktikan oleh tes /auth/me pada run sungguhan (belum dijalankan; lihat catatan ARC-251).
       await context.addCookies([
         {
           name: COOKIE_SESI,
           value: token,
-          url: baseURL,
+          domain: new URL(baseURL).hostname,
+          path: '/',
           httpOnly: true,
           secure: true,
           sameSite: 'Strict',
