@@ -10,8 +10,8 @@ use std::sync::{Arc, Mutex};
 
 use poolrouter_adapter_provider::GagalPanggilProvider;
 use poolrouter_adapter_provider::client::{
-    Allowlist, BATAS_CONNECT, BATAS_TOTAL, GalatKlien, ProviderClientConfig, TlsTrust,
-    build_provider_client, build_provider_client_with_config, kirim,
+    Allowlist, BATAS_BODY_RESPONS, BATAS_CONNECT, BATAS_TOTAL, GalatKlien, ProviderClientConfig,
+    TlsTrust, build_provider_client, build_provider_client_with_config, kirim,
 };
 use rcgen::{BasicConstraints, CertificateParams, DnType, IsCa, KeyPair};
 use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified};
@@ -585,4 +585,82 @@ async fn kirim_ca_kustom_mengembalikan_respons_mentah() {
     assert_eq!(r.status, 200);
     assert_eq!(r.body, b"ok");
     assert!(posisi(&server.data(), b"0012345678901234").is_some());
+}
+
+/// ARC-241: CA yang salah (jalur webpki, bukan verifier pin kita) tetap
+/// dipetakan `Tls`. Uji ini mengunci deteksi galat sertifikat di `petakan_reqwest`
+/// yang masih memeriksa teks `Debug` dan `Display`: bila naik versi `reqwest`
+/// atau `rustls` membuatnya merah, periksa dulu rantai galatnya, jangan
+/// melonggarkan uji.
+#[tokio::test]
+async fn kirim_ca_salah_dipetakan_tls_tanpa_data_aplikasi() {
+    let a = sertifikat("a");
+    let b = sertifikat("b");
+    let server_b = mock(&b, OK.to_vec()).await;
+    let klien_a = build_provider_client(TlsTrust::CaKustom {
+        ca_pem: a.ca_pem.into_bytes(),
+    })
+    .unwrap();
+    let hasil = kirim(
+        &klien_a,
+        "POST",
+        &server_b.url("/uji"),
+        Some("{\"NIK\":\"0012345678901234\"}".to_owned()),
+        BATAS_TOTAL,
+    )
+    .await;
+    assert!(
+        matches!(hasil, Err(GagalPanggilProvider::Tls(_))),
+        "{hasil:?}"
+    );
+    assert!(server_b.data().is_empty(), "{:?}", server_b.data());
+}
+
+/// Respons `200` dengan `n` byte body. `dengan_panjang` mengisi `Content-Length`;
+/// tanpa itu body dibaca sampai koneksi ditutup.
+fn respons_besar(n: usize, dengan_panjang: bool) -> Vec<u8> {
+    let kepala = if dengan_panjang {
+        format!("HTTP/1.1 200 OK\r\nContent-Length: {n}\r\n\r\n")
+    } else {
+        "HTTP/1.1 200 OK\r\nConnection: close\r\n\r\n".to_owned()
+    };
+    let mut r = kepala.into_bytes();
+    r.extend(std::iter::repeat_n(b'x', n));
+    r
+}
+
+/// Panjang body yang diterima `kirim` (bukan isinya, supaya pesan gagal tetap pendek).
+async fn kirim_ke_mock(respons: Vec<u8>) -> Result<usize, GagalPanggilProvider> {
+    let s = sertifikat("a");
+    let server = mock(&s, respons).await;
+    let klien = build_provider_client(TlsTrust::CaKustom {
+        ca_pem: s.ca_pem.into_bytes(),
+    })
+    .unwrap();
+    kirim(&klien, "GET", &server.url("/uji"), None, BATAS_TOTAL)
+        .await
+        .map(|r| r.body.len())
+}
+
+/// ARC-241: body sebesar batas diterima utuh; satu byte lebih ditolak, baik
+/// ukurannya diumumkan lewat `Content-Length` maupun baru ketahuan saat dibaca.
+#[tokio::test]
+async fn kirim_body_tepat_batas_diterima() {
+    for dengan_panjang in [true, false] {
+        let panjang = kirim_ke_mock(respons_besar(BATAS_BODY_RESPONS, dengan_panjang))
+            .await
+            .unwrap_or_else(|e| panic!("panjang={dengan_panjang}: {e:?}"));
+        assert_eq!(panjang, BATAS_BODY_RESPONS);
+    }
+}
+
+#[tokio::test]
+async fn kirim_body_melebihi_batas_ditolak() {
+    for dengan_panjang in [true, false] {
+        let hasil = kirim_ke_mock(respons_besar(BATAS_BODY_RESPONS + 1, dengan_panjang)).await;
+        assert!(
+            matches!(hasil, Err(GagalPanggilProvider::ResponsTidakValid(_))),
+            "panjang={dengan_panjang}: {hasil:?}"
+        );
+    }
 }

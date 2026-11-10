@@ -40,7 +40,12 @@ const TTL_SLOT_TAMBAHAN_DETIK: i64 = 60;
 /// Timeout assumed when `parameter_dispatch` does not name one. The column is
 /// `jsonb NOT NULL DEFAULT '{}'`, so an empty object is a normal state between
 /// a pool insert and the dispatcher ticket that fills it in.
-const TIMEOUT_UPSTREAM_BAWAAN_DETIK: i64 = 30;
+///
+/// 20 detik menurut ADR-0001 bagian 5a.4. Ini satu-satunya nilai bawaan: worker,
+/// jalur sync, dan klien adapter membacanya dari sini, sehingga TTL slot yang
+/// ditulis worker sama dengan yang dihitung ulang rebuild (timeout + 60 s).
+/// Sebelum ARC-241 sync dan rebuild memakai 30 detik.
+pub const TIMEOUT_UPSTREAM_BAWAAN_DETIK: i64 = 20;
 
 /// Konkurensi bawaan bila `parameter_dispatch.maks_konkurensi` tidak diisi.
 /// Kuota tetap dijaga skrip token; angka ini hanya membatasi panggilan paralel.
@@ -527,7 +532,10 @@ mod uji_parameter {
             p.timeout_total_upstream_detik,
             TIMEOUT_UPSTREAM_BAWAAN_DETIK
         );
-        assert_eq!(p.ttl_slot_mikro(), (30 + 60) * 1_000_000);
+        // ADR-0001 §5a.4: 20 s, sama dengan worker dan jalur sync (ARC-241).
+        assert_eq!(TIMEOUT_UPSTREAM_BAWAAN_DETIK, 20);
+        assert_eq!(p.ttl_slot_mikro(), (20 + 60) * 1_000_000);
+        assert_eq!(p.ambang_reconciler_detik(), 20 + 60);
         assert_eq!(p.batas_jeda_mikro(), 0, "tanpa rate tidak ada jeda");
     }
 

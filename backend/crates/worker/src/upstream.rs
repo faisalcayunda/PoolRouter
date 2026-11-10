@@ -7,6 +7,7 @@
 //!   host lain) dan tidak me-retry sendiri; retry dikendalikan PoolRouter;
 //! - body dikirim dengan `Content-Length` (body `String` utuh, bukan stream);
 //! - timeout connect 5 s, total dari konfigurasi pool (bawaan 20 s);
+//! - body respons dibaca paling banyak `BATAS_BODY_RESPONS` (ARC-241);
 //! - hanya `tls_trust = system`. Mode `ca_kustom` dan `pin_spki` dibangun di
 //!   klien adapter provider ARC-64/ARC-221 yang belum masuk `main`; sampai
 //!   itu, worker menolaknya tanpa koneksi keluar sebagai kegagalan `tls`
@@ -17,6 +18,7 @@ use std::future::Future;
 use std::time::Duration;
 
 use poolrouter_adapter_provider::GagalPanggilProvider;
+use poolrouter_adapter_provider::client::{BATAS_BODY_RESPONS, baca_body};
 
 /// Batas connect ke provider (ADR-0001 bagian 5a.4).
 pub const BATAS_CONNECT: Duration = Duration::from_secs(5);
@@ -105,7 +107,7 @@ impl PemanggilProvider for PemanggilReqwest {
         }
         let jawab = rb.send().await.map_err(petakan)?;
         let status = jawab.status().as_u16();
-        let body = jawab.bytes().await.map_err(petakan)?.to_vec();
+        let body = baca_body(jawab, BATAS_BODY_RESPONS).await?;
         Ok(ResponsMentah { status, body })
     }
 }
