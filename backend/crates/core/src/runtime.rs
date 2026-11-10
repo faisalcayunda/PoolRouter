@@ -83,7 +83,25 @@ pub async fn healthcheck() -> std::process::ExitCode {
 
 /// Probe `/readyz` on `addr` (used by tests with an explicit address).
 pub async fn healthcheck_at(addr: &str) -> std::process::ExitCode {
-    let url = format!("http://{addr}/readyz");
+    probe_at(addr, "readyz").await
+}
+
+/// Probe `/healthz` for the container liveness check (ARC-226). Unlike
+/// [`healthcheck`], a down dependency does not fail it: only a process that
+/// reports itself dead does (worker consumer loops, ADR-0004 section 4.3 W3).
+pub async fn liveness() -> std::process::ExitCode {
+    let addr =
+        std::env::var("POOLROUTER_ADMIN_ADDR").unwrap_or_else(|_| "127.0.0.1:9090".to_owned());
+    liveness_at(&addr).await
+}
+
+/// Probe `/healthz` on `addr` (used by tests with an explicit address).
+pub async fn liveness_at(addr: &str) -> std::process::ExitCode {
+    probe_at(addr, "healthz").await
+}
+
+async fn probe_at(addr: &str, path: &str) -> std::process::ExitCode {
+    let url = format!("http://{addr}/{path}");
     let result = tokio::time::timeout(
         Duration::from_secs(2),
         reqwest::Client::new().get(url).send(),
@@ -440,6 +458,25 @@ mod tests {
             .await
             .unwrap();
         assert!(healthz.status().is_success());
+    }
+
+    #[tokio::test]
+    async fn liveness_at_membaca_healthz_bukan_readyz() {
+        // Worker mati tetapi dependensi siap: liveness gagal, readiness lolos.
+        let addr = "127.0.0.1:19196";
+        spawn_ready_server_with_liveness_on(addr, Arc::new(Ready), Arc::new(Mati));
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        assert_eq!(liveness_at(addr).await, ExitCode::FAILURE);
+        assert_eq!(healthcheck_at(addr).await, ExitCode::SUCCESS);
+
+        // Dependensi turun tetapi proses hidup: liveness tetap lolos.
+        let addr = "127.0.0.1:19197";
+        spawn_ready_server_on(addr, Arc::new(NotReady));
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        assert_eq!(liveness_at(addr).await, ExitCode::SUCCESS);
+        assert_eq!(healthcheck_at(addr).await, ExitCode::FAILURE);
+
+        assert_eq!(liveness_at("127.0.0.1:19198").await, ExitCode::FAILURE);
     }
 
     /// Temuan review ARC-68: password hasil generate dengan karakter khusus
