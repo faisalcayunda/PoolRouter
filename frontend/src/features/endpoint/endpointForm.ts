@@ -231,6 +231,7 @@ export function toEndpointConfig(
       issues.nama_field = { kode: 'nama_field_format', batas: NAMA_FIELD_MAKS };
     } else if (seen.has(nama)) issues.nama_field = { kode: 'nama_field_duplikat', nama };
     seen.add(nama);
+    if (!row.deskripsi.trim()) issues.deskripsi = { kode: 'wajib' };
     if (row.tipe === 'enum' && splitList(row.nilai_diizinkan).length === 0) {
       issues.nilai_diizinkan = { kode: 'nilai_diizinkan_wajib' };
     }
@@ -268,9 +269,9 @@ const ROW_FIELDS = new Set<string>(ROW_ORDER);
 
 /**
  * Petakan 422 ke galat per field. Segmen pertama JSON pointer menentukan field; di bawah
- * `/metadata_fields/<n>/<field>` galat jatuh ke baris ke-n. Problem `metadata_wajib_hilang` (M-R1)
- * tanpa daftar `errors` tetap menjadi galat di daftar metadata. Galat yang tidak menunjuk field
- * form dikembalikan di `lainnya`.
+ * `metadata_fields/<n>/<field>` galat jatuh ke baris ke-n. Server selalu mengirim `errors` tak
+ * kosong; untuk M-R1 isinya `{ field: 'metadata_fields', kode: 'metadata_wajib_hilang' }`, dipetakan
+ * ke kalimat khusus `wajib_hilang`. Galat yang tidak menunjuk field form dikembalikan di `lainnya`.
  */
 export function serverErrors(
   problem: Problem | null | undefined,
@@ -279,17 +280,13 @@ export function serverErrors(
   const errors = emptyErrors();
   const lainnya: FieldIssue[] = [];
   const list = problem?.errors ?? [];
-  if (list.length === 0) {
-    if (problem?.kode === 'metadata_wajib_hilang') {
-      errors.fields.metadata_fields = { kode: 'wajib_hilang' };
-      return { errors, lainnya };
-    }
-    return null;
-  }
+  if (list.length === 0) return null;
   for (const e of list) {
     const segmen = e.field.replace(/^\/+/, '').split('/');
     const field = segmen[0] ?? '';
-    const issue: FieldIssue = { kode: e.kode, nama: e.nama ?? null, batas: e.batas ?? null };
+    const kode =
+      field === 'metadata_fields' && e.kode === 'metadata_wajib_hilang' ? 'wajib_hilang' : e.kode;
+    const issue: FieldIssue = { kode, nama: e.nama ?? null, batas: e.batas ?? null };
     if (field === 'metadata_fields' && /^\d+$/.test(segmen[1] ?? '')) {
       const row = rows[Number(segmen[1])];
       const sub = segmen[2] ?? '';

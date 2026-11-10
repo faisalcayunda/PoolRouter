@@ -300,6 +300,7 @@ describe('S04b + S07b form endpoint', () => {
     await user.click(screen.getByRole('button', { name: 'Tambah field' }));
     const group = within(screen.getByRole('group', { name: 'Field ke-1' }));
     await paste('Nama field', 'status_penerima_manfaat', group);
+    await paste('Deskripsi', 'Status penerima manfaat', group);
     await user.click(group.getByRole('checkbox', { name: 'Wajib diisi client' }));
     await user.click(group.getByRole('checkbox', { name: 'Kirim ke data balikan' }));
     await user.click(screen.getByRole('button', { name: 'Simpan endpoint' }));
@@ -318,7 +319,7 @@ describe('S04b + S07b form endpoint', () => {
           wajib: true,
           klasifikasi: 'Internal',
           kirim_ke_data_balikan: true,
-          deskripsi: '',
+          deskripsi: 'Status penerima manfaat',
         },
       ],
       config_schema_version: 1,
@@ -424,7 +425,14 @@ describe('S04b + S07b form endpoint', () => {
     const createEndpoint = vi.fn().mockRejectedValue(
       new ApiError(422, {
         kode: 'metadata_wajib_hilang',
-        errors: [{ field: '/metadata_fields', kode: 'wajib_hilang' }],
+        // Bentuk asli server (endpoint.rs): pointer tanpa garis miring depan, kode sama dengan problem.
+        errors: [
+          {
+            field: 'metadata_fields',
+            kode: 'metadata_wajib_hilang',
+            nama: 'status_penerima_manfaat',
+          },
+        ],
       }),
     );
     asRole('platform_admin', <EndpointFormScreen client={stubClient({ createEndpoint })} />);
@@ -439,6 +447,48 @@ describe('S04b + S07b form endpoint', () => {
         'Endpoint Dukcapil wajib memuat field status_penerima_manfaat di kontrak metadata.',
       ),
     ).toBeVisible();
+  });
+
+  it('blocks a metadata row without a description before calling the server', async () => {
+    const createEndpoint = vi.fn();
+    asRole('platform_admin', <EndpointFormScreen client={stubClient({ createEndpoint })} />);
+
+    await screen.findByRole('heading', { level: 1, name: 'Tambah endpoint' });
+    await choose(/Provider/, 'provider-metadata');
+    await choose(/Downstream pool/, 'pool-contoh');
+    await user.click(screen.getByRole('button', { name: 'Tambah field' }));
+    const group = within(screen.getByRole('group', { name: 'Field ke-1' }));
+    await paste('Nama field', 'kode_wilayah', group);
+    await user.click(screen.getByRole('button', { name: 'Simpan endpoint' }));
+
+    expect(await group.findByText('Wajib diisi.')).toBeVisible();
+    expect(createEndpoint).not.toHaveBeenCalled();
+  });
+
+  it('shows a server description error on the description of the row it points at', async () => {
+    const updateEndpoint = vi.fn().mockRejectedValue(
+      new ApiError(422, {
+        kode: 'validasi_gagal',
+        errors: [{ field: 'metadata_fields/1/deskripsi', kode: 'wajib' }],
+      }),
+    );
+    asRole(
+      'platform_admin',
+      <EndpointFormScreen
+        client={stubClient({ updateEndpoint })}
+        endpointId={ENDPOINT.endpoint_id}
+      />,
+    );
+
+    await screen.findByRole('heading', { level: 1, name: 'Ubah endpoint' });
+    await paste('Alasan perubahan', 'Perbaikan kontrak metadata.');
+    await user.click(screen.getByRole('button', { name: 'Simpan perubahan' }));
+
+    const second = within(await screen.findByRole('group', { name: 'Field ke-2' }));
+    expect(await second.findByText('Wajib diisi.')).toBeVisible();
+    expect(
+      within(screen.getByRole('group', { name: 'Field ke-1' })).queryByText('Wajib diisi.'),
+    ).toBeNull();
   });
 
   it('puts a server field error on the row it points at', async () => {

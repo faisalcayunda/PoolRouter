@@ -95,15 +95,28 @@ describe('toEndpointConfig', () => {
     });
   });
 
+  it('rejects a blank description like the server does', () => {
+    const row = { ...emptyRow(), nama_field: 'kode_wilayah', deskripsi: '   ' };
+    const built = toEndpointConfig(draftWith({ metadata_fields: [row] }), 'create');
+    if (built.ok) throw new Error('expected errors');
+    expect(built.errors.rows[row.key]?.deskripsi).toEqual({ kode: 'wajib' });
+  });
+
   it('sends allowed values only for enum rows and omits a blank validation rule', () => {
     const enumRow = {
       ...emptyRow(),
       nama_field: 'status',
+      deskripsi: 'Status',
       tipe: 'enum' as const,
       nilai_diizinkan: ' aktif, ,nonaktif ',
       aturan_validasi: '  ',
     };
-    const textRow = { ...emptyRow(), nama_field: 'catatan', nilai_diizinkan: 'sisa-isian' };
+    const textRow = {
+      ...emptyRow(),
+      nama_field: 'catatan',
+      deskripsi: 'Catatan',
+      nilai_diizinkan: 'sisa-isian',
+    };
     const built = toEndpointConfig(draftWith({ metadata_fields: [enumRow, textRow] }), 'create');
     if (!built.ok) throw new Error('expected ok');
     expect(built.body.metadata_fields[0]).toMatchObject({ nilai_diizinkan: ['aktif', 'nonaktif'] });
@@ -115,6 +128,7 @@ describe('toEndpointConfig', () => {
     const row = {
       ...emptyRow(),
       nama_field: 'nilai_sensitif',
+      deskripsi: 'Nilai sensitif',
       klasifikasi: 'Rahasia' as const,
       kirim_ke_data_balikan: true,
     };
@@ -154,10 +168,15 @@ describe('toEndpointConfig', () => {
   });
 
   it('flags a bad, repeated or enum-without-values field name on the right row', () => {
-    const bad = { ...emptyRow(), nama_field: 'Status-Baru' };
-    const first = { ...emptyRow(), nama_field: 'status' };
-    const again = { ...emptyRow(), nama_field: 'status' };
-    const enumEmpty = { ...emptyRow(), nama_field: 'pilihan', tipe: 'enum' as const };
+    const bad = { ...emptyRow(), nama_field: 'Status-Baru', deskripsi: 'x' };
+    const first = { ...emptyRow(), nama_field: 'status', deskripsi: 'x' };
+    const again = { ...emptyRow(), nama_field: 'status', deskripsi: 'x' };
+    const enumEmpty = {
+      ...emptyRow(),
+      nama_field: 'pilihan',
+      deskripsi: 'x',
+      tipe: 'enum' as const,
+    };
     const built = toEndpointConfig(
       draftWith({ metadata_fields: [bad, first, again, enumEmpty] }),
       'create',
@@ -197,9 +216,33 @@ describe('serverErrors', () => {
     expect(mapped?.errors.rows[rows[0]!.key]).toBeUndefined();
   });
 
-  it('maps the M-R1 problem even when the body carries no error list', () => {
-    const mapped = serverErrors({ kode: 'metadata_wajib_hilang' }, []);
-    expect(mapped?.errors.fields.metadata_fields).toEqual({ kode: 'wajib_hilang' });
+  it('maps the M-R1 error exactly as the server sends it', () => {
+    const mapped = serverErrors(
+      {
+        kode: 'metadata_wajib_hilang',
+        errors: [
+          {
+            field: 'metadata_fields',
+            kode: 'metadata_wajib_hilang',
+            nama: 'status_penerima_manfaat',
+          },
+        ],
+      },
+      [],
+    );
+    expect(mapped?.errors.fields.metadata_fields).toMatchObject({ kode: 'wajib_hilang' });
+  });
+
+  it('puts a description error from the server on the description of that row', () => {
+    const rows = [emptyRow(), emptyRow()];
+    const mapped = serverErrors(
+      {
+        kode: 'validasi_gagal',
+        errors: [{ field: 'metadata_fields/1/deskripsi', kode: 'wajib' }],
+      },
+      rows,
+    );
+    expect(mapped?.errors.rows[rows[1]!.key]?.deskripsi).toMatchObject({ kode: 'wajib' });
   });
 
   it('keeps top-level fields and sends unknown pointers to lainnya', () => {

@@ -146,12 +146,15 @@ export function MetadataFieldsEditor({
                   />
                 </div>
               ) : null}
-              <TextField
-                label={t('endpoint.metadata.deskripsi')}
-                value={row.deskripsi}
-                onChange={(v) => patch(row.key, { deskripsi: v }, 'deskripsi')}
-                autoComplete="off"
-              />
+              <div data-row={row.key} data-row-field="deskripsi">
+                <TextField
+                  label={t('endpoint.metadata.deskripsi')}
+                  value={row.deskripsi}
+                  onChange={(v) => patch(row.key, { deskripsi: v }, 'deskripsi')}
+                  autoComplete="off"
+                  {...err('deskripsi')}
+                />
+              </div>
               <TextField
                 label={t('endpoint.metadata.aturan_validasi')}
                 description={t('endpoint.metadata.aturan_validasi_help')}
