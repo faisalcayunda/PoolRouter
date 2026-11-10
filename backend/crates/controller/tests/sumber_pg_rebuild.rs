@@ -332,6 +332,125 @@ async fn rebuild_memakai_angka_terbesar_antara_snapshot_dan_log() {
     bersihkan(&su, fx.pool_id).await;
 }
 
+/// ARC-232: jadwal `reset_kuota_*_berikut` yang sudah berlaku berhari-hari tetap
+/// aturan aktif bagi rebuild, walau tidak ada tulis admin yang menaikkannya ke
+/// kolom aktif. Fixture: aturan aktif 00:00 Asia/Jakarta, jadwal 12:00
+/// Asia/Jakarta yang berlaku sejak tiga hari lalu.
+#[tokio::test]
+#[ignore]
+async fn rebuild_memakai_jadwal_reset_yang_sudah_berlaku_lama() {
+    let Some(_) = url_su() else {
+        eprintln!("POOLROUTER_TEST_DATABASE_URL_SU tidak diset; uji dilewati");
+        return;
+    };
+    let su = pool_su().await;
+    let controller = pool_controller().await;
+    let fx = buat_fixture(&su, 0, None).await;
+    let sekarang = fx.published_at;
+
+    sqlx::query(
+        "UPDATE upstream_pool
+            SET reset_kuota_jam_berikut = '12:00',
+                reset_kuota_zona_berikut = 'Asia/Jakarta',
+                reset_kuota_berlaku_mulai = $2
+          WHERE upstream_pool_id = $1",
+    )
+    .bind(fx.pool_id)
+    .bind(sekarang - Duration::days(3))
+    .execute(&su)
+    .await
+    .expect("jadwal reset lama");
+
+    let jakarta = ZonaTetap::dari_detik(7 * 3600).expect("offset Jakarta");
+    let jam_baru = NaiveTime::from_hms_opt(12, 0, 0).unwrap();
+    let baru = periode_untuk(
+        sekarang,
+        &[AturanReset::baru(
+            sekarang - Duration::days(1),
+            jam_baru,
+            jakarta,
+        )],
+    )
+    .expect("periode aturan baru");
+    let lama = periode_untuk_fixture(sekarang);
+    assert_ne!(
+        baru.mulai, lama.mulai,
+        "fixture harus membedakan kedua aturan"
+    );
+
+    // Snapshot hanya ada untuk periode aturan baru: rebuild yang masih memakai
+    // aturan lama tidak akan menemukannya.
+    sqlx::query(
+        "INSERT INTO upstream_attempt_daily
+                (upstream_pool_id, periode_mulai, periode_selesai, tanggal, jumlah, snapshot_at)
+         VALUES ($1, $2, $3, $4, 4, now())",
+    )
+    .bind(fx.pool_id)
+    .bind(baru.mulai)
+    .bind(baru.selesai)
+    .bind(baru.tanggal_lokal)
+    .execute(&su)
+    .await
+    .expect("upstream_attempt_daily");
+
+    let redis = redis_uji().await;
+    let mut koneksi = redis
+        .get_multiplexed_async_connection()
+        .await
+        .expect("redis");
+    let run_id = baca_run_id(&mut koneksi).await.expect("run_id");
+    redis::cmd("DEL")
+        .arg(KUNCI_SIAP)
+        .query_async::<()>(&mut koneksi)
+        .await
+        .expect("hapus pr:siap");
+
+    let sumber = SumberPostgres::baru(controller);
+    let hasil = bangun_ulang(&mut koneksi, &run_id, &sumber, sekarang)
+        .await
+        .expect("rebuild");
+    let HasilRebuild::Dibangun(_) = hasil else {
+        panic!("rebuild harus dikerjakan, dapat {hasil:?}");
+    };
+
+    let pool = fx.pool_id.to_string();
+    let keadaan = sumber.keadaan(sekarang).await.expect("keadaan");
+    let k = keadaan
+        .iter()
+        .find(|k| k.pool_id == pool)
+        .expect("pool fixture");
+    assert_eq!(
+        k.periode_mulai, baru.mulai,
+        "periode dari jadwal yang berlaku"
+    );
+    assert_eq!(
+        k.snapshot_attempts, 4,
+        "snapshot periode aturan baru terbaca"
+    );
+
+    let di_redis_baru: Option<i64> = redis::cmd("GET")
+        .arg(kunci_attempts(&pool, baru.mulai))
+        .query_async(&mut koneksi)
+        .await
+        .expect("GET attempts baru");
+    assert_eq!(
+        di_redis_baru,
+        Some(nilai_counter(4, 0)),
+        "counter di kunci aturan baru"
+    );
+    let di_redis_lama: Option<i64> = redis::cmd("GET")
+        .arg(kunci_attempts(&pool, lama.mulai))
+        .query_async(&mut koneksi)
+        .await
+        .expect("GET attempts lama");
+    assert_eq!(
+        di_redis_lama, None,
+        "tidak ada counter di kunci aturan lama"
+    );
+
+    bersihkan(&su, fx.pool_id).await;
+}
+
 #[tokio::test]
 #[ignore]
 async fn keadaan_dari_postgresql_cocok_dengan_fixture() {
