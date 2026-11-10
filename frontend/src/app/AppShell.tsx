@@ -11,70 +11,103 @@ import { Icon, icons } from '../icons';
 import type { AdminRole } from '../features/common/RoleContext';
 import { activeHref, crumbsFor, navGroupsFor } from './nav';
 
-/** M3 window size class breakpoint for the `expanded` layout (tailwind.css `--breakpoint-expanded`). */
-const EXPANDED_QUERY = '(min-width: 840px)';
+/**
+ * Drawer standar hanya dari kelas jendela M3 `large` (>= 1200 px, `--breakpoint-large` di
+ * tailwind.css). Desain menggambar 1024, 768 dan 375 sebagai drawer modal dan hanya 1440 sebagai
+ * standar; batas persisnya inferensi (`.takeover/design/shell-v2-spec.md` bagian 3).
+ */
+const LARGE_QUERY = '(min-width: 1200px)';
 
-function useIsExpanded(): boolean {
-  const [expanded, setExpanded] = useState(
-    () => typeof window !== 'undefined' && window.matchMedia(EXPANDED_QUERY).matches,
+function useIsLarge(): boolean {
+  const [large, setLarge] = useState(
+    () => typeof window !== 'undefined' && window.matchMedia(LARGE_QUERY).matches,
   );
   useEffect(() => {
-    const mql = window.matchMedia(EXPANDED_QUERY);
-    const onChange = (e: MediaQueryListEvent) => setExpanded(e.matches);
+    const mql = window.matchMedia(LARGE_QUERY);
+    const onChange = (e: MediaQueryListEvent) => setLarge(e.matches);
     mql.addEventListener('change', onChange);
     return () => mql.removeEventListener('change', onChange);
   }, []);
-  return expanded;
+  return large;
 }
 
-function DrawerNav({
+/** Isi drawer: nama produk (dan tombol tutup di modal), grup menu per peran, identitas di dasar. */
+function DrawerContent({
   pathname,
   role,
+  user,
   onNavigate,
+  onClose,
 }: {
   pathname: string;
   role: AdminRole | null;
+  user?: AppShellProps['user'];
   onNavigate?: () => void;
+  /** Hanya varian modal: tombol "Tutup menu" di sudut kanan atas drawer. */
+  onClose?: () => void;
 }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const current = activeHref(pathname);
   return (
-    <nav aria-label={t('nav.drawer.aria')} className="flex flex-col gap-3">
-      {navGroupsFor(role).map((group) => (
-        <div key={group.id} className="flex flex-col gap-0.5">
-          <p className="typescale-label-small px-3 text-inverse-on-surface/70">
-            {t(group.labelKey)}
-          </p>
-          {group.items.map((item) => {
-            const isActive = item.href === current;
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                onPress={onNavigate}
-                aria-current={isActive ? 'page' : undefined}
-                className={cx(
-                  'typescale-label-large rounded-full px-3 py-2.5 no-underline outline-none',
-                  isActive
-                    ? 'bg-inverse-primary text-inverse-surface'
-                    : 'text-inverse-on-surface hover:bg-inverse-on-surface/8',
-                  'focus-visible:outline-2 focus-visible:outline-inverse-primary',
-                )}
-              >
-                {t(item.labelKey)}
-              </Link>
-            );
-          })}
+    <>
+      <div className="relative flex h-16 shrink-0 items-center px-7">
+        <span className="typescale-title-large">{t('common.app.name')}</span>
+        {onClose ? (
+          <IconButton
+            aria-label={t('nav.drawer.close_menu')}
+            onPress={onClose}
+            className="absolute top-2 right-3"
+          >
+            <Icon icon={icons.close} className="text-inverse-on-surface" />
+          </IconButton>
+        ) : null}
+      </div>
+      <nav
+        aria-label={t('nav.drawer.aria')}
+        className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-3 pt-3 pb-3"
+      >
+        {navGroupsFor(role).map((group) => (
+          <div key={group.id} className="flex flex-col">
+            <p className="typescale-label-medium px-4 pb-2">{t(group.labelKey)}</p>
+            {group.items.map((item) => {
+              const isActive = item.href === current;
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  onPress={onNavigate}
+                  aria-current={isActive ? 'page' : undefined}
+                  className={cx(
+                    'typescale-label-large flex h-12 items-center gap-3 rounded-full px-4 no-underline outline-none',
+                    isActive ? 'bg-inverse-on-surface/12' : 'hover:bg-inverse-on-surface/8',
+                    'focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-inverse-primary',
+                  )}
+                >
+                  <Icon
+                    icon={icons[item.icon]}
+                    className={isActive ? 'text-inverse-primary' : undefined}
+                  />
+                  {t(item.labelKey)}
+                </Link>
+              );
+            })}
+          </div>
+        ))}
+      </nav>
+      {user ? (
+        <div className="mx-3 flex shrink-0 flex-col gap-1 border-t border-inverse-on-surface/12 px-4 pt-[15px] pb-6">
+          <p className="typescale-body-medium">{user.username}</p>
+          <p className="typescale-label-medium">{enumLabel(i18n, 'peran', user.peran)}</p>
         </div>
-      ))}
-    </nav>
+      ) : null}
+    </>
   );
 }
 
 export interface AppShellProps {
   /** Current route path, used to mark the active drawer item. */
   pathname?: string;
-  /** Signed-in identity shown at the right of the top app bar (spec section 13.1). */
+  /** Identitas pengguna yang masuk, tampil di dasar drawer (desain: `Identitas / nama` dan `/ peran`). */
   user?: { username: string; peran: string } | null;
   /** Admin role that filters the drawer; `null` = unknown, full menu (API is the last guard). */
   role?: AdminRole | null;
@@ -83,25 +116,25 @@ export interface AppShellProps {
 }
 
 /**
- * Application shell: skip link, top app bar, navigation drawer and content area.
+ * Application shell (desain Penpot `F0 / Shell-*`, `.takeover/design/shell-v2-spec.md`): link
+ * lompat, drawer navigasi, bar atas 64 px berisi breadcrumb dan label lingkungan, lalu konten.
  *
- * Window size classes (ADR-0003 5.1):
- * - compact / medium (< 840 px): the drawer is `NavigationDrawer variant="modal"`,
- *   opened from the menu button.
- * - expanded and up (>= 840 px): `NavigationDrawer variant="standard"`, always visible.
+ * - large (>= 1200 px): `NavigationDrawer variant="standard"`, selalu tampil, tinggi penuh; bar atas
+ *   dan konten ada di kanannya.
+ * - di bawahnya (1024, 768, 375): `variant="modal"` dengan scrim, dibuka dari tombol menu di bar atas.
  */
 export function AppShell({ pathname = '/', user, role = null, children }: AppShellProps) {
-  const { t, i18n } = useTranslation();
-  const isExpanded = useIsExpanded();
+  const { t } = useTranslation();
+  const isLarge = useIsLarge();
   const [drawerOpen, setDrawerOpen] = useState(false);
   const closeDrawer = useCallback(() => setDrawerOpen(false), []);
 
-  // The modal drawer only exists in compact/medium; deriving it from `isExpanded`
-  // avoids a state-sync effect and can never show a stale open drawer after resizing.
-  const isModalDrawerOpen = drawerOpen && !isExpanded;
+  // Drawer modal hanya ada di bawah large; diturunkan dari `isLarge` supaya tidak perlu efek
+  // sinkronisasi dan tidak pernah tersisa terbuka setelah jendela diperlebar.
+  const isModalDrawerOpen = drawerOpen && !isLarge;
 
   return (
-    <div className="min-h-dvh bg-surface text-on-surface">
+    <div className="flex min-h-dvh bg-surface text-on-surface">
       <a
         href="#main-content"
         className="typescale-label-large sr-only rounded-full bg-primary px-4 py-2 text-on-primary focus:not-sr-only focus:absolute focus:top-2 focus:left-2 focus:z-50"
@@ -109,42 +142,36 @@ export function AppShell({ pathname = '/', user, role = null, children }: AppShe
         {t('nav.skip_link')}
       </a>
 
-      <TopAppBar
-        className="h-16 border-b border-on-surface/12 px-2"
-        leading={
-          isExpanded ? undefined : (
-            <IconButton aria-label={t('nav.drawer.open_menu')} onClick={() => setDrawerOpen(true)}>
-              <Icon icon={icons.menu} />
-            </IconButton>
-          )
-        }
-        trailing={
-          user ? (
-            <span className="typescale-body-medium text-on-surface-variant">
-              {user.username} · {enumLabel(i18n, 'peran', user.peran)}
-            </span>
-          ) : undefined
-        }
-        title={<span className="font-brand px-2 text-primary">{t('common.app.name')}</span>}
-      />
+      <NavigationDrawer
+        variant={isLarge ? 'standard' : 'modal'}
+        aria-label={t('nav.drawer.aria')}
+        isOpen={isModalDrawerOpen}
+        onOpenChange={(open) => setDrawerOpen(open)}
+      >
+        <DrawerContent
+          pathname={pathname}
+          role={role}
+          user={user}
+          onNavigate={isLarge ? undefined : closeDrawer}
+          onClose={isLarge ? undefined : closeDrawer}
+        />
+      </NavigationDrawer>
 
-      <div className="flex">
-        <NavigationDrawer
-          variant={isExpanded ? 'standard' : 'modal'}
-          aria-label={t('nav.drawer.aria')}
-          isOpen={isModalDrawerOpen}
-          onOpenChange={(open) => setDrawerOpen(open)}
-        >
-          <DrawerNav
-            pathname={pathname}
-            role={role}
-            onNavigate={isExpanded ? undefined : closeDrawer}
-          />
-        </NavigationDrawer>
-
-        <main id="main-content" tabIndex={-1} className="min-w-0 flex-1 p-4">
-          {/* Section 4: content is capped at 1200 px so long tables stay readable on a wide screen. */}
-          <div className="mx-auto flex w-full max-w-[1200px] flex-col gap-3">
+      <div className="flex min-w-0 flex-1 flex-col">
+        <TopAppBar
+          className="border-b border-outline-variant"
+          leading={
+            isLarge ? undefined : (
+              <IconButton
+                aria-label={t('nav.drawer.open_menu')}
+                onPress={() => setDrawerOpen(true)}
+                className="-ml-2"
+              >
+                <Icon icon={icons.menu} />
+              </IconButton>
+            )
+          }
+          title={
             <Breadcrumbs
               aria-label={t('nav.breadcrumb.aria')}
               items={crumbsFor(pathname).map((c) => ({
@@ -152,6 +179,17 @@ export function AppShell({ pathname = '/', user, role = null, children }: AppShe
                 ...(c.href ? { href: c.href } : {}),
               }))}
             />
+          }
+          trailing={
+            <span className="typescale-label-small rounded-small bg-surface-container-high px-3 py-1 text-on-surface">
+              {t('nav.env_label')}
+            </span>
+          }
+        />
+
+        <main id="main-content" tabIndex={-1} className="min-w-0 flex-1 px-6 pt-8 pb-6">
+          {/* Konten dibatasi 1200 px (spec bagian 4) supaya tabel panjang tetap terbaca di layar lebar. */}
+          <div className="mx-auto flex w-full max-w-[1200px] flex-col gap-3">
             <Suspense
               fallback={<p className="typescale-body-medium">{t('common.state.loading')}</p>}
             >

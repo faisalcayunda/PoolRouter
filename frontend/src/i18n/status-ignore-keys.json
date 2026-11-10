@@ -23,6 +23,7 @@
       "log.filter.client",
       "metadata.col.rule",
       "metadata.page.breadcrumb",
+      "nav.env_label",
       "nik.page.payload",
       "provider.list.col.status",
       "provider.rules.col.param",

@@ -569,6 +569,7 @@ export default interface Resources {
     "nav": {
       "breadcrumb": {
         "aria": "Jejak halaman",
+        "credentials": "Kredensial",
         "new": "Baru",
         "not_found": "Halaman tidak ditemukan"
       },
@@ -576,6 +577,7 @@ export default interface Resources {
         "aria": "Navigasi utama",
         "audit": "Audit akses",
         "client": "Client dan kredensial",
+        "close_menu": "Tutup menu",
         "downstream": "Downstream pool",
         "log": "Log transaksi",
         "nik_search": "Pencarian log per NIK",
@@ -587,6 +589,7 @@ export default interface Resources {
         "upstream": "Upstream pool",
         "webhook": "Webhook"
       },
+      "env_label": "PoC",
       "group": {
         "account": "Akun",
         "client": "Client",

@@ -1,7 +1,6 @@
 import { Link } from 'react-aria-components';
 import type { ReactNode } from 'react';
 import { cx } from './cx';
-import { Icon, icons } from '../../icons';
 
 export interface BreadcrumbItem {
   /** Label from the catalog; the usage site resolves the key. */
@@ -12,7 +11,9 @@ export interface BreadcrumbItem {
 
 /**
  * Breadcrumb trail (extensions 7.1) for screens reached from a list, e.g.
- * Log transaksi > detail. The last item is the current page (`aria-current`).
+ * Konfigurasi / Provider / detail. The last item is the current page (`aria-current`).
+ * UI v2 (Penpot `Breadcrumbs`): body-small, pemisah teks "/", tautan `primary`, induk tanpa
+ * tautan `on-surface-variant`, halaman saat ini `on-surface`.
  */
 export function Breadcrumbs({
   items,
@@ -31,11 +32,11 @@ export function Breadcrumbs({
           const last = index === items.length - 1;
           return (
             <li key={index} className={cx('flex items-center gap-1')}>
-              {index > 0 ? <Icon icon={icons.chevronRight} className="h-4 w-4" /> : null}
+              {index > 0 ? <span aria-hidden="true">/</span> : null}
               {item.href && !last ? (
                 <Link
                   href={item.href}
-                  className="m3-focus rounded-sm underline-offset-2 hover:underline"
+                  className="m3-focus rounded-extra-small text-primary underline-offset-2 hover:underline"
                 >
                   {item.label}
                 </Link>

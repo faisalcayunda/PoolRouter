@@ -3,6 +3,7 @@
     "breadcrumb": {
       "aria": "Jejak halaman",
       "new": "Baru",
+    "credentials": "Kredensial",
       "not_found": "Halaman tidak ditemukan"
     },
     "group": {
@@ -25,9 +26,11 @@
       "nik_search": "Pencarian log per NIK",
       "audit": "Audit akses",
       "open_menu": "Buka menu navigasi",
+    "close_menu": "Tutup menu",
       "aria": "Navigasi utama"
     },
-    "skip_link": "Lompat ke konten"
+    "env_label": "PoC",
+  "skip_link": "Lompat ke konten"
   },
   "settings": {
     "page": {

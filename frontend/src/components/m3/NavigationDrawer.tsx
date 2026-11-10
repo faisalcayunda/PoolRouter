@@ -8,6 +8,8 @@ import { cx } from './cx';
  * - `modal`: overlaid with a scrim while open (compact/medium window class).
  *
  * Both variants use the inverse surface roles (UI v2): the drawer stays dark in the light theme.
+ * Lebar 280 px, tanpa radius dan tanpa bayangan di kedua varian (Penpot `NavigationDrawer /
+ * standard|modal`); varian modal berdiri di atas lapisan `scrim` opasitas 32 %.
  * The shell owns the list of links (`AppShell` renders them as children); this
  * component owns the container and, for the modal variant, the overlay, the
  * focus trap, the Escape handling and `aria-modal` semantics via React Aria's
@@ -28,8 +30,8 @@ export interface NavigationDrawerProps {
   children?: ReactNode;
 }
 
-/** Width shared by both variants so the content does not jump when the class changes. */
-const WIDTH = 'w-72 shrink-0';
+/** Lebar 280 px untuk kedua varian (Penpot `NavigationDrawer`), kolom flex. */
+const BASE = 'flex w-[280px] shrink-0 flex-col bg-inverse-surface text-inverse-on-surface';
 
 export function NavigationDrawer({
   variant = 'standard',
@@ -41,10 +43,7 @@ export function NavigationDrawer({
 }: NavigationDrawerProps) {
   if (variant === 'standard') {
     return (
-      <aside
-        aria-label={ariaLabel}
-        className={cx(WIDTH, 'bg-inverse-surface p-3 text-inverse-on-surface', className)}
-      >
+      <aside aria-label={ariaLabel} className={cx(BASE, 'sticky top-0 h-dvh', className)}>
         {children}
       </aside>
     );
@@ -55,15 +54,11 @@ export function NavigationDrawer({
       isOpen={isOpen}
       onOpenChange={onOpenChange}
       isDismissable
-      className="fixed inset-0 z-40 flex"
+      className="fixed inset-0 z-40 flex bg-scrim/32"
     >
       <RacDialog
         aria-label={ariaLabel}
-        className={cx(
-          'm3-focus relative z-10 overflow-auto bg-inverse-surface p-3 text-inverse-on-surface shadow-level1 outline-none',
-          WIDTH,
-          className,
-        )}
+        className={cx('m3-focus relative z-10 h-full outline-none', BASE, className)}
       >
         {children}
       </RacDialog>

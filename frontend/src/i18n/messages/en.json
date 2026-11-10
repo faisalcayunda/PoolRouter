@@ -3,6 +3,7 @@
     "breadcrumb": {
       "aria": "Breadcrumb",
       "new": "New",
+    "credentials": "Credentials",
       "not_found": "Page not found"
     },
     "group": {
@@ -25,9 +26,11 @@
       "nik_search": "Search logs by NIK",
       "audit": "Access audit",
       "open_menu": "Open navigation menu",
+    "close_menu": "Close menu",
       "aria": "Main navigation"
     },
-    "skip_link": "Skip to content"
+    "env_label": "PoC",
+  "skip_link": "Skip to content"
   },
   "settings": {
     "page": {
