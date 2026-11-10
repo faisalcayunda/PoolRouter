@@ -21,6 +21,11 @@ export type SesiStatus = Schemas['SesiStatus'];
 export type Provider = Schemas['Provider'];
 export type ProviderConfig = Schemas['ProviderConfig'];
 export type SecretRingkas = Schemas['SecretRingkas'];
+export type Endpoint = Schemas['Endpoint'];
+export type EndpointConfig = Schemas['EndpointConfig'];
+export type DownstreamPool = Schemas['DownstreamPool'];
+export type PratinjauK20 = Schemas['PratinjauK20'];
+export type HasilK20 = Schemas['HasilK20'];
 
 const ADMIN_PREFIX = '/admin/v1';
 
@@ -112,6 +117,22 @@ export interface ApiClient {
   createProvider(body: ProviderConfig, options?: RequestOptions): Promise<Provider>;
   /** PUT /providers/{id} — update; old versions stay intact (V-03). */
   updateProvider(id: string, body: ProviderConfig, options?: RequestOptions): Promise<Provider>;
+  /** GET /downstream-pools — pilihan pool pada form endpoint. */
+  listDownstreamPools(options?: RequestOptions): Promise<DownstreamPool[]>;
+  /** GET /endpoints — platform admin only. */
+  listEndpoints(options?: RequestOptions): Promise<Endpoint[]>;
+  /** GET /endpoints/{id} — detail untuk form sunting. */
+  getEndpoint(id: string, options?: RequestOptions): Promise<Endpoint>;
+  /** POST /endpoints — buat; endpoint_config_version = 1. */
+  createEndpoint(body: EndpointConfig, options?: RequestOptions): Promise<Endpoint>;
+  /** PUT /endpoints/{id} — versi baru; versi lama tetap utuh (V-03). */
+  updateEndpoint(id: string, body: EndpointConfig, options?: RequestOptions): Promise<Endpoint>;
+  /** POST /endpoints/{id}/aktifkan — tanpa dialog K-20. */
+  aktifkanEndpoint(id: string, options?: RequestOptions): Promise<Endpoint>;
+  /** GET /endpoints/{id}/pratinjau-nonaktif — dampak K-20 sebelum menonaktifkan. */
+  pratinjauNonaktifkanEndpoint(id: string, options?: RequestOptions): Promise<PratinjauK20>;
+  /** POST /endpoints/{id}/nonaktifkan — K-20, alasan wajib. */
+  nonaktifkanEndpoint(id: string, alasan: string, options?: RequestOptions): Promise<HasilK20>;
   /** GET /secrets — nama secret saja; nilainya tidak pernah dikirim server (US-02). */
   listSecrets(options?: RequestOptions): Promise<SecretRingkas[]>;
   /** PUT /secrets/{nama} — simpan atau ganti nilai (write-only, 204 tanpa isi). */
@@ -362,6 +383,78 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
         await client.PUT(`${ADMIN_PREFIX}/providers/{id}`, {
           params: { path: { id } },
           body,
+          headers: headers(opts),
+          signal: opts.signal,
+        }),
+      ),
+
+    listDownstreamPools: async (opts = {}) =>
+      ok(
+        await client.GET(`${ADMIN_PREFIX}/downstream-pools`, {
+          headers: headers(opts),
+          signal: opts.signal,
+        }),
+      ),
+
+    listEndpoints: async (opts = {}) =>
+      ok(
+        await client.GET(`${ADMIN_PREFIX}/endpoints`, {
+          headers: headers(opts),
+          signal: opts.signal,
+        }),
+      ),
+
+    getEndpoint: async (id, opts = {}) =>
+      ok(
+        await client.GET(`${ADMIN_PREFIX}/endpoints/{id}`, {
+          params: { path: { id } },
+          headers: headers(opts),
+          signal: opts.signal,
+        }),
+      ),
+
+    createEndpoint: async (body, opts = {}) =>
+      ok(
+        await client.POST(`${ADMIN_PREFIX}/endpoints`, {
+          body,
+          headers: headers(opts),
+          signal: opts.signal,
+        }),
+      ),
+
+    updateEndpoint: async (id, body, opts = {}) =>
+      ok(
+        await client.PUT(`${ADMIN_PREFIX}/endpoints/{id}`, {
+          params: { path: { id } },
+          body,
+          headers: headers(opts),
+          signal: opts.signal,
+        }),
+      ),
+
+    aktifkanEndpoint: async (id, opts = {}) =>
+      ok(
+        await client.POST(`${ADMIN_PREFIX}/endpoints/{id}/aktifkan`, {
+          params: { path: { id } },
+          headers: headers(opts),
+          signal: opts.signal,
+        }),
+      ),
+
+    pratinjauNonaktifkanEndpoint: async (id, opts = {}) =>
+      ok(
+        await client.GET(`${ADMIN_PREFIX}/endpoints/{id}/pratinjau-nonaktif`, {
+          params: { path: { id } },
+          headers: headers(opts),
+          signal: opts.signal,
+        }),
+      ),
+
+    nonaktifkanEndpoint: async (id, alasan, opts = {}) =>
+      ok(
+        await client.POST(`${ADMIN_PREFIX}/endpoints/{id}/nonaktifkan`, {
+          params: { path: { id } },
+          body: { alasan },
           headers: headers(opts),
           signal: opts.signal,
         }),

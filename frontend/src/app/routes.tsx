@@ -34,6 +34,17 @@ const SecretScreen = lazy(() =>
   import('../features/secret/SecretScreen').then((m) => ({ default: m.SecretScreen })),
 );
 
+const EndpointListScreen = lazy(() =>
+  import('../features/endpoint/EndpointListScreen').then((m) => ({
+    default: m.EndpointListScreen,
+  })),
+);
+const EndpointFormScreen = lazy(() =>
+  import('../features/endpoint/EndpointFormScreen').then((m) => ({
+    default: m.EndpointFormScreen,
+  })),
+);
+
 function NotFound(): ReactNode {
   const { t } = useTranslation();
   return (
@@ -51,6 +62,9 @@ const LOG_DETAIL = /^\/log\/([^/]+)$/;
 /** `/provider/<id>` — form sunting provider (S03–S04, ARC-101); `/provider/baru` membuat baru. */
 const PROVIDER_DETAIL = /^\/provider\/([^/]+)$/;
 
+/** `/endpoint/<id>` — form endpoint + kontrak metadata (ARC-103); `/endpoint/baru` membuat baru. */
+const ENDPOINT_DETAIL = /^\/endpoint\/([^/]+)$/;
+
 /** Path → screen. Longest exact match wins; anything else renders the not-found panel. */
 export function ScreenForPath({ pathname }: { pathname: string }): ReactNode {
   const clean = pathname.replace(/\/+$/, '') || '/';
@@ -64,6 +78,11 @@ export function ScreenForPath({ pathname }: { pathname: string }): ReactNode {
     const id = decodeURIComponent(providerDetail[1] ?? '');
     return <ProviderFormScreen providerId={id === 'baru' ? undefined : id} />;
   }
+  const endpointDetail = ENDPOINT_DETAIL.exec(clean);
+  if (endpointDetail) {
+    const id = decodeURIComponent(endpointDetail[1] ?? '');
+    return <EndpointFormScreen endpointId={id === 'baru' ? undefined : id} />;
+  }
   switch (clean) {
     case '/':
       return <LogPageScreen />;
@@ -75,6 +94,8 @@ export function ScreenForPath({ pathname }: { pathname: string }): ReactNode {
       return <QuotaScreen />;
     case '/provider':
       return <ProviderListScreen />;
+    case '/endpoint':
+      return <EndpointListScreen />;
     case '/secret':
       return <SecretScreen />;
     default:

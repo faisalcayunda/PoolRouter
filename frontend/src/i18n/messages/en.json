@@ -20,7 +20,8 @@
       "nik_search": "Search logs by NIK",
       "audit": "Access audit",
       "open_menu": "Open navigation menu",
-      "aria": "Main navigation"
+      "aria": "Main navigation",
+      "endpoint": "Endpoints"
     },
     "skip_link": "Skip to content"
   },
@@ -467,6 +468,126 @@
       "body": "Add a downstream pool and link it to one upstream pool."
     }
   },
+  "endpoint": {
+    "page": {
+      "title": "Endpoints",
+      "subtitle": "An endpoint ties one provider to one downstream pool, together with its literal parameters and the metadata contract clients must send.",
+      "add": "Add endpoint"
+    },
+    "list": {
+      "col": {
+        "provider": "Provider",
+        "pool": "Downstream pool",
+        "version": "Version",
+        "metadata": "Metadata",
+        "status": "Status",
+        "actions": "Actions"
+      },
+      "inactive": "Inactive",
+      "metadata_count_one": "{{count, number}} field",
+      "metadata_count_other": "{{count, number}} fields",
+      "edit_aria": "Edit endpoint {{nama}}",
+      "activate": "Activate",
+      "activate_aria": "Activate endpoint {{nama}}",
+      "deactivate": "Deactivate",
+      "deactivate_aria": "Deactivate endpoint {{nama}}"
+    },
+    "empty": {
+      "title": "No endpoints yet",
+      "body": "Add an endpoint to connect a provider to a downstream pool."
+    },
+    "activate": {
+      "done": "Endpoint {{nama}} activated. It applies to requests received from now on."
+    },
+    "deactivate": {
+      "title": "Deactivate endpoint {{nama}}?",
+      "body": "Requests queued on this endpoint will be cancelled or failed. The preview below was calculated when this dialog opened.",
+      "impact": "Deactivation impact",
+      "cancelled": "{{jumlah, number}} requests will be cancelled.",
+      "failed": "{{jumlah, number}} requests will be failed.",
+      "reason": {
+        "label": "Reason for deactivation"
+      },
+      "confirm": "Deactivate endpoint",
+      "done": "Endpoint {{nama}} deactivated."
+    },
+    "form": {
+      "title_edit": "Edit endpoint",
+      "subtitle": "Every save creates a new version from all the fields below. Older versions are kept.",
+      "back": "Back to endpoint list",
+      "section": {
+        "target": "Target",
+        "parameters": "Literal parameters",
+        "metadata": "Metadata contract"
+      },
+      "provider": "Provider",
+      "pool": "Downstream pool",
+      "choose": "Choose…",
+      "log_mode": {
+        "label": "Log mode",
+        "metadata_only": "Metadata only",
+        "full_payload": "Full payload",
+        "help": "Cannot be looser than the provider's log mode."
+      },
+      "parameters": {
+        "label": "Literal parameters",
+        "help": "One NAME=value per line, including TRESHOLD. Example: TRESHOLD=90"
+      },
+      "reason": {
+        "heading": "Reason",
+        "label": "Reason for change",
+        "help": "{{jumlah}}/{{batas}} characters, at least 10. Recorded in the configuration audit and not kept in the form."
+      },
+      "save_new": "Save endpoint",
+      "save_edit": "Save changes",
+      "saving": "Saving…",
+      "saved_version": "Endpoint saved as version {{versi}}.",
+      "error": {
+        "summary": "Check the {{jumlah}} marked fields.",
+        "umum": "This field is not valid yet (code {{kode}}).",
+        "wajib": "Required.",
+        "alasan_rentang": "A reason is required, 10–500 characters.",
+        "log_mode_lebih_longgar": "The endpoint log mode cannot be looser than its provider's. Choose Metadata only or change the provider's log mode.",
+        "parameter_format": "Write each parameter as NAME=value. This line does not match: {{nama}}",
+        "parameter_duplikat": "Parameter {{nama}} appears more than once.",
+        "nama_field_format": "Lowercase letters, digits and underscores only; start with a letter; at most {{batas}} characters.",
+        "nama_field_duplikat": "Field name {{nama}} is already used in another row.",
+        "nilai_diizinkan_wajib": "Enter at least one value for an enum type.",
+        "wajib_hilang": "A Dukcapil endpoint must include the status_penerima_manfaat field in its metadata contract."
+      }
+    },
+    "metadata": {
+      "info": "The metadata contract is recorded in the transaction log for data balikan. A request missing a required field is rejected before it uses quota. Rahasia fields are never logged or sent to callbacks.",
+      "empty": "No metadata fields yet.",
+      "group": "Field {{nomor}}",
+      "add": "Add field",
+      "remove": "Remove field",
+      "nama_field": "Field name",
+      "nama_field_help": "Lowercase letters, digits, underscores; at most {{batas}} characters.",
+      "tipe": "Type",
+      "tipe_option": {
+        "string": "Text",
+        "integer": "Integer",
+        "boolean": "Yes/no",
+        "date": "Date",
+        "enum": "Fixed choices"
+      },
+      "klasifikasi": "Classification",
+      "klasifikasi_option": {
+        "Internal": "Internal",
+        "Terbatas": "Restricted",
+        "Rahasia": "Secret"
+      },
+      "nilai_diizinkan": "Allowed values",
+      "nilai_diizinkan_help": "Separate with commas.",
+      "deskripsi": "Description",
+      "aturan_validasi": "Validation rule (optional)",
+      "aturan_validasi_help": "Reference to an existing validation rule.",
+      "wajib": "Required from the client",
+      "kirim": "Send to data balikan",
+      "rahasia_note": "Secret fields are never sent to data balikan."
+    }
+  },
   "metadata": {
     "page": {
       "title": "Metadata contract",
@@ -831,7 +952,8 @@
       "quota": "Quota · PoolRouter",
       "log": "Transaction logs · PoolRouter",
       "nik_search": "Search logs by NIK · PoolRouter",
-      "audit": "Access audit · PoolRouter"
+      "audit": "Access audit · PoolRouter",
+      "endpoint": "Endpoints · PoolRouter"
     }
   },
   "export": {
