@@ -83,7 +83,7 @@ restore() { # restore <volume-data> <ts_target|->
 		set -- --type=time "--target=$tgt" --target-action=promote
 	fi
 	$ENGINE volume create --label "$DRILL_LABEL" "$vol" >/dev/null
-	$ENGINE run --rm --name "shaa381-restore-$(echo "$vol" | tr -c 'a-zA-Z0-9' '-' | cut -c1-40)" \
+	$ENGINE run --rm --name "pr-drill-restore-$(echo "$vol" | tr -c 'a-zA-Z0-9' '-' | cut -c1-40)" \
 		--label "$DRILL_LABEL" --network "${DRILL_NETWORK:-none}" \
 		-v "$vol:/var/lib/postgresql/data" \
 		-v "$REPO_VOLUME:/var/lib/pgbackrest" \
