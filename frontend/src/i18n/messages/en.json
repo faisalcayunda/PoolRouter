@@ -1356,6 +1356,12 @@
         "copy_failed": "Copy failed. Select the text manually.",
         "copy_all": "Copy all",
         "acknowledge": "I have saved them"
+      },
+      "error": {
+        "invalid": "The code does not match or the session has expired. Try again, or go back to sign in.",
+        "invalid_registration": "The registration code does not match or is no longer valid. Try again, or go back to sign in.",
+        "throttled": "Too many attempts. Try again in a moment.",
+        "network": "Cannot connect yet. Check the network, then try again."
       }
     }
   },
@@ -1378,5 +1384,10 @@
       "help": "{{min}} to {{maks}} characters. The reason is recorded in the audit trail.",
       "error": "Write a reason of {{min}} to {{maks}} characters."
     }
+  },
+  "recovery": {
+    "warning": "Recovery codes left: {{n}}. Reset MFA to get new codes.",
+    "error": "You have no recovery codes left. Reset MFA.",
+    "info": "You signed in with a recovery code. Generate new recovery codes when you are ready."
   }
 }
