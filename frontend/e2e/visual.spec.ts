@@ -4,7 +4,7 @@ import type { Page } from '@playwright/test';
 /**
  * Visual evidence at five widths (handoff spec section 4 / AC 1).
  *
- * Widths: 1440 (expanded), 1024 (expanded), 768 (medium), 375 (compact), 320 (compact). Every
+ * Widths: 1440 (expanded), 1024 (drawer modal sejak UI v2), 768 (medium), 375 (compact), 320 (compact). Every
  * screenshot lands in `e2e/screenshots/<layar>@<lebar>.png`; the file name is the contract, so a
  * reviewer can open the folder and check a screen at a glance.
  *

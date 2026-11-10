@@ -686,10 +686,17 @@ export default interface Resources {
       }
     },
     "nav": {
+      "breadcrumb": {
+        "aria": "Jejak halaman",
+        "credentials": "Kredensial",
+        "new": "Baru",
+        "not_found": "Halaman tidak ditemukan"
+      },
       "drawer": {
         "aria": "Navigasi utama",
         "audit": "Audit akses",
         "client": "Client dan kredensial",
+        "close_menu": "Tutup menu",
         "downstream": "Downstream pool",
         "endpoint": "Endpoint",
         "log": "Log transaksi",
@@ -702,6 +709,7 @@ export default interface Resources {
         "upstream": "Upstream pool",
         "webhook": "Webhook"
       },
+      "env_label": "PoC",
       "group": {
         "account": "Akun",
         "client": "Client",

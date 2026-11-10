@@ -15,6 +15,17 @@ import Remove from '@material-symbols/svg-400/outlined/remove.svg?react';
 import Visibility from '@material-symbols/svg-400/outlined/visibility.svg?react';
 import Download from '@material-symbols/svg-400/outlined/download.svg?react';
 import Refresh from '@material-symbols/svg-400/outlined/refresh.svg?react';
+import Api from '@material-symbols/svg-400/outlined/api.svg?react';
+import Apps from '@material-symbols/svg-400/outlined/apps.svg?react';
+import CloudDownload from '@material-symbols/svg-400/outlined/cloud_download.svg?react';
+import CloudUpload from '@material-symbols/svg-400/outlined/cloud_upload.svg?react';
+import DataUsage from '@material-symbols/svg-400/outlined/data_usage.svg?react';
+import Dns from '@material-symbols/svg-400/outlined/dns.svg?react';
+import FactCheck from '@material-symbols/svg-400/outlined/fact_check.svg?react';
+import Key from '@material-symbols/svg-400/outlined/key.svg?react';
+import PersonSearch from '@material-symbols/svg-400/outlined/person_search.svg?react';
+import ReceiptLong from '@material-symbols/svg-400/outlined/receipt_long.svg?react';
+import Settings from '@material-symbols/svg-400/outlined/settings.svg?react';
 
 export type IconComponent = ComponentType<SVGProps<SVGSVGElement>>;
 
@@ -36,6 +47,17 @@ export const icons = {
   visibility: Visibility,
   download: Download,
   refresh: Refresh,
+  api: Api,
+  apps: Apps,
+  cloudDownload: CloudDownload,
+  cloudUpload: CloudUpload,
+  dataUsage: DataUsage,
+  dns: Dns,
+  factCheck: FactCheck,
+  key: Key,
+  personSearch: PersonSearch,
+  receiptLong: ReceiptLong,
+  settings: Settings,
 } satisfies Record<string, IconComponent>;
 
 export function Icon({ icon: Svg, className }: { icon: IconComponent; className?: string }) {
