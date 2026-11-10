@@ -16,6 +16,10 @@
 #   - login lewat UI (password + MFA TOTP) tidak diuji di sini; pengguna uji masuk lewat baris
 #     admin_session dari SQL fixture, sesuai AC-4.
 #   - E2E_UPTO=bootstrap menghentikan run setelah db-bootstrap (bukti skala kecil tanpa image aplikasi).
+#   - compose.yaml memasang `./../db` untuk db-bootstrap (deploy/db tidak ada); overlay harness menambalnya
+#     ke backend/db. Bug di deploy/compose itu di luar ARC-251 dan butuh tiket sendiri.
+#   - jangan jalankan bersamaan dengan gate berlabel ARC-251 yang sama: pembersihan menghapus semua
+#     resource berlabel tiket.
 #   - image backend tidak dibangun otomatis kecuali E2E_BUILD_IMAGES=1: build Rust memakan belasan menit
 #     dan tidak lewat kunci build berat.
 set -eu
