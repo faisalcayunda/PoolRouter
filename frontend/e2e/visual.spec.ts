@@ -123,6 +123,15 @@ async function shoot(page: Page, screen: string, width: number) {
     () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
   );
   expect(overflow, `dokumen melebar ${overflow}px pada ${width}px`).toBeLessThanOrEqual(0);
+  // Medan rentang tanggal hanya boleh membungkus pada lebar compact; di 1024 ke atas satu baris 56 px.
+  if (width >= 1024) {
+    const tinggi = await page.evaluate(() =>
+      Array.from(document.querySelectorAll('[class*="expanded:flex-nowrap"]')).map((el) =>
+        Math.round(el.getBoundingClientRect().height),
+      ),
+    );
+    expect(tinggi.every((h) => h === 56), `medan rentang ${tinggi.join(',')} px pada ${width}px`).toBe(true);
+  }
   await page.screenshot({
     path: `e2e/screenshots/${screen}@${width}.png`,
     fullPage: true,

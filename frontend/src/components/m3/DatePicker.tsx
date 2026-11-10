@@ -24,8 +24,12 @@ const FIELD =
   'm3-focus typescale-body-large flex h-14 w-full items-center gap-1 rounded-extra-small border border-outline bg-surface px-2 text-on-surface data-[focus-within]:border-2 data-[focus-within]:border-primary';
 
 // Rentang memuat dua tanggal dan tombol kalender; pada 320 px isinya lebih lebar dari kolom, jadi
-// tombol turun ke baris berikutnya alih-alih melebarkan dokumen.
-const RANGE_FIELD = FIELD.replace('h-14', 'min-h-14 flex-wrap py-1');
+// tombol turun ke baris berikutnya alih-alih melebarkan dokumen. Pada expanded kolom tetap satu baris
+// setinggi 56 px, sejajar dengan TextField dan Select di sebelahnya.
+const RANGE_FIELD = FIELD.replace(
+  'h-14',
+  'min-h-14 flex-wrap py-1 expanded:h-14 expanded:flex-nowrap expanded:py-0',
+);
 
 const POPOVER = 'rounded-medium bg-surface-container p-2 shadow-level2';
 
