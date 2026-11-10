@@ -3,6 +3,7 @@ import { screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { ApiError, type ApiClient } from '../src/api/client';
 import { LoginScreen } from '../src/features/auth/LoginScreen';
+import { KUNCI_LOGIN_PEMULIHAN } from '../src/features/auth/RecoveryBanner';
 import { renderWithI18n } from './render';
 
 // Semua nilai sintetis dan jelas palsu; tidak ada kode TOTP atau secret nyata.
@@ -54,6 +55,26 @@ describe('login dua langkah (AC-29)', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Verifikasi' }));
 
     expect(client.verifikasiMfa).toHaveBeenCalledWith({ kode_pemulihan: 'CONTOHPM00' });
+  });
+
+  it('marks the session after a recovery-code login, but not after a TOTP login (AC-32)', async () => {
+    sessionStorage.clear();
+    const totp = stub();
+    const { unmount } = renderWithI18n(<LoginScreen client={totp} onBerhasil={vi.fn()} />);
+    await masuk();
+    const kolom = await screen.findByRole('textbox', { name: 'Kode authenticator' });
+    await userEvent.type(kolom, '123456');
+    await userEvent.click(screen.getByRole('button', { name: 'Verifikasi' }));
+    expect(sessionStorage.getItem(KUNCI_LOGIN_PEMULIHAN)).toBeNull();
+    unmount();
+
+    renderWithI18n(<LoginScreen client={stub()} onBerhasil={vi.fn()} />);
+    await masuk();
+    await userEvent.click(await screen.findByRole('button', { name: 'Pakai kode pemulihan' }));
+    await userEvent.type(screen.getByRole('textbox', { name: 'Kode pemulihan' }), 'contoh-pm00');
+    await userEvent.click(screen.getByRole('button', { name: 'Verifikasi' }));
+    expect(sessionStorage.getItem(KUNCI_LOGIN_PEMULIHAN)).toBe('1');
+    sessionStorage.clear();
   });
 
   it('keeps the user on the code screen with an error on a 401, and the back link returns to login', async () => {
