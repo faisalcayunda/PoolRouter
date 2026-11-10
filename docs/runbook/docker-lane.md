@@ -163,10 +163,10 @@ Puncak pemakaian: 5G (image 2.2G, target dan cache sekitar 2.5G). Angka ini peng
 
 ## Root Docker gate (SHAA-379)
 
-Gate resmi (keputusan SHAA-380), dari akar repo:
+Gate resmi (keputusan SHAA-380) dari akar repo, dengan runner kontainer yang tersedia (Podman di Mac Operator, Docker bila ada):
 
 ```sh
-make setup test lint RUNNER=docker FRONTEND_RUNNER=docker CONTAINER_LABEL=arctiva.issue=ARC-<n>
+make setup test lint RUNNER=<podman|docker> FRONTEND_RUNNER=<podman|docker> CONTAINER_LABEL=arctiva.issue=ARC-<n>
 ```
 
 Push ke `main` tidak lagi punya jalur Makefile (CLAUDE.md): perubahan masuk lewat branch

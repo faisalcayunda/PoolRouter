@@ -11,7 +11,8 @@
 #   4. Nama lane build bersama tetap `poolrouter-build`/`poolrouter.build` (AC-5):
 #      nama `arctiva` tidak boleh kembali di Makefile, skrip, runbook, atau workflow.
 #   5. Teks bantuan dan pesan `push-main` tidak memaksa `RUNNER=docker` sebagai satu-satunya
-#      gate resmi dan tidak menyebut pihak luar sebagai pemberi larangan (ARC-224).
+#      gate resmi dan tidak menyebut pihak luar sebagai pemberi larangan (ARC-224);
+#      blok "Gate resmi" di docs/runbook/docker-lane.md ikut dijaga.
 #
 # Tidak butuh Docker. Jalankan: make test-atribut (dari akar repo).
 set -eu
@@ -107,5 +108,19 @@ for cmd in "make -s help" "make -s push-main" "make -s -C backend help" "make -s
 		ok "keluaran '$cmd' mengikuti runner yang tersedia"
 	fi
 done
+
+# Blok "Gate resmi" di runbook: dari barisnya sampai penutup blok kode pertama.
+runbook="$root/docs/runbook/docker-lane.md"
+if [ -f "$runbook" ]; then
+	blok=$(awk '/^Gate resmi/ {on=1} on {print} on && /^```$/ && ++f == 1 {exit}' "$runbook")
+	if [ -z "$blok" ]; then
+		bad "blok 'Gate resmi' tidak ditemukan di docs/runbook/docker-lane.md"
+	elif printf '%s\n' "$blok" | grep -Eq "$pola_dilarang"; then
+		bad "blok 'Gate resmi' di runbook memaksa runner tertentu:"
+		printf '%s\n' "$blok" | grep -En "$pola_dilarang"
+	else
+		ok "blok 'Gate resmi' di runbook mengikuti runner yang tersedia"
+	fi
+fi
 
 exit "$fail"
