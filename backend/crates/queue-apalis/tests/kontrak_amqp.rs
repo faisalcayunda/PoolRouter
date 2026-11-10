@@ -17,19 +17,21 @@
 
 use std::collections::{HashMap, HashSet};
 use std::str::FromStr;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use lapin::options::{BasicGetOptions, QueueDeclareOptions};
-use lapin::types::FieldTable;
+use lapin::types::{AMQPValue, FieldTable, ShortString};
 use lapin::{Channel, Connection, ConnectionProperties};
 use poolrouter_core::queue::{
     JobConsumer, JobPublisher, QueueError, StatusKonsumen, nama_antrean_upstream,
 };
 use poolrouter_queue_apalis::topologi::nama_dlq;
 use poolrouter_queue_apalis::{ApalisQueue, PREFETCH_BAWAAN, TOLERANSI_LIVENESS};
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::io::{AsyncReadExt, AsyncWrite, AsyncWriteExt};
+use tokio::net::tcp::OwnedReadHalf;
+use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{mpsc, watch};
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
@@ -158,6 +160,166 @@ async fn publish_persisten_dengan_body_request_id() {
             .as_ref()
             .map(|m| m.as_str().to_owned()),
         Some(id.to_string())
+    );
+    // ARC-227, S11: header AMQP hanya `x-trace-id`. Belum ada skema trace di
+    // kode (OpenTelemetry belum dipasang), jadi nilainya id korelasi log
+    // aplikasi, yaitu `request_id`.
+    let headers = pesan
+        .delivery
+        .properties
+        .headers()
+        .clone()
+        .expect("header AMQP ada");
+    assert_eq!(headers.inner().len(), 1, "header hanya x-trace-id");
+    match headers.inner().get(&ShortString::from("x-trace-id")) {
+        Some(AMQPValue::LongString(nilai)) => assert_eq!(nilai.to_string(), id.to_string()),
+        lain => panic!("x-trace-id harus string request_id: {lain:?}"),
+    }
+}
+
+/// ARC-227: koneksi penerbit diputus broker (pengganti restart broker, karena
+/// container toolchain tidak bisa me-restart broker). `publish` berikutnya
+/// pada `ApalisQueue` yang sama harus pulih sendiri tanpa proses baru. Satu
+/// publish yang kebetulan jatuh tepat saat putus boleh gagal (reconciler
+/// memulihkannya), jadi uji mencoba ulang sampai batas tunggu; tanpa sambung
+/// ulang semua percobaan gagal selamanya.
+#[tokio::test(flavor = "multi_thread")]
+#[ignore = "butuh RabbitMQ: make -C backend uji-amqp"]
+async fn publish_pulih_setelah_koneksi_diputus_broker() {
+    let antrean = antrean_baru();
+    let q = penerbit(&antrean).await;
+    q.publish(&antrean, Uuid::now_v7())
+        .await
+        .expect("publish sebelum putus");
+
+    putuskan_dari_broker().await;
+
+    let id = Uuid::now_v7();
+    let batas = tokio::time::Instant::now() + BATAS_TUNGGU;
+    loop {
+        match q.publish(&antrean, id).await {
+            Ok(()) => break,
+            Err(galat) => {
+                assert!(
+                    tokio::time::Instant::now() < batas,
+                    "publish tidak pulih setelah koneksi diputus: {galat}"
+                );
+                tokio::time::sleep(Duration::from_millis(200)).await;
+            }
+        }
+    }
+
+    let (_k, kanal) = pengamat().await;
+    let mut isi = Vec::new();
+    while let Some(pesan) = kanal
+        .basic_get(antrean.as_str().into(), BasicGetOptions { no_ack: true })
+        .await
+        .expect("basic_get")
+    {
+        isi.push(pesan.delivery.data);
+    }
+    assert!(
+        isi.contains(&id.to_string().into_bytes()),
+        "pesan sesudah sambung ulang ada di antrean"
+    );
+}
+
+/// Salin byte satu arah; saat `beku`, byte dibaca lalu dibuang (soket tetap
+/// terbuka, tanpa jawaban).
+async fn salin(mut dari: OwnedReadHalf, mut ke: impl AsyncWrite + Unpin, beku: Arc<AtomicBool>) {
+    let mut buf = [0u8; 4096];
+    while let Ok(n) = dari.read(&mut buf).await {
+        if n == 0 || (!beku.load(Ordering::SeqCst) && ke.write_all(&buf[..n]).await.is_err()) {
+            return;
+        }
+    }
+}
+
+/// Proxy TCP di depan broker yang bisa dibekukan: meniru broker yang tidak
+/// menjawab (flow control menahan baca socket, atau host tidak merespons).
+/// Saat beku, koneksi lama tidak lagi diteruskan dan koneksi baru diterima
+/// tanpa pernah disambung ke broker. Mengembalikan URI lewat proxy dan
+/// sakelar bekunya.
+async fn proxy_beku() -> (String, Arc<AtomicBool>) {
+    let asli = uri();
+    let (awal, sisa) = asli.split_once('@').expect("URI uji memuat userinfo");
+    let (alamat_broker, jalur) = sisa.split_once('/').expect("URI uji memuat vhost");
+    let alamat_broker = alamat_broker.to_owned();
+    let pendengar = TcpListener::bind("127.0.0.1:0").await.expect("bind proxy");
+    let uri_proxy = format!(
+        "{awal}@{}/{jalur}",
+        pendengar.local_addr().expect("alamat proxy")
+    );
+    let beku = Arc::new(AtomicBool::new(false));
+    let sakelar = beku.clone();
+    tokio::spawn(async move {
+        while let Ok((klien, _)) = pendengar.accept().await {
+            let alamat_broker = alamat_broker.clone();
+            let beku = beku.clone();
+            tokio::spawn(async move {
+                let (klien_r, klien_w) = klien.into_split();
+                if beku.load(Ordering::SeqCst) {
+                    salin(klien_r, tokio::io::sink(), beku).await;
+                    return;
+                }
+                let Ok(broker) = TcpStream::connect(&alamat_broker).await else {
+                    return;
+                };
+                let (broker_r, broker_w) = broker.into_split();
+                tokio::select! {
+                    () = salin(klien_r, broker_w, beku.clone()) => {}
+                    () = salin(broker_r, klien_w, beku) => {}
+                }
+            });
+        }
+    });
+    (uri_proxy, sakelar)
+}
+
+/// Batas luar uji: BATAS_CONFIRM (5 detik) ditambah selisih penjadwalan.
+const BATAS_LUAR_DECLARE: Duration = Duration::from_secs(10);
+
+/// ARC-227 AC-1: `declare` (jalur `PublisherDeklarasi::publish` di controller,
+/// yang memanggilnya sebelum publish sambil memegang mutex) ikut dibatasi
+/// `BATAS_CONFIRM` saat broker tidak menjawab RPC deklarasi pada koneksi yang
+/// masih tampak tersambung. Tanpa batas, dispatcher macet selama masih leader.
+#[tokio::test(flavor = "multi_thread")]
+#[ignore = "butuh RabbitMQ: make -C backend uji-amqp"]
+async fn declare_dibatasi_saat_broker_tidak_menjawab() {
+    let (uri_proxy, beku) = proxy_beku().await;
+    let q = ApalisQueue::connect(&uri_proxy)
+        .await
+        .expect("connect lewat proxy");
+    beku.store(true, Ordering::SeqCst);
+
+    let hasil = tokio::time::timeout(BATAS_LUAR_DECLARE, q.declare(&antrean_baru()))
+        .await
+        .expect("declare menggantung melewati batas confirm");
+    assert!(
+        matches!(hasil, Err(QueueError::Transport(_))),
+        "declare yang lewat batas harus galat transport: {hasil:?}"
+    );
+}
+
+/// ARC-227 AC-1: sambung ulang di dalam `declare` (koneksi publish diputus
+/// broker, lalu host baru tidak merespons) juga dibatasi, bukan menunggu
+/// timeout TCP OS dengan mutex publish terpegang.
+#[tokio::test(flavor = "multi_thread")]
+#[ignore = "butuh RabbitMQ: make -C backend uji-amqp"]
+async fn declare_dengan_sambung_ulang_dibatasi_saat_broker_tidak_menjawab() {
+    let (uri_proxy, beku) = proxy_beku().await;
+    let q = ApalisQueue::connect(&uri_proxy)
+        .await
+        .expect("connect lewat proxy");
+    putuskan_dari_broker().await;
+    beku.store(true, Ordering::SeqCst);
+
+    let hasil = tokio::time::timeout(BATAS_LUAR_DECLARE, q.declare(&antrean_baru()))
+        .await
+        .expect("declare dengan sambung ulang menggantung melewati batas confirm");
+    assert!(
+        matches!(hasil, Err(QueueError::Transport(_))),
+        "declare yang lewat batas harus galat transport: {hasil:?}"
     );
 }
 
