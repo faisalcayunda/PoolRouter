@@ -1,5 +1,6 @@
 import { useTranslation } from 'react-i18next';
 import { LoginScreen } from '../features/auth/LoginScreen';
+import { RecoveryBanner } from '../features/auth/RecoveryBanner';
 import { SesiDialogs } from '../features/auth/SesiDialogs';
 import { useSesi } from '../features/auth/useSesi';
 import type { AdminRole } from '../features/common/RoleContext';
@@ -43,6 +44,7 @@ function SignedIn({ pathname, search }: { pathname: string; search: string }) {
         user={{ username: sesi.me.username, peran: sesi.me.peran?.[0] ?? '' }}
         role={peranShell(sesi.me.peran)}
       >
+        <RecoveryBanner sesi={sesi} />
         <RoutedScreens pathname={pathname} search={search} role={peranShell(sesi.me.peran)} />
       </AppShell>
       <SesiDialogs sesi={sesi} />
