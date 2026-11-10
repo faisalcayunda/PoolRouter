@@ -31,8 +31,10 @@ const TH = 'border-b border-outline-variant px-4 py-3 font-medium';
 const TD = 'typescale-body-medium px-4 py-3 align-middle';
 
 /**
- * S07 daftar downstream pool (ARC-102). Hanya platform admin. Kolom upstream menampilkan nama
- * provider dari upstream pool yang dilayani; bila pencarian nama gagal, id pool yang tampil.
+ * S07 daftar downstream pool (ARC-102, ARC-247). Hanya platform admin. Kolom upstream menampilkan
+ * nama provider dari upstream pool yang dilayani; bila pencarian nama gagal, id pool yang tampil.
+ * Kolom Mode belum punya data di kontrak, jadi tampil sebagai placeholder seperti frame. Alokasi
+ * tidak ada di frame daftar; nilainya dibaca dan disunting di form.
  */
 export function DownstreamListScreen({ client = api }: DownstreamListScreenProps): ReactNode {
   const { t, i18n } = useTranslation();
@@ -78,19 +80,6 @@ export function DownstreamListScreen({ client = api }: DownstreamListScreenProps
   );
   const upstreamOf = (pool: DownstreamPool) =>
     pool.upstream_pool_ids.map((id) => upstreamNames.get(id) ?? id).join(', ');
-
-  const alokasiOf = (pool: DownstreamPool): string => {
-    if (!pool.alokasi_jenis) return t('downstream.list.no_alokasi');
-    const nilai = fmt.angka(pool.alokasi_nilai ?? 0);
-    const bagian = [
-      pool.alokasi_jenis === 'exact'
-        ? t('downstream.list.alokasi_tetap', { nilai })
-        : t('downstream.list.alokasi_persen', { nilai }),
-    ];
-    if (pool.sifat) bagian.push(t(`downstream.form.alokasi.sifat_${pool.sifat}`));
-    if (pool.boleh_pinjam) bagian.push(t('downstream.list.boleh_pinjam'));
-    return bagian.join(' · ');
-  };
 
   async function aktifkan(pool: DownstreamPool) {
     setBusy(pool.downstream_pool_id);
@@ -157,10 +146,10 @@ export function DownstreamListScreen({ client = api }: DownstreamListScreenProps
                       {t('downstream.col.name')}
                     </th>
                     <th scope="col" className={TH}>
-                      {t('downstream.col.upstream')}
+                      {t('downstream.col.mode')}
                     </th>
                     <th scope="col" className={TH}>
-                      {t('downstream.col.alokasi')}
+                      {t('downstream.col.upstream')}
                     </th>
                     <th scope="col" className={TH}>
                       {t('downstream.col.ttl')}
@@ -182,11 +171,11 @@ export function DownstreamListScreen({ client = api }: DownstreamListScreenProps
                       <td data-label={t('downstream.col.name')} className={TD}>
                         {row.nama}
                       </td>
+                      <td data-label={t('downstream.col.mode')} className={TD}>
+                        {'–'}
+                      </td>
                       <td data-label={t('downstream.col.upstream')} className={TD}>
                         {upstreamOf(row)}
-                      </td>
-                      <td data-label={t('downstream.col.alokasi')} className={TD}>
-                        {alokasiOf(row)}
                       </td>
                       <td data-label={t('downstream.col.ttl')} className={TD}>
                         {t('downstream.list.ttl_hours', {
@@ -205,7 +194,7 @@ export function DownstreamListScreen({ client = api }: DownstreamListScreenProps
                             variant="text"
                             aria-label={t('downstream.list.edit_aria', { nama: row.nama })}
                           >
-                            {t('common.action.edit')}
+                            {t('common.action.open')}
                           </LinkButton>
                           {row.aktif ? (
                             <Button
@@ -239,7 +228,7 @@ export function DownstreamListScreen({ client = api }: DownstreamListScreenProps
       {dialog ? (
         <NonaktifkanDialog
           title={t('downstream.deactivate.title')}
-          objekNama={dialog.nama}
+          tujuan={upstreamOf(dialog)}
           loadPreview={(signal) =>
             client.pratinjauNonaktifDownstreamPool(dialog.downstream_pool_id, { signal })
           }

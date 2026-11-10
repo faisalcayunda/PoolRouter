@@ -280,10 +280,13 @@ describe('S11 log transaksi', () => {
 
     // A 403 is the only HTTP status the catalog words; it must not surface as a bare table.
     const errorAlert = (await screen.findAllByRole('alert')).find((node) =>
-      within(node).queryByText('Anda tidak punya akses ke halaman ini'),
+      within(node).queryByText('Akses tidak diizinkan'),
     );
     expect(errorAlert).toBeDefined();
-    expect(within(errorAlert!).getByRole('button', { name: 'Coba lagi' })).toBeInTheDocument();
+    // Penpot S16 frame 3: the retry action sits below the alert, in the same error block.
+    expect(
+      within(errorAlert!.parentElement!).getByRole('button', { name: 'Coba lagi' }),
+    ).toBeInTheDocument();
   });
 
   it('shows the empty state, not a blank table, when nothing matches', async () => {

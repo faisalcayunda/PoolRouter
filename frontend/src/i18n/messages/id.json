@@ -149,10 +149,12 @@
   },
   "error": {
     "network": "Data belum bisa dimuat. Periksa koneksi, lalu coba lagi.",
+    "load_title": "Data belum bisa dimuat",
+    "load_hint": "Periksa koneksi jaringan dan coba lagi.",
     "http": {
       "403": {
-        "title": "Anda tidak punya akses ke halaman ini",
-        "body": "Peran Anda tidak mencakup halaman ini. Percobaan ini dicatat. Hubungi platform admin bila Anda perlu akses.",
+        "title": "Akses tidak diizinkan",
+        "body": "Percobaan ini dicatat. Hubungi platform admin bila butuh akses.",
         "action": "Ke halaman awal"
       }
     },
@@ -161,12 +163,16 @@
   },
   "login": {
     "page": {
-      "title": "Masuk ke PoolRouter",
-      "subtitle": "Gunakan akun yang diberikan Pusdatin BGN.",
+      "brand": "PoolRouter",
+      "env": "PoC · BGN",
+      "title": "Masuk ke akun",
+      "subtitle": "Gunakan kredensial yang diberikan oleh administrator Pusdatin.",
+      "help": "Butuh akses? Hubungi platform admin Pusdatin BGN.",
       "username": "Nama pengguna",
       "password": "Kata sandi",
       "submit": "Masuk",
-      "session_expired": "Sesi Anda berakhir. Masuk lagi untuk melanjutkan."
+      "session_expired_title": "Sesi Anda telah berakhir",
+      "session_expired_body": "Sesi tidak aktif selama lebih dari batas waktu."
     },
     "error": {
       "invalid": "Nama pengguna atau kata sandi tidak cocok.",
@@ -355,12 +361,12 @@
     "replace": {
       "title": "Ganti secret {{nama}}",
       "new_value": "Nilai baru",
-      "body": "Nilai lama tidak bisa dilihat. Nilai baru langsung menggantikannya.",
-      "confirm": "Ganti nilai"
+      "confirm": "Simpan"
     },
     "delete": {
       "blocked": {
         "title": "Secret masih dipakai",
+        "ack": "Mengerti",
         "body": "{{nama}} masih dipakai oleh provider aktif: {{daftar}}. Nonaktifkan atau ubah provider itu dulu, lalu hapus secret ini.",
         "short": "{{nama}} masih dipakai provider aktif. Ubah atau nonaktifkan provider itu dulu, lalu hapus secret ini."
       },
@@ -379,6 +385,7 @@
       "body": "Secret menyimpan kredensial provider, misalnya USER_ID dan PASSWORD. Tambahkan secret sebelum membuat template provider."
     },
     "masked": "Tersamar",
+    "changed_unknown": "Belum tersedia",
     "unused": "Tidak dipakai",
     "row": {
       "replace_aria": "Ganti nilai secret {{nama}}",
@@ -411,6 +418,7 @@
       "subtitle": "Kuota harian, rate limit per jam, dan porsi sync per provider."
     },
     "tab": {
+      "aria": "Bagian konfigurasi upstream pool",
       "quota": "Kuota dan laju",
       "antipattern": "Anti-pola"
     },
@@ -451,12 +459,8 @@
       "done": "Upstream pool {{nama}} dinonaktifkan: {{dibatalkan, number}} dibatalkan, {{gagal, number}} digagalkan."
     },
     "form": {
-      "title_edit": "Ubah upstream pool {{nama}}",
-      "subtitle": "Penyimpanan mengganti seluruh konfigurasi; isian awal diambil dari konfigurasi saat ini.",
-      "back": "Kembali ke daftar",
+      "title_edit": "Upstream pool · {{nama}}",
       "provider_placeholder": "Pilih provider",
-      "save_new": "Simpan upstream pool",
-      "save_edit": "Simpan perubahan",
       "saved": "Upstream pool disimpan.",
       "group": {
         "general": "Umum",
@@ -477,8 +481,8 @@
         "jendela_kuota": "Periode kuota",
         "kuota_harian": "Kuota harian (request)",
         "rate_limit_per_jam": "Rate limit per jam (request)",
-        "porsi_sync_persen": "Porsi sync (%)",
-        "ambang_berdampingan": "Ambang berdampingan (request)",
+        "porsi_sync_persen": "Porsi maksimal sync (%)",
+        "ambang_berdampingan": "Ambang konkurensi (request)",
         "jeda_min": "Jeda minimum (ms)",
         "jeda_maks": "Jeda maksimum (ms)",
         "reset_kuota_jam": "Jam reset (0 sampai 23)",
@@ -512,8 +516,8 @@
       "min_delay": "Jeda minimum (ms)",
       "max_delay": "Jeda maksimum (ms)",
       "delay_help": "Jeda acak antar-pengiriman dipilih di antara minimum dan maksimum.",
-      "adjacent": "Ambang NIK berdampingan (%)",
-      "adjacent_help": "Batas proporsi NIK berurutan yang boleh terkirim berdampingan.",
+      "adjacent": "Ambang konkurensi (request)",
+      "adjacent_help": "Jumlah maksimum request yang boleh berjalan bersamaan ke upstream ini.",
       "warn": "Jeda yang terlalu besar bisa membuat rate limit {{batas, number}}/jam tidak tercapai. Cek hasil uji beban sebelum mengubah."
     }
   },
@@ -531,8 +535,7 @@
       "name": "Nama",
       "mode": "Mode",
       "upstream": "Upstream pool",
-      "ttl": "TTL antrean",
-      "alokasi": "Alokasi"
+      "ttl": "TTL antrean"
     },
     "mode": {
       "async": "Async",
@@ -554,10 +557,6 @@
       "edit_aria": "Ubah downstream pool {{nama}}",
       "activate_aria": "Aktifkan downstream pool {{nama}}",
       "deactivate_aria": "Nonaktifkan downstream pool {{nama}}",
-      "no_alokasi": "Tanpa alokasi",
-      "alokasi_tetap": "{{nilai}} request per periode",
-      "alokasi_persen": "{{nilai}}% kuota efektif",
-      "boleh_pinjam": "boleh pinjam",
       "ttl_hours": "{{jam}} jam"
     },
     "form": {
@@ -692,7 +691,6 @@
       }
     },
     "metadata": {
-      "info": "Kontrak metadata dicatat di log transaksi untuk data balikan. Request tanpa field wajib ditolak sebelum memakai kuota. Field Rahasia tidak pernah dicatat atau dikirim ke callback.",
       "empty": "Belum ada field metadata.",
       "group": "Field ke-{{nomor}}",
       "add": "Tambah field",
@@ -776,10 +774,12 @@
       "pool": "Downstream pool",
       "pool_help": "Client hanya bisa memakai pool yang ditautkan.",
       "webhook": "Alamat webhook (opsional)",
+      "webhook_help": "Harus diawali https://",
       "save": "Simpan client"
     },
     "snackbar": {
-      "saved": "Client tersimpan"
+      "saved": "Client tersimpan",
+      "saved_webhook_failed": "Client tersimpan, tetapi webhook belum tersimpan. Atur lewat halaman webhook client."
     },
     "empty": {
       "title": "Belum ada client",
@@ -806,13 +806,15 @@
     },
     "secret": {
       "heading": "Secret tanda tangan",
-      "desc": "Dibuat oleh sistem dan hanya tampil sekali. Pasang di aplikasi Anda untuk memverifikasi webhook.",
+      "desc": "Belum ada secret. Dibuat oleh sistem dan hanya tampil sekali. Pasang di aplikasi Anda untuk memverifikasi webhook.",
+      "active_desc": "Dibuat oleh sistem dan hanya tampil sekali, tidak bisa dilihat lagi. Versi aktif: {{versi}}.",
       "create": "Buat secret",
       "rotate": "Rotasi secret"
     },
     "rotate": {
       "title": "Rotasi secret webhook?",
-      "body": "Secret lama langsung tidak berlaku. Aplikasi {{nama_client}} akan gagal memverifikasi webhook sampai secret baru dipasang di aplikasinya."
+      "body": "Secret lama langsung tidak berlaku. Aplikasi {{nama_client}} akan gagal memverifikasi webhook sampai secret baru dipasang di aplikasinya.",
+      "once": "Secret baru tampil satu kali setelah Anda memilih rotasi."
     },
     "created": {
       "title": "Secret webhook baru untuk {{nama_client}}",
@@ -824,6 +826,7 @@
     },
     "col": {
       "time": "Waktu",
+      "queue_id": "queue_id",
       "request_status": "Status request",
       "reason": "Alasan gagal",
       "note": "Catatan"
@@ -847,7 +850,7 @@
     "inactive": "Nonaktif",
     "saved": "Perubahan client tersimpan.",
     "page": {
-      "subtitle": "Aplikasi BGN yang memanggil PoolRouter, beserta kredensial dan webhook-nya."
+      "subtitle": "Aplikasi BGN yang memanggil PoolRouter. Secret hanya tampil sekali saat dibuat."
     },
     "empty": {
       "owner": "Belum ada client yang terhubung dengan akun Anda. Hubungi platform admin."
@@ -860,7 +863,8 @@
     },
     "row": {
       "manage": "Kelola",
-      "manage_aria": "Kelola client {{nama}}"
+      "manage_aria": "Kelola client {{nama}}",
+      "credential_aria": "Buat kredensial untuk client {{nama}}"
     },
     "tab": {
       "aria": "Bagian client",
@@ -967,13 +971,17 @@
       "title": "Kuota",
       "meta": "Pool: {{nama_pool}} · Diperbarui {{waktu}}",
       "today": "Hari ini",
-      "of_total": "{{terpakai, number}} dari {{total, number}}",
       "used_left": "Terpakai {{persen, number}}%, sisa {{sisa, number}}",
       "reset_at": "reset {{waktu}}",
       "hour": "Jam berjalan ({{rentang}})",
       "sync_heading": "Porsi sync",
       "sync_used": "Sync terpakai {{terpakai, number}} dari batas {{persen, number}}%",
-      "note": "Angka dihitung dari jumlah percobaan ke Dukcapil, termasuk percobaan ulang dan panggilan gagal. Selisih dengan log transaksi dapat terjadi.",
+      "note": "Angka dihitung dari jumlah percobaan ke Dukcapil. Selisih kecil dengan log transaksi bisa terjadi.",
+      "limit_of": "dari {{total, number}}",
+      "trend_heading": "Pemakaian 7 hari",
+      "trend_unit": "% dari kuota harian",
+      "trend_pending_title": "Menunggu API riwayat kuota",
+      "trend_pending_body": "Chart pemakaian 7 hari ditunda sampai getQuotaTracker menyediakan riwayat harian.",
       "reload": "Muat ulang",
       "pool_filter": "Pool",
       "pool_unknown": "Pool upstream",
@@ -1064,7 +1072,7 @@
       "title": "Pencarian log per NIK",
       "subtitle": "Setiap pencarian, pembukaan payload, dan ekspor dicatat di audit akses.",
       "field": "NIK (16 digit)",
-      "field_help": "Hanya angka.",
+      "field_help": "Wajib 16 digit angka. Tidak tersimpan di riwayat, URL, atau filter.",
       "error": "Masukkan NIK 16 digit.",
       "range_only_note": "Pencarian rentang waktu saja tidak tersedia; NIK wajib diisi.",
       "export": "Ekspor hasil",
@@ -1104,6 +1112,8 @@
     },
     "filter": {
       "user": "Pengguna",
+      "user_help": "Masukkan ID pengguna dalam format UUID.",
+      "user_error": "ID pengguna harus berformat UUID, misalnya 123e4567-e89b-12d3-a456-426614174000.",
       "action": "Aksi",
       "nik_range": "NIK + rentang {{rentang}}",
       "nik_search": "Pencarian per NIK",
@@ -1111,7 +1121,7 @@
       "range_only": "Rentang {{rentang}}",
       "range": "Rentang waktu",
       "range_help": "Pilih rentang waktu untuk menampilkan catatan audit.",
-      "note": "Filter diterapkan pada catatan audit akses."
+      "note": "Kolom 'Filter atau kueri' menampilkan jenis filter, bukan nilai NIK."
     },
     "col": {
       "user": "Pengguna",
@@ -1289,12 +1299,14 @@
     }
   },
   "k20": {
-    "body": "Periksa dampak berikut sebelum menonaktifkan {{nama}}.",
-    "confirm": "Nonaktifkan",
+    "confirm": "Nonaktifkan pool",
+    "impact": {
+      "queued": "<b>{{jumlah, number}} request</b> yang masih mengantre akan dibatalkan dengan alasan \"pool nonaktif\". Request tidak akan dikirim ke {{tujuan}} dan tidak memakai kuota.",
+      "sent": "Request yang sudah dikirim ke {{tujuan}} tidak berubah. Client yang punya webhook akan menerima status <b>Dibatalkan</b> (cancelled) satu kali."
+    },
     "submitting": "Memproses…",
     "preview": {
       "heading": "Dampak penonaktifan",
-      "cancelled": "{{jumlah, number}} request antre akan dibatalkan.",
       "failed": "{{jumlah, number}} request yang menunggu retry akan digagalkan.",
       "downstream_count": "Dipakai oleh {{jumlah, number}} downstream pool.",
       "computed": "Dihitung pada {{waktu}}.",

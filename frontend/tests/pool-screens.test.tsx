@@ -23,7 +23,7 @@ import {
 } from '../src/features/pool/upstreamForm';
 import { renderWithI18n } from './render';
 
-/** S06, S06b, S07, S14 (ARC-102). Semua id dan nama sintetis. */
+/** S06, S06b, S07, S14 (ARC-102, ARC-247). Semua id dan nama sintetis. */
 const user = userEvent.setup({ delay: null });
 
 const PROVIDER_ID = '00000000-0000-4000-8000-0000000000a1';
@@ -118,6 +118,11 @@ function asRole(role: AdminRole | null, ui: ReactNode) {
   return renderWithI18n(<RoleProvider current={role}>{ui}</RoleProvider>);
 }
 
+/** Isi `<form>` layar; query di sini tidak ikut menangkap tombol di dialog atau bagian lain. */
+function inForm() {
+  return within(document.querySelector('form') as HTMLElement);
+}
+
 async function isi(label: string, text: string) {
   const field = screen.getByLabelText(label);
   await user.clear(field);
@@ -143,22 +148,39 @@ describe('S06 daftar upstream pool', () => {
   it('shows 403 for other roles and never calls the API', () => {
     const client = stubClient();
     asRole('operator', <UpstreamListScreen client={client} />);
-    expect(
-      screen.getByRole('heading', { name: 'Anda tidak punya akses ke halaman ini' }),
-    ).toBeVisible();
+    expect(screen.getByRole('heading', { name: 'Akses tidak diizinkan' })).toBeVisible();
     expect(client.upstreamPools).not.toHaveBeenCalled();
   });
 
-  it('lists a pool by its provider name with quota, rate limit and sync share', async () => {
+  it('lists a pool with the frame columns: Nama, Provider, Kuota, Status, Aksi', async () => {
     asRole('platform_admin', <UpstreamListScreen client={stubClient()} />);
     const table = await screen.findByRole('table');
+    const header = within(table).getAllByRole('columnheader');
+    expect(header.map((cell) => cell.textContent)).toEqual([
+      'Nama',
+      'Provider',
+      'Kuota',
+      'Status',
+      'Aksi',
+    ]);
     const row = within(table).getByRole('row', { name: /provider-contoh-a/ });
+    // Nama belum ada di kontrak API: placeholder seperti frame.
+    expect(within(row).getByText('–')).toBeVisible();
+    expect(within(row).getByText('provider-contoh-a')).toBeVisible();
     expect(within(row).getByText('500 / hari')).toBeVisible();
-    expect(within(row).getByText('10%')).toBeVisible();
+    expect(within(row).queryByText('10%')).toBeNull();
     expect(within(row).getByText('Aktif')).toBeVisible();
     expect(
       within(row).getByRole('link', { name: 'Ubah upstream pool provider-contoh-a' }),
     ).toHaveAttribute('href', `/upstream/${UP_ID}`);
+  });
+
+  it('keeps the row actions on one line like the provider and client tables', async () => {
+    asRole('platform_admin', <UpstreamListScreen client={stubClient()} />);
+    const row = within(await screen.findByRole('row', { name: /provider-contoh-a/ }));
+    const aksi = row.getByRole('link', { name: /Ubah upstream pool/ }).parentElement;
+    expect(aksi).toBe(row.getByRole('button', { name: /Nonaktifkan upstream pool/ }).parentElement);
+    expect(aksi).toHaveClass('flex-nowrap', 'whitespace-nowrap');
   });
 
   it('retries a failed read', async () => {
@@ -194,9 +216,22 @@ describe('S14 NonaktifkanDialog di upstream pool', () => {
     return screen.findByRole('dialog', { name: 'Nonaktifkan upstream pool?' });
   }
 
-  it('shows the preview counts and the last-active warning before asking for a reason', async () => {
+  it('states the impact in the frame wording before asking for a reason', async () => {
     const dialog = await openDialog(stubClient());
-    expect(await within(dialog).findByText('7 request antre akan dibatalkan.')).toBeVisible();
+    expect(await within(dialog).findByText('7 request')).toBeVisible();
+    expect(
+      within(dialog).getByText(
+        'yang masih mengantre akan dibatalkan dengan alasan "pool nonaktif". Request tidak akan dikirim ke provider-contoh-a dan tidak memakai kuota.',
+      ),
+    ).toBeVisible();
+    expect(
+      within(dialog).getByText(/^Request yang sudah dikirim ke provider-contoh-a tidak berubah\./),
+    ).toBeVisible();
+    expect(within(dialog).getByText('Dibatalkan')).toBeVisible();
+    expect(within(dialog).getByText(/\(cancelled\) satu kali\.$/)).toBeVisible();
+    expect(
+      within(dialog.querySelector('form') as HTMLElement).queryByText(/^Periksa dampak/),
+    ).toBeNull();
     expect(
       within(dialog).getByText('3 request yang menunggu retry akan digagalkan.'),
     ).toBeVisible();
@@ -214,18 +249,18 @@ describe('S14 NonaktifkanDialog di upstream pool', () => {
     const dialog = await openDialog(
       stubClient({ pratinjauNonaktifUpstreamPool: vi.fn().mockReturnValue(pending) }),
     );
-    expect(within(dialog).getByRole('button', { name: 'Nonaktifkan' })).toBeDisabled();
+    expect(within(dialog).getByRole('button', { name: 'Nonaktifkan pool' })).toBeDisabled();
     selesai(PREVIEW);
     await waitFor(() =>
-      expect(within(dialog).getByRole('button', { name: 'Nonaktifkan' })).toBeEnabled(),
+      expect(within(dialog).getByRole('button', { name: 'Nonaktifkan pool' })).toBeEnabled(),
     );
   });
 
   it('blocks an empty reason and sends nothing', async () => {
     const client = stubClient();
     const dialog = await openDialog(client);
-    await within(dialog).findByText('7 request antre akan dibatalkan.');
-    await user.click(within(dialog).getByRole('button', { name: 'Nonaktifkan' }));
+    await within(dialog).findByText('7 request');
+    await user.click(within(dialog).getByRole('button', { name: 'Nonaktifkan pool' }));
     expect(await within(dialog).findByText('Tulis alasan 10 sampai 500 karakter.')).toBeVisible();
     expect(client.nonaktifkanUpstreamPool).not.toHaveBeenCalled();
   });
@@ -234,10 +269,10 @@ describe('S14 NonaktifkanDialog di upstream pool', () => {
     const upstreamPools = vi.fn().mockResolvedValue([upstream()]);
     const client = stubClient({ upstreamPools });
     const dialog = await openDialog(client);
-    await within(dialog).findByText('7 request antre akan dibatalkan.');
+    await within(dialog).findByText('7 request');
     await user.click(within(dialog).getByLabelText('Alasan penonaktifan'));
     await user.paste(`  ${ALASAN_UJI}  `);
-    await user.click(within(dialog).getByRole('button', { name: 'Nonaktifkan' }));
+    await user.click(within(dialog).getByRole('button', { name: 'Nonaktifkan pool' }));
 
     expect(client.nonaktifkanUpstreamPool).toHaveBeenCalledWith(UP_ID, ALASAN_UJI);
     expect(
@@ -256,17 +291,17 @@ describe('S14 NonaktifkanDialog di upstream pool', () => {
         .mockRejectedValue(new ApiError(500, { status: 500, kode: 'internal' })),
     });
     const dialog = await openDialog(client);
-    await within(dialog).findByText('7 request antre akan dibatalkan.');
+    await within(dialog).findByText('7 request');
     await user.click(within(dialog).getByLabelText('Alasan penonaktifan'));
     await user.paste(ALASAN_UJI);
-    await user.click(within(dialog).getByRole('button', { name: 'Nonaktifkan' }));
+    await user.click(within(dialog).getByRole('button', { name: 'Nonaktifkan pool' }));
 
     expect(
       await within(dialog).findByText('Data belum bisa dimuat. Periksa koneksi, lalu coba lagi.'),
     ).toBeVisible();
     expect(screen.getByRole('dialog')).toBe(dialog);
     // Setelah gagal, admin boleh mencoba lagi dengan alasan yang sama.
-    expect(within(dialog).getByRole('button', { name: 'Nonaktifkan' })).toBeEnabled();
+    expect(within(dialog).getByRole('button', { name: 'Nonaktifkan pool' })).toBeEnabled();
   });
 });
 
@@ -274,12 +309,66 @@ describe('S06b form upstream pool', () => {
   it('prefills every field from the read, with the sync share as a clean percentage', async () => {
     asRole('platform_admin', <UpstreamFormScreen client={stubClient()} poolId={UP_ID} />);
     expect(
-      await screen.findByRole('heading', { name: 'Ubah upstream pool provider-contoh-a' }),
+      await screen.findByRole('heading', { name: 'Upstream pool · provider-contoh-a' }),
     ).toBeVisible();
-    expect(screen.getByLabelText('Porsi sync (%)')).toHaveValue('10');
+    expect(screen.getByLabelText('Porsi maksimal sync (%)')).toHaveValue('10');
     expect(screen.getByLabelText('Kuota harian (request)')).toHaveValue('500');
     expect(screen.getByLabelText('Margin kuota (0,001 sampai 0,2)')).toHaveValue('0.05');
     expect(screen.getByLabelText('Zona waktu reset')).toHaveValue('Asia/Jakarta');
+  });
+
+  it('shows the two frame tabs, the status and the quota fields in frame order', async () => {
+    asRole('platform_admin', <UpstreamFormScreen client={stubClient()} poolId={UP_ID} />);
+    await screen.findByRole('heading', { name: 'Upstream pool · provider-contoh-a' });
+    const tabs = within(screen.getByRole('tablist', { name: 'Bagian konfigurasi upstream pool' }));
+    expect(tabs.getAllByRole('tab').map((tab) => tab.textContent)).toEqual([
+      'Kuota dan laju',
+      'Anti-pola',
+    ]);
+    expect(tabs.getByRole('tab', { name: 'Kuota dan laju' })).toHaveAttribute(
+      'aria-selected',
+      'true',
+    );
+    const panel = within(screen.getByRole('tabpanel'));
+    expect(panel.getByText('Hanya provider yang sudah tersimpan.')).toBeVisible();
+    expect(panel.getByText('Status')).toBeVisible();
+    expect(panel.getByText('Aktif')).toBeVisible();
+    expect(
+      panel.getByText('Sync sepi: async boleh memakai sisanya. Sync di atas porsi ditolak 429.'),
+    ).toBeVisible();
+    expect(inForm().getByRole('button', { name: 'Simpan' })).toBeVisible();
+    expect(inForm().getByRole('link', { name: 'Batal' })).toHaveAttribute('href', '/upstream');
+    expect(inForm().getByRole('button', { name: 'Nonaktifkan pool' })).toBeVisible();
+  });
+
+  it('shows the anti-pattern tab with the real delay values and the load warning', async () => {
+    asRole('platform_admin', <UpstreamFormScreen client={stubClient()} poolId={UP_ID} />);
+    await screen.findByRole('heading', { name: 'Upstream pool · provider-contoh-a' });
+    await user.click(inForm().getByRole('tab', { name: 'Anti-pola' }));
+    const panel = within(screen.getByRole('tabpanel'));
+    expect(
+      panel.getByText(
+        'Dipakai untuk request async. Request sync tidak diacak dan tidak diberi jeda, tetapi tetap dihitung di kuota.',
+      ),
+    ).toBeVisible();
+    expect(panel.getByLabelText('Jeda minimum (ms)')).toHaveValue('200');
+    expect(panel.getByLabelText('Jeda maksimum (ms)')).toHaveValue('800');
+    // Deviasi dari frame Penpot: frame menulis "NIK berdampingan (%)", padahal kontrak backend
+    // (pool.rs) menyimpannya ke maks_konkurensi, bilangan bulat request.
+    expect(panel.getByLabelText('Ambang konkurensi (request)')).toHaveValue('4');
+    expect(
+      panel.getByText('Jumlah maksimum request yang boleh berjalan bersamaan ke upstream ini.'),
+    ).toBeVisible();
+    expect(panel.queryByText(/NIK berdampingan/)).toBeNull();
+    expect(
+      panel.getByText('Jeda acak antar-pengiriman dipilih di antara minimum dan maksimum.'),
+    ).toBeVisible();
+    expect(
+      panel.getByText(
+        'Jeda yang terlalu besar bisa membuat rate limit 60/jam tidak tercapai. Cek hasil uji beban sebelum mengubah.',
+      ),
+    ).toBeVisible();
+    expect(panel.queryByLabelText('Kuota harian (request)')).toBeNull();
   });
 
   it('requires a reason on update and sends the full body when given one', async () => {
@@ -288,15 +377,15 @@ describe('S06b form upstream pool', () => {
       'platform_admin',
       <UpstreamFormScreen client={stubClient({ updateUpstreamPool })} poolId={UP_ID} />,
     );
-    await screen.findByRole('heading', { name: 'Ubah upstream pool provider-contoh-a' });
+    await screen.findByRole('heading', { name: 'Upstream pool · provider-contoh-a' });
     await isi('Kuota harian (request)', '900');
 
-    await user.click(screen.getByRole('button', { name: 'Simpan perubahan' }));
+    await user.click(inForm().getByRole('button', { name: 'Simpan' }));
     expect(await screen.findByText('Tulis alasan 10 sampai 500 karakter.')).toBeVisible();
     expect(updateUpstreamPool).not.toHaveBeenCalled();
 
     await isi('Alasan perubahan', ALASAN_UJI);
-    await user.click(screen.getByRole('button', { name: 'Simpan perubahan' }));
+    await user.click(inForm().getByRole('button', { name: 'Simpan' }));
 
     await waitFor(() => expect(updateUpstreamPool).toHaveBeenCalledTimes(1));
     expect(updateUpstreamPool).toHaveBeenCalledWith(UP_ID, {
@@ -327,24 +416,61 @@ describe('S06b form upstream pool', () => {
       'platform_admin',
       <UpstreamFormScreen client={stubClient({ updateUpstreamPool })} poolId={UP_ID} />,
     );
-    await screen.findByRole('heading', { name: 'Ubah upstream pool provider-contoh-a' });
+    await screen.findByRole('heading', { name: 'Upstream pool · provider-contoh-a' });
     await isi('Rate limit per jam (request)', '36000');
     await isi('Alasan perubahan', ALASAN_UJI);
-    await user.click(screen.getByRole('button', { name: 'Simpan perubahan' }));
+    await user.click(inForm().getByRole('button', { name: 'Simpan' }));
 
     // 3 600 000 / 36 000 = 100 ms; jeda minimum 200 dan maksimum 800 sama-sama melebihi.
+    // Galatnya ada di tab Anti-pola: form pindah ke tab itu dan fokus ke field salah pertama.
     expect(
       (await screen.findAllByText('Jeda paling lama 100 ms agar rate limit per jam tercapai.'))
         .length,
     ).toBe(2);
+    expect(inForm().getByRole('tab', { name: 'Anti-pola' })).toHaveAttribute(
+      'aria-selected',
+      'true',
+    );
+    expect(inForm().getByLabelText('Jeda minimum (ms)')).toHaveFocus();
     expect(updateUpstreamPool).not.toHaveBeenCalled();
+  });
+
+  it('deactivates from the form through the same dialog and shows the new status', async () => {
+    const client = stubClient();
+    asRole('platform_admin', <UpstreamFormScreen client={client} poolId={UP_ID} />);
+    await screen.findByRole('heading', { name: 'Upstream pool · provider-contoh-a' });
+    await user.click(inForm().getByRole('button', { name: 'Nonaktifkan pool' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Nonaktifkan upstream pool?' });
+    await within(dialog).findByText('7 request');
+    await user.click(within(dialog).getByLabelText('Alasan penonaktifan'));
+    await user.paste(ALASAN_UJI);
+    await user.click(within(dialog).getByRole('button', { name: 'Nonaktifkan pool' }));
+
+    expect(client.nonaktifkanUpstreamPool).toHaveBeenCalledWith(UP_ID, ALASAN_UJI);
+    expect(
+      await screen.findByText(
+        'Upstream pool provider-contoh-a dinonaktifkan: 7 dibatalkan, 3 digagalkan.',
+      ),
+    ).toBeVisible();
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(within(screen.getByRole('tabpanel')).getByText('Nonaktif')).toBeVisible();
+    expect(inForm().queryByRole('button', { name: 'Nonaktifkan pool' })).toBeNull();
+  });
+
+  it('offers no deactivate action for an inactive pool', async () => {
+    const getUpstreamPool = vi.fn().mockResolvedValue(upstream({ aktif: false }));
+    asRole(
+      'platform_admin',
+      <UpstreamFormScreen client={stubClient({ getUpstreamPool })} poolId={UP_ID} />,
+    );
+    await screen.findByRole('heading', { name: 'Upstream pool · provider-contoh-a' });
+    expect(within(screen.getByRole('tabpanel')).getByText('Nonaktif')).toBeVisible();
+    expect(inForm().queryByRole('button', { name: 'Nonaktifkan pool' })).toBeNull();
   });
 
   it('shows the 403 state to other roles', () => {
     asRole('auditor', <UpstreamFormScreen client={stubClient()} poolId={UP_ID} />);
-    expect(
-      screen.getByRole('heading', { name: 'Anda tidak punya akses ke halaman ini' }),
-    ).toBeVisible();
+    expect(screen.getByRole('heading', { name: 'Akses tidak diizinkan' })).toBeVisible();
   });
 });
 
@@ -394,14 +520,24 @@ describe('upstreamForm', () => {
 });
 
 describe('S07 daftar downstream pool', () => {
-  it('shows the upstream provider name, the allocation and the TTL in hours', async () => {
+  it('lists the frame columns with the upstream provider name and the TTL in hours', async () => {
     asRole('platform_admin', <DownstreamListScreen client={stubClient()} />);
-    const row = await screen.findByRole('row', { name: /pool-hilir-contoh/ });
-    expect(within(row).getByText('provider-contoh-a')).toBeVisible();
+    const table = await screen.findByRole('table');
     expect(
-      within(row).getByText('25% kuota efektif · Reserved: hanya dipakai pemiliknya'),
-    ).toBeVisible();
+      within(table)
+        .getAllByRole('columnheader')
+        .map((cell) => cell.textContent),
+    ).toEqual(['Nama', 'Mode', 'Upstream pool', 'TTL antrean', 'Status', 'Aksi']);
+    const row = within(table).getByRole('row', { name: /pool-hilir-contoh/ });
+    expect(within(row).getByText('pool-hilir-contoh')).toBeVisible();
+    // Mode belum ada di kontrak API: placeholder seperti frame.
+    expect(within(row).getByText('–')).toBeVisible();
+    expect(within(row).getByText('provider-contoh-a')).toBeVisible();
     expect(within(row).getByText('24 jam')).toBeVisible();
+    expect(within(row).queryByText(/kuota efektif/)).toBeNull();
+    const open = within(row).getByRole('link', { name: 'Ubah downstream pool pool-hilir-contoh' });
+    expect(open).toHaveTextContent('Buka');
+    expect(open).toHaveAttribute('href', `/downstream/${DOWN_ID}`);
   });
 
   it('shows the empty state and the 403 state', async () => {
@@ -415,9 +551,7 @@ describe('S07 daftar downstream pool', () => {
     view.unmount();
     const client = stubClient();
     asRole('auditor', <DownstreamListScreen client={client} />);
-    expect(
-      screen.getByRole('heading', { name: 'Anda tidak punya akses ke halaman ini' }),
-    ).toBeVisible();
+    expect(screen.getByRole('heading', { name: 'Akses tidak diizinkan' })).toBeVisible();
     expect(client.listDownstreamPools).not.toHaveBeenCalled();
   });
 
@@ -429,13 +563,16 @@ describe('S07 daftar downstream pool', () => {
       await screen.findByRole('button', { name: 'Nonaktifkan downstream pool pool-hilir-contoh' }),
     );
     const dialog = await screen.findByRole('dialog', { name: 'Nonaktifkan downstream pool?' });
-    await within(dialog).findByText('7 request antre akan dibatalkan.');
+    await within(dialog).findByText('7 request');
+    expect(
+      within(dialog).getByText(/dikirim ke provider-contoh-a dan tidak memakai kuota\./),
+    ).toBeVisible();
     expect(
       within(dialog).queryByText('Upstream aktif terakhir untuk downstream pool ini'),
     ).toBeNull();
     await user.click(within(dialog).getByLabelText('Alasan penonaktifan'));
     await user.paste(ALASAN_UJI);
-    await user.click(within(dialog).getByRole('button', { name: 'Nonaktifkan' }));
+    await user.click(within(dialog).getByRole('button', { name: 'Nonaktifkan pool' }));
 
     expect(client.nonaktifkanDownstreamPool).toHaveBeenCalledWith(DOWN_ID, ALASAN_UJI);
     expect(
@@ -509,6 +646,9 @@ describe('S07 form downstream pool', () => {
       <DownstreamFormScreen client={stubClient({ createDownstreamPool })} />,
     );
     await screen.findByRole('heading', { name: 'Tambah downstream pool' });
+    expect(inForm().getByRole('heading', { name: 'Form: tambah downstream pool' })).toBeVisible();
+    // Mode belum ada di kontrak API: kolom tampil seperti frame tapi tidak bisa diisi.
+    expect(inForm().getByLabelText('Mode')).toBeDisabled();
     await user.click(screen.getByLabelText('Nama'));
     await user.paste('pool-hilir-baru');
     await isi('TTL antrean (jam)', '2,5');

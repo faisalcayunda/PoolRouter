@@ -4,6 +4,8 @@ import { api, ApiError, type ApiClient } from '../../api/client';
 import { TextField } from '../../components/m3/TextField';
 import { Button } from '../../components/m3/Button';
 import { InlineAlert } from '../../components/m3/InlineAlert';
+import { StatusLabel } from '../../components/m3/StatusLabel';
+import { Divider } from '../../components/m3/Divider';
 
 type GalatLogin = 'invalid' | 'throttled' | 'network' | null;
 
@@ -55,21 +57,56 @@ export function LoginScreen({ client = api, search = '', onBerhasil }: Props) {
     <main
       id="main-content"
       tabIndex={-1}
-      className="flex min-h-screen flex-col items-center justify-center gap-6 bg-surface px-4 py-12"
+      className="flex min-h-screen items-center justify-center bg-surface px-4 py-12"
     >
-      <h1 className="typescale-headline-medium text-on-surface">{t('login.page.title')}</h1>
-      <p className="typescale-body-large max-w-[36ch] text-center text-on-surface-variant">
-        {t('login.page.subtitle')}
-      </p>
-
-      {search.includes('sesi_berakhir') ? (
-        <div className="w-full max-w-[360px]">
-          <InlineAlert tone="info">{t('login.page.session_expired')}</InlineAlert>
+      {/* Penpot S01: one card, 428 px on desktop (padding 36) and the full width minus 16 on mobile (padding 24). */}
+      <div className="flex w-full max-w-[428px] flex-col gap-6 rounded-large border border-outline-variant bg-surface-container-lowest p-6 shadow-[0_8px_24px_rgb(16_24_40/0.16)] min-[480px]:p-9">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2.5">
+            <span
+              aria-hidden="true"
+              className="flex h-8 w-8 items-center justify-center rounded-small bg-primary-container"
+            >
+              <svg
+                width="24"
+                height="24"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                className="text-on-primary"
+                focusable="false"
+              >
+                <polyline points="4,12 10,12 12,6 14,18 16,12 20,12" />
+              </svg>
+            </span>
+            <span className="typescale-title-large text-on-surface">{t('login.page.brand')}</span>
+          </div>
+          <StatusLabel>{t('login.page.env')}</StatusLabel>
         </div>
-      ) : null}
+        <Divider />
 
-      {galat ? (
-        <div className="w-full max-w-[360px]">
+        <div className="flex flex-col gap-1.5">
+          <h1
+            tabIndex={-1}
+            className="typescale-title-large m3-focus rounded-small text-on-surface outline-none"
+          >
+            {t('login.page.title')}
+          </h1>
+          <p className="typescale-body-medium text-on-surface-variant">
+            {t('login.page.subtitle')}
+          </p>
+        </div>
+
+        {search.includes('sesi_berakhir') ? (
+          <InlineAlert tone="info" heading={t('login.page.session_expired_title')}>
+            {t('login.page.session_expired_body')}
+          </InlineAlert>
+        ) : null}
+
+        {galat ? (
           <InlineAlert tone="error" live="assertive">
             {galat === 'network' ? (
               t('login.error.network')
@@ -92,31 +129,33 @@ export function LoginScreen({ client = api, search = '', onBerhasil }: Props) {
               t(`login.error.${galat}`)
             )}
           </InlineAlert>
-        </div>
-      ) : null}
+        ) : null}
 
-      <form onSubmit={(e) => void masuk(e)} className="flex w-full max-w-[360px] flex-col gap-4">
-        <TextField
-          label={t('login.page.username')}
-          value={username}
-          isDisabled={mengirim}
-          onChange={setUsername}
-          autoComplete="username"
-          isRequired
-        />
-        <TextField
-          label={t('login.page.password')}
-          type="password"
-          value={password}
-          isDisabled={mengirim}
-          onChange={setPassword}
-          autoComplete="current-password"
-          isRequired
-        />
-        <Button type="submit" isDisabled={mengirim} className="self-start">
-          {t('login.page.submit')}
-        </Button>
-      </form>
+        <form onSubmit={(e) => void masuk(e)} className="flex flex-col gap-6">
+          <TextField
+            label={t('login.page.username')}
+            value={username}
+            isDisabled={mengirim}
+            onChange={setUsername}
+            autoComplete="username"
+            isRequired
+          />
+          <TextField
+            label={t('login.page.password')}
+            type="password"
+            value={password}
+            isDisabled={mengirim}
+            onChange={setPassword}
+            autoComplete="current-password"
+            isRequired
+          />
+          <Button type="submit" isDisabled={mengirim} className="w-full">
+            {t('login.page.submit')}
+          </Button>
+        </form>
+
+        <p className="typescale-body-small pt-2 text-on-surface-variant">{t('login.page.help')}</p>
+      </div>
     </main>
   );
 }

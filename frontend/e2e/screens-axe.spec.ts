@@ -255,7 +255,7 @@ for (const bahasa of ['id', 'en'] as const) {
   test(`S01 login passes axe in ${bahasa}`, async ({ page, cspViolations }) => {
     await page.goto(`/login?bahasa=${bahasa}`);
     await expect(page.getByRole('heading', { level: 1 })).toHaveText(
-      bahasa === 'id' ? 'Masuk ke PoolRouter' : 'Sign in to PoolRouter',
+      bahasa === 'id' ? 'Masuk ke akun' : 'Sign in to your account',
     );
     await expectNoAxeViolations(page);
     expect(cspViolations).toEqual([]);
