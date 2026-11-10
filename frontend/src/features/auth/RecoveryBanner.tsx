@@ -74,7 +74,7 @@ export function RecoveryBanner({ sesi }: RecoveryBannerProps) {
       live="polite"
       action={
         <Button variant="text" onPress={() => setDitutup(true)}>
-          {t('common.action.close')}
+          {t('common.close')}
         </Button>
       }
     >
