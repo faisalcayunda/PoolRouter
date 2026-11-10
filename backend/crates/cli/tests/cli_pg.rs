@@ -644,3 +644,66 @@ async fn dua_penonaktifan_bersamaan_tidak_mengunci_sistem() {
         );
     }
 }
+
+/// Dua platform_admin mencabut peran platform_admin miliknya sendiri pada waktu yang sama. Pelaku
+/// tetap aktif di jalur ini, jadi hanya `jaga_admin_terakhir` di bawah kunci yang bisa menolak
+/// salah satunya; tanpa serialisasi keduanya melihat admin lain masih berperan dan sama-sama lolos.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+#[ignore]
+async fn dua_pencabutan_peran_bersamaan_tidak_mengunci_sistem() {
+    let u = Uji::baru().await;
+    let mut dinonaktifkan = Vec::new();
+    let mut putaran = Vec::new();
+    for _ in 0..16 {
+        let (a, nama_a) = u.pengguna("pa-cabut", &[Peran::PlatformAdmin], true).await;
+        let (b, nama_b) = u.pengguna("pa-cabut", &[Peran::PlatformAdmin], true).await;
+        dinonaktifkan.extend(u.sisakan_admin(&[a, b]).await);
+        let gerbang = Arc::new(Barrier::new(2));
+        let cabut = |nama: String| {
+            let (pool, gerbang) = (u.admin.clone(), gerbang.clone());
+            tokio::spawn(async move {
+                gerbang.wait().await;
+                kelola::cabut_peran(
+                    &pool,
+                    &nama,
+                    Peran::PlatformAdmin,
+                    &nama,
+                    &alasan(),
+                    Utc::now(),
+                )
+                .await
+            })
+        };
+        let t1 = cabut(nama_a.clone());
+        let t2 = cabut(nama_b.clone());
+        let (r1, r2) = (t1.await.unwrap(), t2.await.unwrap());
+        let masih_berperan: i64 = sqlx::query_scalar(
+            "SELECT count(DISTINCT pengguna_id) FROM admin_user_peran \
+             WHERE pengguna_id = ANY($1) AND peran = 'platform_admin' AND dicabut_at IS NULL \
+               AND (berlaku_sampai IS NULL OR berlaku_sampai > now())",
+        )
+        .bind(vec![a, b])
+        .fetch_one(&u.su)
+        .await
+        .unwrap();
+        putaran.push((r1, r2, masih_berperan));
+    }
+    u.pulihkan(&dinonaktifkan).await;
+
+    for (i, (r1, r2, masih_berperan)) in putaran.into_iter().enumerate() {
+        assert_eq!(
+            [r1.is_ok(), r2.is_ok()].iter().filter(|b| **b).count(),
+            1,
+            "putaran {i}: tepat satu berhasil ({r1:?} / {r2:?})"
+        );
+        assert_eq!(
+            masih_berperan, 1,
+            "putaran {i}: tepat satu tetap platform_admin"
+        );
+        let ditolak = r1.err().or(r2.err()).unwrap();
+        assert!(
+            matches!(ditolak, GalatKelola::AdminTerakhir(_)),
+            "putaran {i}: {ditolak}"
+        );
+    }
+}
