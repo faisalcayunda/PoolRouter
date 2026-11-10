@@ -194,18 +194,22 @@
       "template": "Template",
       "rules": "Parameters",
       "schema": "Response",
-      "endpoint": "Endpoint"
+      "endpoint": "Endpoint",
+      "aria": "Provider configuration sections"
     },
     "template": {
       "label": "Body template (JSON)",
-      "help": "Write keys exactly as in the Dukcapil document, including the spelling TRESHOLD.",
+      "help": "Secret and parameter variables are wrapped in double curly braces {{contoh}}. Write keys exactly as in the Ditjen Dukcapil document.",
       "save": "Save template",
       "error": {
         "alert": "The template can't be saved yet. Line {{nomor_baris}}: {{rincian}}",
         "brace_missing": "a closing curly brace is missing.",
         "goto": "Go to line {{nomor_baris}}",
-        "secret_missing": "Secret {{nama}} hasn't been created yet. Create it under Secrets, then save the template again."
-      }
+        "secret_missing": "Secret {{nama}} hasn't been created yet. Create it under Secrets, then save the template again.",
+        "title": "The template can't be saved yet",
+        "line": "Line {{baris}}: syntax error"
+      },
+      "title": "Request JSON template editor"
     },
     "general": {
       "name": "Provider name",
@@ -217,19 +221,45 @@
         "header": "API key in header",
         "none": "No authentication",
         "help": "Available in F0: credentials in body, API key in header, or none. JWT/OIDC comes in F2."
+      },
+      "identity": {
+        "title": "Provider identity",
+        "help": "The name and address PoolRouter calls."
+      },
+      "method_auth": {
+        "title": "Method and authentication"
+      },
+      "security": {
+        "title": "Security and logging",
+        "help": "TLS trust, log mode, and configuration schema version. All of them are saved in full each time the provider is saved."
+      },
+      "flag": {
+        "title": "Population data flag",
+        "help": "Decides whether this provider's result may be merged into a blend.",
+        "switch": "Needs a legal basis for blend",
+        "note": "The flag can't be removed for a provider that must log the NIK."
+      },
+      "status": {
+        "title": "Status",
+        "help": "An inactive provider does not accept new requests."
       }
     },
     "schema": {
-      "label": "Response schema (JSON)",
+      "label": "Response schema (JSON format)",
       "help": "Output to the client: status and score for each element sent. Elements that weren't sent don't appear.",
       "add_code": "Add response code",
       "codes": "Response codes",
       "col": {
         "code": "Code",
         "meaning": "Meaning",
-        "handling": "Handling"
+        "handling": "Handling",
+        "status": "Status meaning",
+        "code_full": "Response code",
+        "middleware": "Middleware handling",
+        "category": "Category"
       },
-      "success": "Success"
+      "success": "Success",
+      "table_title": "Response code handling table"
     },
     "rules": {
       "add": "Add parameter",
@@ -238,7 +268,8 @@
         "param": "Parameter",
         "type": "Rule type",
         "value": "Rule value",
-        "status": "Status"
+        "status": "Status",
+        "action": "Action"
       },
       "type": {
         "length_regex": "Length + regex",
@@ -248,7 +279,8 @@
         "regex": "Regex"
       },
       "value": {
-        "digits16": "16 digits"
+        "digits16": "16 digits",
+        "length": "{{min}} to {{maks}} characters"
       },
       "add_heading": "Add rule: choose a type",
       "type_help": "Options: Regex, Enum, Length, Date format. Custom validation functions aren't available in F0.",
@@ -256,7 +288,14 @@
       "no_custom": "Custom validation functions aren't available in this version yet.",
       "empty": {
         "title": "No parameters yet"
-      }
+      },
+      "caption": "Provider parameters and rules",
+      "not_set": "Not set yet",
+      "panel_title": "Set the rule type",
+      "info_title": "A new rule applies to new requests only",
+      "info_body": "Requests already queued use the rule in force when they entered the queue.",
+      "save": "Save rule",
+      "edit_aria": "Edit rule for parameter {{nama}}"
     },
     "endpoint": {
       "info": "Only a platform admin can change this value. Every change is recorded in the audit log (who, when, what).",
@@ -335,6 +374,19 @@
         "data_balikan_skema_terlalu_baru": "The return data schema version isn't supported yet.",
         "config_schema_version_tidak_didukung": "This configuration schema version isn't supported."
       }
+    },
+    "api_pending": "Waiting for API",
+    "subtitle": {
+      "general": "Changes apply to new requests.",
+      "template": "JSON template for the request body.",
+      "rules": "A new rule applies to new requests only.",
+      "schema": "Mapping of the response schema and status codes.",
+      "endpoint": "Constant parameters are stored per endpoint."
+    },
+    "endpoint_tab": {
+      "title": "Provider endpoints",
+      "body": "An endpoint links this provider to a downstream pool and stores constant parameters such as TRESHOLD. Change the values on the Endpoint screen.",
+      "open": "Open the endpoint list"
     }
   },
   "secret": {
@@ -692,6 +744,13 @@
         "nama_field_duplikat": "Field name {{nama}} is already used in another row.",
         "nilai_diizinkan_wajib": "Enter at least one value for an enum type.",
         "wajib_hilang": "A Dukcapil endpoint must include the status_penerima_manfaat field in its metadata contract."
+      },
+      "notice": {
+        "title": "Platform admin level configuration",
+        "body": "Only a platform admin can change this value. Every change is recorded in the configuration audit."
+      },
+      "constants": {
+        "title": "Endpoint constant parameters"
       }
     },
     "metadata": {

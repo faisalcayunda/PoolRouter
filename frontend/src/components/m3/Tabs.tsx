@@ -26,7 +26,7 @@ export function TabList({
     <RacTabList
       {...props}
       className={cx(
-        'flex items-stretch gap-0 overflow-x-auto border-b border-outline-variant',
+        'flex items-stretch gap-2 overflow-x-auto border-b border-outline-variant',
         className,
       )}
     />
@@ -38,9 +38,9 @@ export function Tab({ className, ...props }: Omit<TabProps, 'className'> & { cla
     <RacTab
       {...props}
       className={cx(
-        'm3-state m3-focus typescale-title-small relative cursor-pointer px-4 py-3 text-on-surface-variant outline-none select-none',
+        'm3-state m3-focus typescale-title-small relative cursor-pointer px-4 pt-1 pb-2 text-on-surface-variant outline-none select-none',
         'data-[selected]:text-primary',
-        'after:absolute after:inset-x-0 after:bottom-0 after:h-[3px] after:rounded-full after:bg-transparent',
+        'after:absolute after:inset-x-4 after:bottom-0 after:h-0.5 after:rounded-full after:bg-transparent',
         'data-[selected]:after:bg-primary',
         className,
       )}
@@ -55,7 +55,12 @@ export function TabPanel({
   return (
     <RacTabPanel
       {...props}
-      className={cx('typescale-body-medium py-2 text-on-surface outline-none', className)}
+      className={cx(
+        'typescale-body-medium py-2 text-on-surface outline-none',
+        // `shouldForceMount` menyisakan panel tak aktif di DOM (hanya `inert`); sembunyikan dari layar.
+        'data-[inert]:hidden',
+        className,
+      )}
     />
   );
 }

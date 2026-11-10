@@ -58,6 +58,10 @@ function asRole(role: AdminRole | null, ui: ReactNode) {
   return renderWithI18n(<RoleProvider current={role}>{ui}</RoleProvider>);
 }
 
+async function openTab(name: string) {
+  await user.click(screen.getByRole('tab', { name }));
+}
+
 async function paste(label: string, text: string) {
   const field = screen.getByLabelText(label);
   await user.click(field);
@@ -128,6 +132,7 @@ describe('S03–S04 form provider', () => {
 
     await paste('Nama provider', 'provider-contoh-a');
     await paste('Alamat endpoint (URL)', 'https://provider.example.test/api');
+    await openTab('Template');
     await paste('Template body (JSON)', '{"NIK":"{{input.NIK}}"}');
     await user.click(screen.getByRole('button', { name: 'Simpan provider' }));
 
@@ -164,11 +169,13 @@ describe('S03–S04 form provider', () => {
     );
 
     expect(
-      await screen.findByRole('heading', { level: 1, name: 'Ubah provider provider-contoh-a' }),
+      await screen.findByRole('heading', { level: 1, name: 'provider-contoh-a' }),
     ).toBeInTheDocument();
+    await openTab('Respons');
     expect(screen.getByLabelText('Blok data balikan (JSON)')).toHaveValue(
       JSON.stringify(PROVIDER.data_balikan, null, 2),
     );
+    await openTab('Umum');
     await paste('Alasan perubahan', 'Ganti alamat sesuai surat BGN.');
     await user.click(screen.getByRole('button', { name: 'Simpan perubahan' }));
 
@@ -209,6 +216,7 @@ describe('S03–S04 form provider', () => {
 
     await paste('Nama provider', 'provider-contoh-a');
     await paste('Alamat endpoint (URL)', 'https://provider.example.test/api');
+    await openTab('Template');
     await paste('Template body (JSON)', '{"TGL":"{{tanggal_lahir}"}');
     await user.click(screen.getByRole('button', { name: 'Simpan provider' }));
 
@@ -217,6 +225,9 @@ describe('S03–S04 form provider', () => {
       await screen.findByText('Kurung kurawal placeholder tidak seimbang di baris 1, kolom 9.'),
     ).toBeInTheDocument();
     expect(template).toHaveAttribute('aria-invalid', 'true');
+    const panel = within(screen.getByRole('tabpanel'));
+    expect(screen.getByText('Template belum bisa disimpan')).toBeInTheDocument();
+    expect(panel.getByText('Baris 1: sintaks error')).toBeInTheDocument();
     await waitFor(() => expect(template).toHaveFocus());
     expect(screen.getByText('Periksa 1 isian yang ditandai.')).toBeInTheDocument();
   });
@@ -232,6 +243,7 @@ describe('S03–S04 form provider', () => {
 
     await paste('Nama provider', 'provider-contoh-a');
     await paste('Alamat endpoint (URL)', 'https://provider.example.test/api');
+    await openTab('Template');
     await paste('Template body (JSON)', '{"PWD":"{{secret.PASSWORD}}"}');
     await user.click(screen.getByRole('button', { name: 'Simpan provider' }));
 
@@ -260,6 +272,159 @@ describe('S03–S04 form provider', () => {
       screen.getByRole('heading', { level: 1, name: 'Anda tidak punya akses ke halaman ini' }),
     ).toBeInTheDocument();
     expect(client.getProvider).not.toHaveBeenCalled();
+  });
+});
+
+describe('S03 detail provider: tab dan susunan layar Penpot', () => {
+  const WITH_RULES = {
+    ...PROVIDER,
+    parameters: [
+      { nama: 'NIK', rule: { jenis: 'panjang', panjang_min: 16, panjang_maks: 16 } },
+      { nama: 'TRESHOLD', nilai: '90' },
+    ],
+  } as unknown as Provider;
+
+  async function renderEdit(provider: Provider = PROVIDER) {
+    asRole(
+      'platform_admin',
+      <ProviderFormScreen
+        client={stubClient({ getProvider: vi.fn().mockResolvedValue(provider) })}
+        providerId={provider.provider_id}
+      />,
+    );
+    await screen.findByRole('heading', { level: 1, name: 'provider-contoh-a' });
+  }
+
+  it('shows the five tabs in design order with Umum selected and a single header save', async () => {
+    await renderEdit();
+
+    const tabs = within(screen.getByRole('tablist', { name: 'Bagian konfigurasi provider' }));
+    expect(tabs.getAllByRole('tab').map((tab) => tab.textContent)).toEqual([
+      'Umum',
+      'Template',
+      'Parameter',
+      'Respons',
+      'Endpoint',
+    ]);
+    expect(tabs.getByRole('tab', { name: 'Umum' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getAllByRole('button', { name: 'Simpan perubahan' })).toHaveLength(1);
+    expect(screen.getByRole('link', { name: 'Batal' })).toHaveAttribute('href', '/provider');
+  });
+
+  it('lays out Umum as titled sections, with API-less controls disabled and marked', async () => {
+    await renderEdit();
+
+    const panel = within(screen.getByRole('tabpanel'));
+    for (const title of [
+      'Identitas provider',
+      'Metode dan autentikasi',
+      'Keamanan dan log',
+      'Penanda data kependudukan',
+      'Status',
+    ]) {
+      expect(panel.getByRole('heading', { level: 2, name: title })).toBeInTheDocument();
+    }
+    const status = within(panel.getByRole('heading', { name: 'Status' }).closest('section')!);
+    expect(status.getByText('Aktif')).toBeInTheDocument();
+    expect(status.getByRole('button', { name: 'Nonaktifkan provider' })).toBeDisabled();
+    expect(panel.getByRole('switch', { name: 'Butuh dasar hukum untuk blend' })).toBeDisabled();
+    expect(panel.getAllByText(/Menunggu API/).length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('shows the template editor with the literal {{variabel}} hint on the Template tab', async () => {
+    await renderEdit();
+    await openTab('Template');
+
+    const panel = within(screen.getByRole('tabpanel'));
+    expect(
+      panel.getByRole('heading', { level: 2, name: 'Editor template JSON request' }),
+    ).toBeInTheDocument();
+    expect(
+      panel.getByText(
+        'Variabel secret dan parameter diapit kurung kurawal ganda {{variabel}}. Kunci ditulis persis sesuai dokumen Ditjen Dukcapil.',
+      ),
+    ).toBeInTheDocument();
+    expect(panel.getByLabelText('Template body (JSON)')).toHaveValue(PROVIDER.body_template);
+    expect(screen.getByRole('button', { name: 'Simpan template' })).toBeInTheDocument();
+  });
+
+  it('lists parameters with rule type and value on the Parameter tab', async () => {
+    await renderEdit(WITH_RULES);
+    await openTab('Parameter');
+
+    const panel = within(screen.getByRole('tabpanel'));
+    expect(panel.getByText('Rule baru hanya berlaku untuk request baru')).toBeInTheDocument();
+    const table = within(panel.getByRole('table', { name: 'Parameter dan rule provider' }));
+    const rows = table.getAllByRole('row');
+    expect(within(rows[1]!).getByText('NIK')).toBeInTheDocument();
+    expect(within(rows[1]!).getByText('Panjang')).toBeInTheDocument();
+    expect(within(rows[1]!).getByText('16 sampai 16 karakter')).toBeInTheDocument();
+    expect(within(rows[2]!).getByText('TRESHOLD')).toBeInTheDocument();
+    expect(within(rows[2]!).getByText('Belum ditetapkan')).toBeInTheDocument();
+    expect(panel.getByRole('heading', { level: 2, name: 'Atur jenis rule' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Simpan rule' })).toBeInTheDocument();
+  });
+
+  it('shows the response schema and a placeholder for the unavailable code table', async () => {
+    await renderEdit();
+    await openTab('Respons');
+
+    const panel = within(screen.getByRole('tabpanel'));
+    expect(panel.getByLabelText('Skema respons (JSON format)')).toHaveValue(
+      JSON.stringify(PROVIDER.respons_skema, null, 2),
+    );
+    expect(
+      panel.getByRole('heading', { level: 2, name: 'Tabel penanganan kode respons' }),
+    ).toBeInTheDocument();
+    expect(panel.getByRole('button', { name: 'Tambah kode respons' })).toBeDisabled();
+    const table = within(panel.getByRole('table', { name: 'Tabel penanganan kode respons' }));
+    expect(table.getByRole('columnheader', { name: 'Perlakuan middleware' })).toBeInTheDocument();
+    expect(table.getByText('Menunggu API')).toBeInTheDocument();
+  });
+
+  it('links the Endpoint tab to the endpoint list', async () => {
+    await renderEdit();
+    await openTab('Endpoint');
+
+    const panel = within(screen.getByRole('tabpanel'));
+    expect(panel.getByRole('link', { name: 'Buka daftar endpoint' })).toHaveAttribute(
+      'href',
+      '/endpoint',
+    );
+  });
+
+  it('opens the tab that owns the first invalid field before focusing it', async () => {
+    const updateProvider = vi.fn();
+    asRole(
+      'platform_admin',
+      <ProviderFormScreen
+        client={stubClient({ updateProvider })}
+        providerId={PROVIDER.provider_id}
+      />,
+    );
+    await screen.findByRole('heading', { level: 1, name: 'provider-contoh-a' });
+    await openTab('Parameter');
+    await user.clear(screen.getByLabelText('Parameter dan rule (JSON)'));
+    await user.paste('bukan json');
+    await user.click(screen.getByRole('button', { name: 'Simpan rule' }));
+
+    // Alasan kosong ada di tab Umum, tetapi galat JSON di tab Parameter urutannya lebih dulu.
+    await waitFor(() => expect(screen.getByLabelText('Parameter dan rule (JSON)')).toHaveFocus());
+    expect(screen.getByRole('tab', { name: 'Parameter' })).toHaveAttribute('aria-selected', 'true');
+    expect(updateProvider).not.toHaveBeenCalled();
+  });
+
+  it('opens Umum when the reason is the only missing field', async () => {
+    asRole(
+      'platform_admin',
+      <ProviderFormScreen client={stubClient()} providerId={PROVIDER.provider_id} />,
+    );
+    await screen.findByRole('heading', { level: 1, name: 'provider-contoh-a' });
+    await openTab('Respons');
+    await user.click(screen.getByRole('button', { name: 'Simpan perubahan' }));
+
+    await waitFor(() => expect(screen.getByLabelText('Alasan perubahan')).toHaveFocus());
+    expect(screen.getByRole('tab', { name: 'Umum' })).toHaveAttribute('aria-selected', 'true');
   });
 });
 

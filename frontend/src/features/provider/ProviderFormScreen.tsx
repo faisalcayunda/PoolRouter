@@ -1,4 +1,4 @@
-import { useState, type FormEvent, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type FormEvent, type Key, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { i18n as I18n } from 'i18next';
 import { api, ApiError, type ApiClient, type Provider } from '../../api/client';
@@ -6,6 +6,9 @@ import { Button } from '../../components/m3/Button';
 import { Card } from '../../components/m3/Card';
 import { InlineAlert } from '../../components/m3/InlineAlert';
 import { Select, SelectItem } from '../../components/m3/Select';
+import { StatusLabel } from '../../components/m3/StatusLabel';
+import { Switch } from '../../components/m3/Switch';
+import { Tab, TabList, TabPanel, Tabs } from '../../components/m3/Tabs';
 import { TextArea, TextField } from '../../components/m3/TextField';
 import { useDocumentTitle, useFocusOnMount } from '../common/a11y';
 import { errorMessage, LoadingState, PageHeader, QueryError } from '../common/page';
@@ -13,7 +16,9 @@ import { useRole } from '../common/RoleContext';
 import { useQuery } from '../common/useQuery';
 import { SnackbarRegion, useSnackbar } from '../common/useSnackbar';
 import { Forbidden } from './Forbidden';
+import { FormSection } from './FormSection';
 import { LinkButton } from './LinkButton';
+import { TemplateEditor } from './TemplateEditor';
 import {
   ALASAN_MAKS,
   CONFIG_SCHEMA_VERSIONS,
@@ -30,6 +35,49 @@ import {
   type FieldIssue,
   type ProviderDraft,
 } from './providerForm';
+
+/** Tab detail provider (Penpot F0 / S03a, S03, S04, S03b, S04b); urutan = urutan di layar. */
+const TABS = ['umum', 'template', 'parameter', 'respons', 'endpoint'] as const;
+type ProviderTab = (typeof TABS)[number];
+
+const TAB_LABEL: Record<ProviderTab, string> = {
+  umum: 'provider.tab.general',
+  template: 'provider.tab.template',
+  parameter: 'provider.tab.rules',
+  respons: 'provider.tab.schema',
+  endpoint: 'provider.tab.endpoint',
+};
+
+const TAB_SUBTITLE: Record<ProviderTab, string> = {
+  umum: 'provider.subtitle.general',
+  template: 'provider.subtitle.template',
+  parameter: 'provider.subtitle.rules',
+  respons: 'provider.subtitle.schema',
+  endpoint: 'provider.subtitle.endpoint',
+};
+
+/** Tab yang memuat tiap field draft, supaya galat membuka tab yang benar sebelum fokus. */
+const FIELD_TAB: Record<DraftField, ProviderTab> = {
+  nama: 'umum',
+  base_url: 'umum',
+  metode: 'umum',
+  tls_trust: 'umum',
+  log_mode: 'umum',
+  config_schema_version: 'umum',
+  alasan: 'umum',
+  body_template: 'template',
+  parameters: 'parameter',
+  respons_skema: 'respons',
+  data_balikan: 'respons',
+};
+
+const SAVE_LABEL: Record<ProviderTab, string> = {
+  umum: 'provider.form.save_edit',
+  template: 'provider.template.save',
+  parameter: 'provider.rules.save',
+  respons: 'provider.form.save_edit',
+  endpoint: 'provider.form.save_edit',
+};
 
 /** `t` dengan kunci dinamis; kunci sudah dicek dengan `exists` sebelum dipanggil. */
 function tDynamic(instance: I18n, key: string, vars: Record<string, unknown> = {}): string {
@@ -62,6 +110,55 @@ function focusField(field: DraftField): void {
   box?.querySelector<HTMLElement>('input, textarea, button')?.focus();
 }
 
+type RuleRow = Provider['parameters'][number];
+
+/** Daftar parameter dari teks JSON draft; `null` bila teks belum sah (tabel disembunyikan). */
+function parseRules(text: string): RuleRow[] | null {
+  try {
+    const value: unknown = JSON.parse(text);
+    if (!Array.isArray(value)) return null;
+    return value.filter(
+      (row): row is RuleRow =>
+        typeof row === 'object' && row !== null && typeof (row as RuleRow).nama === 'string',
+    );
+  } catch {
+    return null;
+  }
+}
+
+const RULE_TYPE_KEY = {
+  regex: 'provider.rules.type.regex',
+  enum: 'provider.rules.type.enum',
+  panjang: 'provider.rules.type.length',
+  format_tanggal: 'provider.rules.type.date_format',
+} as const;
+
+function ruleTypeLabel(instance: I18n, rule: RuleRow): string {
+  const jenis = rule.rule?.jenis;
+  return jenis ? tDynamic(instance, RULE_TYPE_KEY[jenis]) : '-';
+}
+
+/** Ringkasan nilai rule; `null` = belum ditetapkan. */
+function ruleValueLabel(instance: I18n, rule: RuleRow): string | null {
+  const r = rule.rule;
+  if (!r) return null;
+  switch (r.jenis) {
+    case 'regex':
+      return r.pola ?? null;
+    case 'enum':
+      return r.nilai_diizinkan?.length ? r.nilai_diizinkan.join(', ') : null;
+    case 'format_tanggal':
+      return r.format_tanggal ?? null;
+    case 'panjang':
+      return r.panjang_min != null || r.panjang_maks != null
+        ? tDynamic(instance, 'provider.rules.value.length', {
+            min: r.panjang_min ?? 0,
+            maks: r.panjang_maks ?? '∞',
+          })
+        : null;
+  }
+}
+
 interface ProviderFormProps {
   client: ApiClient;
   /** Provider yang sedang disunting; `null` = membuat baru. */
@@ -80,6 +177,8 @@ function ProviderForm({ client, initial }: ProviderFormProps): ReactNode {
   const [lainnya, setLainnya] = useState<FieldIssue[]>([]);
   const [failure, setFailure] = useState<unknown>(null);
   const [saving, setSaving] = useState(false);
+  const [tab, setTab] = useState<ProviderTab>('umum');
+  const pendingFocus = useRef<DraftField | null>(null);
 
   const mode = current ? 'update' : 'create';
   useDocumentTitle(t('title.page.provider'));
@@ -98,8 +197,19 @@ function ProviderForm({ client, initial }: ProviderFormProps): ReactNode {
   function showErrors(next: DraftErrors) {
     setErrors(next);
     const first = firstInvalid(next);
-    if (first) queueMicrotask(() => focusField(first));
+    if (first) {
+      // Buka tab pemilik field dulu; fokus dipindah setelah panelnya aktif (efek di bawah).
+      pendingFocus.current = first;
+      setTab(FIELD_TAB[first]);
+    }
   }
+
+  useEffect(() => {
+    const field = pendingFocus.current;
+    if (field === null) return;
+    pendingFocus.current = null;
+    focusField(field);
+  });
 
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -154,22 +264,37 @@ function ProviderForm({ client, initial }: ProviderFormProps): ReactNode {
     };
   };
   const showDataBalikan = draft.config_schema_version === 2 || draft.data_balikan.trim() !== '';
+  const templateIssue = errors.body_template;
+  const rules = parseRules(draft.parameters);
+  const saveLabel = saving
+    ? t('provider.form.saving')
+    : mode === 'create'
+      ? t('provider.form.save_new')
+      : tDynamic(i18n, SAVE_LABEL[tab]);
 
   return (
-    <section className="flex flex-col gap-4">
+    <form noValidate onSubmit={(e) => void submit(e)} className="flex flex-col gap-6">
       <PageHeader
-        title={
-          current ? t('provider.form.title_edit', { nama: current.nama }) : t('provider.page.add')
-        }
-        subtitle={t('provider.form.subtitle')}
+        title={current ? current.nama : t('provider.page.add')}
+        subtitle={tDynamic(i18n, TAB_SUBTITLE[tab])}
         titleRef={titleRef}
         actions={
-          <LinkButton href="/provider" variant="text">
-            {t('provider.form.back')}
-          </LinkButton>
+          <>
+            <LinkButton href="/provider" variant="outlined">
+              {t('common.action.cancel')}
+            </LinkButton>
+            <Button type="submit" isDisabled={saving}>
+              {saveLabel}
+            </Button>
+          </>
         }
       />
 
+      {templateIssue ? (
+        <InlineAlert tone="error" heading={t('provider.template.error.title')}>
+          {issueMessage(i18n, templateIssue)}
+        </InlineAlert>
+      ) : null}
       {invalidCount > 0 ? (
         <InlineAlert tone="error">
           {t('provider.form.error.summary', { jumlah: invalidCount })}
@@ -188,194 +313,409 @@ function ProviderForm({ client, initial }: ProviderFormProps): ReactNode {
         <InlineAlert tone="error">{errorMessage(t, i18n, failure).message}</InlineAlert>
       ) : null}
 
-      <form noValidate onSubmit={(e) => void submit(e)} className="flex flex-col gap-4">
-        <Card variant="outlined" className="flex flex-col gap-4">
-          <h2 className="typescale-title-medium">{t('provider.tab.general')}</h2>
-          <div data-field="nama">
-            <TextField
-              label={t('provider.general.name')}
-              value={draft.nama}
-              onChange={(v) => set('nama', v)}
-              autoComplete="off"
-              {...err('nama')}
-            />
-          </div>
-          <div data-field="base_url">
-            <TextField
-              label={t('provider.general.url')}
-              description={t('provider.form.url_help')}
-              type="url"
-              value={draft.base_url}
-              onChange={(v) => set('base_url', v)}
-              autoComplete="off"
-              {...err('base_url')}
-            />
-          </div>
-          <div className="flex flex-wrap gap-4">
-            <div data-field="metode">
-              <Select
-                label={t('provider.general.method')}
-                selectedKey={draft.metode}
-                onSelectionChange={(key) => {
-                  const found = METODE.find((m) => m === key);
-                  if (found) set('metode', found);
-                }}
+      <Tabs
+        selectedKey={tab}
+        onSelectionChange={(key: Key) => {
+          const found = TABS.find((v) => v === key);
+          if (found) setTab(found);
+        }}
+      >
+        <TabList aria-label={t('provider.tab.aria')}>
+          {TABS.map((id) => (
+            <Tab key={id} id={id}>
+              {tDynamic(i18n, TAB_LABEL[id])}
+            </Tab>
+          ))}
+        </TabList>
+
+        <TabPanel id="umum" shouldForceMount className="pt-4">
+          <Card variant="container">
+            <FormSection
+              title={t('provider.general.identity.title')}
+              help={t('provider.general.identity.help')}
+            >
+              <div data-field="nama">
+                <TextField
+                  label={t('provider.general.name')}
+                  value={draft.nama}
+                  onChange={(v) => set('nama', v)}
+                  autoComplete="off"
+                  {...err('nama')}
+                />
+              </div>
+              <div data-field="base_url">
+                <TextField
+                  label={t('provider.general.url')}
+                  description={t('provider.form.url_help')}
+                  type="url"
+                  value={draft.base_url}
+                  onChange={(v) => set('base_url', v)}
+                  autoComplete="off"
+                  {...err('base_url')}
+                />
+              </div>
+            </FormSection>
+
+            <FormSection
+              title={t('provider.general.method_auth.title')}
+              help={t('provider.general.auth.help')}
+            >
+              <div className="flex flex-wrap gap-4">
+                <div data-field="metode">
+                  <Select
+                    label={t('provider.general.method')}
+                    selectedKey={draft.metode}
+                    onSelectionChange={(key) => {
+                      const found = METODE.find((m) => m === key);
+                      if (found) set('metode', found);
+                    }}
+                  >
+                    {METODE.map((m) => (
+                      <SelectItem key={m} id={m} textValue={m}>
+                        {m}
+                      </SelectItem>
+                    ))}
+                  </Select>
+                </div>
+                {/* Pilihan autentikasi belum ada di kontrak API: tampil seperti di Penpot, tidak bisa diubah. */}
+                <div className="flex flex-col gap-1">
+                  <Select label={t('provider.general.auth.label')} selectedKey="body" isDisabled>
+                    <SelectItem id="body" textValue={t('provider.general.auth.body')}>
+                      {t('provider.general.auth.body')}
+                    </SelectItem>
+                  </Select>
+                  <p className="typescale-body-small text-on-surface-variant">
+                    {t('provider.api_pending')}
+                  </p>
+                </div>
+              </div>
+            </FormSection>
+
+            <FormSection
+              title={t('provider.general.security.title')}
+              help={t('provider.general.security.help')}
+            >
+              <div className="flex flex-wrap gap-4">
+                <div data-field="tls_trust">
+                  <Select
+                    label={t('provider.form.tls.label')}
+                    selectedKey={draft.tls_trust}
+                    onSelectionChange={(key) => {
+                      const found = TLS_TRUST.find((v) => v === key);
+                      if (found) set('tls_trust', found);
+                    }}
+                  >
+                    {TLS_TRUST.map((v) => (
+                      <SelectItem key={v} id={v}>
+                        {tDynamic(i18n, `provider.form.tls.${v}`)}
+                      </SelectItem>
+                    ))}
+                  </Select>
+                </div>
+                <div data-field="log_mode">
+                  <Select
+                    label={t('provider.form.log_mode.label')}
+                    selectedKey={draft.log_mode}
+                    onSelectionChange={(key) => {
+                      const found = LOG_MODE.find((v) => v === key);
+                      if (found) set('log_mode', found);
+                    }}
+                  >
+                    {LOG_MODE.map((v) => (
+                      <SelectItem key={v} id={v}>
+                        {tDynamic(i18n, `provider.form.log_mode.${v}`)}
+                      </SelectItem>
+                    ))}
+                  </Select>
+                </div>
+                <div data-field="config_schema_version">
+                  <Select
+                    label={t('provider.form.version.label')}
+                    selectedKey={draft.config_schema_version}
+                    onSelectionChange={(key) => {
+                      const found = CONFIG_SCHEMA_VERSIONS.find((v) => v === key);
+                      if (found !== undefined) set('config_schema_version', found);
+                    }}
+                  >
+                    {CONFIG_SCHEMA_VERSIONS.map((v) => (
+                      <SelectItem key={v} id={v}>
+                        {tDynamic(i18n, `provider.form.version.v${v}`)}
+                      </SelectItem>
+                    ))}
+                  </Select>
+                </div>
+              </div>
+            </FormSection>
+
+            <FormSection
+              title={t('provider.general.flag.title')}
+              help={t('provider.general.flag.help')}
+            >
+              {/* Penanda blend belum ada di kontrak API: saklar tampil nonaktif. */}
+              <Switch isDisabled>{t('provider.general.flag.switch')}</Switch>
+              <p className="typescale-body-medium text-on-surface-variant">
+                {`${t('provider.general.flag.note')} (${t('provider.api_pending')})`}
+              </p>
+            </FormSection>
+
+            {current ? (
+              <FormSection
+                title={t('provider.general.status.title')}
+                help={t('provider.general.status.help')}
               >
-                {METODE.map((m) => (
-                  <SelectItem key={m} id={m} textValue={m}>
-                    {m}
-                  </SelectItem>
-                ))}
-              </Select>
-            </div>
-            <div data-field="tls_trust">
-              <Select
-                label={t('provider.form.tls.label')}
-                selectedKey={draft.tls_trust}
-                onSelectionChange={(key) => {
-                  const found = TLS_TRUST.find((v) => v === key);
-                  if (found) set('tls_trust', found);
-                }}
-              >
-                {TLS_TRUST.map((v) => (
-                  <SelectItem key={v} id={v}>
-                    {tDynamic(i18n, `provider.form.tls.${v}`)}
-                  </SelectItem>
-                ))}
-              </Select>
-            </div>
-            <div data-field="log_mode">
-              <Select
-                label={t('provider.form.log_mode.label')}
-                selectedKey={draft.log_mode}
-                onSelectionChange={(key) => {
-                  const found = LOG_MODE.find((v) => v === key);
-                  if (found) set('log_mode', found);
-                }}
-              >
-                {LOG_MODE.map((v) => (
-                  <SelectItem key={v} id={v}>
-                    {tDynamic(i18n, `provider.form.log_mode.${v}`)}
-                  </SelectItem>
-                ))}
-              </Select>
-            </div>
-            <div data-field="config_schema_version">
-              <Select
-                label={t('provider.form.version.label')}
-                selectedKey={draft.config_schema_version}
-                onSelectionChange={(key) => {
-                  const found = CONFIG_SCHEMA_VERSIONS.find((v) => v === key);
-                  if (found !== undefined) set('config_schema_version', found);
-                }}
-              >
-                {CONFIG_SCHEMA_VERSIONS.map((v) => (
-                  <SelectItem key={v} id={v}>
-                    {tDynamic(i18n, `provider.form.version.v${v}`)}
-                  </SelectItem>
-                ))}
-              </Select>
-            </div>
-          </div>
-        </Card>
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <StatusLabel tone={current.aktif ? 'success' : 'neutral'}>
+                    {current.aktif ? t('common.state.active') : t('provider.list.inactive')}
+                  </StatusLabel>
+                  {/* Belum ada operasi nonaktifkan provider di API. */}
+                  <Button variant="outlined" isDisabled>
+                    {t('provider.page.deactivate')}
+                  </Button>
+                </div>
+              </FormSection>
+            ) : null}
 
-        <Card variant="outlined" className="flex flex-col gap-4">
-          <h2 className="typescale-title-medium">{t('provider.tab.template')}</h2>
-          <div data-field="body_template">
-            <TextArea
-              label={t('provider.template.label')}
-              description={t('provider.template.help')}
-              value={draft.body_template}
-              onChange={(v) => set('body_template', v)}
-              rows={8}
-              textAreaClassName="font-code"
-              {...err('body_template')}
-            />
-          </div>
-        </Card>
-
-        <Card variant="outlined" className="flex flex-col gap-4">
-          <h2 className="typescale-title-medium">{t('provider.tab.rules')}</h2>
-          <div data-field="parameters">
-            <TextArea
-              label={t('provider.form.parameters.label')}
-              description={t('provider.form.parameters.help')}
-              value={draft.parameters}
-              onChange={(v) => set('parameters', v)}
-              rows={8}
-              textAreaClassName="font-code"
-              {...err('parameters')}
-            />
-          </div>
-        </Card>
-
-        <Card variant="outlined" className="flex flex-col gap-4">
-          <h2 className="typescale-title-medium">{t('provider.tab.schema')}</h2>
-          <div data-field="respons_skema">
-            <TextArea
-              label={t('provider.schema.label')}
-              description={t('provider.schema.help')}
-              value={draft.respons_skema}
-              onChange={(v) => set('respons_skema', v)}
-              rows={8}
-              textAreaClassName="font-code"
-              {...err('respons_skema')}
-            />
-          </div>
-        </Card>
-
-        {showDataBalikan ? (
-          <Card variant="outlined" className="flex flex-col gap-4">
-            <h2 className="typescale-title-medium">{t('provider.form.data_balikan.heading')}</h2>
-            <div data-field="data_balikan">
-              <TextArea
-                label={t('provider.form.data_balikan.label')}
-                description={t('provider.form.data_balikan.help')}
-                value={draft.data_balikan}
-                onChange={(v) => set('data_balikan', v)}
-                rows={8}
-                textAreaClassName="font-code"
-                {...err('data_balikan')}
-              />
-            </div>
-          </Card>
-        ) : null}
-
-        {mode === 'update' ? (
-          <Card variant="outlined" className="flex flex-col gap-4">
-            <h2 className="typescale-title-medium">{t('provider.form.reason.heading')}</h2>
-            <div data-field="alasan">
-              <TextArea
-                label={t('provider.form.reason.label')}
-                description={t('provider.form.reason.help', {
+            {mode === 'update' ? (
+              <FormSection
+                title={t('provider.form.reason.heading')}
+                help={t('provider.form.reason.help', {
                   jumlah: draft.alasan.trim().length,
                   batas: ALASAN_MAKS,
                 })}
-                value={draft.alasan}
-                onChange={(v) => set('alasan', v)}
-                autoComplete="off"
-                rows={3}
-                {...err('alasan')}
+              >
+                <div data-field="alasan">
+                  <TextArea
+                    label={t('provider.form.reason.label')}
+                    value={draft.alasan}
+                    onChange={(v) => set('alasan', v)}
+                    autoComplete="off"
+                    rows={3}
+                    {...err('alasan')}
+                  />
+                </div>
+              </FormSection>
+            ) : null}
+          </Card>
+        </TabPanel>
+
+        <TabPanel id="template" shouldForceMount className="pt-4">
+          <Card variant="container" className="flex flex-col gap-4 p-6">
+            <h2 className="typescale-title-medium text-on-surface">
+              {t('provider.template.title')}
+            </h2>
+            <div data-field="body_template">
+              <TemplateEditor
+                label={t('provider.template.label')}
+                lineNote={
+                  templateIssue?.posisi
+                    ? t('provider.template.error.line', { baris: templateIssue.posisi.baris })
+                    : undefined
+                }
+                description={t('provider.template.help', { contoh: '{{variabel}}' })}
+                value={draft.body_template}
+                onChange={(v) => set('body_template', v)}
+                isInvalid={templateIssue !== undefined}
               />
             </div>
           </Card>
-        ) : null}
+        </TabPanel>
 
-        <div className="flex flex-wrap justify-end gap-2">
-          <LinkButton href="/provider" variant="text">
-            {t('common.action.cancel')}
-          </LinkButton>
-          <Button type="submit" isDisabled={saving}>
-            {saving
-              ? t('provider.form.saving')
-              : mode === 'update'
-                ? t('provider.form.save_edit')
-                : t('provider.form.save_new')}
-          </Button>
-        </div>
-      </form>
+        <TabPanel id="parameter" shouldForceMount className="pt-4">
+          <div className="flex flex-col gap-6">
+            <InlineAlert tone="info" heading={t('provider.rules.info_title')}>
+              {t('provider.rules.info_body')}
+            </InlineAlert>
+            <Card variant="container">
+              {rules === null || rules.length === 0 ? (
+                <p className="typescale-body-medium p-6 text-on-surface-variant">
+                  {t('provider.rules.empty.title')}
+                </p>
+              ) : (
+                <div className="table-card">
+                  <table className="w-full border-collapse text-left">
+                    <caption className="sr-only">{t('provider.rules.caption')}</caption>
+                    <thead>
+                      <tr className="typescale-label-small text-on-surface-variant">
+                        <th scope="col" className="border-b border-outline-variant px-5 py-3.5">
+                          {t('provider.rules.col.param')}
+                        </th>
+                        <th scope="col" className="border-b border-outline-variant px-5 py-3.5">
+                          {t('provider.rules.col.type')}
+                        </th>
+                        <th scope="col" className="border-b border-outline-variant px-5 py-3.5">
+                          {t('provider.rules.col.value')}
+                        </th>
+                        <th scope="col" className="border-b border-outline-variant px-5 py-3.5">
+                          {t('provider.rules.col.action')}
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {rules.map((rule, index) => (
+                        <tr
+                          key={`${rule.nama}-${index}`}
+                          className="border-b border-outline-variant text-on-surface last:border-b-0"
+                        >
+                          <td
+                            data-label={t('provider.rules.col.param')}
+                            className="typescale-title-small px-5 py-4 align-middle"
+                          >
+                            {rule.nama}
+                          </td>
+                          <td
+                            data-label={t('provider.rules.col.type')}
+                            className="typescale-body-medium px-5 py-4 align-middle"
+                          >
+                            {ruleTypeLabel(i18n, rule)}
+                          </td>
+                          <td
+                            data-label={t('provider.rules.col.value')}
+                            className="typescale-body-medium px-5 py-4 align-middle text-on-surface-variant"
+                          >
+                            {ruleValueLabel(i18n, rule) ?? t('provider.rules.not_set')}
+                          </td>
+                          <td
+                            data-label={t('provider.rules.col.action')}
+                            className="px-2 py-2 align-middle"
+                          >
+                            <Button
+                              variant="text"
+                              aria-label={t('provider.rules.edit_aria', { nama: rule.nama })}
+                              onPress={() => focusField('parameters')}
+                            >
+                              {t('common.action.edit')}
+                            </Button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </Card>
+            <Card variant="container" className="flex flex-col gap-4 p-6">
+              <div className="flex flex-col gap-1">
+                <h2 className="typescale-title-medium text-on-surface">
+                  {t('provider.rules.panel_title')}
+                </h2>
+                <p className="typescale-body-medium text-on-surface-variant">
+                  {t('provider.rules.type_help')}
+                </p>
+              </div>
+              <div data-field="parameters">
+                <TextArea
+                  label={t('provider.form.parameters.label')}
+                  description={t('provider.form.parameters.help')}
+                  value={draft.parameters}
+                  onChange={(v) => set('parameters', v)}
+                  rows={8}
+                  textAreaClassName="font-code"
+                  {...err('parameters')}
+                />
+              </div>
+              <p className="typescale-body-medium text-on-surface-variant">
+                {t('provider.rules.no_defaults')}
+              </p>
+            </Card>
+          </div>
+        </TabPanel>
+
+        <TabPanel id="respons" shouldForceMount className="pt-4">
+          <div className="flex flex-col gap-6">
+            <Card variant="container" className="p-6">
+              <div className="flex flex-col gap-3 rounded-large border border-outline-variant bg-surface p-4">
+                <div data-field="respons_skema">
+                  <TextArea
+                    label={t('provider.schema.label')}
+                    description={t('provider.schema.help')}
+                    value={draft.respons_skema}
+                    onChange={(v) => set('respons_skema', v)}
+                    rows={6}
+                    textAreaClassName="font-code"
+                    {...err('respons_skema')}
+                  />
+                </div>
+              </div>
+            </Card>
+
+            {showDataBalikan ? (
+              <Card variant="container" className="flex flex-col gap-4 p-6">
+                <h2 className="typescale-title-medium text-on-surface">
+                  {t('provider.form.data_balikan.heading')}
+                </h2>
+                <div data-field="data_balikan">
+                  <TextArea
+                    label={t('provider.form.data_balikan.label')}
+                    description={t('provider.form.data_balikan.help')}
+                    value={draft.data_balikan}
+                    onChange={(v) => set('data_balikan', v)}
+                    rows={8}
+                    textAreaClassName="font-code"
+                    {...err('data_balikan')}
+                  />
+                </div>
+              </Card>
+            ) : null}
+
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <h2 className="typescale-title-medium text-on-surface">
+                {t('provider.schema.table_title')}
+              </h2>
+              {/* Kode respons belum ada di kontrak API: tombol tampil nonaktif. */}
+              <Button isDisabled>{t('provider.schema.add_code')}</Button>
+            </div>
+            <Card variant="container">
+              <div className="table-card">
+                <table className="w-full border-collapse text-left">
+                  <caption className="sr-only">{t('provider.schema.table_title')}</caption>
+                  <thead>
+                    <tr className="typescale-label-small text-on-surface-variant">
+                      <th scope="col" className="border-b border-outline-variant px-5 py-3.5">
+                        {t('provider.schema.col.code_full')}
+                      </th>
+                      <th scope="col" className="border-b border-outline-variant px-5 py-3.5">
+                        {t('provider.schema.col.status')}
+                      </th>
+                      <th scope="col" className="border-b border-outline-variant px-5 py-3.5">
+                        {t('provider.schema.col.middleware')}
+                      </th>
+                      <th scope="col" className="border-b border-outline-variant px-5 py-3.5">
+                        {t('provider.schema.col.category')}
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td
+                        colSpan={4}
+                        className="typescale-body-medium px-5 py-6 text-on-surface-variant"
+                      >
+                        {t('provider.api_pending')}
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </Card>
+          </div>
+        </TabPanel>
+
+        <TabPanel id="endpoint" shouldForceMount className="pt-4">
+          <Card variant="container" className="flex flex-col items-start gap-4 p-6">
+            <h2 className="typescale-title-medium text-on-surface">
+              {t('provider.endpoint_tab.title')}
+            </h2>
+            <p className="typescale-body-medium text-on-surface-variant">
+              {t('provider.endpoint_tab.body')}
+            </p>
+            <LinkButton href="/endpoint" variant="outlined">
+              {t('provider.endpoint_tab.open')}
+            </LinkButton>
+          </Card>
+        </TabPanel>
+      </Tabs>
       <SnackbarRegion queue={snackbar.queue} />
-    </section>
+    </form>
   );
 }
 

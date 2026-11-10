@@ -282,11 +282,37 @@ describe('S04b + S07b form endpoint', () => {
       en,
     );
 
-    expect(await screen.findByRole('heading', { level: 1, name: 'Edit endpoint' })).toBeVisible();
+    expect(
+      await screen.findByRole('heading', { level: 1, name: 'provider-metadata' }),
+    ).toBeVisible();
     const group = within(screen.getByRole('group', { name: 'Field 1' }));
     expect(group.getByLabelText('Field name')).toHaveValue('status_penerima_manfaat');
     expect(group.getByRole('checkbox', { name: 'Required from the client' })).toBeChecked();
     expect(screen.getByRole('button', { name: 'Save changes' })).toBeVisible();
+  });
+
+  it('follows the Penpot S04b layout: provider title, platform-admin notice, constants card', async () => {
+    asRole(
+      'platform_admin',
+      <EndpointFormScreen client={stubClient()} endpointId={ENDPOINT.endpoint_id} />,
+    );
+
+    await screen.findByRole('heading', { level: 1, name: 'provider-metadata' });
+    const notice = within(screen.getByRole('alert'));
+    expect(notice.getByText('Konfigurasi tingkat platform admin')).toBeInTheDocument();
+    expect(
+      notice.getByText(
+        'Hanya platform admin yang dapat mengubah nilai ini. Setiap perubahan dicatat di audit konfigurasi.',
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('heading', {
+        level: 2,
+        name: 'Parameter konstan endpoint provider-metadata',
+      }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Batal' })).toHaveAttribute('href', '/endpoint');
+    expect(screen.getAllByRole('button', { name: 'Simpan perubahan' })).toHaveLength(1);
   });
 
   it('creates an endpoint with parameters and a metadata contract, then moves to edit mode', async () => {
@@ -350,7 +376,9 @@ describe('S04b + S07b form endpoint', () => {
       />,
     );
 
-    expect(await screen.findByRole('heading', { level: 1, name: 'Ubah endpoint' })).toBeVisible();
+    expect(
+      await screen.findByRole('heading', { level: 1, name: 'provider-metadata' }),
+    ).toBeVisible();
     expect(screen.getByLabelText('Parameter literal')).toHaveValue('TRESHOLD=90');
     const second = within(screen.getByRole('group', { name: 'Field ke-2' }));
     expect(second.getByLabelText('Nama field')).toHaveValue('kode_wilayah');
@@ -382,7 +410,7 @@ describe('S04b + S07b form endpoint', () => {
       <EndpointFormScreen client={stubClient()} endpointId={ENDPOINT.endpoint_id} />,
     );
 
-    await screen.findByRole('heading', { level: 1, name: 'Ubah endpoint' });
+    await screen.findByRole('heading', { level: 1, name: 'provider-metadata' });
     const first = within(screen.getByRole('group', { name: 'Field ke-1' }));
     expect(first.getByRole('checkbox', { name: 'Kirim ke data balikan' })).toBeChecked();
     // Kedua baris punya select Klasifikasi; ubah yang di baris pertama saja.
@@ -480,7 +508,7 @@ describe('S04b + S07b form endpoint', () => {
       />,
     );
 
-    await screen.findByRole('heading', { level: 1, name: 'Ubah endpoint' });
+    await screen.findByRole('heading', { level: 1, name: 'provider-metadata' });
     await paste('Alasan perubahan', 'Perbaikan kontrak metadata.');
     await user.click(screen.getByRole('button', { name: 'Simpan perubahan' }));
 
@@ -506,7 +534,7 @@ describe('S04b + S07b form endpoint', () => {
       />,
     );
 
-    await screen.findByRole('heading', { level: 1, name: 'Ubah endpoint' });
+    await screen.findByRole('heading', { level: 1, name: 'provider-metadata' });
     await paste('Alasan perubahan', 'Perbaikan kontrak metadata.');
     await user.click(screen.getByRole('button', { name: 'Simpan perubahan' }));
 
@@ -528,7 +556,9 @@ describe('S04b + S07b form endpoint', () => {
     );
 
     await user.click(await screen.findByRole('button', { name: 'Coba lagi' }));
-    expect(await screen.findByRole('heading', { level: 1, name: 'Ubah endpoint' })).toBeVisible();
+    expect(
+      await screen.findByRole('heading', { level: 1, name: 'provider-metadata' }),
+    ).toBeVisible();
   });
 
   it.each(['operator', 'auditor'] as const)('shows 403 to %s without calling the API', (role) => {
