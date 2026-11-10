@@ -16,6 +16,7 @@ use chrono::{DateTime, Utc};
 use serde_json::{Value, json};
 use sqlx::{PgConnection, PgPool, Postgres, Transaction};
 use uuid::Uuid;
+use zeroize::Zeroizing;
 
 use crate::admin::password::{HashGagal, KebijakanPassword, ParameterArgon2, hash_password};
 use crate::audit::{
@@ -95,6 +96,10 @@ pub enum GalatKelola {
     BootstrapDitolak,
     #[error("seed hanya boleh di POOLROUTER_ENV dev atau ci")]
     SeedDitolak,
+    #[error(
+        "pengguna seed `{0}` nonaktif; seed tidak mengaktifkannya kembali (pakai `pengguna aktifkan`)"
+    )]
+    SeedNonaktif(String),
     #[error("jalankan `seed pengguna` lebih dulu: seed-platform-admin belum ada")]
     SeedPenggunaBelumAda,
     #[error("{0}")]
@@ -142,10 +147,11 @@ pub fn username_sah(username: &str) -> bool {
     (3..=100).contains(&n) && username == username.to_lowercase()
 }
 
-fn hash(password: &str) -> Result<String, GalatKelola> {
-    let h = hash_password(password, KebijakanPassword::f0(), ParameterArgon2::OWASP)
-        .map_err(GalatKelola::Password)?;
-    Ok(h.to_string())
+/// Hash tetap dalam `Zeroizing` sampai titik bind ke SQL (`&Zeroizing<String>` otomatis menjadi
+/// `&str` di parameter `sisipkan_pengguna`), supaya salinannya terhapus saat di-drop.
+fn hash(password: &str) -> Result<Zeroizing<String>, GalatKelola> {
+    hash_password(password, KebijakanPassword::f0(), ParameterArgon2::OWASP)
+        .map_err(GalatKelola::Password)
 }
 
 #[derive(Debug, Clone)]
@@ -747,9 +753,23 @@ pub async fn daftar(
     Ok(hasil)
 }
 
+/// Pengguna seed yang sudah ada dipakai ulang hanya bila masih aktif. Yang nonaktif ditolak, tidak
+/// diaktifkan kembali: penonaktifan adalah keputusan eksplisit (beserta audit dan pencabutan sesi),
+/// dan seed (hanya sah di `dev`/`ci`) tidak boleh membalikkannya diam-diam atau memakai pengguna
+/// nonaktif sebagai pelaku audit. Pemulihannya lewat `pengguna aktifkan`. Transaksi seed dibatalkan
+/// saat galat ini keluar, jadi penolakan tidak meninggalkan perubahan.
+fn seed_harus_aktif(p: &BarisPengguna, username: &str) -> Result<Uuid, GalatKelola> {
+    if p.aktif {
+        Ok(p.pengguna_id)
+    } else {
+        Err(GalatKelola::SeedNonaktif(username.to_owned()))
+    }
+}
+
 /// `seed pengguna` (AC-42): satu pengguna sintetis per peran plus platform admin yang juga auditor,
 /// semuanya dengan password seed yang sama. Ditolak tanpa perubahan di luar `dev`/`ci`. Idempoten:
 /// pengguna, client, dan peran yang sudah ada tidak dibuat ulang dan tidak menulis audit baru.
+/// Pengguna seed yang nonaktif membuat seed ditolak ([`GalatKelola::SeedNonaktif`]).
 pub async fn seed_pengguna(
     pool: &PgPool,
     env: Environment,
@@ -769,7 +789,7 @@ pub async fn seed_pengguna(
         .await?;
 
     let admin = match cari(&mut tx, SEED_PLATFORM_ADMIN).await? {
-        Some(p) => p.pengguna_id,
+        Some(p) => seed_harus_aktif(&p, SEED_PLATFORM_ADMIN)?,
         None => {
             hasil.pengguna_baru += 1;
             hasil.peran_baru += 1;
@@ -800,7 +820,7 @@ pub async fn seed_pengguna(
     let mut penyetuju = None;
     for (username, client_id, daftar_peran) in rencana {
         let id = match cari(&mut tx, username).await? {
-            Some(p) => p.pengguna_id,
+            Some(p) => seed_harus_aktif(&p, username)?,
             None => {
                 let id = sisipkan_pengguna(&mut tx, username, &password_hash, client_id).await?;
                 catat_konfigurasi(
@@ -994,6 +1014,13 @@ mod tests {
             Err(GalatKelola::BerlakuSampaiLewat)
         ));
         assert!(poc(Some(t0() + chrono::Duration::days(30))).is_ok());
+    }
+
+    #[test]
+    fn hash_tetap_terbungkus_zeroizing() {
+        // Pembungkus baru boleh dilepas di titik bind ke SQL; fungsi `hash` harus menyerahkannya.
+        let h: Zeroizing<String> = hash("kucingoranyeindah").unwrap();
+        assert!(h.starts_with("$argon2"));
     }
 
     #[test]
