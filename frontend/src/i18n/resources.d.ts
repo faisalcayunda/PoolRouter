@@ -184,9 +184,9 @@ export default interface Resources {
         "subtitle": "Aplikasi BGN yang memanggil PoolRouter. Secret hanya tampil sekali saat dibuat."
       },
       "row": {
+        "credential_aria": "Buat kredensial untuk client {{nama}}",
         "manage": "Kelola",
-        "manage_aria": "Kelola client {{nama}}",
-        "credential_aria": "Buat kredensial untuk client {{nama}}"
+        "manage_aria": "Kelola client {{nama}}"
       },
       "saved": "Perubahan client tersimpan.",
       "tab": {
