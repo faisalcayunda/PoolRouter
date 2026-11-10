@@ -6,7 +6,8 @@ import { Card } from '../../components/m3/Card';
 import { Pagination } from '../../components/m3/Pagination';
 import { Select, SelectItem } from '../../components/m3/Select';
 import { Skeleton } from '../../components/m3/Skeleton';
-import { StatusLabel } from '../../components/m3/StatusLabel';
+import { StatusLabel, type StatusLabelTone } from '../../components/m3/StatusLabel';
+import { TextField } from '../../components/m3/TextField';
 import idMessages from '../../i18n/messages/id.json';
 import { useFormatter } from '../../i18n/useFormatter';
 import { enumLabel } from '../../i18n/enums';
@@ -44,6 +45,22 @@ function lastDay(): DateRange {
 /** Actions the catalog can name; the filter offers exactly these (`enum.aksi_audit`). */
 const AKSI_VALUES = Object.keys(idMessages.enum.aksi_audit);
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** Cell classes shared with the other v2 tables (S08 client list). */
+const TH = 'border-b border-outline-variant px-4 py-3 font-medium';
+const TD = 'typescale-body-medium px-4 py-3 align-middle';
+const PLACEHOLDER = '—';
+
+/** Chip tone per action (frame S13: Cari info, Ditolak error, Ekspor warning). */
+const AKSI_TONE: Record<string, StatusLabelTone> = {
+  cari_nik: 'info',
+  ditolak: 'error',
+  ekspor: 'warning',
+};
+/** `StatusLabel` has no warning-container tone (its `warning` reuses error-container), so Ekspor overrides it. */
+const WARNING_CHIP = 'bg-warning-container! text-on-warning-container!';
+
 export interface AuditScreenProps {
   client?: ApiClient;
 }
@@ -51,9 +68,9 @@ export interface AuditScreenProps {
 /**
  * S13 — Audit akses. Read-only: no edit or delete action exists (section 7).
  *
- * Columns follow what `searchAuditAkses` actually returns: time, user id, action, result and
- * reason. The per-row role, filter and record count are not part of the admin contract in F0, so no
- * column is rendered for them — an empty column reading "—" would be worse than omitting it.
+ * Columns follow the Penpot frame: time, user, role, action chip, filter and record count. The
+ * admin contract of `searchAuditAkses` only returns time, user id, action, result and reason, so role,
+ * filter and record count render as "—" until the API carries them, and the reason is not shown.
  */
 export function AuditScreen({ client = api }: AuditScreenProps): ReactNode {
   const { t, i18n } = useTranslation();
@@ -72,6 +89,8 @@ export function AuditScreen({ client = api }: AuditScreenProps): ReactNode {
   const [query, setQuery] = useState<AuditCariRequest>({ dari: initial.from, sampai: initial.to });
 
   const [aksi, setAksi] = useState('semua');
+  const [pengguna, setPengguna] = useState('');
+  const [penggunaError, setPenggunaError] = useState<string | null>(null);
   // One entry per page visited: `[null]` is page 1, later entries are the `kursor` of the previous
   // response. Applying a new filter or range starts the trail over.
   const [cursors, setCursors] = useState<(string | null)[]>([null]);
@@ -94,6 +113,14 @@ export function AuditScreen({ client = api }: AuditScreenProps): ReactNode {
     if (!startIso) next.startDate = t('common.date.format_error');
     if (!endIso) next.endDate = t('common.date.format_error');
     setErrors(next);
+    // `pengguna_id` is a UUID in the admin contract; free text is never sent.
+    const userId = pengguna.trim();
+    const userInvalid = userId !== '' && !UUID_RE.test(userId);
+    setPenggunaError(userInvalid ? t('audit.filter.user_error') : null);
+    if (userInvalid) {
+      setRangeError(null);
+      return;
+    }
     if (!startIso || !endIso) {
       setRangeError(null);
       return;
@@ -106,7 +133,12 @@ export function AuditScreen({ client = api }: AuditScreenProps): ReactNode {
       return;
     }
     setRangeError(null);
-    setQuery(aksi === 'semua' ? { dari: from, sampai: to } : { dari: from, sampai: to, aksi });
+    setQuery({
+      dari: from,
+      sampai: to,
+      ...(aksi === 'semua' ? {} : { aksi }),
+      ...(userId ? { pengguna_id: userId } : {}),
+    });
     setCursors([null]);
   }
 
@@ -119,34 +151,48 @@ export function AuditScreen({ client = api }: AuditScreenProps): ReactNode {
       />
 
       <form className="flex flex-col gap-4" onSubmit={submit}>
-        <DateRangeField
-          legend={t('audit.filter.range')}
-          description={t('audit.filter.range_help')}
-          value={range}
-          typed={typed}
-          onTypedChange={setTyped}
-          onChange={(next) => {
-            if (next) setRange(next);
-            setRangeError(null);
-          }}
-          errors={errors}
-          errorMessage={rangeError}
-        />
-        <Select
-          label={t('audit.filter.action')}
-          selectedKey={aksi}
-          onSelectionChange={(key) => {
-            if (key !== null) setAksi(String(key));
-          }}
-          className="md:w-64"
-        >
-          <SelectItem id="semua">{t('common.action.all')}</SelectItem>
-          {AKSI_VALUES.map((value) => (
-            <SelectItem key={value} id={value}>
-              {enumLabel(i18n, 'aksi_audit', value)}
-            </SelectItem>
-          ))}
-        </Select>
+        <div className="grid grid-cols-1 gap-4 expanded:grid-cols-2">
+          <TextField
+            label={t('audit.filter.user')}
+            value={pengguna}
+            autoComplete="off"
+            isInvalid={penggunaError !== null}
+            errorMessage={penggunaError}
+            description={t('audit.filter.user_help')}
+            onChange={(value) => {
+              setPengguna(value);
+              setPenggunaError(null);
+            }}
+          />
+          <Select
+            label={t('audit.filter.action')}
+            selectedKey={aksi}
+            onSelectionChange={(key) => {
+              if (key !== null) setAksi(String(key));
+            }}
+          >
+            <SelectItem id="semua">{t('common.action.all')}</SelectItem>
+            {AKSI_VALUES.map((value) => (
+              <SelectItem key={value} id={value}>
+                {enumLabel(i18n, 'aksi_audit', value)}
+              </SelectItem>
+            ))}
+          </Select>
+          <div className="expanded:col-span-2">
+            <DateRangeField
+              legend={t('audit.filter.range')}
+              value={range}
+              typed={typed}
+              onTypedChange={setTyped}
+              onChange={(next) => {
+                if (next) setRange(next);
+                setRangeError(null);
+              }}
+              errors={errors}
+              errorMessage={rangeError}
+            />
+          </div>
+        </div>
         <div className="flex flex-wrap gap-2">
           <Button type="submit">{t('common.action.search')}</Button>
         </div>
@@ -175,35 +221,23 @@ export function AuditScreen({ client = api }: AuditScreenProps): ReactNode {
                 <caption className="sr-only">{t('audit.page.title')}</caption>
                 <thead>
                   <tr className="typescale-title-small text-on-surface-variant">
-                    <th
-                      scope="col"
-                      className="border-b border-outline-variant px-4 py-3 font-medium"
-                    >
+                    <th scope="col" className={TH}>
                       {t('audit.col.time')}
                     </th>
-                    <th
-                      scope="col"
-                      className="hide-md border-b border-outline-variant px-4 py-3 font-medium"
-                    >
+                    <th scope="col" className={`hide-md ${TH}`}>
                       {t('audit.col.user')}
                     </th>
-                    <th
-                      scope="col"
-                      className="border-b border-outline-variant px-4 py-3 font-medium"
-                    >
+                    <th scope="col" className={`hide-md ${TH}`}>
+                      {t('audit.col.role')}
+                    </th>
+                    <th scope="col" className={TH}>
                       {t('audit.col.action')}
                     </th>
-                    <th
-                      scope="col"
-                      className="border-b border-outline-variant px-4 py-3 font-medium"
-                    >
-                      {t('audit.col.result')}
+                    <th scope="col" className={`hide-md ${TH}`}>
+                      {t('audit.col.filter')}
                     </th>
-                    <th
-                      scope="col"
-                      className="border-b border-outline-variant px-4 py-3 font-medium"
-                    >
-                      {t('audit.col.reason')}
+                    <th scope="col" className={`${TH} text-right`}>
+                      {t('audit.col.count')}
                     </th>
                   </tr>
                 </thead>
@@ -213,41 +247,41 @@ export function AuditScreen({ client = api }: AuditScreenProps): ReactNode {
                       key={row.audit_id}
                       className="border-b border-outline-variant text-on-surface"
                     >
-                      <td
-                        data-label={t('audit.col.time')}
-                        className="typescale-body-medium px-4 py-3 align-middle"
-                      >
+                      <td data-label={t('audit.col.time')} className={TD}>
                         {format.tanggalWaktu(row.dilakukan_pada)}
                       </td>
-                      <td
-                        data-label={t('audit.col.user')}
-                        className="hide-md typescale-body-medium px-4 py-3 align-middle"
-                      >
+                      <td data-label={t('audit.col.user')} className={`hide-md ${TD}`}>
                         {/* Section 13.2: the raw id is an identifier, labelled as one — never a name. */}
                         <span className="break-all font-code text-on-surface-variant">
                           {row.pengguna_id}
                         </span>
                       </td>
-                      <td
-                        data-label={t('audit.col.action')}
-                        className="typescale-body-medium px-4 py-3 align-middle"
-                      >
-                        {/* `labelOr` keeps an action outside the catalog from rendering as a raw key. */}
-                        {enumLabel(i18n, 'aksi_audit', row.aksi)}
+                      {/* Gap: the audit contract carries no role, filter or record count yet; the frame's columns stay as placeholders. */}
+                      <td data-label={t('audit.col.role')} className={`hide-md ${TD}`}>
+                        {PLACEHOLDER}
                       </td>
-                      <td
-                        data-label={t('audit.col.result')}
-                        className="typescale-body-medium px-4 py-3 align-middle"
-                      >
-                        <StatusLabel tone={row.hasil === 'berhasil' ? 'success' : 'error'}>
-                          {enumLabel(i18n, 'hasil', row.hasil)}
-                        </StatusLabel>
+                      <td data-label={t('audit.col.action')} className={TD}>
+                        <div className="flex flex-wrap gap-1">
+                          {/* `enumLabel` keeps an action outside the catalog from rendering as a raw key. */}
+                          <StatusLabel
+                            tone={AKSI_TONE[row.aksi] ?? 'neutral'}
+                            className={row.aksi === 'ekspor' ? WARNING_CHIP : undefined}
+                          >
+                            {enumLabel(i18n, 'aksi_audit', row.aksi)}
+                          </StatusLabel>
+                          {/* A refused attempt under another action still reads as refused. */}
+                          {row.hasil === 'ditolak' && row.aksi !== 'ditolak' ? (
+                            <StatusLabel tone="error">
+                              {enumLabel(i18n, 'hasil', row.hasil)}
+                            </StatusLabel>
+                          ) : null}
+                        </div>
                       </td>
-                      <td
-                        data-label={t('audit.col.reason')}
-                        className="typescale-body-medium px-4 py-3 align-middle"
-                      >
-                        {row.alasan ?? '—'}
+                      <td data-label={t('audit.col.filter')} className={`hide-md ${TD}`}>
+                        {PLACEHOLDER}
+                      </td>
+                      <td data-label={t('audit.col.count')} className={`${TD} expanded:text-right`}>
+                        {PLACEHOLDER}
                       </td>
                     </tr>
                   ))}

@@ -26,6 +26,8 @@ import Key from '@material-symbols/svg-400/outlined/key.svg?react';
 import PersonSearch from '@material-symbols/svg-400/outlined/person_search.svg?react';
 import ReceiptLong from '@material-symbols/svg-400/outlined/receipt_long.svg?react';
 import Settings from '@material-symbols/svg-400/outlined/settings.svg?react';
+import Search from '@material-symbols/svg-400/outlined/search.svg?react';
+import Lock from '@material-symbols/svg-400/outlined/lock.svg?react';
 
 export type IconComponent = ComponentType<SVGProps<SVGSVGElement>>;
 
@@ -58,6 +60,8 @@ export const icons = {
   personSearch: PersonSearch,
   receiptLong: ReceiptLong,
   settings: Settings,
+  search: Search,
+  lock: Lock,
 } satisfies Record<string, IconComponent>;
 
 export function Icon({ icon: Svg, className }: { icon: IconComponent; className?: string }) {

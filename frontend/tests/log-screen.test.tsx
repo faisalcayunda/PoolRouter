@@ -12,7 +12,7 @@ const LOG: LogPage = {
     {
       kode_transaksi: 'TRX-2026-0001',
       client_id: 'c1',
-      queue_id: 'q1',
+      queue_id: '0b19c3b4-7c5f-4e2f-9b3a-1a2b3c4d5e6f',
       requested_at: '2026-11-03T07:30:00.000Z',
       client_nama: 'Dukcapil Jabar',
       nik: '••••••••••••0001',
@@ -36,64 +36,197 @@ function stubClient(overrides: Partial<ApiClient> = {}): ApiClient {
   } as ApiClient;
 }
 
+const DETAIL = 'Detail transaksi TRX-2026-0001';
+
 describe('S11 log transaksi', () => {
-  it('posts the search and renders the server-masked NIK', async () => {
-    const client = stubClient();
-    renderWithI18n(<LogPageScreen client={client} />);
+  it('follows the Penpot frame: header, KPI placeholders, one toolbar, table, footer', async () => {
+    renderWithI18n(<LogPageScreen client={stubClient()} />);
+    const detail = await screen.findByRole('link', { name: DETAIL });
 
-    await userEvent.click(screen.getByRole('button', { name: 'Cari' }));
-
-    await screen.findByRole('link', { name: 'TRX-2026-0001' });
-    // The window loads on mount; "Cari" on an untouched form re-reads it rather than reusing it.
-    expect(client.cariLog).toHaveBeenCalledTimes(2);
-    const body = vi.mocked(client.cariLog).mock.calls.at(-1)![0];
-    // Both ends of the default 24-hour window travel in the body, not the URL.
-    expect(body.dari).toMatch(/\+07:00$/);
-    expect(body.sampai).toMatch(/\+07:00$/);
-    // The operator sees the masked value exactly as sent; the screen never re-formats a NIK. The
-    // trailing four digits sit in their own element so a narrow column cannot split them, hence
-    // the check compares the cell's text rather than one text node.
-    expect(screen.getAllByRole('cell').map((cell) => cell.textContent)).toContain(
-      '••••••••••••0001',
-    );
-  });
-
-  it('uses POST so the code filter stays out of the access log', async () => {
-    const client = stubClient();
-    renderWithI18n(<LogPageScreen client={client} />);
-
-    await userEvent.type(screen.getByRole('textbox', { name: 'Kode transaksi' }), 'TRX-2026-0001');
-    await userEvent.click(screen.getByRole('button', { name: 'Cari' }));
-
-    // The initial window loads on mount; the code only appears in the body of the explicit search.
-    await waitFor(() => expect(client.cariLog).toHaveBeenCalledTimes(2));
-    const body = vi.mocked(client.cariLog).mock.calls[1]![0];
-    expect(body.kode_transaksi).toBe('TRX-2026-0001');
-  });
-
-  it('hides the payload column from a role that cannot open one', async () => {
-    renderWithI18n(<LogPageScreen client={stubClient()} canOpenPayload={false} />);
-    await userEvent.click(screen.getByRole('button', { name: 'Cari' }));
-    await screen.findByRole('link', { name: 'TRX-2026-0001' });
-
-    expect(screen.queryByRole('columnheader', { name: 'Lihat payload' })).not.toBeInTheDocument();
+    // The h1 takes focus on open for screen readers but draws no frame, as in the design.
+    const h1 = screen.getByRole('heading', { level: 1, name: 'Log transaksi' });
+    expect(h1).toHaveFocus();
+    expect(h1.className).not.toContain('m3-focus');
     expect(
       screen.getByText(
-        'Pencarian per NIK hanya tersedia untuk auditor. Butuh NIK lengkap? Minta auditor.',
+        'Telusuri lewat kode transaksi, queue_id, client, atau waktu. NIK ditampilkan 4 digit akhir.',
       ),
     ).toBeInTheDocument();
+
+    // The API has no daily aggregates yet, so every KPI card is a placeholder, not a made-up number.
+    const kpi = within(screen.getByRole('list'));
+    for (const title of ['Transaksi hari ini', 'Berhasil', 'Gagal', 'Rata-rata respons']) {
+      expect(kpi.getByText(title)).toBeInTheDocument();
+    }
+    expect(kpi.getAllByText('Menunggu API')).toHaveLength(4);
+
+    // One search box, one client select, one date range, "Hapus filter" — and no "Cari" button.
+    expect(screen.getByRole('textbox', { name: 'Cari' })).toHaveAttribute(
+      'placeholder',
+      'Cari kode transaksi atau queue_id',
+    );
+    expect(screen.getByRole('button', { name: /Client/ })).toHaveTextContent('Semua client');
+    expect(screen.getAllByText('Rentang tanggal')).toHaveLength(1);
+    expect(screen.getByRole('button', { name: 'Hapus filter' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Cari' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('textbox', { name: 'Dari' })).not.toBeInTheDocument();
+
+    // Table columns in design order; the masked NIK is shown exactly as the server sent it.
+    const table = within(screen.getByRole('table'));
+    expect(table.getAllByRole('columnheader').map((h) => h.textContent)).toEqual([
+      'Waktu',
+      'Kode transaksi',
+      'Client',
+      'NIK',
+      'Status akses',
+      'Detail',
+    ]);
+    const cells = table.getAllByRole('cell').map((cell) => cell.textContent);
+    expect(cells).toContain('3 Nov 2026, 14.30');
+    expect(cells).toContain('TRX-…0001');
+    expect(cells).toContain('Dukcapil Jabar');
+    expect(cells).toContain('••••••••••••0001');
+    expect(table.getByText('Berhasil')).toBeInTheDocument();
+    expect(detail).toHaveAttribute('href', '/log/TRX-2026-0001');
+    expect(detail).toHaveTextContent('Detail');
+
+    // Footer: range text and two text buttons.
+    const footer = within(screen.getByRole('navigation', { name: 'Halaman 1 dari 1' }));
+    expect(footer.getByText('1–1 dari 1')).toBeInTheDocument();
+    expect(footer.getByRole('button', { name: 'Sebelumnya' })).toBeDisabled();
+    expect(footer.getByRole('button', { name: 'Berikutnya' })).toBeDisabled();
   });
 
-  it('offers the payload action to an auditor', async () => {
+  it('sends the day range as whole WIB days in the POST body', async () => {
+    const client = stubClient();
+    renderWithI18n(<LogPageScreen client={client} />);
+    await screen.findByRole('link', { name: DETAIL });
+
+    const body = vi.mocked(client.cariLog).mock.calls[0]![0];
+    expect(body.dari).toMatch(/^\d{4}-\d{2}-\d{2}T00:00:00\+07:00$/);
+    expect(body.sampai).toMatch(/^\d{4}-\d{2}-\d{2}T23:59:59\+07:00$/);
+    expect(body.dari.slice(0, 10)).toBe(body.sampai.slice(0, 10));
+  });
+
+  it('searches on Enter; a plain transaction code goes to kode_transaksi only', async () => {
+    const client = stubClient();
+    renderWithI18n(<LogPageScreen client={client} />);
+    await waitFor(() => expect(client.cariLog).toHaveBeenCalledTimes(1));
+
+    await userEvent.type(screen.getByRole('textbox', { name: 'Cari' }), 'TRX-2026-0001{Enter}');
+    await waitFor(() => expect(client.cariLog).toHaveBeenCalledTimes(2));
+    const byCode = vi.mocked(client.cariLog).mock.calls[1]![0];
+    expect(byCode.kode_transaksi).toBe('TRX-2026-0001');
+    expect(byCode.queue_id).toBeUndefined();
+  });
+
+  it('searches a UUID both as kode_transaksi and as queue_id, one filter per request, and merges', async () => {
+    const kode = '7d6f1c2e-3a4b-4c5d-8e9f-0a1b2c3d4e5f';
+    const queue = '0b19c3b4-7c5f-4e2f-9b3a-1a2b3c4d5e6f';
+    const row = { ...LOG.baris[0]!, kode_transaksi: kode };
+    const cariLog = vi
+      .fn()
+      .mockImplementation((body: { kode_transaksi?: string }) =>
+        Promise.resolve(
+          body.kode_transaksi === kode ? { ...LOG, baris: [row] } : { ...LOG, baris: [] },
+        ),
+      );
+    const client = stubClient({ cariLog });
+    renderWithI18n(<LogPageScreen client={client} />);
+    await waitFor(() => expect(cariLog).toHaveBeenCalledTimes(1));
+
+    await userEvent.type(screen.getByRole('textbox', { name: 'Cari' }), `${kode}{Enter}`);
+    await waitFor(() => expect(cariLog).toHaveBeenCalledTimes(3));
+    const sent = cariLog.mock.calls.slice(1).map((c) => c[0] as Record<string, unknown>);
+    expect(sent).toContainEqual(expect.objectContaining({ kode_transaksi: kode }));
+    expect(sent).toContainEqual(expect.objectContaining({ queue_id: kode }));
+    // The server ANDs filters: no single request may carry both.
+    for (const body of sent)
+      expect(body.kode_transaksi !== undefined && body.queue_id !== undefined).toBe(false);
+    // A transaction code hits only through kode_transaksi; the merged table still shows it.
+    expect(
+      await screen.findByRole('link', { name: `Detail transaksi ${kode}` }),
+    ).toBeInTheDocument();
+
+    // A queue_id hits only through queue_id.
+    const rowQ = { ...LOG.baris[0]!, kode_transaksi: 'TRX-2026-0001' };
+    cariLog.mockImplementation((body: { queue_id?: string }) =>
+      Promise.resolve(body.queue_id === queue ? { ...LOG, baris: [rowQ] } : { ...LOG, baris: [] }),
+    );
+    const search = screen.getByRole('textbox', { name: 'Cari' });
+    await userEvent.clear(search);
+    await userEvent.type(search, `${queue}{Enter}`);
+    expect(await screen.findByRole('link', { name: DETAIL })).toBeInTheDocument();
+  });
+
+  it('re-reads the window when Enter is pressed again without changing anything', async () => {
+    const client = stubClient();
+    renderWithI18n(<LogPageScreen client={client} />);
+    await waitFor(() => expect(client.cariLog).toHaveBeenCalledTimes(1));
+
+    const search = screen.getByRole('textbox', { name: 'Cari' });
+    await userEvent.type(search, '{Enter}');
+    await waitFor(() => expect(client.cariLog).toHaveBeenCalledTimes(2));
+    await userEvent.type(search, '{Enter}');
+    // Identical filters, but the snapshot may have moved on: the second Enter must ask again.
+    await waitFor(() => expect(client.cariLog).toHaveBeenCalledTimes(3));
+  });
+
+  it('filters on the code a deep link carries, not just fills the field', async () => {
+    const client = stubClient();
+    renderWithI18n(<LogPageScreen client={client} initialCode="TRX-2026-0001" />);
+
+    await waitFor(() => expect(client.cariLog).toHaveBeenCalled());
+    // The first request is the one the screen mounts with: `/log/<kode>` must already filter.
+    const body = vi.mocked(client.cariLog).mock.calls[0]![0];
+    expect(body.kode_transaksi).toBe('TRX-2026-0001');
+    expect(screen.getByRole('textbox', { name: 'Cari' })).toHaveValue('TRX-2026-0001');
+  });
+
+  it('applies the client choice at once, shows its chip, and clears everything with Hapus filter', async () => {
+    const client = stubClient();
+    renderWithI18n(<LogPageScreen client={client} />);
+    await screen.findByRole('link', { name: DETAIL });
+
+    await userEvent.click(screen.getByRole('button', { name: /Client/ }));
+    await userEvent.click(await screen.findByRole('option', { name: 'Dukcapil Jabar' }));
+
+    await waitFor(() => expect(client.cariLog).toHaveBeenCalledTimes(2));
+    expect(vi.mocked(client.cariLog).mock.calls[1]![0].client_id).toBe('c1');
+    expect(screen.getByText('Client: Dukcapil Jabar')).toBeInTheDocument();
+
+    await userEvent.type(screen.getByRole('textbox', { name: 'Cari' }), 'abc');
+    // The chip's remove button shares the name; the toolbar button comes first in the DOM.
+    await userEvent.click(screen.getAllByRole('button', { name: 'Hapus filter' })[0]!);
+    await waitFor(() => expect(client.cariLog).toHaveBeenCalledTimes(3));
+    const body = vi.mocked(client.cariLog).mock.calls[2]![0];
+    expect(body.client_id).toBeUndefined();
+    expect(body.kode_transaksi).toBeUndefined();
+    expect(screen.getByRole('textbox', { name: 'Cari' })).toHaveValue('');
+    expect(screen.queryByText('Client: Dukcapil Jabar')).not.toBeInTheDocument();
+  });
+
+  it('hides the payload column from a role that cannot open one and says why', async () => {
+    renderWithI18n(<LogPageScreen client={stubClient()} canOpenPayload={false} />);
+    await screen.findByRole('link', { name: DETAIL });
+
+    expect(screen.queryByRole('columnheader', { name: 'Lihat payload' })).not.toBeInTheDocument();
+    expect(screen.getByText('Pencarian per NIK hanya tersedia untuk auditor.')).toBeInTheDocument();
+  });
+
+  it('offers the payload action to an auditor, without the NIK hint', async () => {
     const onOpenPayload = vi.fn();
     renderWithI18n(
       <LogPageScreen client={stubClient()} canOpenPayload onOpenPayload={onOpenPayload} />,
     );
-    await userEvent.click(screen.getByRole('button', { name: 'Cari' }));
-    await screen.findByRole('link', { name: 'TRX-2026-0001' });
+    await screen.findByRole('link', { name: DETAIL });
 
-    await userEvent.click(screen.getByRole('button', { name: 'Lihat payload — TRX-2026-0001' }));
+    const table = within(screen.getByRole('table'));
+    await userEvent.click(table.getByRole('button', { name: 'Lihat payload — TRX-2026-0001' }));
     expect(onOpenPayload).toHaveBeenCalledWith(LOG.baris[0]);
+    expect(
+      screen.queryByText('Pencarian per NIK hanya tersedia untuk auditor.'),
+    ).not.toBeInTheDocument();
   });
 
   it('derives the payload affordance from the auditor role, not only an explicit prop', async () => {
@@ -102,8 +235,7 @@ describe('S11 log transaksi', () => {
         <LogPageScreen client={stubClient()} />
       </RoleProvider>,
     );
-    await userEvent.click(screen.getByRole('button', { name: 'Cari' }));
-    await screen.findByRole('link', { name: 'TRX-2026-0001' });
+    await screen.findByRole('link', { name: DETAIL });
 
     expect(screen.getByRole('columnheader', { name: 'Lihat payload' })).toBeInTheDocument();
   });
@@ -114,8 +246,7 @@ describe('S11 log transaksi', () => {
         <LogPageScreen client={stubClient()} />
       </RoleProvider>,
     );
-    await userEvent.click(screen.getByRole('button', { name: 'Cari' }));
-    await screen.findByRole('link', { name: 'TRX-2026-0001' });
+    await screen.findByRole('link', { name: DETAIL });
 
     expect(screen.queryByRole('columnheader', { name: 'Lihat payload' })).not.toBeInTheDocument();
   });
@@ -131,8 +262,7 @@ describe('S11 log transaksi', () => {
       }),
     });
     renderWithI18n(<LogPageScreen client={client} canOpenPayload />);
-    await userEvent.click(screen.getByRole('button', { name: 'Cari' }));
-    await screen.findByRole('link', { name: 'TRX-2026-0001' });
+    await screen.findByRole('link', { name: DETAIL });
 
     await userEvent.click(screen.getByRole('button', { name: 'Lihat payload — TRX-2026-0001' }));
 
@@ -148,14 +278,15 @@ describe('S11 log transaksi', () => {
     });
     renderWithI18n(<LogPageScreen client={client} />);
 
-    await userEvent.click(screen.getByRole('button', { name: 'Cari' }));
-
     // A 403 is the only HTTP status the catalog words; it must not surface as a bare table.
     const errorAlert = (await screen.findAllByRole('alert')).find((node) =>
-      within(node).queryByText('Anda tidak punya akses ke halaman ini'),
+      within(node).queryByText('Akses tidak diizinkan'),
     );
     expect(errorAlert).toBeDefined();
-    expect(within(errorAlert!).getByRole('button', { name: 'Coba lagi' })).toBeInTheDocument();
+    // Penpot S16 frame 3: the retry action sits below the alert, in the same error block.
+    expect(
+      within(errorAlert!.parentElement!).getByRole('button', { name: 'Coba lagi' }),
+    ).toBeInTheDocument();
   });
 
   it('shows the empty state, not a blank table, when nothing matches', async () => {
@@ -166,86 +297,26 @@ describe('S11 log transaksi', () => {
     });
     renderWithI18n(<LogPageScreen client={client} />);
 
-    await userEvent.click(screen.getByRole('button', { name: 'Cari' }));
     expect(await screen.findByText('Tidak ada log yang cocok')).toBeInTheDocument();
     expect(screen.queryByRole('table')).not.toBeInTheDocument();
   });
 
-  it('names the empty client filter "Semua", never the framework default', async () => {
+  it('names the empty client filter "Semua client", never the framework default', async () => {
     renderWithI18n(<LogPageScreen client={stubClient()} />);
-    await userEvent.click(screen.getByRole('button', { name: 'Cari' }));
-    await screen.findByRole('link', { name: 'TRX-2026-0001' });
+    await screen.findByRole('link', { name: DETAIL });
 
     // A select with no option matching its empty value printed the English "Select an item".
     const trigger = screen.getByRole('button', { name: /Client/ });
-    expect(within(trigger).getByText('Semua')).toBeInTheDocument();
+    expect(within(trigger).getByText('Semua client')).toBeInTheDocument();
     expect(screen.queryByText('Select an item')).not.toBeInTheDocument();
-  });
-
-  it('filters on the code a deep link carries, not just fills the field', async () => {
-    const client = stubClient();
-    renderWithI18n(<LogPageScreen client={client} initialCode="TRX-2026-0001" />);
-
-    await waitFor(() => expect(client.cariLog).toHaveBeenCalled());
-    // The first request is the one the screen mounts with: `/log/<kode>` must already filter.
-    const body = vi.mocked(client.cariLog).mock.calls[0]![0];
-    expect(body.kode_transaksi).toBe('TRX-2026-0001');
-    expect(screen.getByRole('textbox', { name: 'Kode transaksi' })).toHaveValue('TRX-2026-0001');
-  });
-
-  it('re-reads the window when the operator searches again without changing anything', async () => {
-    const client = stubClient();
-    renderWithI18n(<LogPageScreen client={client} />);
-    await waitFor(() => expect(client.cariLog).toHaveBeenCalledTimes(1));
-
-    await userEvent.click(screen.getByRole('button', { name: 'Cari' }));
-    await waitFor(() => expect(client.cariLog).toHaveBeenCalledTimes(2));
-    await userEvent.click(screen.getByRole('button', { name: 'Cari' }));
-    // Identical filters, but the snapshot may have moved on: the second press must ask again.
-    await waitFor(() => expect(client.cariLog).toHaveBeenCalledTimes(3));
-  });
-
-  it('reports a date that is not a real day instead of ignoring it', async () => {
-    const client = stubClient();
-    renderWithI18n(<LogPageScreen client={client} />);
-    // The window the screen mounts with already ran once; a rejected range adds no request.
-    await waitFor(() => expect(client.cariLog).toHaveBeenCalledTimes(1));
-
-    const start = screen.getByRole('textbox', { name: 'Dari' });
-    await userEvent.clear(start);
-    await userEvent.type(start, '31/02/2026');
-    await userEvent.click(screen.getByRole('button', { name: 'Cari' }));
-
-    expect(
-      await screen.findByText('Tanggal belum sah. Tulis dengan format 03/11/2026.'),
-    ).toBeInTheDocument();
-    expect(start).toHaveAttribute('aria-invalid', 'true');
-    expect(client.cariLog).toHaveBeenCalledTimes(1);
-  });
-
-  it('reports an end date before the start date as a pair error', async () => {
-    const client = stubClient();
-    renderWithI18n(<LogPageScreen client={client} />);
-    await waitFor(() => expect(client.cariLog).toHaveBeenCalledTimes(1));
-
-    // The end of the range stays at the default "last 24 hours", so the start below must stay in
-    // the future: a literal close to today inverted the pair only until that day arrived.
-    const start = screen.getByRole('textbox', { name: 'Dari' });
-    await userEvent.clear(start);
-    await userEvent.type(start, '01/01/2099');
-    await userEvent.click(screen.getByRole('button', { name: 'Cari' }));
-
-    expect(
-      await screen.findByText('Tanggal akhir harus sama dengan atau setelah tanggal awal.'),
-    ).toBeInTheDocument();
-    expect(client.cariLog).toHaveBeenCalledTimes(1);
   });
 
   it('shows the request time once: no second column repeats requested_at', async () => {
     renderWithI18n(<LogPageScreen client={stubClient()} />);
 
-    await screen.findByRole('link', { name: 'TRX-2026-0001' });
-    expect(screen.getAllByRole('columnheader', { name: 'Waktu' })).toHaveLength(1);
-    expect(screen.queryByRole('columnheader', { name: 'Diminta pada' })).not.toBeInTheDocument();
+    await screen.findByRole('link', { name: DETAIL });
+    const table = within(screen.getByRole('table'));
+    expect(table.getAllByRole('columnheader', { name: 'Waktu' })).toHaveLength(1);
+    expect(table.queryByRole('columnheader', { name: 'Diminta pada' })).not.toBeInTheDocument();
   });
 });

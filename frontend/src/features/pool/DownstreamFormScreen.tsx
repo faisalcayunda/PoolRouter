@@ -187,53 +187,69 @@ function DownstreamForm({
 
       <form noValidate onSubmit={(e) => void submit(e)} className="flex flex-col gap-4">
         <Card variant="outlined" className="flex flex-col gap-4">
-          <h2 className="typescale-title-medium">{t('downstream.form.group.general')}</h2>
-          <div data-field="nama">
-            <TextField
-              label={t('downstream.col.name')}
-              value={draft.nama}
-              onChange={(v) => set('nama', v)}
-              autoComplete="off"
-              {...err('nama')}
-            />
-          </div>
-          <div data-field="upstream_pool_id">
-            <Select
-              label={t('downstream.col.upstream')}
-              selectedKey={draft.upstream_pool_id === '' ? null : draft.upstream_pool_id}
-              onSelectionChange={(key) => {
-                const found = upstreams.find((p) => p.upstream_pool_id === key);
-                if (found) set('upstream_pool_id', found.upstream_pool_id);
-              }}
-              placeholder={t('downstream.form.upstream_placeholder')}
-              isInvalid={errors.upstream_pool_id !== undefined}
-            >
-              {upstreams.map((p) => (
-                <SelectItem
-                  key={p.upstream_pool_id}
-                  id={p.upstream_pool_id}
-                  textValue={upstreamLabel(p)}
-                >
-                  {upstreamLabel(p)}
-                </SelectItem>
-              ))}
-            </Select>
-            {errors.upstream_pool_id ? (
-              <p className="typescale-body-small text-error">
-                {err('upstream_pool_id').errorMessage}
-              </p>
-            ) : null}
-          </div>
-          <div data-field="ttl_jam">
-            <TextField
-              label={t('downstream.page.ttl')}
-              description={t('downstream.page.ttl_help')}
-              value={draft.ttl_jam}
-              onChange={(v) => set('ttl_jam', v)}
-              inputMode="decimal"
-              autoComplete="off"
-              {...err('ttl_jam')}
-            />
+          <h2 className="typescale-title-medium">
+            {mode === 'create'
+              ? t('downstream.page.form_heading')
+              : t('downstream.form.group.general')}
+          </h2>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div data-field="nama">
+              <TextField
+                label={t('downstream.col.name')}
+                value={draft.nama}
+                onChange={(v) => set('nama', v)}
+                autoComplete="off"
+                {...err('nama')}
+              />
+            </div>
+            <div>
+              {/* Mode belum ada di kontrak API: kolom tampil seperti frame, tanpa nilai. */}
+              <TextField
+                label={t('downstream.col.mode')}
+                value="–"
+                isReadOnly
+                isDisabled
+                autoComplete="off"
+              />
+            </div>
+            <div data-field="upstream_pool_id">
+              <Select
+                label={t('downstream.col.upstream')}
+                selectedKey={draft.upstream_pool_id === '' ? null : draft.upstream_pool_id}
+                onSelectionChange={(key) => {
+                  const found = upstreams.find((p) => p.upstream_pool_id === key);
+                  if (found) set('upstream_pool_id', found.upstream_pool_id);
+                }}
+                placeholder={t('downstream.form.upstream_placeholder')}
+                isInvalid={errors.upstream_pool_id !== undefined}
+              >
+                {upstreams.map((p) => (
+                  <SelectItem
+                    key={p.upstream_pool_id}
+                    id={p.upstream_pool_id}
+                    textValue={upstreamLabel(p)}
+                  >
+                    {upstreamLabel(p)}
+                  </SelectItem>
+                ))}
+              </Select>
+              {errors.upstream_pool_id ? (
+                <p className="typescale-body-small text-error">
+                  {err('upstream_pool_id').errorMessage}
+                </p>
+              ) : null}
+            </div>
+            <div data-field="ttl_jam">
+              <TextField
+                label={t('downstream.page.ttl')}
+                description={t('downstream.page.ttl_help')}
+                value={draft.ttl_jam}
+                onChange={(v) => set('ttl_jam', v)}
+                inputMode="decimal"
+                autoComplete="off"
+                {...err('ttl_jam')}
+              />
+            </div>
           </div>
         </Card>
 

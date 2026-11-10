@@ -37,6 +37,7 @@ import {
   type RowField,
   type TopField,
 } from './endpointForm';
+import { MetadataContractTable } from './MetadataContractTable';
 import { issueMessage, MetadataFieldsEditor, tDynamic } from './MetadataFieldsEditor';
 
 /** Fokus ke kontrol pertama di pembungkus field (tombol select, input, atau textarea). */
@@ -314,9 +315,9 @@ function EndpointForm({ client, lookups, initial }: EndpointFormProps): ReactNod
 
         <Card variant="container" className="flex flex-col gap-4 p-6">
           <h2 className="typescale-title-medium">{t('endpoint.form.section.metadata')}</h2>
-          <p className="typescale-body-medium text-on-surface-variant">
-            {t('endpoint.metadata.info')}
-          </p>
+          <InlineAlert tone="info">{t('metadata.page.info')}</InlineAlert>
+          <MetadataContractTable rows={draft.metadata_fields} />
+          <p className="typescale-body-small text-on-surface-variant">{t('metadata.page.note')}</p>
           <div data-field="metadata_fields">
             {metadataIssue ? (
               <InlineAlert tone="error">{issueMessage(i18n, metadataIssue)}</InlineAlert>
