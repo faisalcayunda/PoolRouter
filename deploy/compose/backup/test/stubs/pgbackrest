@@ -1,0 +1,8 @@
+#!/bin/sh
+echo "pgbackrest $*" >> "$STUB_LOG"
+case "$*" in
+	*"--type=full backup"*)
+		# Simulasi full yang berjalan lama: jam sistem maju STUB_FULL_SECS detik.
+		[ -n "${STUB_FULL_SECS:-}" ] && echo $(( $(cat "$PR_BACKUP_CLOCK_FILE") + STUB_FULL_SECS )) > "$PR_BACKUP_CLOCK_FILE" ;;
+esac
+exit 0

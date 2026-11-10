@@ -468,7 +468,10 @@ describe('S03 detail provider: tab dan susunan layar Penpot', () => {
     expect(header.getByRole('button', { name: 'Tambah parameter' })).toBeInTheDocument();
     expect(header.queryByRole('link', { name: 'Batal' })).not.toBeInTheDocument();
     await user.click(header.getByRole('button', { name: 'Tambah parameter' }));
-    expect(screen.getByLabelText('Parameter dan rule (JSON)')).toHaveFocus();
+    // Editor terstruktur, bukan kotak JSON: dialog kosong dengan nama parameter di fokus.
+    const dialog = await screen.findByRole('dialog', { name: 'Tambah parameter' });
+    expect(within(dialog).getByLabelText('Nama parameter')).toBeInTheDocument();
+    expect(screen.queryByLabelText('Parameter dan rule (JSON)')).not.toBeInTheDocument();
   });
 
   it('shows five columns on the Parameter table, with Status pending the API', async () => {
@@ -495,8 +498,13 @@ describe('S03 detail provider: tab dan susunan layar Penpot', () => {
     expect(editor.className).toContain('data-[focus-visible]:outline-inverse-primary');
   });
 
-  it('opens the tab that owns the first invalid field before focusing it', async () => {
-    const updateProvider = vi.fn();
+  it('opens the tab that owns a server rule error before focusing it', async () => {
+    const updateProvider = vi.fn().mockRejectedValue(
+      new ApiError(422, {
+        kode: 'validasi_gagal',
+        errors: [{ field: '/parameters/0/rule/pola', kode: 'regex_tidak_sah' }],
+      }),
+    );
     asRole(
       'platform_admin',
       <ProviderFormScreen
@@ -505,15 +513,14 @@ describe('S03 detail provider: tab dan susunan layar Penpot', () => {
       />,
     );
     await screen.findByRole('heading', { level: 1, name: 'provider-contoh-a' });
+    await paste('Alasan perubahan', 'Ganti pola sesuai surat BGN.');
     await openTab('Parameter');
-    await user.clear(screen.getByLabelText('Parameter dan rule (JSON)'));
-    await user.paste('bukan json');
     await user.click(screen.getByRole('button', { name: 'Simpan rule' }));
 
-    // Alasan kosong ada di tab Umum, tetapi galat JSON di tab Parameter urutannya lebih dulu.
-    await waitFor(() => expect(screen.getByLabelText('Parameter dan rule (JSON)')).toHaveFocus());
+    const alert = await screen.findByText('Rule belum bisa disimpan');
+    expect(alert).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'Parameter' })).toHaveAttribute('aria-selected', 'true');
-    expect(updateProvider).not.toHaveBeenCalled();
+    await waitFor(() => expect(alert.closest('[data-field="parameters"]')).toHaveFocus());
   });
 
   it('opens Umum when the reason is the only missing field', async () => {
@@ -696,5 +703,108 @@ describe('S05 secret', () => {
       screen.getByRole('heading', { level: 1, name: 'Akses tidak diizinkan' }),
     ).toBeInTheDocument();
     expect(client.listSecrets).not.toHaveBeenCalled();
+  });
+});
+
+describe('S04 editor rule terstruktur (ARC-252)', () => {
+  const RULES = {
+    ...PROVIDER,
+    parameters: [
+      { nama: 'NIK', rule: { jenis: 'regex', pola: '^\\d{16}$' } },
+      { nama: 'TRESHOLD', nilai: '90' },
+    ],
+  } as unknown as Provider;
+
+  async function renderRules(updateProvider = vi.fn().mockResolvedValue(RULES)) {
+    asRole(
+      'platform_admin',
+      <ProviderFormScreen
+        client={stubClient({ getProvider: vi.fn().mockResolvedValue(RULES), updateProvider })}
+        providerId={RULES.provider_id}
+      />,
+    );
+    await screen.findByRole('heading', { level: 1, name: 'provider-contoh-a' });
+    await paste('Alasan perubahan', 'Ubah rule sesuai surat BGN.');
+    await openTab('Parameter');
+    return updateProvider;
+  }
+
+  async function pickJenis(name: string) {
+    const dialog = screen.getByRole('dialog');
+    await user.click(within(dialog).getByRole('button', { name: /Jenis rule/ }));
+    await user.click(await screen.findByRole('option', { name }));
+  }
+
+  async function sentParameters(updateProvider: ReturnType<typeof vi.fn>) {
+    await user.click(screen.getByRole('button', { name: 'Simpan rule' }));
+    await waitFor(() => expect(updateProvider).toHaveBeenCalledTimes(1));
+    return (updateProvider.mock.calls[0]! as [string, ProviderConfig])[1].parameters;
+  }
+
+  it('adds a parameter with a length rule and sends it in the contract shape', async () => {
+    const updateProvider = await renderRules();
+    await user.click(screen.getByRole('button', { name: 'Tambah parameter' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Tambah parameter' });
+    await paste('Nama parameter', 'KODE');
+    await pickJenis('Panjang');
+    await user.click(within(dialog).getByLabelText('Panjang minimum'));
+    await user.paste('2');
+    await user.click(within(dialog).getByLabelText('Panjang maksimum'));
+    await user.paste('5');
+    await user.click(within(dialog).getByRole('button', { name: 'Simpan parameter' }));
+
+    const table = within(screen.getByRole('table', { name: 'Parameter dan rule provider' }));
+    expect(table.getByText('KODE')).toBeInTheDocument();
+    expect(table.getByText('2 sampai 5 karakter')).toBeInTheDocument();
+    expect(await sentParameters(updateProvider)).toEqual([
+      ...RULES.parameters,
+      { nama: 'KODE', rule: { jenis: 'panjang', panjang_min: 2, panjang_maks: 5 } },
+    ]);
+  });
+
+  it('edits a rule: switching type drops the keys of the old type', async () => {
+    const updateProvider = await renderRules();
+    await user.click(screen.getByRole('button', { name: 'Ubah rule parameter NIK' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Ubah parameter' });
+    expect(within(dialog).getByLabelText('Nama parameter')).toHaveValue('NIK');
+    expect(within(dialog).getByLabelText('Pola regex')).toHaveValue('^\\d{16}$');
+    await pickJenis('Enum');
+    await user.click(within(dialog).getByLabelText('Nilai yang diizinkan'));
+    await user.paste('A\nB');
+    await user.click(within(dialog).getByRole('button', { name: 'Simpan parameter' }));
+
+    expect(await sentParameters(updateProvider)).toEqual([
+      { nama: 'NIK', rule: { jenis: 'enum', nilai_diizinkan: ['A', 'B'] } },
+      { nama: 'TRESHOLD', nilai: '90' },
+    ]);
+  });
+
+  it('deletes a parameter', async () => {
+    const updateProvider = await renderRules();
+    await user.click(screen.getByRole('button', { name: 'Hapus parameter NIK' }));
+    expect(await sentParameters(updateProvider)).toEqual([{ nama: 'TRESHOLD', nilai: '90' }]);
+  });
+
+  it('keeps the dialog open and names the problem when the input is invalid', async () => {
+    const updateProvider = await renderRules();
+    await user.click(screen.getByRole('button', { name: 'Tambah parameter' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Tambah parameter' });
+    await paste('Nama parameter', 'NIK');
+    await user.click(within(dialog).getByRole('button', { name: 'Simpan parameter' }));
+    expect(await within(dialog).findByText('Nama parameter sudah dipakai.')).toBeInTheDocument();
+    await pickJenis('Regex');
+    await user.click(within(dialog).getByRole('button', { name: 'Simpan parameter' }));
+    expect(within(dialog).getByText('Wajib diisi.')).toBeInTheDocument();
+    expect(updateProvider).not.toHaveBeenCalled();
+  });
+
+  it('cancel leaves the list untouched', async () => {
+    const updateProvider = await renderRules();
+    await user.click(screen.getByRole('button', { name: 'Tambah parameter' }));
+    const dialog = await screen.findByRole('dialog');
+    await paste('Nama parameter', 'BARU');
+    await user.click(within(dialog).getByRole('button', { name: 'Batal' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    expect(await sentParameters(updateProvider)).toEqual(RULES.parameters);
   });
 });
