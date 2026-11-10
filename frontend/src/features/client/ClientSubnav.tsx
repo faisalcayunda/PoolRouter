@@ -1,12 +1,15 @@
 import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Link } from 'react-aria-components';
-import { cx } from '../../components/m3/cx';
+import { LinkButton } from '../provider/LinkButton';
 import { clientPath } from './access';
 
 export type ClientBagian = 'detail' | 'kredensial' | 'webhook';
 
-/** Tiga bagian satu client (S08, S08b, S09/S09a); tautan biasa supaya bisa dibuka di tab baru. */
+/**
+ * Tautan ke dua bagian lain satu client (S08, S08b, S09/S09a). Frame Penpot tidak menggambar tab:
+ * jejak breadcrumb sudah membawa kembali ke daftar, jadi bagian lain cukup tautan teks di sisi
+ * aksi judul. Tautan biasa supaya bisa dibuka di tab baru.
+ */
 export function ClientSubnav({
   clientId,
   active,
@@ -25,28 +28,14 @@ export function ClientSubnav({
     { id: 'webhook', href: clientPath(clientId, 'webhook'), label: t('clients.tab.webhook') },
   ];
   return (
-    <nav aria-label={t('clients.tab.aria')} className="flex flex-wrap gap-2">
-      <Link
-        href="/client"
-        className="m3-state m3-focus typescale-label-large inline-flex h-10 items-center rounded-full px-3 text-primary no-underline"
-      >
-        {t('clients.back')}
-      </Link>
-      {items.map((item) => (
-        <Link
-          key={item.id}
-          href={item.href}
-          aria-current={item.id === active ? 'page' : undefined}
-          className={cx(
-            'm3-state m3-focus typescale-label-large inline-flex h-10 items-center rounded-full px-4 no-underline',
-            item.id === active
-              ? 'bg-secondary-container text-on-secondary-container'
-              : 'border border-outline text-on-surface',
-          )}
-        >
-          {item.label}
-        </Link>
-      ))}
+    <nav aria-label={t('clients.tab.aria')} className="flex flex-wrap items-center">
+      {items
+        .filter((item) => item.id !== active)
+        .map((item) => (
+          <LinkButton key={item.id} href={item.href} variant="text">
+            {item.label}
+          </LinkButton>
+        ))}
     </nav>
   );
 }

@@ -18,6 +18,7 @@ import { StatusLabel } from '../../components/m3/StatusLabel';
 import { Tab, TabList, TabPanel, Tabs } from '../../components/m3/Tabs';
 import { TextArea, TextField } from '../../components/m3/TextField';
 import { useDocumentTitle, useFocusOnMount } from '../common/a11y';
+import { useCrumbName } from '../common/CrumbName';
 import { errorMessage, LoadingState, PageHeader, QueryError } from '../common/page';
 import { useRole } from '../common/RoleContext';
 import { useQuery } from '../common/useQuery';
@@ -101,6 +102,10 @@ function UpstreamForm({ client, providers, initial }: UpstreamFormProps): ReactN
   const snackbar = useSnackbar();
   const titleRef = useFocusOnMount<HTMLHeadingElement>();
   const [current, setCurrent] = useState<UpstreamPool | null>(initial);
+  useCrumbName(
+    current?.upstream_pool_id,
+    providers.find((p) => p.provider_id === current?.provider_id)?.nama,
+  );
   const [draft, setDraft] = useState<UpstreamDraft>(() =>
     initial ? draftFromPool(initial) : emptyDraft(),
   );

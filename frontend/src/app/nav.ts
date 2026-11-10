@@ -188,10 +188,16 @@ function safeDecode(value: string): string {
 /**
  * Jejak breadcrumb untuk setiap rute yang dirender shell, termasuk detail dan not-found.
  * Grup berupa teks biasa, daftar menjadi tautan di rute detail, crumb terakhir adalah halaman
- * saat ini (desain: `Shell-detail`). Crumb terakhir sebuah record adalah id dari URL karena shell
- * tidak mengetahui nama record.
+ * saat ini (desain: `Shell-detail`). Crumb sebuah record adalah id dari URL, kecuali screen sudah
+ * melaporkan namanya (`record`, lihat `useCrumbName`) dan id-nya sama dengan id di URL.
  */
-export function crumbsFor(pathname: string): Crumb[] {
+export function crumbsFor(pathname: string, record?: { id: string; name: string } | null): Crumb[] {
+  const crumbs = rawCrumbsFor(pathname);
+  if (!record) return crumbs;
+  return crumbs.map((c) => (c.text === record.id ? { ...c, text: record.name } : c));
+}
+
+function rawCrumbsFor(pathname: string): Crumb[] {
   const clean = pathname.replace(/\/+$/, '') || '/';
   const detail = DETAIL.exec(clean);
   if (detail) {

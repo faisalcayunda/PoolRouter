@@ -16,6 +16,7 @@ import { InlineAlert } from '../../components/m3/InlineAlert';
 import { TextField } from '../../components/m3/TextField';
 import { useFormatter } from '../../i18n/useFormatter';
 import { useDocumentTitle, useFocusOnMount } from '../common/a11y';
+import { useCrumbName } from '../common/CrumbName';
 import { errorMessage, LoadingState, PageHeader, QueryError } from '../common/page';
 import { useRole } from '../common/RoleContext';
 import { ScrollArea } from '../common/ScrollArea';
@@ -205,6 +206,7 @@ export function WebhookScreen({ clientId, client = api }: WebhookScreenProps): R
     `webhook:${clientId}`,
     { enabled: allowed },
   );
+  useCrumbName(clientId, query.status === 'success' ? query.data.client.nama : undefined);
   const log = useQuery<WebhookLog[]>(
     // Desain S09 hanya memuat kegagalan pengiriman, tanpa saringan.
     (signal) => client.listWebhookLog(clientId, { hasil: 'gagal' }, { signal }),
@@ -241,9 +243,11 @@ export function WebhookScreen({ clientId, client = api }: WebhookScreenProps): R
 
   return (
     <section className="flex flex-col gap-4">
-      <PageHeader title={t('webhook.page.title', { nama_client: nama })} titleRef={titleRef}>
-        <ClientSubnav clientId={clientId} active="webhook" />
-      </PageHeader>
+      <PageHeader
+        title={t('webhook.page.title', { nama_client: nama })}
+        titleRef={titleRef}
+        actions={<ClientSubnav clientId={clientId} active="webhook" />}
+      />
 
       {query.status === 'loading' ? <LoadingState label={t('common.state.loading')} /> : null}
       {query.status === 'error' ? <QueryError error={query.error} onRetry={query.reload} /> : null}

@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { screen, waitFor, within } from '@testing-library/react';
+import { today } from '@internationalized/date';
 import userEvent from '@testing-library/user-event';
 import { ApiError, type ApiClient, type AuditAksesPage } from '../src/api/client';
 import { AuditScreen } from '../src/features/audit-akses/AuditScreen';
@@ -77,12 +78,31 @@ describe('S13 audit akses', () => {
     ).toBeInTheDocument();
 
     const body = vi.mocked(client.cariAuditAkses).mock.calls[0]![0];
-    // Default window is the last 24 hours, the same as S11: a first visit always has a range.
-    const hours = (Date.parse(body.sampai!) - Date.parse(body.dari)) / 3_600_000;
-    expect(hours).toBeGreaterThan(23.9);
-    expect(hours).toBeLessThan(24.1);
+    // Default window is today as a whole WIB day, the same as S11: a first visit always has a range.
+    const day = today('Asia/Jakarta').toString();
+    expect(body.dari).toBe(`${day}T00:00:00+07:00`);
+    expect(body.sampai).toBe(`${day}T23:59:59+07:00`);
     // The action filter is not sent until the screen offers one.
     expect(body.aksi).toBeUndefined();
+  });
+
+  it('lays the filters out as the frame does: one row, one date range, no UUID hint', async () => {
+    renderWithI18n(
+      <AuditScreen client={stubClient({ cariAuditAkses: vi.fn().mockResolvedValue(AUDIT) })} />,
+    );
+
+    const form = within(screen.getByRole('textbox', { name: 'Pengguna' }).closest('form')!);
+    expect(form.getByRole('button', { name: /Aksi/ })).toBeInTheDocument();
+    const range = within(form.getByRole('group', { name: 'Rentang waktu' }));
+    // RAC labels the trigger with the calendar label and the field label together.
+    expect(range.getByRole('button', { name: /Pilih rentang tanggal/ })).toBeInTheDocument();
+    expect(form.getAllByText('Rentang waktu')).toHaveLength(1);
+    expect(form.getByRole('button', { name: 'Cari' })).toBeInTheDocument();
+    // The old pair of Dari/Jam fields and the hint under the user field are gone.
+    expect(form.queryByRole('textbox', { name: 'Dari' })).not.toBeInTheDocument();
+    expect(form.queryByText('Pilih tanggal mulai')).not.toBeInTheDocument();
+    expect(form.queryByText('Masukkan ID pengguna dalam format UUID.')).not.toBeInTheDocument();
+    await screen.findByText('budi');
   });
 
   it('sends the typed user as pengguna_id', async () => {

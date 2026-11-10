@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import { screen, waitFor, within } from '@testing-library/react';
+import { today } from '@internationalized/date';
 import userEvent from '@testing-library/user-event';
 import { ApiError, type ApiClient, type LogPage } from '../src/api/client';
 import { NikSearchScreen } from '../src/features/auditor/NikSearchScreen';
@@ -151,7 +152,13 @@ describe('S12 pencarian log per NIK', () => {
     const call = vi.mocked(client.cariLogNik).mock.calls[0];
     if (!call) throw new Error('cariLogNik was not called');
     const [body, options] = call;
-    expect(body).toMatchObject({ nik: NIK, alasan: 'Audit aduan W-2026-07' });
+    const day = today('Asia/Jakarta').toString();
+    expect(body).toMatchObject({
+      nik: NIK,
+      dari: `${day}T00:00:00+07:00`,
+      sampai: `${day}T23:59:59+07:00`,
+      alasan: 'Audit aduan W-2026-07',
+    });
     // The reason also rides a header so it never appears in a URL or an access log line.
     expect(options?.alasan).toBe('Audit aduan W-2026-07');
   });
@@ -186,6 +193,19 @@ describe('S12 layout from the Penpot frame', () => {
         'Data di luar retensi online belum bisa dicari. Pencarian arsip tersedia di F1.',
       ),
     ).toBeInTheDocument();
+  });
+
+  it('uses one date range control beside the NIK field, as frame S12c does', () => {
+    renderWithI18n(<NikSearchScreen client={stubClient()} />);
+
+    const form = within(screen.getByLabelText('NIK (16 digit)').closest('form')!);
+    const range = within(form.getByRole('group', { name: 'Rentang waktu' }));
+    // RAC labels the trigger with the calendar label and the field label together.
+    expect(range.getByRole('button', { name: /Pilih rentang tanggal/ })).toBeInTheDocument();
+    expect(form.getAllByText('Rentang waktu')).toHaveLength(1);
+    expect(form.queryByRole('textbox', { name: 'Dari' })).not.toBeInTheDocument();
+    expect(form.queryByText('Pilih tanggal mulai')).not.toBeInTheDocument();
+    expect(form.queryByText('Jam mulai')).not.toBeInTheDocument();
   });
 
   it('explains that a range alone is not enough next to the NIK error', async () => {

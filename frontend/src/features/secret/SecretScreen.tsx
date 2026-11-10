@@ -327,11 +327,14 @@ export function SecretScreen({ client = api }: SecretScreenProps): ReactNode {
                   {rows.map((row) => (
                     <tr key={row.nama} className="border-b border-outline-variant text-on-surface">
                       <td data-label={t('secret.col.name')} className={TD}>
-                        <span className="break-all font-code">{row.nama}</span>
+                        <span className="break-all">{row.nama}</span>
                       </td>
                       <td data-label={t('secret.col.value')} className={TD}>
                         {/* Selalu tersamar: tidak ada nilai di respons, jadi tidak ada yang bisa ditampilkan. */}
-                        <span className="text-on-surface-variant">{t('secret.masked')}</span>
+                        <span className="text-on-surface-variant" aria-hidden="true">
+                          {t('secret.masked')}
+                        </span>
+                        <span className="sr-only">{t('secret.masked_label')}</span>
                       </td>
                       <td data-label={t('secret.col.used_by')} className={TD}>
                         {row.dipakai_oleh_provider_count > 0

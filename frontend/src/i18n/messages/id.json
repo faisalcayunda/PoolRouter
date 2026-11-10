@@ -3,7 +3,7 @@
     "breadcrumb": {
       "aria": "Jejak halaman",
       "new": "Baru",
-    "credentials": "Kredensial",
+      "credentials": "Kredensial",
       "not_found": "Halaman tidak ditemukan"
     },
     "group": {
@@ -31,7 +31,7 @@
       "endpoint": "Endpoint"
     },
     "env_label": "PoC",
-  "skip_link": "Lompat ke konten"
+    "skip_link": "Lompat ke konten"
   },
   "settings": {
     "page": {
@@ -98,16 +98,8 @@
       "wib": "{{tanggal}}, {{jam}} WIB"
     },
     "date": {
-      "from": "Dari",
-      "to": "Sampai",
-      "from_time": "Jam mulai",
-      "to_time": "Jam akhir",
-      "from_picker": "Pilih tanggal mulai",
-      "to_picker": "Pilih tanggal akhir",
-      "format_hint": "Format: 03/11/2026",
-      "format_error": "Tanggal belum sah. Tulis dengan format 03/11/2026.",
       "order_error": "Tanggal akhir harus sama dengan atau setelah tanggal awal.",
-      "only_note": "Pilih tanggal dan jam mulai serta akhir untuk mencari."
+      "only_note": "Pilih tanggal mulai dan akhir untuk mencari."
     }
   },
   "account": {
@@ -437,7 +429,8 @@
       "title": "Belum ada secret",
       "body": "Secret menyimpan kredensial provider, misalnya USER_ID dan PASSWORD. Tambahkan secret sebelum membuat template provider."
     },
-    "masked": "Tersamar",
+    "masked": "••••••••••••",
+    "masked_label": "Tersamar",
     "changed_unknown": "Belum tersedia",
     "unused": "Tidak dipakai",
     "row": {
@@ -906,7 +899,6 @@
     }
   },
   "clients": {
-    "back": "Semua client",
     "inactive": "Nonaktif",
     "saved": "Perubahan client tersimpan.",
     "page": {
@@ -1133,6 +1125,7 @@
       "subtitle": "Setiap pencarian, pembukaan payload, dan ekspor dicatat di audit akses.",
       "field": "NIK (16 digit)",
       "field_help": "Wajib 16 digit angka. Tidak tersimpan di riwayat, URL, atau filter.",
+      "range": "Rentang waktu",
       "error": "Masukkan NIK 16 digit.",
       "range_only_note": "Pencarian rentang waktu saja tidak tersedia; NIK wajib diisi.",
       "export": "Ekspor hasil",
@@ -1172,7 +1165,6 @@
     },
     "filter": {
       "user": "Pengguna",
-      "user_help": "Masukkan ID pengguna dalam format UUID.",
       "user_error": "ID pengguna harus berformat UUID, misalnya 123e4567-e89b-12d3-a456-426614174000.",
       "action": "Aksi",
       "nik_range": "NIK + rentang {{rentang}}",
