@@ -171,7 +171,9 @@ paths:
     post:
       tags:
       - admin
-      summary: Login (ADR-0003 section 3.6). Success sets `__Host-pr_session` cookie.
+      summary: |-
+        Login (ADR-0003 section 3.6). Success sets `__Host-pr_session` cookie (204); a role that
+        must pass MFA gets 200 `{langkah}` and the `__Host-pr_mfa` pre-session cookie instead.
       operationId: login
       requestBody:
         content:
@@ -180,6 +182,21 @@ paths:
               $ref: '#/components/schemas/LoginRequest'
         required: true
       responses:
+        '200':
+          description: 'Kata sandi benar tapi peran wajib MFA: cookie pra-sesi `__Host-pr_mfa` (5 menit) dan langkah berikutnya; belum ada sesi'
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+              description: Selalu no-store (R-16)
+            Set-Cookie:
+              schema:
+                type: string
+              description: __Host-pr_mfa=...; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=300
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LangkahLogin'
         '204':
           description: Login berhasil; cookie sesi diterbitkan
           headers:
@@ -3063,6 +3080,20 @@ components:
         upstream_pool_id:
           type: string
           format: uuid
+    Langkah:
+      type: string
+      description: Langkah yang harus ditempuh client setelah kata sandi benar (AC-9).
+      enum:
+      - mfa
+      - daftar_mfa
+    LangkahLogin:
+      type: object
+      description: '`POST /auth/login` 200: kata sandi benar tapi sesi belum terbit (AC-9).'
+      required:
+      - langkah
+      properties:
+        langkah:
+          $ref: '#/components/schemas/Langkah'
     LogBaris:
       type: object
       description: |-

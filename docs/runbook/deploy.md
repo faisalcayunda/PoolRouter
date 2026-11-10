@@ -84,8 +84,33 @@ Healthcheck bawaan:
 - `postgres`: `pg_isready` terhadap `POSTGRES_USER` dan `POSTGRES_DB`
 - `redis`: `redis-cli ping` dengan `REDISCLI_AUTH` dari secret (tidak lewat argumen)
 - `rabbitmq`: `rabbitmq-diagnostics -q ping`
-- `backend-webserver`: `webserver healthcheck` (probe lokal lewat subcommand binary, ADR-0001 §11.2). Subcommand ini ada di lingkup SHAA-175 (Flik). Sampai ada di image, service ini tidak akan `healthy`. Probe TCP tidak dipakai: image runtime tidak punya shell atau `nc`, dan probe TCP akan memasukkan alat yang harus dicabut lagi. `backend-controller` dan `backend-worker` belum punya healthcheck; ditambahkan di Bagian 2.
+- `backend-webserver`: `webserver healthcheck` (probe lokal lewat subcommand binary, ADR-0001 §11.2). Subcommand ini ada di lingkup SHAA-175 (Flik). Sampai ada di image, service ini tidak akan `healthy`. Probe TCP tidak dipakai: image runtime tidak punya shell atau `nc`, dan probe TCP akan memasukkan alat yang harus dicabut lagi. `backend-controller`: `controller healthcheck` (`/readyz`). `backend-worker`: `worker liveness` (`/healthz`), lihat bagian berikut.
 - `frontend`: `wget` ke port 8080 di dalam container. Verifikasi pada Bagian 2 bahwa image nginx-unprivileged memiliki `wget`.
+
+### Liveness dan restart worker (ARC-226)
+
+Docker Compose tidak me-restart container yang berstatus `unhealthy`. Jadi healthcheck saja tidak memulihkan worker yang consumer-nya tidak pernah tersambung ke broker (mis. 406 `PRECONDITION_FAILED` atau izin vhost ditolak, ADR-0004 §4.3 W3). Mekanismenya tiga lapis:
+
+1. `/healthz` worker gagal (503) bila ada loop consumer yang terputus lebih dari 90 detik (`TOLERANSI_LIVENESS`). Tanpa loop terdaftar (belum ada upstream pool) worker tetap hidup. Gangguan PostgreSQL atau Redis tidak mempengaruhi `/healthz`, hanya `/readyz` (ADR-0001 §5a.9).
+2. Healthcheck Compose `backend-worker` memanggil `worker liveness` (GET `/healthz`), bukan `worker healthcheck` (GET `/readyz`). Hasilnya terlihat di `compose-ps`.
+3. Pemulihan: worker mengawasi status yang sama tiap 5 detik. Saat liveness gagal ia log `worker: liveness gagal, keluar agar di-restart orkestrator`, menghentikan consumer (handler berjalan selesai dan di-ack), lalu keluar dengan kode 1. Bila drain melewati 30 detik, proses keluar paksa dengan kode 1. Kebijakan `restart` menyalakannya lagi: `on-failure` di `compose.yaml` (dev), `unless-stopped` di `compose.staging.yaml` dan `compose.prod.yaml`. Waktu dari putus sampai restart kira-kira 90 sampai 100 detik, ditambah waktu drain.
+
+Kubernetes (F1): manifest belum ada di repo (lihat bagian Lingkungan). Saat ditulis, container worker memakai `livenessProbe` `httpGet` `/healthz` port 9090 (`periodSeconds: 10`, `failureThreshold: 3`) dan `readinessProbe` `/readyz`. Toleransi 90 detik sudah ada di aplikasi, jadi probe tidak perlu menambah `initialDelaySeconds` besar. Pengawas proses di atas ikut berlaku: kubelet me-restart container yang keluar non-nol.
+
+Uji manual (dev, butuh stack `app` sudah naik dan minimal satu upstream pool aktif):
+
+```sh
+make compose-ps ENV=dev ENV_FILE=deploy/compose/env/dev.env CONTAINER_ENGINE=podman
+# 1. Catat waktu start worker.
+W=$(podman ps -q --filter label=com.docker.compose.service=backend-worker)
+podman inspect -f '{{.State.StartedAt}}' "$W"
+# 2. Putus broker: stop rabbitmq (atau cabut izin vhost role worker).
+podman stop "$(podman ps -q --filter label=com.docker.compose.service=rabbitmq)"
+# 3. Tunggu lebih dari 100 detik, lalu baca log dan waktu start lagi.
+make compose-logs ENV=dev ENV_FILE=deploy/compose/env/dev.env CONTAINER_ENGINE=podman
+```
+
+Hasil yang diharapkan: log worker memuat `liveness gagal, keluar agar di-restart orkestrator`, lalu container start ulang (`StartedAt` berubah; di Docker `docker inspect -f '{{.RestartCount}}'` naik). Setelah `rabbitmq` dinyalakan lagi, worker tersambung dan `worker liveness` kembali sukses. Pemeriksaan probe saja: `podman exec "$W" worker liveness; echo $?` (0 sehat, 1 mati atau tidak terjangkau). Uji otomatis yang ada: `liveness_at_membaca_healthz_bukan_readyz` (`poolrouter-core`) dan `tunggu_mati_baru_selesai_setelah_liveness_gagal` (`poolrouter-worker`).
 
 ### Upgrade (staging dan prod)
 

@@ -19,6 +19,7 @@ import { SnackbarRegion, useSnackbar } from '../common/useSnackbar';
 import { Forbidden } from './Forbidden';
 import { FormSection } from './FormSection';
 import { LinkButton } from './LinkButton';
+import { RuleDialog } from './RuleDialog';
 import { TemplateEditor } from './TemplateEditor';
 import {
   ALASAN_MAKS,
@@ -37,6 +38,7 @@ import {
   type FieldIssue,
   type ProviderDraft,
 } from './providerForm';
+import { parseParameters, serializeParameters, type ParameterRule } from './ruleEditor';
 
 /** Tab detail provider (Penpot F0 / S03a, S03, S04, S03b, S04b); urutan = urutan di layar. */
 const TABS = ['umum', 'template', 'parameter', 'respons', 'endpoint'] as const;
@@ -111,24 +113,12 @@ export function issueMessage(instance: I18n, issue: FieldIssue): string {
 /** Fokus ke kontrol pertama di pembungkus field (input, textarea, atau tombol select). */
 function focusField(field: DraftField): void {
   const box = document.querySelector(`[data-field="${field}"]`);
-  box?.querySelector<HTMLElement>('input, textarea, button')?.focus();
+  (
+    box?.querySelector<HTMLElement>('input, textarea, button') ?? (box as HTMLElement | null)
+  )?.focus();
 }
 
-type RuleRow = Provider['parameters'][number];
-
-/** Daftar parameter dari teks JSON draft; `null` bila teks belum sah (tabel disembunyikan). */
-function parseRules(text: string): RuleRow[] | null {
-  try {
-    const value: unknown = JSON.parse(text);
-    if (!Array.isArray(value)) return null;
-    return value.filter(
-      (row): row is RuleRow =>
-        typeof row === 'object' && row !== null && typeof (row as RuleRow).nama === 'string',
-    );
-  } catch {
-    return null;
-  }
-}
+type RuleRow = ParameterRule;
 
 const RULE_TYPE_KEY = {
   regex: 'provider.rules.type.regex',
@@ -183,6 +173,8 @@ function ProviderForm({ client, initial }: ProviderFormProps): ReactNode {
   const [saving, setSaving] = useState(false);
   const [tab, setTab] = useState<ProviderTab>('umum');
   const pendingFocus = useRef<DraftField | null>(null);
+  /** Editor rule terbuka: `index` null = parameter baru. */
+  const [ruleDialog, setRuleDialog] = useState<{ index: number | null } | null>(null);
 
   const mode = current ? 'update' : 'create';
   useDocumentTitle(t('title.page.provider'));
@@ -197,6 +189,20 @@ function ProviderForm({ client, initial }: ProviderFormProps): ReactNode {
       delete next[field];
       return next;
     });
+  }
+
+  function saveRule(row: ParameterRule) {
+    const list = [...(parseParameters(draft.parameters) ?? [])];
+    const index = ruleDialog?.index ?? null;
+    if (index === null) list.push(row);
+    else list[index] = row;
+    set('parameters', serializeParameters(list));
+    setRuleDialog(null);
+  }
+
+  function removeRule(index: number) {
+    const list = (parseParameters(draft.parameters) ?? []).filter((_, i) => i !== index);
+    set('parameters', serializeParameters(list));
   }
 
   function showErrors(next: DraftErrors) {
@@ -270,7 +276,7 @@ function ProviderForm({ client, initial }: ProviderFormProps): ReactNode {
   };
   const showDataBalikan = draft.config_schema_version === 2 || draft.data_balikan.trim() !== '';
   const templateIssue = errors.body_template;
-  const rules = parseRules(draft.parameters);
+  const rules = parseParameters(draft.parameters);
   const saveLabel = saving
     ? t('provider.form.saving')
     : mode === 'create'
@@ -285,7 +291,7 @@ function ProviderForm({ client, initial }: ProviderFormProps): ReactNode {
         titleRef={titleRef}
         actions={
           tab === 'parameter' ? (
-            <Button type="button" onPress={() => focusField('parameters')}>
+            <Button type="button" onPress={() => setRuleDialog({ index: null })}>
               {t('provider.rules.add')}
             </Button>
           ) : (
@@ -632,9 +638,16 @@ function ProviderForm({ client, initial }: ProviderFormProps): ReactNode {
                             <Button
                               variant="text"
                               aria-label={t('provider.rules.edit_aria', { nama: rule.nama })}
-                              onPress={() => focusField('parameters')}
+                              onPress={() => setRuleDialog({ index })}
                             >
                               {t('common.action.edit')}
+                            </Button>
+                            <Button
+                              variant="text"
+                              aria-label={t('provider.rules.delete_aria', { nama: rule.nama })}
+                              onPress={() => removeRule(index)}
+                            >
+                              {t('common.action.delete')}
                             </Button>
                           </td>
                         </tr>
@@ -653,17 +666,13 @@ function ProviderForm({ client, initial }: ProviderFormProps): ReactNode {
                   {t('provider.rules.type_help')}
                 </p>
               </div>
-              <div data-field="parameters">
-                <TextArea
-                  label={t('provider.form.parameters.label')}
-                  description={t('provider.form.parameters.help')}
-                  value={draft.parameters}
-                  onChange={(v) => set('parameters', v)}
-                  rows={8}
-                  textAreaClassName="font-code"
-                  {...err('parameters')}
-                />
-              </div>
+              {errors.parameters ? (
+                <div data-field="parameters" tabIndex={-1} className="m3-focus">
+                  <InlineAlert tone="error" heading={t('provider.rules.error_title')}>
+                    {issueMessage(i18n, errors.parameters)}
+                  </InlineAlert>
+                </div>
+              ) : null}
               <p className="typescale-body-medium text-on-surface-variant">
                 {t('provider.rules.no_defaults')}
               </p>
@@ -770,6 +779,15 @@ function ProviderForm({ client, initial }: ProviderFormProps): ReactNode {
         </TabPanel>
       </Tabs>
       <SnackbarRegion queue={snackbar.queue} />
+      {ruleDialog ? (
+        <RuleDialog
+          initial={ruleDialog.index === null ? null : (rules?.[ruleDialog.index] ?? null)}
+          editingIndex={ruleDialog.index}
+          existingNames={(rules ?? []).map((rule) => rule.nama)}
+          onSave={saveRule}
+          onCancel={() => setRuleDialog(null)}
+        />
+      ) : null}
     </form>
   );
 }

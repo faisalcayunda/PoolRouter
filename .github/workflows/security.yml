@@ -78,10 +78,10 @@ jobs:
             semgrep scan --config p/rust --severity ERROR --error --metrics=off .
 
   image-scan:
-    # Berat (tiga build image); hanya push ke main dan manual, bukan gate PR (ARC-212).
+    # Berat (empat build image); hanya push ke main dan manual, bukan gate PR (ARC-212).
     if: github.event_name != 'pull_request'
     # Ambang: gagal pada CVE HIGH atau CRITICAL yang punya perbaikan (--ignore-unfixed --exit-code 1).
-    # Mencakup tiga image F0: backend, frontend, dan mock Dukcapil (ARC-76).
+    # Mencakup empat image F0: backend, frontend, mock Dukcapil (ARC-76), dan PostgreSQL + pgBackRest (ARC-215).
     # Build dan push image-nya ada di workflow backend-image.yml dan app-images.yml.
     runs-on: ubuntu-latest
     timeout-minutes: 45
@@ -98,6 +98,9 @@ jobs:
           - image: localhost/poolrouter-mock-dukcapil:ci
             file: perf/mock-dukcapil/Containerfile
             context: perf/mock-dukcapil
+          - image: localhost/poolrouter-postgres:dev
+            file: deploy/compose/backup/Containerfile
+            context: deploy/compose/backup
     name: image-scan (${{ matrix.image }})
     steps:
       - name: Checkout

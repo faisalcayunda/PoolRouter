@@ -13,9 +13,11 @@
 //! - [`upstream`]: port panggilan HTTP ke provider beserta implementasi
 //!   `reqwest`.
 //! - [`konsumen`]: penyambung handler ke port `JobConsumer`.
+//! - [`liveness`]: pengawas yang mendeteksi proses tidak hidup lagi.
 
 pub mod handler;
 pub mod keputusan;
 pub mod konsumen;
+pub mod liveness;
 pub mod render;
 pub mod upstream;
