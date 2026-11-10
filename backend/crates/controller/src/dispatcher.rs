@@ -208,20 +208,73 @@ fn pool_dari_baris(baris: &PgRow, sekarang: DateTime<Utc>) -> Result<PoolDispatc
     })
 }
 
-/// Kandidat berikutnya untuk satu upstream pool. Request yang belum pernah
+/// Berapa kandidat teratas yang dibaca dari tiap sumber (satu downstream pool,
+/// atau request menunggu retry) sebelum dikunci. Harus lebih besar dari jumlah
+/// dispatcher yang boleh memegang kunci baris bersamaan: `SKIP LOCKED` hanya
+/// melewati baris yang sudah dikunci dispatcher lain, jadi kandidat yang
+/// dikunci semua tidak menyisakan pilihan di putaran itu. Hanya satu leader
+/// yang berjalan di produksi; uji AC-11 memakai dua.
+const KANDIDAT_PER_SUMBER: i64 = 32;
+
+/// Kandidat berikutnya untuk satu upstream pool, urut `(prioritas_efektif,
+/// dispatch_key)`, `FOR UPDATE SKIP LOCKED`. Request yang belum pernah
 /// di-dispatch belum punya `upstream_pool_id` (EN-04), jadi pool-nya diturunkan
-/// dari rute pertama yang aktif (asumsi CW4, satu rute per downstream pool di
-/// F0); request menunggu retry tetap di pool percobaan sebelumnya.
-fn sql_calon() -> String {
+/// dari rute pertama yang aktif (asumsi CW4; `SQL_RUTE_PERTAMA`, fragmen yang
+/// sama dengan rebuild dan penyapu); request menunggu retry tetap di pool
+/// percobaan sebelumnya.
+///
+/// Bentuknya dipilih supaya `request_dispatch_idx` (`downstream_pool_id,
+/// prioritas_efektif, dispatch_key`) terpakai berurutan, bukan seq scan plus
+/// sort seluruh antrean (ARC-229):
+///
+/// 1. `hulu`: downstream pool yang rute pertamanya `$1`, dihitung sekali per
+///    kueri dari tabel rute yang kecil, bukan per baris `request`.
+/// 2. `teratas`: per downstream pool, `KANDIDAT_PER_SUMBER` request baru
+///    teratas lewat indeks (`LATERAL ... LIMIT`), digabung dengan request
+///    menunggu retry `upstream_pool_id = $1`. Tanpa kunci: `FOR UPDATE` tidak
+///    boleh di `UNION` atau subquery ber-`LIMIT` yang menyebar kunci ke baris
+///    yang tidak dipilih.
+/// 3. Kueri luar mengunci kandidat terbaik yang tidak sedang dikunci dispatcher
+///    lain. Yang disortir paling banyak `KANDIDAT_PER_SUMBER` kali jumlah
+///    sumber, berapa pun panjang antreannya.
+///
+/// Parameter: `$1` upstream pool, `$2` waktu sekarang, `$3` request yang
+/// dilewati putaran ini.
+pub fn sql_calon() -> String {
     format!(
-        "SELECT r.request_id, r.attempt_count
+        "WITH hulu AS (
+            SELECT r.downstream_pool_id
+              FROM (SELECT DISTINCT downstream_pool_id FROM downstream_pool_rute) r
+             WHERE {SQL_RUTE_PERTAMA} = $1
+         ), teratas AS (
+            (SELECT t.request_id
+               FROM hulu h
+              CROSS JOIN LATERAL (
+                    SELECT q.request_id
+                      FROM request q
+                     WHERE q.downstream_pool_id = h.downstream_pool_id
+                       AND q.status = 'queued'
+                       AND q.mode = 'async'
+                       AND q.upstream_pool_id IS NULL
+                       AND (q.not_before IS NULL OR q.not_before <= $2)
+                       AND q.request_id <> ALL($3)
+                     ORDER BY q.prioritas_efektif, q.dispatch_key
+                     LIMIT {KANDIDAT_PER_SUMBER}) t)
+            UNION ALL
+            (SELECT q.request_id
+               FROM request q
+              WHERE q.upstream_pool_id = $1
+                AND q.status = 'queued'
+                AND q.mode = 'async'
+                AND (q.not_before IS NULL OR q.not_before <= $2)
+                AND q.request_id <> ALL($3)
+              ORDER BY q.prioritas_efektif, q.dispatch_key
+              LIMIT {KANDIDAT_PER_SUMBER})
+         )
+         SELECT r.request_id, r.attempt_count
            FROM request r
-          WHERE r.status = 'queued'
-            AND r.mode = 'async'
-            AND (r.not_before IS NULL OR r.not_before <= $2)
-            AND (r.upstream_pool_id = $1
-                 OR (r.upstream_pool_id IS NULL AND {SQL_RUTE_PERTAMA} = $1))
-            AND r.request_id <> ALL($3)
+          WHERE r.request_id IN (SELECT request_id FROM teratas)
+            AND r.status = 'queued'
           ORDER BY r.prioritas_efektif, r.dispatch_key
           LIMIT 1
           FOR UPDATE OF r SKIP LOCKED"
