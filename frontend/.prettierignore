@@ -9,3 +9,5 @@ src/i18n/messages
 src/i18n/status-ignore-keys.json
 src/styles/m3/theme.json
 .cache
+playwright-report
+test-results

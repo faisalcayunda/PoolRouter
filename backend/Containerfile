@@ -1,5 +1,7 @@
 # Image backend PoolRouter (ADR-0001 Addendum A §3.1, §3.3, §6, §7).
-# Satu image memuat binary webserver, controller, dan worker. Compose memilih proses lewat `command:`.
+# Satu image memuat binary webserver, controller, worker, dan backend-cli. Compose memilih proses lewat `command:`;
+# backend-cli dijalankan lewat service backend-cli (profile cli, `compose run --rm`) atau `exec` di container backend
+# (ADR-0003 §3.6c, docs/runbook/deploy.md).
 # Build (dari akar repo): podman build -f backend/Containerfile backend   (atau docker build, konteks backend/)
 # Tanpa fitur khusus BuildKit: tanpa `# syntax=`, tanpa HEALTHCHECK/SHELL/ONBUILD, tanpa COPY --link/--parents/--exclude.
 # Pengecualian: `RUN --mount=type=cache` di stage build, diizinkan Addendum A §3.3 (didukung Buildah dan Docker 27).
@@ -24,9 +26,9 @@ COPY . .
 # Cache registry dan target hanya ada selama build; binary disalin ke /out dalam RUN yang sama.
 RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
     --mount=type=cache,target=/src/target,sharing=locked \
-    cargo build --release --locked --bin webserver --bin controller --bin worker \
+    cargo build --release --locked --bin webserver --bin controller --bin worker --bin backend-cli \
  && mkdir -p /out \
- && cp target/release/webserver target/release/controller target/release/worker /out/
+ && cp target/release/webserver target/release/controller target/release/worker target/release/backend-cli /out/
 
 # Runtime glibc (bookworm, sama dengan build stage). Digest index multi-arch, diambil 2026-11-03.
 FROM docker.io/library/debian:bookworm-slim@sha256:99c0b25c46d0214d5a2091092e7908907dcaecd6a962cde0ac700acee222b6f3
@@ -44,7 +46,7 @@ LABEL org.opencontainers.image.source="https://github.com/faisalcayunda/PoolRout
 RUN apt-get update \
  && apt-get install -y --no-install-recommends --only-upgrade apt \
  && rm -rf /var/lib/apt/lists/*
-COPY --from=build /out/webserver /out/controller /out/worker /usr/local/bin/
+COPY --from=build /out/webserver /out/controller /out/worker /out/backend-cli /usr/local/bin/
 # User numerik tetap (ADR-0001 Addendum A §6, D5). Tidak bergantung pada entri /etc/passwd.
 USER 10001:10001
 WORKDIR /

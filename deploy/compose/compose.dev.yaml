@@ -16,6 +16,12 @@ services:
     environment:
       POOLROUTER_DB_SSLMODE: disable
       POOLROUTER_SEED_SYNTHETIC: "true"
+
+  # Password seed hanya dibaca backend-cli: config menolak POOLROUTER_SEED_PASSWORD_FILE pada komponen
+  # lain, jadi webserver tidak boleh memilikinya.
+  backend-cli:
+    environment:
+      POOLROUTER_DB_SSLMODE: disable
       POOLROUTER_SEED_PASSWORD_FILE: /run/secrets/poolrouter_seed_password
     secrets: [poolrouter_seed_password]
 

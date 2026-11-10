@@ -32,6 +32,9 @@ Aturan yang berlaku untuk semua perintah tulis:
 - Pelaku di CLI dinyatakan, tidak dibuktikan. Akses `exec` ke container dibatasi untuk petugas
   infrastruktur (risiko sisa ADR-0003 §3.6c, ditutup UI pengguna di F1).
 
+Opsi ditulis `--nama nilai` atau `--nama=nilai`. Nilai yang diawali `--` hanya diterima dalam
+bentuk `--nama=nilai`.
+
 | Perintah | Keterangan |
 |---|---|
 | `bootstrap --username <u> --alasan <teks>` | Platform admin pertama. Hanya berhasil saat tabel pengguna kosong. |
@@ -42,6 +45,7 @@ Aturan yang berlaku untuk semua perintah tulis:
 | `peran cabut --username <u> --peran <peran> --oleh <admin> --alasan <teks>` | Mencabut satu peran. |
 | `daftar` | Username, status aktif, peran yang berlaku, dan client. Tanpa hash password. |
 | `seed pengguna` | Pengguna sintetis per peran, hanya untuk `dev` dan `ci`. |
+| `seed dukcapil` | Provider, upstream pool, downstream pool, dan endpoint sintetis, hanya untuk `dev` dan `ci`. Jalankan sesudah `seed pengguna`. |
 
 Aturan peran (A-02, contract §8.1):
 
@@ -93,8 +97,29 @@ Pengguna yang dibuat, semuanya sintetis:
 | `seed-client-owner` | `client_owner`, terikat client `Client Sintetis Seed` |
 | `seed-admin-auditor` | `platform_admin` dan `auditor` |
 
-Seed idempoten: menjalankannya lagi tidak membuat baris baru. `seed dukcapil` belum tersedia;
-perintah itu menunggu CRUD endpoint admin API (ARC-54).
+Seed idempoten: menjalankannya lagi tidak membuat baris baru. Bila salah satu pengguna seed sudah ada
+tetapi nonaktif, seed ditolak tanpa perubahan (keluar non-nol) dan tidak mengaktifkannya kembali;
+aktifkan lewat `pengguna aktifkan`.
+
+### Seed dukcapil (dev dan ci)
+
+`seed dukcapil` membuat satu rantai konfigurasi sintetis supaya jalur sync dan async bisa dicoba
+tanpa mengisi konfigurasi lewat UI. Aturannya sama dengan `seed pengguna`: hanya `dev` dan `ci`,
+idempoten, dan setiap objek baru tercatat di `audit_konfigurasi` atas nama `seed-platform-admin`,
+sehingga `seed pengguna` harus dijalankan lebih dulu (kalau belum, perintah keluar non-nol).
+
+| Objek | Nama |
+|---|---|
+| provider (versi 1 aktif) | `seed-dukcapil-provider` |
+| upstream pool (kuota harian 1000) | `seed-dukcapil-upstream` |
+| downstream pool, rute ke upstream di atas | `seed-dukcapil-downstream` |
+| downstream endpoint (versi 1 aktif) | `seed-dukcapil-endpoint` |
+
+Batasan: template provider tidak memakai `{{secret.*}}` (CLI tidak punya KEK), `base_url`-nya
+`https://dukcapil-sintetis.example.test/api` (admin API mewajibkan https; arahkan ke mock lewat
+`updateProvider` bila perlu), dan data balikan tidak diaktifkan (keputusan D-08 masih terbuka).
+
+Di Compose dev: `make compose-seed ENV=dev` menjalankan kedua seed berurutan lewat profil `cli`.
 
 ## Uji
 
