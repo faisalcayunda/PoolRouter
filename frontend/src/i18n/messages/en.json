@@ -355,12 +355,12 @@
     "replace": {
       "title": "Replace secret {{nama}}",
       "new_value": "New value",
-      "body": "The old value can't be viewed. The new value replaces it right away.",
-      "confirm": "Replace value"
+      "confirm": "Save"
     },
     "delete": {
       "blocked": {
         "title": "Secret is still in use",
+        "ack": "Got it",
         "body": "{{nama}} is still used by active providers: {{daftar}}. Deactivate or change those providers first, then delete this secret.",
         "short": "{{nama}} is still used by an active provider. Change or deactivate that provider first, then delete this secret."
       },
@@ -379,6 +379,7 @@
       "body": "A secret stores a provider credential, such as USER_ID and PASSWORD. Add a secret before you create a provider template."
     },
     "masked": "Masked",
+    "changed_unknown": "Not available yet",
     "unused": "Not in use",
     "row": {
       "replace_aria": "Replace the value of secret {{nama}}",
@@ -779,10 +780,12 @@
       "pool": "Downstream pool",
       "pool_help": "A client can only use the pool it is linked to.",
       "webhook": "Webhook address (optional)",
+      "webhook_help": "Must start with https://",
       "save": "Save client"
     },
     "snackbar": {
-      "saved": "Client saved"
+      "saved": "Client saved",
+      "saved_webhook_failed": "Client saved, but the webhook was not saved. Set it on the client webhook page."
     },
     "empty": {
       "title": "No clients yet",
@@ -809,13 +812,15 @@
     },
     "secret": {
       "heading": "Signing secret",
-      "desc": "Created by the system and shown only once. Install it in your application to verify webhooks.",
+      "desc": "No secret yet. Created by the system and shown only once. Install it in your application to verify webhooks.",
+      "active_desc": "Created by the system and shown only once; it cannot be viewed again. Active version: {{versi}}.",
       "create": "Create secret",
       "rotate": "Rotate secret"
     },
     "rotate": {
       "title": "Rotate webhook secret?",
-      "body": "The old secret stops working immediately. The {{nama_client}} application will fail to verify webhooks until the new secret is installed in it."
+      "body": "The old secret stops working immediately. The {{nama_client}} application will fail to verify webhooks until the new secret is installed in it.",
+      "once": "The new secret is shown once after you choose to rotate."
     },
     "created": {
       "title": "New webhook secret for {{nama_client}}",
@@ -828,6 +833,7 @@
     },
     "col": {
       "time": "Time",
+      "queue_id": "queue_id",
       "request_status": "Request status",
       "reason": "Failure reason",
       "note": "Note"
@@ -973,13 +979,17 @@
       "title": "Quota",
       "meta": "Pool: {{nama_pool}} · Updated {{waktu}}",
       "today": "Today",
-      "of_total": "{{terpakai, number}} of {{total, number}}",
       "used_left": "{{persen, number}}% used, {{sisa, number}} left",
       "reset_at": "resets {{waktu}}",
       "hour": "Current hour ({{rentang}})",
       "sync_heading": "Sync share",
       "sync_used": "Sync used {{terpakai, number}} of the {{persen, number}}% limit",
-      "note": "Figures are counted from attempts to Dukcapil, including retries and failed calls. Differences from the transaction log can occur.",
+      "note": "Figures are counted from attempts to Dukcapil. Small differences from the transaction log can occur.",
+      "limit_of": "of {{total, number}}",
+      "trend_heading": "7-day usage",
+      "trend_unit": "% of daily quota",
+      "trend_pending_title": "Waiting for the quota history API",
+      "trend_pending_body": "The 7-day usage chart waits until getQuotaTracker provides daily history.",
       "reload": "Reload",
       "pool_filter": "Pool",
       "pool_unknown": "Upstream pool",

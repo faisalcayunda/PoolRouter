@@ -21,7 +21,7 @@ export function OnceSecretDialog({
   title: string;
   fieldLabel: string;
   value: string;
-  /** Client ID kredensial baru; hanya diisi layar kredensial (layar webhook tidak punya padanannya). */
+  /** Client ID kredensial baru; hanya diisi layar kredensial, kosong untuk secret webhook. */
   clientId?: string;
   onDone: () => void;
 }): ReactNode {
