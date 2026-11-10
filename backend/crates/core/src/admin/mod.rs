@@ -28,6 +28,7 @@ pub mod password;
 pub mod pengguna;
 pub mod pra_sesi;
 pub mod secret;
+pub mod seed_dukcapil;
 pub mod sesi;
 pub mod sesi_store;
 pub mod token;
