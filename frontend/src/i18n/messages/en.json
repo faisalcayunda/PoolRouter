@@ -171,7 +171,8 @@
       "username": "Username",
       "password": "Password",
       "submit": "Sign in",
-      "session_expired": "Your session has expired. Sign in again to continue."
+      "session_expired_title": "Your session has ended",
+      "session_expired_body": "The session was inactive for longer than the time limit."
     },
     "error": {
       "invalid": "The username or password doesn't match.",

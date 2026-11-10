@@ -118,8 +118,7 @@ describe('S01 masuk', () => {
 
   it('explains an expired session when the shell sent us here with alasan=sesi_berakhir', () => {
     renderWithI18n(<LoginScreen client={stub()} search="?alasan=sesi_berakhir" />);
-    expect(
-      screen.getByText('Sesi Anda berakhir. Masuk lagi untuk melanjutkan.'),
-    ).toBeInTheDocument();
+    expect(screen.getByText('Sesi Anda telah berakhir')).toBeInTheDocument();
+    expect(screen.getByText('Sesi tidak aktif selama lebih dari batas waktu.')).toBeInTheDocument();
   });
 });

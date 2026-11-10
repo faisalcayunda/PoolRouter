@@ -171,7 +171,8 @@
       "username": "Nama pengguna",
       "password": "Kata sandi",
       "submit": "Masuk",
-      "session_expired": "Sesi Anda berakhir. Masuk lagi untuk melanjutkan."
+      "session_expired_title": "Sesi Anda telah berakhir",
+      "session_expired_body": "Sesi tidak aktif selama lebih dari batas waktu."
     },
     "error": {
       "invalid": "Nama pengguna atau kata sandi tidak cocok.",

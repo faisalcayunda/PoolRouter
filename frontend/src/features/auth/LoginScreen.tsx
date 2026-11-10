@@ -101,7 +101,9 @@ export function LoginScreen({ client = api, search = '', onBerhasil }: Props) {
         </div>
 
         {search.includes('sesi_berakhir') ? (
-          <InlineAlert tone="info">{t('login.page.session_expired')}</InlineAlert>
+          <InlineAlert tone="info" heading={t('login.page.session_expired_title')}>
+            {t('login.page.session_expired_body')}
+          </InlineAlert>
         ) : null}
 
         {galat ? (
