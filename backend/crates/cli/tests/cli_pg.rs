@@ -542,7 +542,7 @@ async fn hitung_rantai_dukcapil(u: &Uji) -> (i64, i64, i64, i64, i64, i64, i64) 
 #[ignore]
 async fn seed_pengguna_lalu_seed_dukcapil_hanya_dev_ci_dan_idempoten() {
     let u = Uji::baru().await;
-    u.jalankan_di(Environment::Ci, Some(PASSWORD), Perintah::SeedPengguna)
+    u.jalankan_di(Environment::Ci, Some(NILAI_UJI), Perintah::SeedPengguna)
         .await
         .unwrap();
 
