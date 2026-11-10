@@ -49,7 +49,9 @@ fn periode_untuk_fixture(sekarang: DateTime<Utc>) -> Periode {
 /// dengan jam dinding, uji yang jalan dekat 17:00 UTC melihat sebagian baris
 /// jatuh di periode sebelumnya (`jumlah` 1 bukan 4 pada 17:00:10, ARC-253).
 /// Tanggalnya di masa lalu supaya `received_at` tidak mendahului `now()` pada
-/// riwayat status.
+/// riwayat status. `ttl_expires_at` tetap dari `now()`: `bersihkan` tidak bisa
+/// menghapus `request` yang punya `transaction_log`, dan request antre yang TTL-nya
+/// sudah lewat akan disapu `penyapu` milik uji lain pada basis data yang sama.
 fn sekarang_tetap() -> DateTime<Utc> {
     Utc.with_ymd_and_hms(2026, 11, 9, 5, 0, 0).unwrap()
 }
@@ -147,7 +149,7 @@ async fn fixture(su: &PgPool, jumlah_log: usize, sekarang: DateTime<Utc>) -> Uui
                      prioritas, prioritas_efektif, status, metadata, received_at,
                      ttl_expires_at, attempt_count)
              VALUES ($1, $2, $3, $4, $5, $6, $7, 1, 1, 'async', 1, 1, 'queued', '{}'::jsonb, $8,
-                     $8 + interval '1 hour', 0)",
+                     now() + interval '1 hour', 0)",
         )
         .bind(request_id)
         .bind(client_id)
@@ -279,7 +281,7 @@ async fn snapshot_idempoten_dan_final_sama_dengan_count_log() {
              SELECT $1, client_id, credential_id, downstream_endpoint_id,
                     downstream_pool_id, provider_id, upstream_pool_id,
                     1, 1, 'async', 1, 1, 'queued', '{}'::jsonb, $2,
-                    $2 + interval '1 hour', 0
+                    now() + interval '1 hour', 0
                FROM request WHERE upstream_pool_id = $3 LIMIT 1",
         )
         .bind(request_id)
