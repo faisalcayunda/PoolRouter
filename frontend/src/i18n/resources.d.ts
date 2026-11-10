@@ -932,9 +932,9 @@ export default interface Resources {
       "page": {
         "empty_action": "Atur upstream pool",
         "hour": "Jam berjalan ({{rentang}})",
+        "limit_of": "dari {{total, number}}",
         "meta": "Pool: {{nama_pool}} · Diperbarui {{waktu}}",
-        "note": "Angka dihitung dari jumlah percobaan ke Dukcapil, termasuk percobaan ulang dan panggilan gagal. Selisih dengan log transaksi dapat terjadi.",
-        "of_total": "{{terpakai, number}} dari {{total, number}}",
+        "note": "Angka dihitung dari jumlah percobaan ke Dukcapil. Selisih kecil dengan log transaksi bisa terjadi.",
         "pool_filter": "Pool",
         "pool_unknown": "Pool upstream",
         "reload": "Muat ulang",
@@ -944,6 +944,10 @@ export default interface Resources {
         "sync_used": "Sync terpakai {{terpakai, number}} dari batas {{persen, number}}%",
         "title": "Kuota",
         "today": "Hari ini",
+        "trend_heading": "Pemakaian 7 hari",
+        "trend_pending_body": "Chart pemakaian 7 hari ditunda sampai getQuotaTracker menyediakan riwayat harian.",
+        "trend_pending_title": "Menunggu API riwayat kuota",
+        "trend_unit": "% dari kuota harian",
         "used_left": "Terpakai {{persen, number}}%, sisa {{sisa, number}}"
       }
     },
