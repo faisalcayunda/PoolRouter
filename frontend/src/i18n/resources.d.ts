@@ -196,7 +196,11 @@ export default interface Resources {
       }
     },
     "downstream": {
+      "activate": {
+        "done": "Downstream pool {{nama}} diaktifkan."
+      },
       "col": {
+        "alokasi": "Alokasi",
         "mode": "Mode",
         "name": "Nama",
         "ttl": "TTL antrean",
@@ -204,11 +208,65 @@ export default interface Resources {
       },
       "deactivate": {
         "done": "Downstream pool dinonaktifkan.",
+        "done_counts": "Downstream pool {{nama}} dinonaktifkan: {{dibatalkan, number}} dibatalkan, {{gagal, number}} digagalkan.",
         "title": "Nonaktifkan downstream pool?"
       },
       "empty": {
         "body": "Tambahkan downstream pool dan kaitkan dengan satu upstream pool.",
         "title": "Belum ada downstream pool"
+      },
+      "form": {
+        "alokasi": {
+          "boleh_pinjam": "Boleh meminjam sisa kuota dan anggaran shareable",
+          "jenis": "Jenis alokasi",
+          "jenis_none": "Tanpa alokasi",
+          "jenis_persentase": "Persen dari kuota efektif",
+          "jenis_tetap": "Jumlah tetap per periode",
+          "nilai_persen": "Persen kuota efektif (0,01 sampai 100)",
+          "nilai_tetap": "Jumlah request per periode",
+          "none_help": "Tanpa alokasi, pool memakai sisa kuota dan boleh meminjam.",
+          "sifat": "Sifat anggaran",
+          "sifat_placeholder": "Pilih sifat",
+          "sifat_reserved": "Reserved: hanya dipakai pemiliknya",
+          "sifat_shareable": "Shareable: boleh dipinjam downstream pool lain"
+        },
+        "back": "Kembali ke daftar",
+        "error": {
+          "alasan_rentang": "Tulis alasan {{min}} sampai {{max}} karakter.",
+          "alokasi_kelebihan": "Total alokasi melebihi kuota efektif sebanyak {{batas, number}} request.",
+          "alokasi_kelebihan_umum": "Total alokasi melebihi kuota efektif upstream pool.",
+          "lainnya": "Server menolak {{jumlah}} isian lain yang tidak ada di form ini.",
+          "rentang": "Harus antara {{min}} dan {{max}}.",
+          "server": "Server menolak nilai ini.",
+          "summary": "{{jumlah}} isian perlu diperbaiki.",
+          "tetap_bulat": "Tulis bilangan bulat, minimal 1.",
+          "ttl_positif": "TTL harus bilangan lebih dari 0 jam, atau kosongkan.",
+          "wajib": "Wajib diisi."
+        },
+        "group": {
+          "alokasi": "Alokasi anggaran",
+          "general": "Umum"
+        },
+        "reason": {
+          "heading": "Alasan",
+          "help": "{{jumlah}} dari {{batas}} karakter. Wajib saat mengubah.",
+          "label": "Alasan perubahan"
+        },
+        "save_edit": "Simpan perubahan",
+        "save_new": "Simpan downstream pool",
+        "saved": "Downstream pool {{nama}} disimpan.",
+        "title_edit": "Ubah downstream pool {{nama}}",
+        "upstream_placeholder": "Pilih upstream pool"
+      },
+      "list": {
+        "activate_aria": "Aktifkan downstream pool {{nama}}",
+        "alokasi_persen": "{{nilai}}% kuota efektif",
+        "alokasi_tetap": "{{nilai}} request per periode",
+        "boleh_pinjam": "boleh pinjam",
+        "deactivate_aria": "Nonaktifkan downstream pool {{nama}}",
+        "edit_aria": "Ubah downstream pool {{nama}}",
+        "no_alokasi": "Tanpa alokasi",
+        "ttl_hours": "{{jam}} jam"
       },
       "mode": {
         "async": "Async",
@@ -274,6 +332,24 @@ export default interface Resources {
         "title": "Ekspor tidak bisa dilakukan",
         "too_large": "Hasil terlalu besar. Persempit rentang waktu hingga paling banyak 10.000 record."
       }
+    },
+    "k20": {
+      "body": "Periksa dampak berikut sebelum menonaktifkan {{nama}}.",
+      "confirm": "Nonaktifkan",
+      "preview": {
+        "cancelled": "{{jumlah, number}} request antre akan dibatalkan.",
+        "computed": "Dihitung pada {{waktu}}.",
+        "downstream_count": "Dipakai oleh {{jumlah, number}} downstream pool.",
+        "failed": "{{jumlah, number}} request yang menunggu retry akan digagalkan.",
+        "heading": "Dampak penonaktifan",
+        "last_active_heading": "Upstream aktif terakhir untuk downstream pool ini"
+      },
+      "reason": {
+        "error": "Tulis alasan {{min}} sampai {{maks}} karakter.",
+        "help": "{{min}} sampai {{maks}} karakter. Alasan tercatat di audit.",
+        "label": "Alasan penonaktifan"
+      },
+      "submitting": "Memproses…"
     },
     "log": {
       "chip": {
@@ -815,6 +891,9 @@ export default interface Resources {
       }
     },
     "upstream": {
+      "activate": {
+        "done": "Upstream pool {{nama}} diaktifkan."
+      },
       "col": {
         "actions": "Aksi",
         "name": "Nama",
@@ -825,9 +904,74 @@ export default interface Resources {
       "daily_quota": {
         "help": "Dihitung per hari menurut jam reset (pengaturan jam reset menyusul)."
       },
+      "deactivate": {
+        "done": "Upstream pool {{nama}} dinonaktifkan: {{dibatalkan, number}} dibatalkan, {{gagal, number}} digagalkan.",
+        "title": "Nonaktifkan upstream pool?"
+      },
       "empty": {
         "body": "Tambahkan upstream pool untuk menetapkan kuota harian dan rate limit per jam ke provider.",
         "title": "Belum ada upstream pool"
+      },
+      "form": {
+        "back": "Kembali ke daftar",
+        "error": {
+          "alasan_rentang": "Tulis alasan {{min}} sampai {{max}} karakter.",
+          "bilangan": "Tulis bilangan yang sah.",
+          "bilangan_bulat": "Tulis bilangan bulat.",
+          "cap_di_bawah_base": "Batas atas backoff tidak boleh lebih kecil dari {{batas}} detik (dasar backoff).",
+          "jeda_melebihi_rate": "Jeda paling lama {{batas}} ms agar rate limit per jam tercapai.",
+          "jeda_terbalik": "Jeda maksimum tidak boleh lebih kecil dari jeda minimum.",
+          "lainnya": "Server menolak {{jumlah}} isian lain yang tidak ada di form ini.",
+          "minimal": "Minimal {{min}}.",
+          "rentang": "Harus antara {{min}} dan {{max}}.",
+          "server": "Server menolak nilai ini.",
+          "summary": "{{jumlah}} isian perlu diperbaiki.",
+          "wajib": "Wajib diisi."
+        },
+        "field": {
+          "ambang_berdampingan": "Ambang berdampingan (request)",
+          "batas_percobaan": "Percobaan per request (1 sampai 5)",
+          "jeda_maks": "Jeda maksimum (ms)",
+          "jeda_min": "Jeda minimum (ms)",
+          "jendela_kuota": "Periode kuota",
+          "kuota_harian": "Kuota harian (request)",
+          "margin_kuota": "Margin kuota (0,001 sampai 0,2)",
+          "porsi_sync_persen": "Porsi sync (%)",
+          "rate_limit_per_jam": "Rate limit per jam (request)",
+          "reset_kuota_jam": "Jam reset (0 sampai 23)",
+          "reset_kuota_zona": "Zona waktu reset",
+          "retry_backoff_base_detik": "Dasar backoff (detik)",
+          "retry_backoff_cap_detik": "Batas atas backoff (detik)",
+          "retry_min_per_jam": "Anggaran retry minimum per jam",
+          "retry_rasio": "Rasio anggaran retry (0 sampai 0,5)"
+        },
+        "group": {
+          "general": "Umum",
+          "reset": "Reset kuota",
+          "retry": "Retry dan margin"
+        },
+        "jendela": {
+          "bergulir_24j": "24 jam bergulir",
+          "kalender": "Hari kalender"
+        },
+        "provider_placeholder": "Pilih provider",
+        "reason": {
+          "heading": "Alasan",
+          "help": "{{jumlah}} dari {{batas}} karakter. Wajib saat mengubah dan saat memakai hari kalender.",
+          "label": "Alasan perubahan",
+          "optional": "Alasan (opsional)"
+        },
+        "save_edit": "Simpan perubahan",
+        "save_new": "Simpan upstream pool",
+        "saved": "Upstream pool disimpan.",
+        "subtitle": "Penyimpanan mengganti seluruh konfigurasi; isian awal diambil dari konfigurasi saat ini.",
+        "title_edit": "Ubah upstream pool {{nama}}"
+      },
+      "list": {
+        "activate": "Aktifkan",
+        "activate_aria": "Aktifkan upstream pool {{nama}}",
+        "deactivate_aria": "Nonaktifkan upstream pool {{nama}}",
+        "edit_aria": "Ubah upstream pool {{nama}}"
       },
       "page": {
         "add": "Tambah upstream pool",
@@ -838,11 +982,15 @@ export default interface Resources {
         "provider": "Provider",
         "quota_per_day": "{{jumlah, number}} / hari",
         "status": "Status",
+        "subtitle": "Kuota harian, rate limit per jam, dan porsi sync per provider.",
         "sync_share": "Porsi maksimal sync (%)",
         "title": "Upstream pool"
       },
       "provider": {
         "help": "Hanya provider yang sudah tersimpan."
+      },
+      "status": {
+        "inactive": "Nonaktif"
       },
       "sync_share": {
         "help": "Sync sepi: async boleh memakai sisanya. Sync di atas porsi ditolak 429."

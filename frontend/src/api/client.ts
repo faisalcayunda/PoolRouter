@@ -14,6 +14,11 @@ export type AuditCariRequest = Schemas['AuditCariRequest'];
 export type AuditAksesPage = Schemas['AuditAksesPage'];
 export type AuditAksesBaris = Schemas['AuditAksesBaris'];
 export type UpstreamPool = Schemas['UpstreamPool'];
+export type UpstreamPoolConfig = Schemas['UpstreamPoolConfig'];
+export type DownstreamPool = Schemas['DownstreamPool'];
+export type DownstreamPoolConfig = Schemas['DownstreamPoolConfig'];
+export type PratinjauK20 = Schemas['PratinjauK20'];
+export type HasilK20 = Schemas['HasilK20'];
 export type ValidasiErrorAdmin = Schemas['ValidasiErrorAdmin'];
 export type LoginRequest = Schemas['LoginRequest'];
 export type Me = Schemas['Me'];
@@ -104,6 +109,47 @@ export interface ApiClient {
   kuota(upstreamPoolId?: string, options?: RequestOptions): Promise<KuotaTracker[]>;
   /** GET /upstream-pools — read-only lookup for the quota tracker filter. */
   upstreamPools(options?: RequestOptions): Promise<UpstreamPool[]>;
+  /** GET /upstream-pools/{id} — detail for the edit form. */
+  getUpstreamPool(id: string, options?: RequestOptions): Promise<UpstreamPool>;
+  /** POST /upstream-pools — platform admin only. */
+  createUpstreamPool(body: UpstreamPoolConfig, options?: RequestOptions): Promise<UpstreamPool>;
+  /** PUT /upstream-pools/{id} — full replacement; `alasan` required. */
+  updateUpstreamPool(
+    id: string,
+    body: UpstreamPoolConfig,
+    options?: RequestOptions,
+  ): Promise<UpstreamPool>;
+  /** POST /upstream-pools/{id}/aktifkan. */
+  aktifkanUpstreamPool(id: string, options?: RequestOptions): Promise<UpstreamPool>;
+  /** GET /upstream-pools/{id}/pratinjau-nonaktif (K-20). */
+  pratinjauNonaktifUpstreamPool(id: string, options?: RequestOptions): Promise<PratinjauK20>;
+  /** POST /upstream-pools/{id}/nonaktifkan (K-20). */
+  nonaktifkanUpstreamPool(id: string, alasan: string, options?: RequestOptions): Promise<HasilK20>;
+  /** GET /downstream-pools. */
+  listDownstreamPools(options?: RequestOptions): Promise<DownstreamPool[]>;
+  /** GET /downstream-pools/{id}. */
+  getDownstreamPool(id: string, options?: RequestOptions): Promise<DownstreamPool>;
+  /** POST /downstream-pools. */
+  createDownstreamPool(
+    body: DownstreamPoolConfig,
+    options?: RequestOptions,
+  ): Promise<DownstreamPool>;
+  /** PUT /downstream-pools/{id} — `alasan` required. */
+  updateDownstreamPool(
+    id: string,
+    body: DownstreamPoolConfig,
+    options?: RequestOptions,
+  ): Promise<DownstreamPool>;
+  /** POST /downstream-pools/{id}/aktifkan. */
+  aktifkanDownstreamPool(id: string, options?: RequestOptions): Promise<DownstreamPool>;
+  /** GET /downstream-pools/{id}/pratinjau-nonaktif (K-20). */
+  pratinjauNonaktifDownstreamPool(id: string, options?: RequestOptions): Promise<PratinjauK20>;
+  /** POST /downstream-pools/{id}/nonaktifkan (K-20). */
+  nonaktifkanDownstreamPool(
+    id: string,
+    alasan: string,
+    options?: RequestOptions,
+  ): Promise<HasilK20>;
   /** GET /providers — platform admin only. */
   listProviders(options?: RequestOptions): Promise<Provider[]>;
   /** GET /providers/{id} — provider detail for the edit form. */
@@ -326,6 +372,126 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
     upstreamPools: async (opts = {}) =>
       ok(
         await client.GET(`${ADMIN_PREFIX}/upstream-pools`, {
+          headers: headers(opts),
+          signal: opts.signal,
+        }),
+      ),
+
+    getUpstreamPool: async (id, opts = {}) =>
+      ok(
+        await client.GET(`${ADMIN_PREFIX}/upstream-pools/{id}`, {
+          params: { path: { id } },
+          headers: headers(opts),
+          signal: opts.signal,
+        }),
+      ),
+
+    createUpstreamPool: async (body, opts = {}) =>
+      ok(
+        await client.POST(`${ADMIN_PREFIX}/upstream-pools`, {
+          body,
+          headers: headers(opts),
+          signal: opts.signal,
+        }),
+      ),
+
+    updateUpstreamPool: async (id, body, opts = {}) =>
+      ok(
+        await client.PUT(`${ADMIN_PREFIX}/upstream-pools/{id}`, {
+          params: { path: { id } },
+          body,
+          headers: headers(opts),
+          signal: opts.signal,
+        }),
+      ),
+
+    aktifkanUpstreamPool: async (id, opts = {}) =>
+      ok(
+        await client.POST(`${ADMIN_PREFIX}/upstream-pools/{id}/aktifkan`, {
+          params: { path: { id } },
+          headers: headers(opts),
+          signal: opts.signal,
+        }),
+      ),
+
+    pratinjauNonaktifUpstreamPool: async (id, opts = {}) =>
+      ok(
+        await client.GET(`${ADMIN_PREFIX}/upstream-pools/{id}/pratinjau-nonaktif`, {
+          params: { path: { id } },
+          headers: headers(opts),
+          signal: opts.signal,
+        }),
+      ),
+
+    nonaktifkanUpstreamPool: async (id, alasan, opts = {}) =>
+      ok(
+        await client.POST(`${ADMIN_PREFIX}/upstream-pools/{id}/nonaktifkan`, {
+          params: { path: { id } },
+          body: { alasan },
+          headers: headers(opts),
+          signal: opts.signal,
+        }),
+      ),
+
+    listDownstreamPools: async (opts = {}) =>
+      ok(
+        await client.GET(`${ADMIN_PREFIX}/downstream-pools`, {
+          headers: headers(opts),
+          signal: opts.signal,
+        }),
+      ),
+
+    getDownstreamPool: async (id, opts = {}) =>
+      ok(
+        await client.GET(`${ADMIN_PREFIX}/downstream-pools/{id}`, {
+          params: { path: { id } },
+          headers: headers(opts),
+          signal: opts.signal,
+        }),
+      ),
+
+    createDownstreamPool: async (body, opts = {}) =>
+      ok(
+        await client.POST(`${ADMIN_PREFIX}/downstream-pools`, {
+          body,
+          headers: headers(opts),
+          signal: opts.signal,
+        }),
+      ),
+
+    updateDownstreamPool: async (id, body, opts = {}) =>
+      ok(
+        await client.PUT(`${ADMIN_PREFIX}/downstream-pools/{id}`, {
+          params: { path: { id } },
+          body,
+          headers: headers(opts),
+          signal: opts.signal,
+        }),
+      ),
+
+    aktifkanDownstreamPool: async (id, opts = {}) =>
+      ok(
+        await client.POST(`${ADMIN_PREFIX}/downstream-pools/{id}/aktifkan`, {
+          params: { path: { id } },
+          headers: headers(opts),
+          signal: opts.signal,
+        }),
+      ),
+
+    pratinjauNonaktifDownstreamPool: async (id, opts = {}) =>
+      ok(
+        await client.GET(`${ADMIN_PREFIX}/downstream-pools/{id}/pratinjau-nonaktif`, {
+          params: { path: { id } },
+          headers: headers(opts),
+          signal: opts.signal,
+        }),
+      ),
+
+    nonaktifkanDownstreamPool: async (id, alasan, opts = {}) =>
+      ok(
+        await client.POST(`${ADMIN_PREFIX}/downstream-pools/{id}/nonaktifkan`, {
+          params: { path: { id } },
+          body: { alasan },
           headers: headers(opts),
           signal: opts.signal,
         }),
