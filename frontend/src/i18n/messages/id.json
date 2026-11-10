@@ -412,6 +412,7 @@
       "subtitle": "Kuota harian, rate limit per jam, dan porsi sync per provider."
     },
     "tab": {
+      "aria": "Bagian konfigurasi upstream pool",
       "quota": "Kuota dan laju",
       "antipattern": "Anti-pola"
     },
@@ -452,12 +453,8 @@
       "done": "Upstream pool {{nama}} dinonaktifkan: {{dibatalkan, number}} dibatalkan, {{gagal, number}} digagalkan."
     },
     "form": {
-      "title_edit": "Ubah upstream pool {{nama}}",
-      "subtitle": "Penyimpanan mengganti seluruh konfigurasi; isian awal diambil dari konfigurasi saat ini.",
-      "back": "Kembali ke daftar",
+      "title_edit": "Upstream pool · {{nama}}",
       "provider_placeholder": "Pilih provider",
-      "save_new": "Simpan upstream pool",
-      "save_edit": "Simpan perubahan",
       "saved": "Upstream pool disimpan.",
       "group": {
         "general": "Umum",
@@ -478,8 +475,8 @@
         "jendela_kuota": "Periode kuota",
         "kuota_harian": "Kuota harian (request)",
         "rate_limit_per_jam": "Rate limit per jam (request)",
-        "porsi_sync_persen": "Porsi sync (%)",
-        "ambang_berdampingan": "Ambang berdampingan (request)",
+        "porsi_sync_persen": "Porsi maksimal sync (%)",
+        "ambang_berdampingan": "Ambang konkurensi (request)",
         "jeda_min": "Jeda minimum (ms)",
         "jeda_maks": "Jeda maksimum (ms)",
         "reset_kuota_jam": "Jam reset (0 sampai 23)",
@@ -513,8 +510,8 @@
       "min_delay": "Jeda minimum (ms)",
       "max_delay": "Jeda maksimum (ms)",
       "delay_help": "Jeda acak antar-pengiriman dipilih di antara minimum dan maksimum.",
-      "adjacent": "Ambang NIK berdampingan (%)",
-      "adjacent_help": "Batas proporsi NIK berurutan yang boleh terkirim berdampingan.",
+      "adjacent": "Ambang konkurensi (request)",
+      "adjacent_help": "Jumlah maksimum request yang boleh berjalan bersamaan ke upstream ini.",
       "warn": "Jeda yang terlalu besar bisa membuat rate limit {{batas, number}}/jam tidak tercapai. Cek hasil uji beban sebelum mengubah."
     }
   },
@@ -532,8 +529,7 @@
       "name": "Nama",
       "mode": "Mode",
       "upstream": "Upstream pool",
-      "ttl": "TTL antrean",
-      "alokasi": "Alokasi"
+      "ttl": "TTL antrean"
     },
     "mode": {
       "async": "Async",
@@ -555,10 +551,6 @@
       "edit_aria": "Ubah downstream pool {{nama}}",
       "activate_aria": "Aktifkan downstream pool {{nama}}",
       "deactivate_aria": "Nonaktifkan downstream pool {{nama}}",
-      "no_alokasi": "Tanpa alokasi",
-      "alokasi_tetap": "{{nilai}} request per periode",
-      "alokasi_persen": "{{nilai}}% kuota efektif",
-      "boleh_pinjam": "boleh pinjam",
       "ttl_hours": "{{jam}} jam"
     },
     "form": {
@@ -693,7 +685,6 @@
       }
     },
     "metadata": {
-      "info": "Kontrak metadata dicatat di log transaksi untuk data balikan. Request tanpa field wajib ditolak sebelum memakai kuota. Field Rahasia tidak pernah dicatat atau dikirim ke callback.",
       "empty": "Belum ada field metadata.",
       "group": "Field ke-{{nomor}}",
       "add": "Tambah field",
@@ -1288,12 +1279,14 @@
     }
   },
   "k20": {
-    "body": "Periksa dampak berikut sebelum menonaktifkan {{nama}}.",
-    "confirm": "Nonaktifkan",
+    "confirm": "Nonaktifkan pool",
+    "impact": {
+      "queued": "<b>{{jumlah, number}} request</b> yang masih mengantre akan dibatalkan dengan alasan \"pool nonaktif\". Request tidak akan dikirim ke {{tujuan}} dan tidak memakai kuota.",
+      "sent": "Request yang sudah dikirim ke {{tujuan}} tidak berubah. Client yang punya webhook akan menerima status <b>Dibatalkan</b> (cancelled) satu kali."
+    },
     "submitting": "Memproses…",
     "preview": {
       "heading": "Dampak penonaktifan",
-      "cancelled": "{{jumlah, number}} request antre akan dibatalkan.",
       "failed": "{{jumlah, number}} request yang menunggu retry akan digagalkan.",
       "downstream_count": "Dipakai oleh {{jumlah, number}} downstream pool.",
       "computed": "Dihitung pada {{waktu}}.",

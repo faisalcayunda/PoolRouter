@@ -413,6 +413,7 @@
       "subtitle": "Daily quota, hourly rate limit and sync share per provider."
     },
     "tab": {
+      "aria": "Upstream pool configuration sections",
       "quota": "Quota and rate",
       "antipattern": "Anti-pattern"
     },
@@ -453,12 +454,8 @@
       "done": "Upstream pool {{nama}} deactivated: {{dibatalkan, number}} cancelled, {{gagal, number}} failed."
     },
     "form": {
-      "title_edit": "Edit upstream pool {{nama}}",
-      "subtitle": "Saving replaces the whole configuration; the fields start from the current configuration.",
-      "back": "Back to the list",
+      "title_edit": "Upstream pool · {{nama}}",
       "provider_placeholder": "Choose a provider",
-      "save_new": "Save upstream pool",
-      "save_edit": "Save changes",
       "saved": "Upstream pool saved.",
       "group": {
         "general": "General",
@@ -479,7 +476,7 @@
         "jendela_kuota": "Quota period",
         "kuota_harian": "Daily quota (requests)",
         "rate_limit_per_jam": "Hourly rate limit (requests)",
-        "porsi_sync_persen": "Sync share (%)",
+        "porsi_sync_persen": "Maximum sync share (%)",
         "ambang_berdampingan": "Concurrency threshold (requests)",
         "jeda_min": "Minimum delay (ms)",
         "jeda_maks": "Maximum delay (ms)",
@@ -514,8 +511,8 @@
       "min_delay": "Minimum delay (ms)",
       "max_delay": "Maximum delay (ms)",
       "delay_help": "A random delay between sends is picked between the minimum and the maximum.",
-      "adjacent": "Adjacent NIK threshold (%)",
-      "adjacent_help": "Maximum share of consecutive NIKs that may be sent next to each other.",
+      "adjacent": "Concurrency threshold (requests)",
+      "adjacent_help": "Maximum number of requests that may run at the same time against this upstream.",
       "warn": "A delay that is too long can keep the rate limit of {{batas, number}}/hour from being reached. Check the load-test results before changing it."
     }
   },
@@ -534,8 +531,7 @@
       "name": "Name",
       "mode": "Mode",
       "upstream": "Upstream pool",
-      "ttl": "Queue TTL",
-      "alokasi": "Allocation"
+      "ttl": "Queue TTL"
     },
     "mode": {
       "async": "Async",
@@ -557,10 +553,6 @@
       "edit_aria": "Edit downstream pool {{nama}}",
       "activate_aria": "Activate downstream pool {{nama}}",
       "deactivate_aria": "Deactivate downstream pool {{nama}}",
-      "no_alokasi": "No allocation",
-      "alokasi_tetap": "{{nilai}} requests per period",
-      "alokasi_persen": "{{nilai}}% of effective quota",
-      "boleh_pinjam": "may borrow",
       "ttl_hours": "{{jam}} h"
     },
     "form": {
@@ -696,7 +688,6 @@
       }
     },
     "metadata": {
-      "info": "The metadata contract is recorded in the transaction log for data balikan. A request missing a required field is rejected before it uses quota. Rahasia fields are never logged or sent to callbacks.",
       "empty": "No metadata fields yet.",
       "group": "Field {{nomor}}",
       "add": "Add field",
@@ -1297,12 +1288,14 @@
     }
   },
   "k20": {
-    "body": "Review the impact below before deactivating {{nama}}.",
-    "confirm": "Deactivate",
+    "confirm": "Deactivate pool",
+    "impact": {
+      "queued": "<b>{{jumlah, number}} requests</b> that are still queued will be cancelled with the reason \"pool inactive\". The requests will not be sent to {{tujuan}} and will not use quota.",
+      "sent": "Requests already sent to {{tujuan}} are unchanged. Clients with a webhook will receive the status <b>Cancelled</b> once."
+    },
     "submitting": "Processing…",
     "preview": {
       "heading": "Impact of deactivation",
-      "cancelled": "{{jumlah, number}} queued requests will be cancelled.",
       "failed": "{{jumlah, number}} requests waiting for retry will be failed.",
       "downstream_count": "Used by {{jumlah, number}} downstream pools.",
       "computed": "Computed at {{waktu}}.",
