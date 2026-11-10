@@ -13,6 +13,8 @@ export default tseslint.config(
       'src/api/schema.gen.ts',
       'src/i18n/i18next.d.ts',
       '.cache',
+      'playwright-report',
+      'test-results',
     ],
   },
   js.configs.recommended,
