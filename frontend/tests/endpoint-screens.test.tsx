@@ -298,7 +298,12 @@ describe('S04b + S07b form endpoint', () => {
     );
 
     await screen.findByRole('heading', { level: 1, name: 'provider-metadata' });
-    const notice = within(screen.getByRole('alert'));
+    // Halaman memuat dua alert (notice platform admin dan catatan metadata); pilih yang memuat judul notice platform admin.
+    const alertAdmin = screen
+      .getAllByRole('alert')
+      .find((el) => within(el).queryByText('Konfigurasi tingkat platform admin') !== null);
+    expect(alertAdmin).toBeDefined();
+    const notice = within(alertAdmin as HTMLElement);
     expect(notice.getByText('Konfigurasi tingkat platform admin')).toBeInTheDocument();
     expect(
       notice.getByText(
