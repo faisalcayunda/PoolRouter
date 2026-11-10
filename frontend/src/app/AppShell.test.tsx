@@ -75,7 +75,9 @@ describe('AppShell — di bawah large (modal)', () => {
     renderShell();
     await userEvent.click(screen.getByRole('button', { name: 'Buka menu navigasi' }));
     const dialog = await screen.findByRole('dialog', { name: 'Navigasi utama' });
-    await userEvent.click(within(dialog).getByRole('button', { name: 'Tutup menu' }));
+    const close = within(dialog).getByRole('button', { name: 'Tutup menu' });
+    expect(close.className).toContain('outline-inverse-primary!');
+    await userEvent.click(close);
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
   });
 
@@ -229,6 +231,9 @@ describe('AppShell — menu per role', () => {
     expect(active.querySelector('svg')?.getAttribute('class')).toContain('text-inverse-primary');
     const other = screen.getByRole('link', { name: 'Log transaksi' });
     expect(other.className).not.toContain('bg-inverse-on-surface/12');
+    // Tailwind 4: outline-none mematikan style, jadi ring fokus butuh outline-solid.
+    expect(active.className).toContain('focus-visible:outline-solid');
+    expect(active.className).toContain('focus-visible:outline-3');
     expect(other.querySelector('svg')).not.toBeNull();
   });
 
@@ -326,6 +331,15 @@ describe('crumbsFor', () => {
       { labelKey: 'nav.breadcrumb.credentials' },
     ]);
     expect(crumbsFor('/provider/a/webhook')).toEqual([{ labelKey: 'nav.breadcrumb.not_found' }]);
+    // Segmen berformat salah tidak boleh melempar URIError (akar tidak boleh unmount).
+    for (const path of ['/provider/%/kredensial', '/upstream/100%/webhook', '/log/%zz/webhook']) {
+      expect(crumbsFor(path), path).toEqual([{ labelKey: 'nav.breadcrumb.not_found' }]);
+    }
+    expect(crumbsFor('/provider/%zz').at(-1)).toEqual({ text: '%zz' });
+    expect(crumbsFor('/client/100%/kredensial').at(1)).toEqual({
+      labelKey: 'nav.drawer.client',
+      href: '/client',
+    });
     expect(crumbsFor('/x')).toEqual([{ labelKey: 'nav.breadcrumb.not_found' }]);
   });
 });

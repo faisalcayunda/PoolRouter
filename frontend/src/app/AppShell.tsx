@@ -56,7 +56,7 @@ function DrawerContent({
           <IconButton
             aria-label={t('nav.drawer.close_menu')}
             onPress={onClose}
-            className="absolute top-2 right-3"
+            className="absolute top-2 right-3 outline-inverse-primary! data-[focus-visible]:outline-inverse-primary!"
           >
             <Icon icon={icons.close} className="text-inverse-on-surface" />
           </IconButton>
@@ -79,8 +79,9 @@ function DrawerContent({
                   aria-current={isActive ? 'page' : undefined}
                   className={cx(
                     'typescale-label-large flex h-12 items-center gap-3 rounded-full px-4 no-underline outline-none',
+
                     isActive ? 'bg-inverse-on-surface/12' : 'hover:bg-inverse-on-surface/8',
-                    'focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-inverse-primary',
+                    'focus-visible:outline-solid focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-inverse-primary',
                   )}
                 >
                   <Icon

@@ -176,6 +176,15 @@ const DETAIL_BASE: Record<string, { base: string; hasNew: boolean }> = {
 const DETAIL =
   /^\/(log|provider|endpoint|upstream|downstream|client)\/([^/]+)(?:\/(kredensial|webhook))?$/;
 
+/** `decodeURIComponent` melempar URIError untuk `%` yang salah; shell memakai teks mentah. */
+function safeDecode(value: string): string {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+}
+
 /**
  * Jejak breadcrumb untuk setiap rute yang dirender shell, termasuk detail dan not-found.
  * Grup berupa teks biasa, daftar menjadi tautan di rute detail, crumb terakhir adalah halaman
@@ -188,7 +197,7 @@ export function crumbsFor(pathname: string): Crumb[] {
   if (detail) {
     const segment = detail[1] ?? '';
     const target = DETAIL_BASE[segment];
-    const id = decodeURIComponent(detail[2] ?? '');
+    const id = safeDecode(detail[2] ?? '');
     const sub = detail[3];
     if (target && (!sub || segment === 'client')) {
       if (sub) {
