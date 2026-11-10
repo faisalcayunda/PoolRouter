@@ -10,6 +10,7 @@ import {
   type ProviderConfig,
   type SecretRingkas,
 } from '../src/api/client';
+import { AppShell } from '../src/app/AppShell';
 import { RoleProvider, type AdminRole } from '../src/features/common/RoleContext';
 import { ProviderFormScreen } from '../src/features/provider/ProviderFormScreen';
 import { ProviderListScreen } from '../src/features/provider/ProviderListScreen';
@@ -161,6 +162,19 @@ describe('S03–S04 form provider', () => {
     ).toBeInTheDocument();
     // Setelah dibuat, simpan berikutnya adalah PUT yang meminta alasan.
     expect(screen.getByLabelText('Alasan perubahan')).toBeInTheDocument();
+  });
+
+  it('names the provider in the breadcrumb instead of its id', async () => {
+    asRole(
+      'platform_admin',
+      <AppShell pathname={`/provider/${PROVIDER.provider_id}`}>
+        <ProviderFormScreen client={stubClient()} providerId={PROVIDER.provider_id} />
+      </AppShell>,
+    );
+
+    const trail = within(screen.getByRole('navigation', { name: 'Jejak halaman' }));
+    expect(await trail.findByText('provider-contoh-a')).toHaveAttribute('aria-current', 'page');
+    expect(trail.queryByText(PROVIDER.provider_id)).toBeNull();
   });
 
   it('PUTs every field back, including data_balikan, and clears the reason', async () => {
@@ -521,7 +535,9 @@ describe('S05 secret', () => {
     asRole('platform_admin', <SecretScreen client={stubClient()} />);
 
     const table = within(await screen.findByRole('table'));
-    expect(table.getAllByText('Tersamar')).toHaveLength(2);
+    // Frame S05: the value column is twelve bullets, and the name is plain text, not monospace.
+    expect(table.getAllByText('••••••••••••')).toHaveLength(2);
+    expect(table.getByText('USER_ID').className).not.toContain('font-code');
     expect(table.getByText('1 provider')).toBeInTheDocument();
     expect(table.getByText('Tidak dipakai')).toBeInTheDocument();
     // Kolom S05 berurutan sesuai desain; "Diubah" belum punya data di API (celah).

@@ -17,7 +17,7 @@ import { ClientAddDialog } from './ClientAddDialog';
 
 // Ukuran mengikuti frame Penpot S08: kepala 40 px berlatar surface, baris 56 px, garis pemisah
 // surface-container-high, padding horizontal 20 px.
-const TH = 'typescale-label-small h-10 bg-surface px-5 font-medium';
+const TH = 'typescale-label-small h-10 whitespace-nowrap bg-surface px-5 font-medium';
 const TD =
   'typescale-body-medium h-14 border-b border-surface-container-high px-5 py-2 align-middle';
 const KOSONG = '\u2014';
@@ -120,7 +120,10 @@ export function ClientListScreen({ client = api }: ClientListScreenProps): React
                         {KOSONG}
                       </td>
                       <td data-label={t('client.col.id')} className={TD}>
-                        <span className="break-all font-code">{row.client_id}</span>
+                        {/* Satu baris; id lengkap ada di title dan di halaman detail. */}
+                        <span title={row.client_id} className="block max-w-48 truncate font-code">
+                          {row.client_id}
+                        </span>
                       </td>
                       <td
                         data-label={t('client.col.created')}

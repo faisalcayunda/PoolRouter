@@ -327,7 +327,7 @@ export function SecretScreen({ client = api }: SecretScreenProps): ReactNode {
                   {rows.map((row) => (
                     <tr key={row.nama} className="border-b border-outline-variant text-on-surface">
                       <td data-label={t('secret.col.name')} className={TD}>
-                        <span className="break-all font-code">{row.nama}</span>
+                        <span className="break-all">{row.nama}</span>
                       </td>
                       <td data-label={t('secret.col.value')} className={TD}>
                         {/* Selalu tersamar: tidak ada nilai di respons, jadi tidak ada yang bisa ditampilkan. */}
