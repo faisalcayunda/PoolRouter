@@ -130,7 +130,8 @@ describe('pendaftaran MFA dan kode pemulihan (AC-30/31)', () => {
     expect(dialog).toHaveTextContent('CONTOHPM00');
     expect(dialog).toHaveTextContent('CONTOHPM09');
     // Rahasia pendaftaran sudah dibuang dari layar begitu kode pemulihan tampil.
-    expect(screen.queryByText(/CONTOHSECRET/)).not.toBeInTheDocument();
+    expect(screen.queryByText('CONT OHSE CRET SINT ETIS BUKA NASL I234')).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Pindai kode QR' })).not.toBeInTheDocument();
     expect(onBerhasil).not.toHaveBeenCalled();
 
     await userEvent.click(screen.getByRole('button', { name: 'Sudah saya simpan' }));
