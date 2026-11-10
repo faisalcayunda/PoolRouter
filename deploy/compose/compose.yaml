@@ -25,10 +25,10 @@ x-backend-env: &backend-env
 
 services:
   postgres:
-    image: docker.io/library/postgres:17-alpine@sha256:266d3c257594e195b309ae9d1805e54c788f1d7b375f56bf6c367aac6c917e7b
+    image: ${POOLROUTER_POSTGRES_BACKUP_IMAGE:?isi POOLROUTER_POSTGRES_BACKUP_IMAGE di file env}
     profiles: ["bundled-infra"]
-    # Entrypoint resmi mulai sebagai root lalu turun ke user postgres (pengecualian 2, §5).
-    # cap_add minimum untuk turun hak itu saja. Daftar ini diizinkan lint hanya untuk postgres dan redis.
+    # PostgreSQL 17 + pgBackRest (ADR-0005 rev 4 §4.5, AC-15). Entrypoint pr-pg-entrypoint.sh
+    # membaca secret lalu menjalankan postgres.
     cap_drop: [ALL]
     cap_add: [CHOWN, DAC_OVERRIDE, FOWNER, SETUID, SETGID]
     security_opt: ["no-new-privileges:true"]
@@ -36,9 +36,21 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:?isi POSTGRES_DB di file env}
       POSTGRES_USER: ${POSTGRES_USER:?isi POSTGRES_USER di file env}
       POSTGRES_PASSWORD_FILE: /run/secrets/db_password
-    secrets: [db_password]
+      # pgBackRest (ADR-0005 §4.5): archive_timeout=60, archive-async=y, compress-type=zst.
+      # Retensi: full time 7 hari. Jadwal: full 01.00 WIB, diferensial 6-jam, WAL async.
+      # Repo di volume terpisah dari pg_data (AC-15).
+      PGBACKREST_REPO1_PATH: /var/lib/pgbackrest
+      PGBACKREST_REPO1_CIPHER_TYPE: aes-256-cbc
+      PGBACKREST_REPO1_CIPHER_PASS_FILE: /run/secrets/pgbackrest_repo_passphrase
+      PGBACKREST_ARCHIVE_TIMEOUT: "60"
+      PGBACKREST_ARCHIVE_ASYNC: "y"
+      PGBACKREST_COMPRESS_TYPE: zst
+      PGBACKREST_REPO1_RETENTION_FULL_TYPE: time
+      PGBACKREST_REPO1_RETENTION_FULL: "7"
+    secrets: [db_password, pgbackrest_repo_passphrase]
     volumes:
       - pg_data:/var/lib/postgresql/data
+      - pgbackrest_repo:/var/lib/pgbackrest
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
       interval: 5s
@@ -261,6 +273,7 @@ services:
 
 volumes:
   pg_data: {}
+  pgbackrest_repo: {}
   redis_data: {}
   rabbitmq_data: {}
 
@@ -299,3 +312,5 @@ secrets:
     file: ${POOLROUTER_SECRETS_DIR:?}/poolrouter_nik_hmac_key
   poolrouter_idempotency_hmac_key:
     file: ${POOLROUTER_SECRETS_DIR:?}/poolrouter_idempotency_hmac_key
+  pgbackrest_repo_passphrase:
+    file: ${POOLROUTER_SECRETS_DIR:?}/pgbackrest_repo_passphrase
