@@ -155,6 +155,22 @@ pub struct ProviderConfig {
     /// TLS trust setting for the provider call (ADR-0002 D5). Closed set: there
     /// is deliberately no "verify off" mode, not even in dev.
     pub tls_trust: TlsTrust,
+    /// CA certificate bundle in PEM for `tls_trust = ca_kustom` (ADR-0002 D5).
+    /// Required for `ca_kustom`, forbidden for every other mode (422
+    /// `tidak_untuk_mode`). Only `CERTIFICATE` blocks are accepted: 1 to 10
+    /// blocks, at most 64 KiB. Not a secret: stored in the provider config
+    /// version and returned by reads.
+    #[serde(default)]
+    #[schema(value_type = Option<String>, max_length = 65536)]
+    pub tls_ca_pem: Option<String>,
+    /// SHA-256 SPKI pins for `tls_trust = pin_spki` (ADR-0002 D5): standard
+    /// base64 of exactly 32 bytes each, 1 to 10 distinct pins. The pin is
+    /// matched against the leaf certificate. Required for `pin_spki`,
+    /// forbidden for every other mode (422 `tidak_untuk_mode`). One pin is
+    /// accepted; two (old and new) are recommended for rotation.
+    #[serde(default)]
+    #[schema(value_type = Option<Vec<String>>, max_items = 10)]
+    pub tls_pin_spki: Option<Vec<String>>,
     pub log_mode: LogMode,
     /// 1 in F0; 2 in F1. Other values are 422.
     #[schema(minimum = 1, maximum = 2, example = 1)]
@@ -230,6 +246,13 @@ pub struct Provider {
     pub respons_skema: serde_json::Value,
     /// TLS trust setting for the provider call (ADR-0002 D5).
     pub tls_trust: TlsTrust,
+    /// CA bundle in PEM, set only when `tls_trust = ca_kustom`; otherwise null.
+    #[schema(value_type = Option<String>)]
+    pub tls_ca_pem: Option<String>,
+    /// SHA-256 SPKI pins (base64), set only when `tls_trust = pin_spki`;
+    /// otherwise null.
+    #[schema(value_type = Option<Vec<String>>)]
+    pub tls_pin_spki: Option<Vec<String>>,
     pub log_mode: LogMode,
     /// 1 in F0; 2 in F1. Mirrors `ProviderConfig::config_schema_version`.
     #[schema(minimum = 1, maximum = 2, example = 1)]
