@@ -130,7 +130,10 @@ async function shoot(page: Page, screen: string, width: number) {
         Math.round(el.getBoundingClientRect().height),
       ),
     );
-    expect(tinggi.every((h) => h === 56), `medan rentang ${tinggi.join(',')} px pada ${width}px`).toBe(true);
+    expect(
+      tinggi.every((h) => h === 56),
+      `medan rentang ${tinggi.join(',')} px pada ${width}px`,
+    ).toBe(true);
   }
   await page.screenshot({
     path: `e2e/screenshots/${screen}@${width}.png`,
