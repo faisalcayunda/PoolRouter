@@ -97,7 +97,9 @@ Pengguna yang dibuat, semuanya sintetis:
 | `seed-client-owner` | `client_owner`, terikat client `Client Sintetis Seed` |
 | `seed-admin-auditor` | `platform_admin` dan `auditor` |
 
-Seed idempoten: menjalankannya lagi tidak membuat baris baru.
+Seed idempoten: menjalankannya lagi tidak membuat baris baru. Bila salah satu pengguna seed sudah ada
+tetapi nonaktif, seed ditolak tanpa perubahan (keluar non-nol) dan tidak mengaktifkannya kembali;
+aktifkan lewat `pengguna aktifkan`.
 
 ### Seed dukcapil (dev dan ci)
 
