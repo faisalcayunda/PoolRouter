@@ -14,11 +14,14 @@ export function OnceSecretDialog({
   title,
   fieldLabel,
   value,
+  clientId,
   onDone,
 }: {
   title: string;
   fieldLabel: string;
   value: string;
+  /** Client ID kredensial baru; desain v2 menampilkannya di atas secret. Kosong untuk secret webhook. */
+  clientId?: string;
   onDone: () => void;
 }): ReactNode {
   const { t } = useTranslation();
@@ -42,25 +45,32 @@ export function OnceSecretDialog({
       isKeyboardDismissDisabled
       title={title}
       closeLabel={t('common.close')}
-      footer={
-        <>
-          <Button variant="text" onPress={() => void copy()}>
-            {t('common.action.copy')}
-          </Button>
-          <Button onPress={onDone}>{t('secret_once.dialog.done')}</Button>
-        </>
-      }
+      footer={<Button onPress={onDone}>{t('secret_once.dialog.done')}</Button>}
     >
       <div className="flex flex-col gap-3 pt-2">
         <p>{t('secret_once.dialog.body')}</p>
-        <TextField
-          label={fieldLabel}
-          description={t('secret_once.dialog.shown_once')}
-          value={value}
-          isReadOnly
-          autoComplete="off"
-          className="[&_input]:font-code"
-        />
+        {clientId ? (
+          <TextField
+            label={t('client.col.id')}
+            value={clientId}
+            isReadOnly
+            autoComplete="off"
+            className="[&_input]:font-code"
+          />
+        ) : null}
+        <div className="flex items-start gap-3">
+          <TextField
+            label={fieldLabel}
+            description={t('secret_once.dialog.shown_once')}
+            value={value}
+            isReadOnly
+            autoComplete="off"
+            className="min-w-0 flex-1 [&_input]:font-code"
+          />
+          <Button variant="outlined" className="mt-6" onPress={() => void copy()}>
+            {t('common.action.copy')}
+          </Button>
+        </div>
         <p role="status" className="typescale-body-medium text-on-surface-variant">
           {copied ? t('secret_once.dialog.copied') : ''}
         </p>

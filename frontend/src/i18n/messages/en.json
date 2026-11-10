@@ -779,10 +779,12 @@
       "pool": "Downstream pool",
       "pool_help": "A client can only use the pool it is linked to.",
       "webhook": "Webhook address (optional)",
+      "webhook_help": "Must start with https://",
       "save": "Save client"
     },
     "snackbar": {
-      "saved": "Client saved"
+      "saved": "Client saved",
+      "saved_webhook_failed": "Client saved, but the webhook was not saved. Set it on the client webhook page."
     },
     "empty": {
       "title": "No clients yet",
@@ -809,13 +811,15 @@
     },
     "secret": {
       "heading": "Signing secret",
-      "desc": "Created by the system and shown only once. Install it in your application to verify webhooks.",
+      "desc": "No secret yet. Created by the system and shown only once. Install it in your application to verify webhooks.",
+      "active_desc": "Created by the system and shown only once; it cannot be viewed again. Active version: {{versi}}.",
       "create": "Create secret",
       "rotate": "Rotate secret"
     },
     "rotate": {
       "title": "Rotate webhook secret?",
-      "body": "The old secret stops working immediately. The {{nama_client}} application will fail to verify webhooks until the new secret is installed in it."
+      "body": "The old secret stops working immediately. The {{nama_client}} application will fail to verify webhooks until the new secret is installed in it.",
+      "once": "The new secret is shown once after you choose to rotate."
     },
     "created": {
       "title": "New webhook secret for {{nama_client}}",
@@ -828,6 +832,7 @@
     },
     "col": {
       "time": "Time",
+      "queue_id": "queue_id",
       "request_status": "Request status",
       "reason": "Failure reason",
       "note": "Note"

@@ -126,14 +126,16 @@ export default interface Resources {
         "pool_help": "Client hanya bisa memakai pool yang ditautkan.",
         "save": "Simpan client",
         "title": "Tambah client",
-        "webhook": "Alamat webhook (opsional)"
+        "webhook": "Alamat webhook (opsional)",
+        "webhook_help": "Harus diawali https://"
       },
       "page": {
         "add": "Tambah client",
         "title": "Client dan kredensial"
       },
       "snackbar": {
-        "saved": "Client tersimpan"
+        "saved": "Client tersimpan",
+        "saved_webhook_failed": "Client tersimpan, tetapi webhook belum tersimpan. Atur lewat halaman webhook client."
       },
       "type": {
         "api_key": "API key",
@@ -1256,6 +1258,7 @@ export default interface Resources {
       },
       "col": {
         "note": "Catatan",
+        "queue_id": "queue_id",
         "reason": "Alasan gagal",
         "request_status": "Status request",
         "time": "Waktu"
@@ -1284,11 +1287,13 @@ export default interface Resources {
       },
       "rotate": {
         "body": "Secret lama langsung tidak berlaku. Aplikasi {{nama_client}} akan gagal memverifikasi webhook sampai secret baru dipasang di aplikasinya.",
+        "once": "Secret baru tampil satu kali setelah Anda memilih rotasi.",
         "title": "Rotasi secret webhook?"
       },
       "secret": {
+        "active_desc": "Dibuat oleh sistem dan hanya tampil sekali, tidak bisa dilihat lagi. Versi aktif: {{versi}}.",
         "create": "Buat secret",
-        "desc": "Dibuat oleh sistem dan hanya tampil sekali. Pasang di aplikasi Anda untuk memverifikasi webhook.",
+        "desc": "Belum ada secret. Dibuat oleh sistem dan hanya tampil sekali. Pasang di aplikasi Anda untuk memverifikasi webhook.",
         "heading": "Secret tanda tangan",
         "rotate": "Rotasi secret"
       },
