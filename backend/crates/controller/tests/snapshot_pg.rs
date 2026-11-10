@@ -13,7 +13,7 @@
 //! `pr_controller` cannot write `request` (grant matrix), while the job itself
 //! runs on the `pr_controller` pool it uses in production.
 
-use chrono::{DateTime, Datelike, Duration, NaiveTime, TimeZone, Timelike, Utc};
+use chrono::{DateTime, Duration, NaiveTime, TimeZone, Utc};
 use poolrouter_controller::snapshot::jalankan;
 use poolrouter_core::kuota::periode::{AturanReset, Periode, ZonaTetap, periode_untuk};
 use sqlx::PgPool;
@@ -43,17 +43,15 @@ fn periode_untuk_fixture(sekarang: DateTime<Utc>) -> Periode {
     periode_untuk(sekarang, &riwayat).expect("periode fixture")
 }
 
-fn detik_tertutup() -> DateTime<Utc> {
-    let now = Utc::now();
-    Utc.with_ymd_and_hms(
-        now.year(),
-        now.month(),
-        now.day(),
-        now.hour(),
-        now.minute(),
-        now.second(),
-    )
-    .unwrap()
+/// Jam uji yang tetap, di tengah periode: 12:00 Asia/Jakarta, tujuh jam dari
+/// reset tengah malam (17:00 UTC) di kedua sisi. Baris log fixture berada pada
+/// `sekarang - 60s ..= sekarang` dan snapshot ketiga jalan pada `sekarang + 30s`;
+/// dengan jam dinding, uji yang jalan dekat 17:00 UTC melihat sebagian baris
+/// jatuh di periode sebelumnya (`jumlah` 1 bukan 4 pada 17:00:10, ARC-253).
+/// Tanggalnya di masa lalu supaya `received_at` tidak mendahului `now()` pada
+/// riwayat status.
+fn sekarang_tetap() -> DateTime<Utc> {
+    Utc.with_ymd_and_hms(2026, 11, 9, 5, 0, 0).unwrap()
 }
 
 /// Minimal fixture graph; returns the pool id.
@@ -252,7 +250,7 @@ async fn snapshot_idempoten_dan_final_sama_dengan_count_log() {
     let controller =
         pool(&std::env::var("POOLROUTER_TEST_DATABASE_URL_CONTROLLER").expect("url")).await;
 
-    let sekarang = detik_tertutup();
+    let sekarang = sekarang_tetap();
     let fx = fixture(&su, 4, sekarang).await;
 
     let pertama = jalankan(&controller, sekarang).await.expect("snapshot 1");
