@@ -183,9 +183,10 @@ export default interface Resources {
         "value": "{{burst, number}} burst, isi ulang {{isi_ulang}} per detik"
       },
       "page": {
-        "subtitle": "Aplikasi BGN yang memanggil PoolRouter, beserta kredensial dan webhook-nya."
+        "subtitle": "Aplikasi BGN yang memanggil PoolRouter. Secret hanya tampil sekali saat dibuat."
       },
       "row": {
+        "credential_aria": "Buat kredensial untuk client {{nama}}",
         "manage": "Kelola",
         "manage_aria": "Kelola client {{nama}}"
       },

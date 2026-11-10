@@ -857,7 +857,7 @@
     "inactive": "Inactive",
     "saved": "Client changes saved.",
     "page": {
-      "subtitle": "BGN applications that call PoolRouter, with their credentials and webhooks."
+      "subtitle": "BGN applications that call PoolRouter. The secret is shown only once, when it is created."
     },
     "empty": {
       "owner": "No client is linked to your account yet. Contact a platform admin."
@@ -870,7 +870,8 @@
     },
     "row": {
       "manage": "Manage",
-      "manage_aria": "Manage client {{nama}}"
+      "manage_aria": "Manage client {{nama}}",
+      "credential_aria": "Create a credential for client {{nama}}"
     },
     "tab": {
       "aria": "Client sections",

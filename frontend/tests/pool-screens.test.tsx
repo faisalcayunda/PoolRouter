@@ -161,6 +161,14 @@ describe('S06 daftar upstream pool', () => {
     ).toHaveAttribute('href', `/upstream/${UP_ID}`);
   });
 
+  it('keeps the row actions on one line like the provider and client tables', async () => {
+    asRole('platform_admin', <UpstreamListScreen client={stubClient()} />);
+    const row = within(await screen.findByRole('row', { name: /provider-contoh-a/ }));
+    const aksi = row.getByRole('link', { name: /Ubah upstream pool/ }).parentElement;
+    expect(aksi).toBe(row.getByRole('button', { name: /Nonaktifkan upstream pool/ }).parentElement);
+    expect(aksi).toHaveClass('flex-nowrap', 'whitespace-nowrap');
+  });
+
   it('retries a failed read', async () => {
     const upstreamPools = vi
       .fn()

@@ -853,7 +853,7 @@
     "inactive": "Nonaktif",
     "saved": "Perubahan client tersimpan.",
     "page": {
-      "subtitle": "Aplikasi BGN yang memanggil PoolRouter, beserta kredensial dan webhook-nya."
+      "subtitle": "Aplikasi BGN yang memanggil PoolRouter. Secret hanya tampil sekali saat dibuat."
     },
     "empty": {
       "owner": "Belum ada client yang terhubung dengan akun Anda. Hubungi platform admin."
@@ -866,7 +866,8 @@
     },
     "row": {
       "manage": "Kelola",
-      "manage_aria": "Kelola client {{nama}}"
+      "manage_aria": "Kelola client {{nama}}",
+      "credential_aria": "Buat kredensial untuk client {{nama}}"
     },
     "tab": {
       "aria": "Bagian client",

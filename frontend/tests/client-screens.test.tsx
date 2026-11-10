@@ -140,19 +140,50 @@ describe('peran client_owner di shell', () => {
 });
 
 describe('S08 daftar client', () => {
-  it('lists clients with status and a manage link per row', async () => {
+  it('lists clients with the columns of the Penpot frame and per-row actions', async () => {
     asRole('platform_admin', <ClientListScreen client={stubClient()} />);
 
     const table = within(await screen.findByRole('table'));
-    const baris = table.getByRole('row', { name: /Aplikasi Contoh A/ });
-    expect(within(baris).getByText('Aktif')).toBeInTheDocument();
-    expect(within(baris).getByText('20 burst, isi ulang 1 per detik')).toBeInTheDocument();
+    expect(table.getAllByRole('columnheader').map((kolom) => kolom.textContent?.trim())).toEqual([
+      'Client',
+      'Jenis kredensial',
+      'Client ID',
+      'Dibuat',
+      'Status',
+      'Aksi',
+    ]);
+    const baris = within(table.getByRole('row', { name: /Aplikasi Contoh A/ }));
+    expect(baris.getByText('Aktif')).toBeInTheDocument();
+    expect(baris.getByText(CLIENT_ID)).toBeInTheDocument();
+    // Jenis kredensial dan waktu buat belum ada di GET /clients: placeholder, bukan nilai karangan.
+    expect(baris.getAllByText('\u2014')).toHaveLength(2);
+    expect(baris.queryByText(/burst, isi ulang/)).toBeNull();
     expect(table.getByRole('row', { name: /Aplikasi Contoh B/ })).toHaveTextContent('Nonaktif');
-    expect(table.getByRole('link', { name: 'Kelola client Aplikasi Contoh A' })).toHaveAttribute(
+    expect(
+      baris.getByRole('link', { name: 'Buat kredensial untuk client Aplikasi Contoh A' }),
+    ).toHaveAttribute('href', `/client/${CLIENT_ID}/kredensial`);
+    expect(baris.getByRole('link', { name: 'Kelola client Aplikasi Contoh A' })).toHaveAttribute(
       'href',
       `/client/${CLIENT_ID}`,
     );
     expect(screen.getByRole('button', { name: 'Tambah client' })).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        'Aplikasi BGN yang memanggil PoolRouter. Secret hanya tampil sekali saat dibuat.',
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it('keeps both row actions on one line, aligned with the provider and upstream tables', async () => {
+    asRole('platform_admin', <ClientListScreen client={stubClient()} />);
+
+    const table = within(await screen.findByRole('table'));
+    const baris = within(table.getByRole('row', { name: /Aplikasi Contoh A/ }));
+    const aksi = baris.getByRole('link', { name: /Kelola client/ }).parentElement;
+    expect(aksi).toBe(
+      baris.getByRole('link', { name: /Buat kredensial untuk client/ }).parentElement,
+    );
+    expect(aksi).toHaveClass('flex-nowrap', 'whitespace-nowrap');
   });
 
   it('shows the empty state to a platform admin with the add action', async () => {
@@ -479,6 +510,13 @@ describe('S08b kredensial', () => {
     });
     expect(within(once).getByLabelText('Client ID')).toHaveValue(CLIENT_ID);
     expect(within(once).getByLabelText('Client secret')).toHaveValue(TAMPIL_SEKALI);
+    // Client ID kredensial baru tampil di atas secret, sesuai frame Penpot S08.
+    expect(within(once).getByLabelText('Client ID')).toHaveValue(CLIENT_ID);
+    expect(
+      within(once)
+        .getAllByRole('button')
+        .map((b) => b.textContent),
+    ).toEqual(['Salin', 'Sudah saya simpan']);
     // Tidak bisa ditutup dengan Esc, hanya lewat tombol.
     await user.keyboard('{Escape}');
     expect(screen.getByRole('alertdialog')).toBeInTheDocument();
@@ -922,7 +960,18 @@ describe('English catalog', () => {
     expect(
       await screen.findByRole('heading', { level: 1, name: 'Clients and credentials' }),
     ).toBeVisible();
-    expect(screen.getAllByText('20 burst, refill 1 per second')).toHaveLength(2);
+    const kepala = within(screen.getByRole('table')).getAllByRole('columnheader');
+    expect(kepala.map((kolom) => kolom.textContent?.trim())).toEqual([
+      'Client',
+      'Credential type',
+      'Client ID',
+      'Created',
+      'Status',
+      'Actions',
+    ]);
+    expect(
+      screen.getByRole('link', { name: 'Create a credential for client Aplikasi Contoh A' }),
+    ).toBeVisible();
     await user.click(screen.getByRole('button', { name: 'Add client' }));
     const tambah = within(await screen.findByRole('dialog', { name: 'Add client' }));
     expect(tambah.getByText('Must start with https://')).toBeInTheDocument();

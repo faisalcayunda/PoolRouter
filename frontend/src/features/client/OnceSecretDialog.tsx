@@ -1,8 +1,9 @@
-import { useState, type ReactNode } from 'react';
+import { useId, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button } from '../../components/m3/Button';
 import { Dialog } from '../../components/m3/Dialog';
 import { TextField } from '../../components/m3/TextField';
+import { Icon, icons } from '../../icons';
 
 /**
  * Secret yang hanya tampil sekali (kredensial baru, secret webhook). Nilai hidup di props dialog
@@ -20,11 +21,12 @@ export function OnceSecretDialog({
   title: string;
   fieldLabel: string;
   value: string;
-  /** Client ID kredensial baru; desain v2 menampilkannya di atas secret. Kosong untuk secret webhook. */
+  /** Client ID kredensial baru; hanya diisi layar kredensial, kosong untuk secret webhook. */
   clientId?: string;
   onDone: () => void;
 }): ReactNode {
   const { t } = useTranslation();
+  const secretId = useId();
   const [copied, setCopied] = useState(false);
 
   async function copy() {
@@ -43,13 +45,20 @@ export function OnceSecretDialog({
       role="alertdialog"
       isDismissable={false}
       isKeyboardDismissDisabled
-      title={title}
+      title={
+        <span className="flex flex-col items-start gap-4">
+          <span className="flex size-10 items-center justify-center rounded-full bg-surface-container-low text-success">
+            <Icon icon={icons.checkCircle} />
+          </span>
+          {title}
+        </span>
+      }
       closeLabel={t('common.close')}
       footer={<Button onPress={onDone}>{t('secret_once.dialog.done')}</Button>}
     >
-      <div className="flex flex-col gap-3 pt-2">
+      <div className="flex flex-col gap-4 pt-2">
         <p>{t('secret_once.dialog.body')}</p>
-        {clientId ? (
+        {clientId !== undefined ? (
           <TextField
             label={t('client.col.id')}
             value={clientId}
@@ -58,18 +67,29 @@ export function OnceSecretDialog({
             className="[&_input]:font-code"
           />
         ) : null}
-        <div className="flex items-start gap-3">
-          <TextField
-            label={fieldLabel}
-            description={t('secret_once.dialog.shown_once')}
-            value={value}
-            isReadOnly
-            autoComplete="off"
-            className="min-w-0 flex-1 [&_input]:font-code"
-          />
-          <Button variant="outlined" className="mt-6" onPress={() => void copy()}>
-            {t('common.action.copy')}
-          </Button>
+        <div className="flex flex-col gap-1.5">
+          <label
+            htmlFor={secretId}
+            className="typescale-body-medium font-medium text-on-surface-variant"
+          >
+            {fieldLabel}
+          </label>
+          <div className="flex h-10 items-center justify-between gap-2 rounded-medium border border-outline-variant bg-surface-container-lowest pl-3 pr-1">
+            <input
+              id={secretId}
+              readOnly
+              autoComplete="off"
+              value={value}
+              aria-describedby={`${secretId}-once`}
+              className="m3-focus typescale-body-medium min-w-0 flex-1 bg-transparent font-code text-on-surface"
+            />
+            <Button variant="outlined" onPress={() => void copy()}>
+              {t('common.action.copy')}
+            </Button>
+          </div>
+          <p id={`${secretId}-once`} className="typescale-body-small text-on-surface-variant">
+            {t('secret_once.dialog.shown_once')}
+          </p>
         </div>
         <p role="status" className="typescale-body-medium text-on-surface-variant">
           {copied ? t('secret_once.dialog.copied') : ''}
