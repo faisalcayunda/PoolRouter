@@ -32,7 +32,7 @@ COMPOSE := $(COMPOSE_ENV) $(CONTAINER_ENGINE) compose -p $(PROJECT) $(COMPOSE_FI
 LINT_ENV_FILES := $(COMPOSE_DIR)/env/dev.env.example
 IMAGE_TAG ?= dev
 
-.PHONY: check-env compose-up compose-down compose-ps compose-logs compose-config compose-migrate compose-seed compose-lint compose-test-dind image image-frontend
+.PHONY: check-env compose-up compose-down compose-ps compose-logs compose-config compose-migrate compose-seed compose-lint compose-test-dind image image-frontend image-postgres
 
 check-env:
 	@case "$(ENV)" in dev|staging|prod) ;; *) echo "ENV harus dev, staging, atau prod" >&2; exit 2 ;; esac
@@ -89,6 +89,11 @@ image-frontend:
 	@test -f frontend/Containerfile || { echo "frontend/Containerfile tidak ada" >&2; exit 2; }
 	$(CONTAINER_ENGINE) build -f frontend/Containerfile -t localhost/poolrouter-frontend:$(IMAGE_TAG) frontend
 
+# image-postgres: image PostgreSQL 17 + pgBackRest (deploy/compose/backup/), konteks folder itu.
+# ARC_ISSUE (mis. ARC-215) memberi label arctiva.issue pada image.
+image-postgres:
+	$(CONTAINER_ENGINE) build $(if $(ARC_ISSUE),--label arctiva.issue=$(ARC_ISSUE)) -f $(COMPOSE_DIR)/backup/Containerfile -t localhost/poolrouter-postgres:$(IMAGE_TAG) $(COMPOSE_DIR)/backup
+
 # Repo gate (ADR-0003 section 5): `make setup test lint` from the repo root.
 # Each stack keeps its own Makefile; these targets only delegate. frontend/ is
 # included once it has a Makefile, so adding it needs no change here.
@@ -96,11 +101,11 @@ image-frontend:
 SUBMAKE = $(MAKE)
 STACKS := backend $(if $(wildcard frontend/Makefile),frontend)
 
-.PHONY: help setup test lint fmt clean push-main test-dry-run test-label test-atribut
+.PHONY: help setup test lint fmt clean push-main test-dry-run test-label test-atribut test-image-cli
 
 help:
 	@echo "gate resmi: make setup test lint RUNNER=docker FRONTEND_RUNNER=docker CONTAINER_LABEL=arctiva.issue=ARC-<n>"
-	@echo "targets: setup test lint fmt clean (gate repo, delegasi ke stack); test-dry-run (uji regresi make -n, tanpa Docker); compose-up compose-down compose-ps compose-logs compose-config compose-migrate compose-seed compose-lint compose-test-dind image image-frontend"
+	@echo "targets: setup test lint fmt clean (gate repo, delegasi ke stack); test-dry-run (uji regresi make -n, tanpa Docker); test-image-cli (biner di image backend); compose-up compose-down compose-ps compose-logs compose-config compose-migrate compose-seed compose-lint compose-test-dind image image-frontend"
 	@echo "Push: tidak ada push langsung ke main. Branch agent/<ID>-<slug> -> PR ke main -> merge Operator (CLAUDE.md)."
 
 # push-main: sengaja menolak. Arctiva tidak mengizinkan push langsung ke main, dan jalur push
@@ -126,6 +131,12 @@ test-label:
 # test-atribut: uji regresi aturan repo Arctiva (push-main hanya penjaga, CLAUDE.md, tanpa label Shaal).
 test-atribut:
 	@sh scripts/test-atribut.sh
+
+# test-image-cli: image backend memuat webserver, controller, worker, dan backend-cli (ARC-236).
+# Tanpa IMAGE hanya memeriksa Containerfile (statis). Dengan IMAGE (hasil `make image`, tag $(IMAGE_TAG)) juga
+# menjalankan `backend-cli --help` di dalam image: make image test-image-cli IMAGE=localhost/poolrouter-backend:$(IMAGE_TAG)
+test-image-cli:
+	@IMAGE="$(IMAGE)" CONTAINER_ENGINE="$(CONTAINER_ENGINE)" CONTAINER_LABEL="$(CONTAINER_LABEL)" sh scripts/test-image-cli.sh
 
 setup test lint fmt clean:
 	@set -e; for s in $(STACKS); do \

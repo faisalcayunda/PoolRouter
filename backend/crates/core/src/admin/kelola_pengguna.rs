@@ -16,6 +16,7 @@ use chrono::{DateTime, Utc};
 use serde_json::{Value, json};
 use sqlx::{PgConnection, PgPool, Postgres, Transaction};
 use uuid::Uuid;
+use zeroize::Zeroizing;
 
 use crate::admin::password::{HashGagal, KebijakanPassword, ParameterArgon2, hash_password};
 use crate::audit::{
@@ -86,10 +87,19 @@ pub enum GalatKelola {
     StatusSama(&'static str),
     #[error("pelaku tidak boleh menonaktifkan dirinya sendiri")]
     NonaktifkanDiriSendiri,
+    #[error(
+        "`{0}` adalah platform_admin aktif terakhir; mencabut peran atau menonaktifkannya \
+         mengunci sistem. Angkat platform_admin lain terlebih dahulu"
+    )]
+    AdminTerakhir(String),
     #[error("bootstrap hanya boleh saat tabel pengguna kosong")]
     BootstrapDitolak,
     #[error("seed hanya boleh di POOLROUTER_ENV dev atau ci")]
     SeedDitolak,
+    #[error(
+        "pengguna seed `{0}` nonaktif; seed tidak mengaktifkannya kembali (pakai `pengguna aktifkan`)"
+    )]
+    SeedNonaktif(String),
     #[error("jalankan `seed pengguna` lebih dulu: seed-platform-admin belum ada")]
     SeedPenggunaBelumAda,
     #[error("{0}")]
@@ -137,10 +147,11 @@ pub fn username_sah(username: &str) -> bool {
     (3..=100).contains(&n) && username == username.to_lowercase()
 }
 
-fn hash(password: &str) -> Result<String, GalatKelola> {
-    let h = hash_password(password, KebijakanPassword::f0(), ParameterArgon2::OWASP)
-        .map_err(GalatKelola::Password)?;
-    Ok(h.to_string())
+/// Hash tetap dalam `Zeroizing` sampai titik bind ke SQL (`&Zeroizing<String>` otomatis menjadi
+/// `&str` di parameter `sisipkan_pengguna`), supaya salinannya terhapus saat di-drop.
+fn hash(password: &str) -> Result<Zeroizing<String>, GalatKelola> {
+    hash_password(password, KebijakanPassword::f0(), ParameterArgon2::OWASP)
+        .map_err(GalatKelola::Password)
 }
 
 #[derive(Debug, Clone)]
@@ -212,6 +223,55 @@ async fn target(conn: &mut PgConnection, username: &str) -> Result<BarisPengguna
     cari(conn, username)
         .await?
         .ok_or_else(|| GalatKelola::TargetTidakAda(username.to_owned()))
+}
+
+/// Serialisasikan semua operasi yang bisa mengurangi platform_admin aktif. Kunci diambil pada SEMUA
+/// baris pengguna aktif, berurutan menurut `pengguna_id` (urutan sama, tanpa deadlock), bukan hanya
+/// baris target: dua operasi pada dua admin berbeda tetap berebut kunci yang sama, jadi yang kedua
+/// menunggu, lalu membaca keadaan yang sudah di-commit yang pertama. Wajib dipanggil SEBELUM
+/// `pelaku_admin` dan sebagai pernyataan sendiri, karena snapshot pernyataan READ COMMITTED yang
+/// sudah berjalan tidak melihat commit yang ditunggunya. `FOR NO KEY UPDATE` tidak bentrok dengan
+/// `FOR KEY SHARE` milik FK audit.
+async fn kunci_admin_aktif(conn: &mut PgConnection) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "SELECT pengguna_id FROM admin_user WHERE aktif ORDER BY pengguna_id FOR NO KEY UPDATE",
+    )
+    .fetch_all(conn)
+    .await?;
+    Ok(())
+}
+
+/// Tolak bila `t` platform_admin aktif terakhir. Hitung platform_admin aktif LAIN dengan definisi
+/// "berlaku" yang sama seperti `peran_berlaku`. Dipanggil setelah [`kunci_admin_aktif`].
+async fn jaga_admin_terakhir(
+    conn: &mut PgConnection,
+    username: &str,
+    t: &BarisPengguna,
+    sekarang: DateTime<Utc>,
+) -> Result<(), GalatKelola> {
+    if !t.aktif
+        || !peran_berlaku(conn, t.pengguna_id, sekarang)
+            .await?
+            .contains(&Peran::PlatformAdmin)
+    {
+        return Ok(());
+    }
+    let lain: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM admin_user u \
+         WHERE u.aktif AND u.pengguna_id <> $1 AND EXISTS ( \
+           SELECT 1 FROM admin_user_peran p \
+           WHERE p.pengguna_id = u.pengguna_id AND p.peran = $3 AND p.dicabut_at IS NULL \
+             AND (p.berlaku_sampai IS NULL OR p.berlaku_sampai > $2))",
+    )
+    .bind(t.pengguna_id)
+    .bind(sekarang)
+    .bind(Peran::PlatformAdmin.as_str())
+    .fetch_one(conn)
+    .await?;
+    if lain == 0 {
+        return Err(GalatKelola::AdminTerakhir(username.to_owned()));
+    }
+    Ok(())
 }
 
 async fn sisipkan_pengguna(
@@ -525,11 +585,17 @@ pub async fn cabut_peran(
     sekarang: DateTime<Utc>,
 ) -> Result<(), GalatKelola> {
     let mut tx = pool.begin().await?;
+    if peran == Peran::PlatformAdmin {
+        kunci_admin_aktif(&mut tx).await?;
+    }
     let pelaku = pelaku_admin(&mut tx, oleh, sekarang).await?;
     let t = target(&mut tx, target_username).await?;
     let lama = peran_berlaku(&mut tx, t.pengguna_id, sekarang).await?;
     if !lama.contains(&peran) {
         return Err(GalatKelola::PeranTidakAda(peran));
+    }
+    if peran == Peran::PlatformAdmin {
+        jaga_admin_terakhir(&mut tx, target_username, &t, sekarang).await?;
     }
     sqlx::query(
         "UPDATE admin_user_peran SET dicabut_at = now() \
@@ -608,6 +674,9 @@ pub async fn ubah_aktif(
     sekarang: DateTime<Utc>,
 ) -> Result<(), GalatKelola> {
     let mut tx = pool.begin().await?;
+    if !aktif {
+        kunci_admin_aktif(&mut tx).await?;
+    }
     let pelaku = pelaku_admin(&mut tx, oleh, sekarang).await?;
     let t = target(&mut tx, target_username).await?;
     if !aktif && t.pengguna_id == pelaku {
@@ -619,6 +688,9 @@ pub async fn ubah_aktif(
         } else {
             "nonaktif"
         }));
+    }
+    if !aktif {
+        jaga_admin_terakhir(&mut tx, target_username, &t, sekarang).await?;
     }
     sqlx::query("UPDATE admin_user SET aktif = $2, diubah_at = now() WHERE pengguna_id = $1")
         .bind(t.pengguna_id)
@@ -681,9 +753,23 @@ pub async fn daftar(
     Ok(hasil)
 }
 
+/// Pengguna seed yang sudah ada dipakai ulang hanya bila masih aktif. Yang nonaktif ditolak, tidak
+/// diaktifkan kembali: penonaktifan adalah keputusan eksplisit (beserta audit dan pencabutan sesi),
+/// dan seed (hanya sah di `dev`/`ci`) tidak boleh membalikkannya diam-diam atau memakai pengguna
+/// nonaktif sebagai pelaku audit. Pemulihannya lewat `pengguna aktifkan`. Transaksi seed dibatalkan
+/// saat galat ini keluar, jadi penolakan tidak meninggalkan perubahan.
+fn seed_harus_aktif(p: &BarisPengguna, username: &str) -> Result<Uuid, GalatKelola> {
+    if p.aktif {
+        Ok(p.pengguna_id)
+    } else {
+        Err(GalatKelola::SeedNonaktif(username.to_owned()))
+    }
+}
+
 /// `seed pengguna` (AC-42): satu pengguna sintetis per peran plus platform admin yang juga auditor,
 /// semuanya dengan password seed yang sama. Ditolak tanpa perubahan di luar `dev`/`ci`. Idempoten:
 /// pengguna, client, dan peran yang sudah ada tidak dibuat ulang dan tidak menulis audit baru.
+/// Pengguna seed yang nonaktif membuat seed ditolak ([`GalatKelola::SeedNonaktif`]).
 pub async fn seed_pengguna(
     pool: &PgPool,
     env: Environment,
@@ -703,7 +789,7 @@ pub async fn seed_pengguna(
         .await?;
 
     let admin = match cari(&mut tx, SEED_PLATFORM_ADMIN).await? {
-        Some(p) => p.pengguna_id,
+        Some(p) => seed_harus_aktif(&p, SEED_PLATFORM_ADMIN)?,
         None => {
             hasil.pengguna_baru += 1;
             hasil.peran_baru += 1;
@@ -734,7 +820,7 @@ pub async fn seed_pengguna(
     let mut penyetuju = None;
     for (username, client_id, daftar_peran) in rencana {
         let id = match cari(&mut tx, username).await? {
-            Some(p) => p.pengguna_id,
+            Some(p) => seed_harus_aktif(&p, username)?,
             None => {
                 let id = sisipkan_pengguna(&mut tx, username, &password_hash, client_id).await?;
                 catat_konfigurasi(
@@ -928,6 +1014,13 @@ mod tests {
             Err(GalatKelola::BerlakuSampaiLewat)
         ));
         assert!(poc(Some(t0() + chrono::Duration::days(30))).is_ok());
+    }
+
+    #[test]
+    fn hash_tetap_terbungkus_zeroizing() {
+        // Pembungkus baru boleh dilepas di titik bind ke SQL; fungsi `hash` harus menyerahkannya.
+        let h: Zeroizing<String> = hash("kucingoranyeindah").unwrap();
+        assert!(h.starts_with("$argon2"));
     }
 
     #[test]
