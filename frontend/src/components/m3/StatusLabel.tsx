@@ -10,16 +10,16 @@ import { Icon, icons } from '../../icons';
 export type StatusLabelTone = 'neutral' | 'info' | 'success' | 'warning' | 'error';
 
 /**
- * M3 baseline has no `success`/`warning` colour roles, so the tones reuse the
- * catalogued roles the way §7.1 `StatusLabel` allows: `tertiary-container` for a
- * positive state, `error-container` for warning and error. The text always names
- * the status (§7.5), so colour is never the only signal.
+ * Warna mengikuti frame Penpot `StatusLabel / *`: `success-container` hijau (#b8f397) dan
+ * `warning-container` kuning (#ffdea7) memakai peran ekstensi token, bukan `tertiary-container`
+ * (oranye) yang dulu dipinjam. Teks selalu menyebut statusnya (§7.5), jadi warna bukan satu-satunya
+ * penanda.
  */
 const TONE: Record<StatusLabelTone, string> = {
-  neutral: 'bg-surface-container-highest text-on-surface-variant',
+  neutral: 'bg-surface-container-high text-on-surface',
   info: 'bg-secondary-container text-on-secondary-container',
-  success: 'bg-tertiary-container text-on-tertiary-container',
-  warning: 'bg-error-container text-on-error-container',
+  success: 'bg-success-container text-on-success-container',
+  warning: 'bg-warning-container text-on-warning-container',
   error: 'bg-error-container text-on-error-container',
 };
 
@@ -48,7 +48,7 @@ export function StatusLabel({
   return (
     <span
       className={cx(
-        'typescale-label-medium inline-flex items-center gap-1 whitespace-nowrap rounded-full px-2 py-0.5',
+        'typescale-label-small inline-flex h-6 items-center gap-1 whitespace-nowrap rounded-small px-2',
         TONE[tone],
         className,
       )}

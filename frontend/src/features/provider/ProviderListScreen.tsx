@@ -48,7 +48,7 @@ export function ProviderListScreen({ client = api }: ProviderListScreenProps): R
         subtitle={t('provider.page.subtitle')}
         titleRef={titleRef}
         actions={
-          rows.length > 0 ? (
+          providers.status === 'success' ? (
             <LinkButton href="/provider/baru">{t('provider.page.add')}</LinkButton>
           ) : null
         }
@@ -67,7 +67,7 @@ export function ProviderListScreen({ client = api }: ProviderListScreenProps): R
           </p>
           <div className="flex flex-wrap justify-center gap-2">
             <LinkButton href="/provider/baru">{t('provider.page.add')}</LinkButton>
-            <LinkButton href="/secret" variant="outlined">
+            <LinkButton href="/secret" variant="text">
               {t('provider.empty.goto_secrets')}
             </LinkButton>
           </div>

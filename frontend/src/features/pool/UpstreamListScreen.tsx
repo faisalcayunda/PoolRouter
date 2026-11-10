@@ -163,7 +163,7 @@ export function UpstreamListScreen({ client = api }: UpstreamListScreenProps): R
                         </StatusLabel>
                       </td>
                       <td data-label={t('upstream.col.actions')} className={TD}>
-                        <div className="flex flex-wrap gap-1">
+                        <div className="flex flex-nowrap items-center gap-1 whitespace-nowrap">
                           <LinkButton
                             href={`/upstream/${encodeURIComponent(row.upstream_pool_id)}`}
                             variant="text"
