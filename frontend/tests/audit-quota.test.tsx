@@ -6,6 +6,8 @@ import { AuditScreen } from '../src/features/audit-akses/AuditScreen';
 import { QuotaScreen } from '../src/features/quota/QuotaScreen';
 import { renderWithI18n } from './render';
 
+const USER_ID = '123e4567-e89b-12d3-a456-426614174000';
+
 const AUDIT: AuditAksesPage = {
   baris: [
     {
@@ -88,10 +90,23 @@ describe('S13 audit akses', () => {
     renderWithI18n(<AuditScreen client={stubClient({ cariAuditAkses })} />);
 
     await userEvent.click(screen.getByLabelText('Pengguna'));
+    await userEvent.paste(USER_ID);
+    await userEvent.click(screen.getByRole('button', { name: 'Cari' }));
+
+    await waitFor(() => expect(cariAuditAkses.mock.calls.at(-1)![0].pengguna_id).toBe(USER_ID));
+  });
+
+  it('rejects a non-UUID user in the client and does not send it', async () => {
+    const cariAuditAkses = vi.fn().mockResolvedValue(AUDIT);
+    renderWithI18n(<AuditScreen client={stubClient({ cariAuditAkses })} />);
+    await waitFor(() => expect(cariAuditAkses).toHaveBeenCalledTimes(1));
+
+    await userEvent.click(screen.getByLabelText('Pengguna'));
     await userEvent.paste('budi');
     await userEvent.click(screen.getByRole('button', { name: 'Cari' }));
 
-    await waitFor(() => expect(cariAuditAkses.mock.calls.at(-1)![0].pengguna_id).toBe('budi'));
+    expect(await screen.findByText(/harus berformat UUID/)).toBeInTheDocument();
+    expect(cariAuditAkses).toHaveBeenCalledTimes(1);
   });
 
   it('offers no edit or delete affordance on any row', async () => {

@@ -45,6 +45,8 @@ function lastDay(): DateRange {
 /** Actions the catalog can name; the filter offers exactly these (`enum.aksi_audit`). */
 const AKSI_VALUES = Object.keys(idMessages.enum.aksi_audit);
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 /** Cell classes shared with the other v2 tables (S08 client list). */
 const TH = 'border-b border-outline-variant px-4 py-3 font-medium';
 const TD = 'typescale-body-medium px-4 py-3 align-middle';
@@ -88,6 +90,7 @@ export function AuditScreen({ client = api }: AuditScreenProps): ReactNode {
 
   const [aksi, setAksi] = useState('semua');
   const [pengguna, setPengguna] = useState('');
+  const [penggunaError, setPenggunaError] = useState<string | null>(null);
   // One entry per page visited: `[null]` is page 1, later entries are the `kursor` of the previous
   // response. Applying a new filter or range starts the trail over.
   const [cursors, setCursors] = useState<(string | null)[]>([null]);
@@ -110,6 +113,14 @@ export function AuditScreen({ client = api }: AuditScreenProps): ReactNode {
     if (!startIso) next.startDate = t('common.date.format_error');
     if (!endIso) next.endDate = t('common.date.format_error');
     setErrors(next);
+    // `pengguna_id` is a UUID in the admin contract; free text is never sent.
+    const userId = pengguna.trim();
+    const userInvalid = userId !== '' && !UUID_RE.test(userId);
+    setPenggunaError(userInvalid ? t('audit.filter.user_error') : null);
+    if (userInvalid) {
+      setRangeError(null);
+      return;
+    }
     if (!startIso || !endIso) {
       setRangeError(null);
       return;
@@ -122,7 +133,6 @@ export function AuditScreen({ client = api }: AuditScreenProps): ReactNode {
       return;
     }
     setRangeError(null);
-    const userId = pengguna.trim();
     setQuery({
       dari: from,
       sampai: to,
@@ -146,7 +156,13 @@ export function AuditScreen({ client = api }: AuditScreenProps): ReactNode {
             label={t('audit.filter.user')}
             value={pengguna}
             autoComplete="off"
-            onChange={setPengguna}
+            isInvalid={penggunaError !== null}
+            errorMessage={penggunaError}
+            description={t('audit.filter.user_help')}
+            onChange={(value) => {
+              setPengguna(value);
+              setPenggunaError(null);
+            }}
           />
           <Select
             label={t('audit.filter.action')}

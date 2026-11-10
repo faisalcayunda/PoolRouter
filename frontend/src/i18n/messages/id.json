@@ -1092,6 +1092,8 @@
     },
     "filter": {
       "user": "Pengguna",
+      "user_help": "Masukkan ID pengguna dalam format UUID.",
+      "user_error": "ID pengguna harus berformat UUID, misalnya 123e4567-e89b-12d3-a456-426614174000.",
       "action": "Aksi",
       "nik_range": "NIK + rentang {{rentang}}",
       "nik_search": "Pencarian per NIK",

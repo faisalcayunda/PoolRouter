@@ -48,7 +48,9 @@ export default interface Resources {
         "range": "Rentang waktu",
         "range_help": "Pilih rentang waktu untuk menampilkan catatan audit.",
         "range_only": "Rentang {{rentang}}",
-        "user": "Pengguna"
+        "user": "Pengguna",
+        "user_error": "ID pengguna harus berformat UUID, misalnya 123e4567-e89b-12d3-a456-426614174000.",
+        "user_help": "Masukkan ID pengguna dalam format UUID."
       },
       "page": {
         "subtitle": "Catatan hanya bisa dibaca. Tidak ada aksi ubah atau hapus.",
