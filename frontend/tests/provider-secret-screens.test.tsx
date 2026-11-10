@@ -5,6 +5,7 @@ import type { ReactNode } from 'react';
 import {
   ApiError,
   type ApiClient,
+  type Endpoint,
   type Provider,
   type ProviderConfig,
   type SecretRingkas,
@@ -45,6 +46,7 @@ function stubClient(overrides: Partial<ApiClient> = {}): ApiClient {
   return {
     listProviders: vi.fn().mockResolvedValue([]),
     getProvider: vi.fn().mockResolvedValue(PROVIDER),
+    listEndpoints: vi.fn().mockResolvedValue([]),
     createProvider: vi.fn(),
     updateProvider: vi.fn(),
     listSecrets: vi.fn().mockResolvedValue(SECRETS),
@@ -382,15 +384,96 @@ describe('S03 detail provider: tab dan susunan layar Penpot', () => {
     expect(table.getByText('Menunggu API')).toBeInTheDocument();
   });
 
-  it('links the Endpoint tab to the endpoint list', async () => {
+  it("shows the platform-admin notice and this provider's TRESHOLD constant on the Endpoint tab", async () => {
+    const endpoint = {
+      endpoint_id: '00000000-0000-4000-8000-0000000000e1',
+      provider_id: PROVIDER.provider_id,
+      parameter_literal: { TRESHOLD: '80' },
+    } as unknown as Endpoint;
+    const other = {
+      endpoint_id: '00000000-0000-4000-8000-0000000000e2',
+      provider_id: '00000000-0000-4000-8000-0000000000b2',
+      parameter_literal: { TRESHOLD: '55' },
+    } as unknown as Endpoint;
+    asRole(
+      'platform_admin',
+      <ProviderFormScreen
+        client={stubClient({ listEndpoints: vi.fn().mockResolvedValue([endpoint, other]) })}
+        providerId={PROVIDER.provider_id}
+      />,
+    );
+    await screen.findByRole('heading', { level: 1, name: 'provider-contoh-a' });
+    await openTab('Endpoint');
+
+    const panel = within(screen.getByRole('tabpanel'));
+    expect(await panel.findByText('Konfigurasi tingkat platform admin')).toBeInTheDocument();
+    expect(
+      panel.getByRole('heading', {
+        level: 2,
+        name: 'Parameter konstan endpoint provider-contoh-a',
+      }),
+    ).toBeInTheDocument();
+    const field = panel.getByLabelText('TRESHOLD');
+    expect(field).toHaveValue('80');
+    expect(field).toHaveAttribute('readonly');
+    expect(panel.queryByDisplayValue('55')).not.toBeInTheDocument();
+    expect(
+      panel.getByText(
+        'Nilai TRESHOLD dikirimkan ke Dukcapil langsung dari middleware. Client dilarang mengirimkan nilai ini (ditolak 422).',
+      ),
+    ).toBeInTheDocument();
+    expect(panel.getByRole('link', { name: 'Ubah di layar Endpoint' })).toHaveAttribute(
+      'href',
+      `/endpoint/${endpoint.endpoint_id}`,
+    );
+  });
+
+  it('keeps the notice and a link to the endpoint list when the provider has no endpoint yet', async () => {
     await renderEdit();
     await openTab('Endpoint');
 
     const panel = within(screen.getByRole('tabpanel'));
+    expect(await panel.findByText('Konfigurasi tingkat platform admin')).toBeInTheDocument();
     expect(panel.getByRole('link', { name: 'Buka daftar endpoint' })).toHaveAttribute(
       'href',
       '/endpoint',
     );
+  });
+
+  it('puts one primary action, Tambah parameter, in the Parameter header', async () => {
+    await renderEdit(WITH_RULES);
+    await openTab('Parameter');
+
+    const header = within(screen.getByRole('heading', { level: 1 }).parentElement!);
+    expect(header.getAllByRole('button')).toHaveLength(1);
+    expect(header.getByRole('button', { name: 'Tambah parameter' })).toBeInTheDocument();
+    expect(header.queryByRole('link', { name: 'Batal' })).not.toBeInTheDocument();
+    await user.click(header.getByRole('button', { name: 'Tambah parameter' }));
+    expect(screen.getByLabelText('Parameter dan rule (JSON)')).toHaveFocus();
+  });
+
+  it('shows five columns on the Parameter table, with Status pending the API', async () => {
+    await renderEdit(WITH_RULES);
+    await openTab('Parameter');
+
+    const table = within(screen.getByRole('table', { name: 'Parameter dan rule provider' }));
+    expect(table.getAllByRole('columnheader').map((c) => c.textContent)).toEqual([
+      'Parameter',
+      'Jenis rule',
+      'Nilai rule',
+      'Status',
+      'Aksi',
+    ]);
+    expect(table.getAllByText('Menunggu API')).toHaveLength(2);
+  });
+
+  it('gives the dark template editor a high-contrast focus indicator', async () => {
+    await renderEdit();
+    await openTab('Template');
+
+    const editor = screen.getByLabelText('Template body (JSON)');
+    expect(editor.className).toContain('focus-visible:outline-inverse-primary');
+    expect(editor.className).toContain('data-[focus-visible]:outline-inverse-primary');
   });
 
   it('opens the tab that owns the first invalid field before focusing it', async () => {

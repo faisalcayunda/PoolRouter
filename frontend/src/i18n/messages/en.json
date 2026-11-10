@@ -384,9 +384,10 @@
       "endpoint": "Constant parameters are stored per endpoint."
     },
     "endpoint_tab": {
-      "title": "Provider endpoints",
-      "body": "An endpoint links this provider to a downstream pool and stores constant parameters such as TRESHOLD. Change the values on the Endpoint screen.",
-      "open": "Open the endpoint list"
+      "open": "Open the endpoint list",
+      "edit": "Edit on the Endpoint screen",
+      "empty": "This provider has no endpoint yet. Create one on the Endpoint screen to set its constant parameters.",
+      "threshold_help": "The TRESHOLD value is sent to Dukcapil straight from the middleware. Clients must not send this value (rejected with 422)."
     }
   },
   "secret": {

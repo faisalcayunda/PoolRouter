@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent, type Key, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { i18n as I18n } from 'i18next';
-import { api, ApiError, type ApiClient, type Provider } from '../../api/client';
+import { api, ApiError, type ApiClient, type Endpoint, type Provider } from '../../api/client';
 import { Button } from '../../components/m3/Button';
 import { Card } from '../../components/m3/Card';
 import { InlineAlert } from '../../components/m3/InlineAlert';
@@ -279,14 +279,20 @@ function ProviderForm({ client, initial }: ProviderFormProps): ReactNode {
         subtitle={tDynamic(i18n, TAB_SUBTITLE[tab])}
         titleRef={titleRef}
         actions={
-          <>
-            <LinkButton href="/provider" variant="outlined">
-              {t('common.action.cancel')}
-            </LinkButton>
-            <Button type="submit" isDisabled={saving}>
-              {saveLabel}
+          tab === 'parameter' ? (
+            <Button type="button" onPress={() => focusField('parameters')}>
+              {t('provider.rules.add')}
             </Button>
-          </>
+          ) : (
+            <>
+              <LinkButton href="/provider" variant="outlined">
+                {t('common.action.cancel')}
+              </LinkButton>
+              <Button type="submit" isDisabled={saving}>
+                {saveLabel}
+              </Button>
+            </>
+          )
         }
       />
 
@@ -546,6 +552,9 @@ function ProviderForm({ client, initial }: ProviderFormProps): ReactNode {
                           {t('provider.rules.col.value')}
                         </th>
                         <th scope="col" className="border-b border-outline-variant px-5 py-3.5">
+                          {t('provider.rules.col.status')}
+                        </th>
+                        <th scope="col" className="border-b border-outline-variant px-5 py-3.5">
                           {t('provider.rules.col.action')}
                         </th>
                       </tr>
@@ -573,6 +582,12 @@ function ProviderForm({ client, initial }: ProviderFormProps): ReactNode {
                             className="typescale-body-medium px-5 py-4 align-middle text-on-surface-variant"
                           >
                             {ruleValueLabel(i18n, rule) ?? t('provider.rules.not_set')}
+                          </td>
+                          <td
+                            data-label={t('provider.rules.col.status')}
+                            className="typescale-body-medium px-5 py-4 align-middle text-on-surface-variant"
+                          >
+                            {t('provider.api_pending')}
                           </td>
                           <td
                             data-label={t('provider.rules.col.action')}
@@ -616,6 +631,14 @@ function ProviderForm({ client, initial }: ProviderFormProps): ReactNode {
               <p className="typescale-body-medium text-on-surface-variant">
                 {t('provider.rules.no_defaults')}
               </p>
+              <div className="flex flex-wrap items-center justify-end gap-2">
+                <LinkButton href="/provider" variant="outlined">
+                  {t('common.action.cancel')}
+                </LinkButton>
+                <Button type="submit" isDisabled={saving}>
+                  {saveLabel}
+                </Button>
+              </div>
             </Card>
           </div>
         </TabPanel>
@@ -701,21 +724,81 @@ function ProviderForm({ client, initial }: ProviderFormProps): ReactNode {
         </TabPanel>
 
         <TabPanel id="endpoint" shouldForceMount className="pt-4">
-          <Card variant="container" className="flex flex-col items-start gap-4 p-6">
-            <h2 className="typescale-title-medium text-on-surface">
-              {t('provider.endpoint_tab.title')}
-            </h2>
-            <p className="typescale-body-medium text-on-surface-variant">
-              {t('provider.endpoint_tab.body')}
-            </p>
-            <LinkButton href="/endpoint" variant="outlined">
-              {t('provider.endpoint_tab.open')}
-            </LinkButton>
-          </Card>
+          <EndpointTab
+            client={client}
+            provider={current}
+            enabled={current !== null && tab === 'endpoint'}
+          />
         </TabPanel>
       </Tabs>
       <SnackbarRegion queue={snackbar.queue} />
     </form>
+  );
+}
+
+/** Tab Endpoint (S04b): pemberitahuan tingkat admin dan parameter konstan endpoint milik provider ini. */
+function EndpointTab({
+  client,
+  provider,
+  enabled,
+}: {
+  client: ApiClient;
+  provider: Provider | null;
+  enabled: boolean;
+}): ReactNode {
+  const { t } = useTranslation();
+  const providerId = provider?.provider_id ?? '';
+  const endpoints = useQuery<Endpoint[]>(
+    async (signal) =>
+      (await client.listEndpoints({ signal })).filter((e) => e.provider_id === providerId),
+    `provider-endpoints:${providerId}`,
+    { enabled },
+  );
+  return (
+    <div className="flex flex-col gap-6">
+      <InlineAlert tone="info" heading={t('endpoint.form.notice.title')}>
+        {t('endpoint.form.notice.body')}
+      </InlineAlert>
+      {endpoints.status === 'loading' ? (
+        <LoadingState label={t('common.state.loading')} />
+      ) : endpoints.status === 'error' ? (
+        <QueryError error={endpoints.error} onRetry={endpoints.reload} />
+      ) : endpoints.data.length === 0 ? (
+        <Card variant="container" className="flex flex-col items-start gap-4 p-6">
+          <p className="typescale-body-medium text-on-surface-variant">
+            {t('provider.endpoint_tab.empty')}
+          </p>
+          <LinkButton href="/endpoint" variant="outlined">
+            {t('provider.endpoint_tab.open')}
+          </LinkButton>
+        </Card>
+      ) : (
+        endpoints.data.map((endpoint) => (
+          <Card
+            key={endpoint.endpoint_id}
+            variant="container"
+            className="flex flex-col items-start gap-4 p-6"
+          >
+            <h2 className="typescale-title-medium text-on-surface">
+              {`${t('endpoint.form.constants.title')} ${provider?.nama ?? ''}`}
+            </h2>
+            <TextField
+              label="TRESHOLD"
+              value={endpoint.parameter_literal['TRESHOLD'] ?? ''}
+              isReadOnly
+              autoComplete="off"
+              description={t('provider.endpoint_tab.threshold_help')}
+            />
+            <LinkButton
+              href={`/endpoint/${encodeURIComponent(endpoint.endpoint_id)}`}
+              variant="outlined"
+            >
+              {t('provider.endpoint_tab.edit')}
+            </LinkButton>
+          </Card>
+        ))
+      )}
+    </div>
   );
 }
 

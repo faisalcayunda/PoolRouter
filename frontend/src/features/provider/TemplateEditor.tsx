@@ -49,7 +49,7 @@ export function TemplateEditor({
         <RacTextArea
           rows={8}
           spellCheck={false}
-          className="m3-focus typescale-body-medium min-h-40 w-full resize-y rounded-extra-small bg-transparent font-code text-inverse-on-surface outline-none"
+          className="m3-focus typescale-body-medium min-h-40 w-full resize-y rounded-extra-small bg-transparent font-code text-inverse-on-surface outline-none focus-visible:outline-inverse-primary! data-[focus-visible]:outline-inverse-primary!"
         />
       </div>
       {description ? (

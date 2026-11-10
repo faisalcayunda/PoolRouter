@@ -384,9 +384,10 @@
       "endpoint": "Parameter konstan disimpan per endpoint."
     },
     "endpoint_tab": {
-      "title": "Endpoint provider",
-      "body": "Endpoint menghubungkan provider ini ke downstream pool dan menyimpan parameter konstan seperti TRESHOLD. Nilainya diubah di layar Endpoint.",
-      "open": "Buka daftar endpoint"
+      "open": "Buka daftar endpoint",
+      "edit": "Ubah di layar Endpoint",
+      "empty": "Provider ini belum punya endpoint. Buat endpoint di layar Endpoint untuk mengatur parameter konstannya.",
+      "threshold_help": "Nilai TRESHOLD dikirimkan ke Dukcapil langsung dari middleware. Client dilarang mengirimkan nilai ini (ditolak 422)."
     }
   },
   "secret": {

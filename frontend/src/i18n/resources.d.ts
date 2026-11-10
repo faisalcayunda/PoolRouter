@@ -776,9 +776,10 @@ export default interface Resources {
         "threshold_help": "Dikirim ke Dukcapil dari sini. Client tidak boleh mengirim TRESHOLD (ditolak 422)."
       },
       "endpoint_tab": {
-        "body": "Endpoint menghubungkan provider ini ke downstream pool dan menyimpan parameter konstan seperti TRESHOLD. Nilainya diubah di layar Endpoint.",
+        "edit": "Ubah di layar Endpoint",
+        "empty": "Provider ini belum punya endpoint. Buat endpoint di layar Endpoint untuk mengatur parameter konstannya.",
         "open": "Buka daftar endpoint",
-        "title": "Endpoint provider"
+        "threshold_help": "Nilai TRESHOLD dikirimkan ke Dukcapil langsung dari middleware. Client dilarang mengirimkan nilai ini (ditolak 422)."
       },
       "form": {
         "back": "Kembali ke daftar provider",
