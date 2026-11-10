@@ -30,10 +30,12 @@ use futures::Sink;
 use lapin::{
     BasicProperties, Channel, Confirmation, Connection, ConnectionProperties,
     options::{BasicNackOptions, BasicPublishOptions, ConfirmSelectOptions},
+    types::{AMQPValue, FieldTable},
 };
 use poolrouter_core::queue::{
     JobConsumer, JobPublisher, PenandaKonsumen, QueueError, StatusKonsumen,
 };
+use tokio::sync::Mutex;
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
@@ -64,12 +66,60 @@ pub const TOLERANSI_LIVENESS: Duration = Duration::from_secs(JEDA_MAKS.as_secs()
 /// tidak pernah tercatat tersambung, sehingga tidak mereset toleransi.
 const JEDA_STABIL: Duration = Duration::from_secs(2);
 
+/// Batas satu publish sampai confirm broker (ADR-0001 bagian 5a.4). Broker
+/// yang sedang flow control menahan tulis frame maupun confirm; tanpa batas,
+/// dispatcher ikut tertahan. Lewat batas = [`QueueError::Transport`], dan
+/// reconciler memulihkan request-nya.
+const BATAS_CONFIRM: Duration = Duration::from_secs(5);
+
+/// Nama header AMQP pembawa id korelasi (ADR-0001 bagian 6, S11).
+const HEADER_TRACE: &str = "x-trace-id";
+
 fn transport(galat: impl std::fmt::Display) -> QueueError {
     QueueError::Transport(galat.to_string())
 }
 
-pub struct ApalisQueue {
+/// Koneksi dan channel publish (`confirm_select`). Koneksi dipegang supaya
+/// statusnya bisa dibaca; channel saja tidak cukup untuk mendeteksi putus.
+struct SaluranPublish {
+    koneksi: Connection,
     channel: Channel,
+}
+
+impl SaluranPublish {
+    async fn buka(uri: &str) -> Result<Self, QueueError> {
+        let koneksi = Connection::connect(uri, ConnectionProperties::default())
+            .await
+            .map_err(transport)?;
+        let channel = koneksi.create_channel().await.map_err(transport)?;
+        channel
+            .confirm_select(ConfirmSelectOptions::default())
+            .await
+            .map_err(transport)?;
+        Ok(Self { koneksi, channel })
+    }
+
+    fn tersambung(&self) -> bool {
+        self.koneksi.status().connected() && self.channel.status().connected()
+    }
+}
+
+/// Jalankan `kerja` paling lama `batas`; lewat batas menjadi galat transport.
+async fn dengan_batas(
+    batas: Duration,
+    kerja: impl Future<Output = Result<(), QueueError>>,
+) -> Result<(), QueueError> {
+    tokio::time::timeout(batas, kerja).await.map_err(|_| {
+        QueueError::Transport(format!(
+            "publish tidak dikonfirmasi broker dalam {} detik",
+            batas.as_secs_f32()
+        ))
+    })?
+}
+
+pub struct ApalisQueue {
+    /// Diganti saat publish menemukan koneksi putus (broker restart).
+    publish: Mutex<SaluranPublish>,
     uri: String,
     berhenti: CancellationToken,
     prefetch: u16,
@@ -80,16 +130,8 @@ impl ApalisQueue {
     /// Buka koneksi dan channel publish (`confirm_select`). Consumer membuka
     /// koneksinya sendiri per sesi, jadi `uri` disimpan.
     pub async fn connect(uri: &str) -> Result<Self, QueueError> {
-        let connection = Connection::connect(uri, ConnectionProperties::default())
-            .await
-            .map_err(transport)?;
-        let channel = connection.create_channel().await.map_err(transport)?;
-        channel
-            .confirm_select(ConfirmSelectOptions::default())
-            .await
-            .map_err(transport)?;
         Ok(Self {
-            channel,
+            publish: Mutex::new(SaluranPublish::buka(uri).await?),
             uri: uri.to_owned(),
             berhenti: CancellationToken::new(),
             prefetch: PREFETCH_BAWAAN,
@@ -121,9 +163,24 @@ impl ApalisQueue {
     /// Deklarasikan topologi untuk `queue` (idempoten, AC-3). Lihat
     /// [`topologi`].
     pub async fn declare(&self, queue: &str) -> Result<(), QueueError> {
-        topologi::deklarasi(&self.channel, queue)
+        let channel = self.channel_publish().await?;
+        topologi::deklarasi(&channel, queue)
             .await
             .map_err(transport)
+    }
+
+    /// Channel publish yang tersambung. Koneksi atau channel yang sudah putus
+    /// (broker restart, channel ditutup broker) dibuka ulang di sini, sekali
+    /// per kegagalan, tanpa percobaan ulang buta: publish yang jatuh tepat
+    /// saat putus tetap gagal dan dipulihkan reconciler. Kunci dilepas
+    /// sebelum publish, jadi publish bersamaan tidak saling menunggu confirm.
+    async fn channel_publish(&self) -> Result<Channel, QueueError> {
+        let mut saluran = self.publish.lock().await;
+        if !saluran.tersambung() {
+            tracing::warn!("channel publish putus; membuka ulang");
+            *saluran = SaluranPublish::buka(&self.uri).await?;
+        }
+        Ok(saluran.channel.clone())
     }
 
     /// Satu sesi consumer: koneksi baru, topologi, backend apalis, lalu worker
@@ -285,9 +342,25 @@ impl JobPublisher for ApalisQueue {
     /// W1: sukses hanya bila broker meng-ack tanpa mengembalikan pesan.
     /// Pesan tak terarah (`Ack` dengan pesan kembali), `Nack`, dan
     /// `NotRequested` adalah galat.
+    ///
+    /// Seluruh publish (sambung ulang, tulis, confirm) dibatasi
+    /// [`BATAS_CONFIRM`]. Header `x-trace-id` memuat `request_id`: kode belum
+    /// punya skema trace (OpenTelemetry belum dipasang), dan id korelasi log
+    /// aplikasi adalah `request_id` (ADR-0001 bagian 7.1).
     async fn publish(&self, queue: &str, request_id: Uuid) -> Result<(), QueueError> {
-        let confirm = self
-            .channel
+        dengan_batas(BATAS_CONFIRM, self.publish_tanpa_batas(queue, request_id)).await
+    }
+}
+
+impl ApalisQueue {
+    async fn publish_tanpa_batas(&self, queue: &str, request_id: Uuid) -> Result<(), QueueError> {
+        let channel = self.channel_publish().await?;
+        let mut header = FieldTable::default();
+        header.insert(
+            HEADER_TRACE.into(),
+            AMQPValue::LongString(request_id.to_string().into()),
+        );
+        let confirm = channel
             .basic_publish(
                 topologi::EXCHANGE_JOB.into(),
                 queue.into(),
@@ -298,7 +371,8 @@ impl JobPublisher for ApalisQueue {
                 &kodek::body(request_id),
                 BasicProperties::default()
                     .with_delivery_mode(2)
-                    .with_message_id(request_id.to_string().into()),
+                    .with_message_id(request_id.to_string().into())
+                    .with_headers(header),
             )
             .await
             .map_err(transport)?;
@@ -390,6 +464,23 @@ mod tests {
 
     /// Toleransi liveness harus memuat minimal dua percobaan sambung ulang
     /// penuh pada backoff maksimum ditambah jeda stabil satu sesi.
+    /// ADR-0001 bagian 5a.4: publish (confirm) dibatasi 5 detik.
+    #[test]
+    fn batas_confirm_lima_detik() {
+        assert_eq!(BATAS_CONFIRM, Duration::from_secs(5));
+    }
+
+    /// Confirm yang tidak pernah datang menjadi galat transport, bukan
+    /// menahan pemanggil.
+    #[tokio::test]
+    async fn publish_tanpa_confirm_habis_waktu_menjadi_galat_transport() {
+        let hasil = dengan_batas(Duration::from_millis(50), std::future::pending()).await;
+        assert!(
+            matches!(hasil, Err(QueueError::Transport(ref pesan)) if pesan.contains("tidak dikonfirmasi")),
+            "{hasil:?}"
+        );
+    }
+
     #[test]
     fn toleransi_liveness_memuat_dua_percobaan_backoff_maksimum() {
         assert_eq!(TOLERANSI_LIVENESS, Duration::from_secs(90));

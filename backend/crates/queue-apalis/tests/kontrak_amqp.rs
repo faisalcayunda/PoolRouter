@@ -22,7 +22,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use lapin::options::{BasicGetOptions, QueueDeclareOptions};
-use lapin::types::FieldTable;
+use lapin::types::{AMQPValue, FieldTable, ShortString};
 use lapin::{Channel, Connection, ConnectionProperties};
 use poolrouter_core::queue::{
     JobConsumer, JobPublisher, QueueError, StatusKonsumen, nama_antrean_upstream,
@@ -158,6 +158,67 @@ async fn publish_persisten_dengan_body_request_id() {
             .as_ref()
             .map(|m| m.as_str().to_owned()),
         Some(id.to_string())
+    );
+    // ARC-227, S11: header AMQP hanya `x-trace-id`. Belum ada skema trace di
+    // kode (OpenTelemetry belum dipasang), jadi nilainya id korelasi log
+    // aplikasi, yaitu `request_id`.
+    let headers = pesan
+        .delivery
+        .properties
+        .headers()
+        .clone()
+        .expect("header AMQP ada");
+    assert_eq!(headers.inner().len(), 1, "header hanya x-trace-id");
+    match headers.inner().get(&ShortString::from("x-trace-id")) {
+        Some(AMQPValue::LongString(nilai)) => assert_eq!(nilai.to_string(), id.to_string()),
+        lain => panic!("x-trace-id harus string request_id: {lain:?}"),
+    }
+}
+
+/// ARC-227: koneksi penerbit diputus broker (pengganti restart broker, karena
+/// container toolchain tidak bisa me-restart broker). `publish` berikutnya
+/// pada `ApalisQueue` yang sama harus pulih sendiri tanpa proses baru. Satu
+/// publish yang kebetulan jatuh tepat saat putus boleh gagal (reconciler
+/// memulihkannya), jadi uji mencoba ulang sampai batas tunggu; tanpa sambung
+/// ulang semua percobaan gagal selamanya.
+#[tokio::test(flavor = "multi_thread")]
+#[ignore = "butuh RabbitMQ: make -C backend uji-amqp"]
+async fn publish_pulih_setelah_koneksi_diputus_broker() {
+    let antrean = antrean_baru();
+    let q = penerbit(&antrean).await;
+    q.publish(&antrean, Uuid::now_v7())
+        .await
+        .expect("publish sebelum putus");
+
+    putuskan_dari_broker().await;
+
+    let id = Uuid::now_v7();
+    let batas = tokio::time::Instant::now() + BATAS_TUNGGU;
+    loop {
+        match q.publish(&antrean, id).await {
+            Ok(()) => break,
+            Err(galat) => {
+                assert!(
+                    tokio::time::Instant::now() < batas,
+                    "publish tidak pulih setelah koneksi diputus: {galat}"
+                );
+                tokio::time::sleep(Duration::from_millis(200)).await;
+            }
+        }
+    }
+
+    let (_k, kanal) = pengamat().await;
+    let mut isi = Vec::new();
+    while let Some(pesan) = kanal
+        .basic_get(antrean.as_str().into(), BasicGetOptions { no_ack: true })
+        .await
+        .expect("basic_get")
+    {
+        isi.push(pesan.delivery.data);
+    }
+    assert!(
+        isi.contains(&id.to_string().into_bytes()),
+        "pesan sesudah sambung ulang ada di antrean"
     );
 }
 
