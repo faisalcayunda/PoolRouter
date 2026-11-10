@@ -16,6 +16,7 @@ use chrono::{DateTime, Utc};
 use serde_json::{Value, json};
 use sqlx::{PgConnection, PgPool, Postgres, Transaction};
 use uuid::Uuid;
+use zeroize::Zeroizing;
 
 use crate::admin::password::{HashGagal, KebijakanPassword, ParameterArgon2, hash_password};
 use crate::audit::{
@@ -137,10 +138,11 @@ pub fn username_sah(username: &str) -> bool {
     (3..=100).contains(&n) && username == username.to_lowercase()
 }
 
-fn hash(password: &str) -> Result<String, GalatKelola> {
-    let h = hash_password(password, KebijakanPassword::f0(), ParameterArgon2::OWASP)
-        .map_err(GalatKelola::Password)?;
-    Ok(h.to_string())
+/// Hash tetap dalam `Zeroizing` sampai titik bind ke SQL (`&Zeroizing<String>` otomatis menjadi
+/// `&str` di parameter `sisipkan_pengguna`), supaya salinannya terhapus saat di-drop.
+fn hash(password: &str) -> Result<Zeroizing<String>, GalatKelola> {
+    hash_password(password, KebijakanPassword::f0(), ParameterArgon2::OWASP)
+        .map_err(GalatKelola::Password)
 }
 
 #[derive(Debug, Clone)]
@@ -928,6 +930,13 @@ mod tests {
             Err(GalatKelola::BerlakuSampaiLewat)
         ));
         assert!(poc(Some(t0() + chrono::Duration::days(30))).is_ok());
+    }
+
+    #[test]
+    fn hash_tetap_terbungkus_zeroizing() {
+        // Pembungkus baru boleh dilepas di titik bind ke SQL; fungsi `hash` harus menyerahkannya.
+        let h: Zeroizing<String> = hash("kucingoranyeindah").unwrap();
+        assert!(h.starts_with("$argon2"));
     }
 
     #[test]
