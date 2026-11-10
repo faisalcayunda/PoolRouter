@@ -62,7 +62,8 @@ async function cariGabungan(
 ): Promise<LogPage> {
   const q = req.kode_transaksi;
   if (!q || !UUID.test(q)) return client.cariLog(req, { signal });
-  const { kode_transaksi: _kode, ...tanpaKode } = req;
+  const tanpaKode: LogCariRequest = { ...req };
+  delete tanpaKode.kode_transaksi;
   const [byCode, byQueue] = await Promise.all([
     client.cariLog(req, { signal }),
     client.cariLog({ ...tanpaKode, queue_id: q }, { signal }),
