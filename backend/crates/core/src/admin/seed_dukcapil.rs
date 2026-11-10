@@ -10,7 +10,8 @@
 //! Batasan yang disengaja:
 //! - Template tidak memakai `{{secret.*}}`: CLI tidak punya KEK dan tidak membuat `provider_secret`.
 //! - `config_schema_version` 1 dan `data_balikan_aktif` false. Skema data balikan Dukcapil masih
-//!   keputusan terbuka D-08.
+//!   keputusan terbuka D-08. `respons_skema` memakai bentuk `status_skor` yang dibaca parser runtime
+//!   (`adapter-provider::dokumen::baca_respons_skema`), supaya jalur sync dan async tidak menolaknya.
 //! - `base_url` memakai host `.example.test` karena aturan handler mewajibkan `https://`. Operator
 //!   mengarahkannya ke mock lewat admin API bila perlu.
 
@@ -46,7 +47,8 @@ pub struct HasilSeedDukcapil {
     pub endpoint_baru: u32,
 }
 
-fn dokumen_provider() -> Value {
+/// Publik supaya uji di crate adapter bisa memastikan dokumen ini terbaca parser runtime.
+pub fn dokumen_provider() -> Value {
     let parameter: Vec<Value> = PARAMETER_SEED
         .iter()
         .map(|n| json!({ "nama": n }))
@@ -56,7 +58,14 @@ fn dokumen_provider() -> Value {
         "base_url": "https://dukcapil-sintetis.example.test/api",
         "body_template": TEMPLATE_SEED,
         "parameters": parameter,
-        "respons_skema": { "status_skema": "status_skor" },
+        "respons_skema": {
+            "parser": "status_skor",
+            "literal": [
+                { "teks": "Sesuai", "status": "sesuai" },
+                { "teks": "Tidak Sesuai", "status": "tidak_sesuai" }
+            ],
+            "parameter_output": [{ "nama": "NAMA_LGKP" }]
+        },
         "tls_trust": "system",
         "log_mode": "metadata_only"
     })
