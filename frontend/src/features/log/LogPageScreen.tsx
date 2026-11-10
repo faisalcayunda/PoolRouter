@@ -47,8 +47,37 @@ function todayRange(): DayRange {
   return { start: day, end: day };
 }
 
-/** `queue_id` di API berupa UUID; isian lain dicari sebagai kode transaksi. */
+/**
+ * `queue_id` dan `kode_transaksi` sama-sama UUID, dan server menggabungkan filter dengan AND. Isian
+ * berbentuk UUID karena itu dicari dua kali (sebagai kode transaksi dan sebagai queue_id) lalu
+ * hasilnya digabung; mengirim kedua field dalam satu permintaan tidak akan menemukan apa pun.
+ */
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** Menjalankan pencarian; isian UUID juga dicari sebagai queue_id dan hasilnya digabung per kode. */
+async function cariGabungan(
+  client: ApiClient,
+  req: LogCariRequest,
+  signal: AbortSignal,
+): Promise<LogPage> {
+  const q = req.kode_transaksi;
+  if (!q || !UUID.test(q)) return client.cariLog(req, { signal });
+  const { kode_transaksi: _kode, ...tanpaKode } = req;
+  const [byCode, byQueue] = await Promise.all([
+    client.cariLog(req, { signal }),
+    client.cariLog({ ...tanpaKode, queue_id: q }, { signal }),
+  ]);
+  const seen = new Set<string>();
+  const baris = [...byCode.baris, ...byQueue.baris]
+    .filter((r) => !seen.has(r.kode_transaksi) && seen.add(r.kode_transaksi))
+    .sort((a, b) => b.requested_at.localeCompare(a.requested_at));
+  return {
+    ...byCode,
+    baris,
+    kursor: null,
+    di_luar_retensi_online: byCode.di_luar_retensi_online || byQueue.di_luar_retensi_online,
+  };
+}
 
 function buildRequest(term: string, clientId: string | null, range: DayRange): LogCariRequest {
   const body: LogCariRequest = {
@@ -56,10 +85,7 @@ function buildRequest(term: string, clientId: string | null, range: DayRange): L
     sampai: `${range.end.toString()}T23:59:59+07:00`,
   };
   const q = term.trim();
-  if (q) {
-    if (UUID.test(q)) body.queue_id = q;
-    else body.kode_transaksi = q;
-  }
+  if (q) body.kode_transaksi = q;
   if (clientId) body.client_id = clientId;
   return body;
 }
@@ -133,7 +159,7 @@ export function LogPageScreen({
   /** Bumped whenever the operator asks for the same filters again, so Enter re-reads the window. */
   const [run, setRun] = useState(0);
   const filters = useQuery<LogPage>(
-    (signal) => client.cariLog(applied, { signal }),
+    (signal) => cariGabungan(client, applied, signal),
     `${JSON.stringify(applied)}#${run}`,
   );
 

@@ -108,25 +108,55 @@ describe('S11 log transaksi', () => {
     expect(body.dari.slice(0, 10)).toBe(body.sampai.slice(0, 10));
   });
 
-  it('searches on Enter; a transaction code and a queue_id go to their own fields', async () => {
+  it('searches on Enter; a plain transaction code goes to kode_transaksi only', async () => {
     const client = stubClient();
     renderWithI18n(<LogPageScreen client={client} />);
     await waitFor(() => expect(client.cariLog).toHaveBeenCalledTimes(1));
 
-    const search = screen.getByRole('textbox', { name: 'Cari' });
-    await userEvent.type(search, 'TRX-2026-0001{Enter}');
+    await userEvent.type(screen.getByRole('textbox', { name: 'Cari' }), 'TRX-2026-0001{Enter}');
     await waitFor(() => expect(client.cariLog).toHaveBeenCalledTimes(2));
     const byCode = vi.mocked(client.cariLog).mock.calls[1]![0];
     expect(byCode.kode_transaksi).toBe('TRX-2026-0001');
     expect(byCode.queue_id).toBeUndefined();
+  });
 
+  it('searches a UUID both as kode_transaksi and as queue_id, one filter per request, and merges', async () => {
+    const kode = '7d6f1c2e-3a4b-4c5d-8e9f-0a1b2c3d4e5f';
     const queue = '0b19c3b4-7c5f-4e2f-9b3a-1a2b3c4d5e6f';
+    const row = { ...LOG.baris[0]!, kode_transaksi: kode };
+    const cariLog = vi
+      .fn()
+      .mockImplementation((body: { kode_transaksi?: string }) =>
+        Promise.resolve(
+          body.kode_transaksi === kode ? { ...LOG, baris: [row] } : { ...LOG, baris: [] },
+        ),
+      );
+    const client = stubClient({ cariLog });
+    renderWithI18n(<LogPageScreen client={client} />);
+    await waitFor(() => expect(cariLog).toHaveBeenCalledTimes(1));
+
+    await userEvent.type(screen.getByRole('textbox', { name: 'Cari' }), `${kode}{Enter}`);
+    await waitFor(() => expect(cariLog).toHaveBeenCalledTimes(3));
+    const sent = cariLog.mock.calls.slice(1).map((c) => c[0] as Record<string, unknown>);
+    expect(sent).toContainEqual(expect.objectContaining({ kode_transaksi: kode }));
+    expect(sent).toContainEqual(expect.objectContaining({ queue_id: kode }));
+    // The server ANDs filters: no single request may carry both.
+    for (const body of sent)
+      expect(body.kode_transaksi !== undefined && body.queue_id !== undefined).toBe(false);
+    // A transaction code hits only through kode_transaksi; the merged table still shows it.
+    expect(
+      await screen.findByRole('link', { name: `Detail transaksi ${kode}` }),
+    ).toBeInTheDocument();
+
+    // A queue_id hits only through queue_id.
+    const rowQ = { ...LOG.baris[0]!, kode_transaksi: 'TRX-2026-0001' };
+    cariLog.mockImplementation((body: { queue_id?: string }) =>
+      Promise.resolve(body.queue_id === queue ? { ...LOG, baris: [rowQ] } : { ...LOG, baris: [] }),
+    );
+    const search = screen.getByRole('textbox', { name: 'Cari' });
     await userEvent.clear(search);
     await userEvent.type(search, `${queue}{Enter}`);
-    await waitFor(() => expect(client.cariLog).toHaveBeenCalledTimes(3));
-    const byQueue = vi.mocked(client.cariLog).mock.calls[2]![0];
-    expect(byQueue.queue_id).toBe(queue);
-    expect(byQueue.kode_transaksi).toBeUndefined();
+    expect(await screen.findByRole('link', { name: DETAIL })).toBeInTheDocument();
   });
 
   it('re-reads the window when Enter is pressed again without changing anything', async () => {
