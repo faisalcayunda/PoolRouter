@@ -556,6 +556,9 @@ export default interface Resources {
     },
     "error": {
       "http": {
+        "401": {
+          "body": "Sesi Anda telah berakhir. Masuk lagi untuk melanjutkan."
+        },
         "403": {
           "action": "Ke halaman awal",
           "body": "Percobaan ini dicatat. Hubungi platform admin bila butuh akses.",
@@ -985,6 +988,7 @@ export default interface Resources {
           "brace_missing": "kurung kurawal penutup kurang.",
           "goto": "Ke baris {{nomor_baris}}",
           "line": "Baris {{baris}}: sintaks error",
+          "secret_create": "Buat secret {{nama}}",
           "secret_missing": "Secret {{nama}} belum dibuat. Buat di menu Secret, lalu simpan template lagi.",
           "title": "Template belum bisa disimpan"
         },

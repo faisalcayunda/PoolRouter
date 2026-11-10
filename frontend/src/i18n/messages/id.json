@@ -144,6 +144,9 @@
     "load_title": "Data belum bisa dimuat",
     "load_hint": "Periksa koneksi jaringan dan coba lagi.",
     "http": {
+      "401": {
+        "body": "Sesi Anda telah berakhir. Masuk lagi untuk melanjutkan."
+      },
       "403": {
         "title": "Akses tidak diizinkan",
         "body": "Percobaan ini dicatat. Hubungi platform admin bila butuh akses.",
@@ -203,6 +206,7 @@
         "alert": "Template belum bisa disimpan. Baris {{nomor_baris}}: {{rincian}}",
         "brace_missing": "kurung kurawal penutup kurang.",
         "goto": "Ke baris {{nomor_baris}}",
+        "secret_create": "Buat secret {{nama}}",
         "secret_missing": "Secret {{nama}} belum dibuat. Buat di menu Secret, lalu simpan template lagi.",
         "title": "Template belum bisa disimpan",
         "line": "Baris {{baris}}: sintaks error"

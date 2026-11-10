@@ -23,6 +23,10 @@ export function errorMessage(
   const kode = error instanceof ApiError ? error.kode : 'jaringan';
   // A transport failure always reads as "check the connection".
   if (kode === 'jaringan') return { message: t('error.network'), kode };
+  // A 401 means the session is gone (S16); the client has already announced it to the shell.
+  if (error instanceof ApiError && error.status === 401) {
+    return { message: t('error.http.401.body'), kode };
+  }
   // A 403 is the one HTTP status the catalog words per se.
   if (error instanceof ApiError && error.status === 403) {
     return { message: t('error.http.403.title'), kode };
