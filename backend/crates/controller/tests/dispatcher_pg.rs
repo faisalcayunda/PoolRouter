@@ -9,11 +9,12 @@
 
 mod umum;
 
+use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 use chrono::Utc;
 use poolrouter_controller::dispatcher::{
-    JedaTetap, KonfigurasiPutaran, RingkasanPutaran, jalankan_putaran,
+    JedaTetap, KonfigurasiPutaran, RingkasanPutaran, SumberJeda, jalankan_putaran,
 };
 use poolrouter_controller::reconciler::{KonfigurasiReconciler, jalankan_siklus_reconciler};
 use poolrouter_core::queue::{JobPublisher, nama_antrean_upstream};
@@ -461,6 +462,52 @@ async fn ac10_jeda_di_dalam_slot_dan_tidak_lebih_dari_10_per_detik() {
         durasi >= Duration::from_millis(2_700),
         "30 token pada 10 TPS butuh >= 2,9 s, dapat {durasi:?}"
     );
+}
+
+/// Perekam rentang jeda yang diminta dispatcher; mengembalikan batas bawahnya.
+#[derive(Default)]
+struct PerekamJeda(Mutex<Vec<(i64, i64)>>);
+
+impl SumberJeda for PerekamJeda {
+    fn jeda_mikro(&self, min_mikro: i64, maks_mikro: i64) -> i64 {
+        self.0.lock().unwrap().push((min_mikro, maks_mikro));
+        min_mikro
+    }
+}
+
+/// ARC-233: `jeda_acak_min_mikro` dari `parameter_dispatch` sampai ke
+/// `SumberJeda` sebagai batas bawah, dan `JedaTetap` tidak bisa turun di
+/// bawahnya.
+#[tokio::test]
+#[ignore]
+async fn arc233_jeda_min_dari_parameter_dispatch_sampai_ke_dispatcher() {
+    let su = pool_su().await;
+    let db = pool_controller().await;
+    let g = buat_graf(
+        &su,
+        &OpsiGraf {
+            parameter: serde_json::json!({
+                "rate": { "tps": { "t_mikro": 1_000, "burst": 1_000 } },
+                "maks_konkurensi": 1_000,
+                "jeda_acak_min_mikro": 400,
+                "jeda_acak_maks_mikro": 800
+            }),
+            ..OpsiGraf::default()
+        },
+    )
+    .await;
+    for _ in 0..3 {
+        buat_request(&su, &g, &Req::queued()).await;
+    }
+    let kuota = siapkan_redis(&db).await;
+    let perekam = Perekam::default();
+    let jeda = PerekamJeda::default();
+    let r = jalankan_putaran(&db, &kuota, &perekam, &jeda, &konf(g.upool_id), Utc::now())
+        .await
+        .expect("putaran dispatcher");
+    assert_eq!(r.dikirim.len(), 3);
+    assert_eq!(*jeda.0.lock().unwrap(), vec![(400, 800); 3]);
+    assert_eq!(JedaTetap(0).jeda_mikro(400, 800), 400, "tidak di bawah min");
 }
 
 #[tokio::test]

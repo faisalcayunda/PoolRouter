@@ -241,7 +241,7 @@ impl KonfigurasiAdmin {
         let jeda_maks = angka(p.get("jeda_acak_maks_mikro")).map_or(0, |m| m / 1_000);
         Self {
             rate_limit_per_jam,
-            jeda_min: 0,
+            jeda_min: angka(p.get("jeda_acak_min_mikro")).map_or(0, |m| m / 1_000),
             jeda_maks,
             ambang_berdampingan: angka(p.get("maks_konkurensi"))
                 .unwrap_or(poolrouter_core::kuota::sumber_pg::MAKS_KONKURENSI_BAWAAN),
@@ -249,25 +249,26 @@ impl KonfigurasiAdmin {
     }
 
     /// Gabungkan ke `parameter_dispatch` yang ada. Kunci lain (mis.
-    /// `timeout_total_upstream_detik`, jendela `tps`/`tpm` dari seed) dibiarkan.
+    /// `timeout_total_upstream_detik`) dibiarkan; `rate` diganti utuh (ARC-233).
     ///
     /// Pemetaan ke kunci dispatcher (ARC-70):
-    /// - `rate.tph` = satu token per `3_600_000_000 / rate_limit_per_jam` µs, burst 1;
+    /// - `rate` = `{ tph }` saja: satu token per `3_600_000_000 / rate_limit_per_jam`
+    ///   µs, burst 1. Jendela `tps`/`tpm` lama dibuang supaya tidak diam-diam
+    ///   membatasi di bawah `rate_limit_per_jam` yang baru (sama dengan POST);
+    /// - `jeda_acak_min_mikro` = `jeda_min` ms dalam µs;
     /// - `jeda_acak_maks_mikro` = `jeda_maks` ms dalam µs (dispatcher memotongnya ke
     ///   satu slot token);
     /// - `maks_konkurensi` = `ambang_berdampingan` (ambang konkurensi, US-22).
     fn gabung_ke(self, lama: &Value) -> Value {
         let mut obj = lama.as_object().cloned().unwrap_or_default();
-        let mut rate = obj
-            .get("rate")
-            .and_then(Value::as_object)
-            .cloned()
-            .unwrap_or_default();
-        rate.insert(
-            "tph".to_owned(),
-            json!({ "t_mikro": 3_600_000_000_i64 / self.rate_limit_per_jam.max(1), "burst": 1 }),
+        obj.insert(
+            "rate".to_owned(),
+            json!({ "tph": { "t_mikro": 3_600_000_000_i64 / self.rate_limit_per_jam.max(1), "burst": 1 } }),
         );
-        obj.insert("rate".to_owned(), Value::Object(rate));
+        obj.insert(
+            "jeda_acak_min_mikro".to_owned(),
+            json!(self.jeda_min.saturating_mul(1_000)),
+        );
         obj.insert(
             "jeda_acak_maks_mikro".to_owned(),
             json!(self.jeda_maks.saturating_mul(1_000)),
@@ -287,6 +288,19 @@ impl KonfigurasiAdmin {
         );
         Value::Object(obj)
     }
+}
+
+/// Jendela `rate` selain `tph` yang akan dibuang PUT (ARC-233).
+fn jendela_rate_dibuang(lama: &Value) -> Vec<&str> {
+    lama.get("rate")
+        .and_then(Value::as_object)
+        .map(|o| {
+            o.keys()
+                .map(String::as_str)
+                .filter(|k| *k != "tph")
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 fn jendela_dari_kolom(k: &str) -> JendelaKuota {
@@ -507,6 +521,14 @@ pub(super) async fn update_upstream_pool(
 
     jadwalkan_reset(&mut tx, id, &body, sekarang).await?;
 
+    let dibuang = jendela_rate_dibuang(&lama.parameter_dispatch.0);
+    if !dibuang.is_empty() {
+        tracing::warn!(
+            upstream_pool_id = %id,
+            jendela = ?dibuang,
+            "admin: PUT upstream pool membuang jendela rate lama; rate hanya tph"
+        );
+    }
     let parameter = KonfigurasiAdmin::dari_body(&body).gabung_ke(&lama.parameter_dispatch.0);
     sqlx::query(
         "UPDATE upstream_pool SET provider_id = $2, kuota_harian = $3, porsi_sync_maks = $4, \
@@ -1455,11 +1477,59 @@ mod tests {
         );
         assert_eq!(d.maks_konkurensi, 4);
         assert_eq!(d.jeda_acak_maks_mikro, Some(500_000));
+        assert_eq!(p["jeda_acak_min_mikro"], json!(100_000));
         let tph = d.jendela_rate.iter().find(|j| j.jenis == "tph").unwrap();
         assert_eq!((tph.t_mikro, tph.burst), (1_000_000, 1));
-        assert!(d.jendela_rate.iter().any(|j| j.jenis == "tps"));
+        assert_eq!(
+            d.jendela_rate.len(),
+            1,
+            "jendela tps seed dibuang (ARC-233)"
+        );
         let a = KonfigurasiAdmin::dari_parameter(&p);
         assert_eq!(a, KonfigurasiAdmin::dari_body(&pool_valid()));
+    }
+
+    /// ARC-233 A1: `jeda_min` ms sampai ke dispatcher sebagai batas bawah jeda.
+    #[test]
+    fn jeda_min_menjadi_kunci_dispatcher() {
+        let p = KonfigurasiAdmin::dari_body(&pool_valid()).gabung_ke(&json!({}));
+        assert_eq!(p["jeda_acak_min_mikro"], json!(100_000));
+        let d = poolrouter_core::kuota::sumber_pg::ParameterDispatch::dari_json(&p).unwrap();
+        assert_eq!(d.jeda_acak_min_mikro, Some(100_000));
+        assert_eq!(d.rentang_jeda_mikro(), (100_000, 500_000));
+    }
+
+    /// ARC-233 A1: pool tanpa `konfigurasi_admin` membaca `jeda_min` dari kunci
+    /// dispatcher, bukan hardcode 0.
+    #[test]
+    fn jeda_min_dibaca_dari_kunci_dispatcher_tanpa_konfigurasi_admin() {
+        let a = KonfigurasiAdmin::dari_parameter(&json!({
+            "rate": { "tph": { "t_mikro": 1_000_000, "burst": 1 } },
+            "jeda_acak_min_mikro": 100_000,
+            "jeda_acak_maks_mikro": 500_000
+        }));
+        assert_eq!((a.jeda_min, a.jeda_maks), (100, 500));
+    }
+
+    /// ARC-233 B1: PUT di atas pool seed bertjendela `tps` menghasilkan `rate`
+    /// berisi `tph` saja; kunci lain tetap.
+    #[test]
+    fn put_membuang_jendela_tps_tpm_lama() {
+        let lama = json!({
+            "timeout_total_upstream_detik": 20,
+            "rate": {
+                "tps": { "t_mikro": 100_000, "burst": 1 },
+                "tpm": { "t_mikro": 6_000_000, "burst": 1 },
+                "tph": { "t_mikro": 1, "burst": 9 }
+            }
+        });
+        assert_eq!(jendela_rate_dibuang(&lama), ["tpm", "tps"]);
+        let p = KonfigurasiAdmin::dari_body(&pool_valid()).gabung_ke(&lama);
+        assert_eq!(
+            p["rate"],
+            json!({ "tph": { "t_mikro": 1_000_000, "burst": 1 } })
+        );
+        assert_eq!(p["timeout_total_upstream_detik"], json!(20));
     }
 
     #[test]
