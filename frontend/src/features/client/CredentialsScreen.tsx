@@ -16,6 +16,7 @@ import { Select, SelectItem } from '../../components/m3/Select';
 import { StatusLabel, type StatusLabelTone } from '../../components/m3/StatusLabel';
 import { useFormatter } from '../../i18n/useFormatter';
 import { useDocumentTitle, useFocusOnMount } from '../common/a11y';
+import { useCrumbName } from '../common/CrumbName';
 import { errorMessage, LoadingState, PageHeader, QueryError } from '../common/page';
 import { useRole } from '../common/RoleContext';
 import { ScrollArea } from '../common/ScrollArea';
@@ -170,6 +171,8 @@ export function CredentialsScreen({ clientId, client = api }: CredentialsScreenP
     { enabled: allowed },
   );
 
+  useCrumbName(clientId, query.status === 'success' ? query.data.client.nama : undefined);
+
   if (!allowed) return <Forbidden />;
 
   const data = query.status === 'success' ? query.data : null;
@@ -188,10 +191,13 @@ export function CredentialsScreen({ clientId, client = api }: CredentialsScreenP
         title={t('credentials.page.title', { nama_client: nama })}
         subtitle={t('credentials.page.subtitle')}
         titleRef={titleRef}
-        actions={data ? buat : null}
-      >
-        <ClientSubnav clientId={clientId} active="kredensial" />
-      </PageHeader>
+        actions={
+          <>
+            <ClientSubnav clientId={clientId} active="kredensial" />
+            {data ? buat : null}
+          </>
+        }
+      />
 
       {query.status === 'loading' ? <LoadingState label={t('common.state.loading')} /> : null}
       {query.status === 'error' ? <QueryError error={query.error} onRetry={query.reload} /> : null}

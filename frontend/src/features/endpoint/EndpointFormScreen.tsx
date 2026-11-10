@@ -14,6 +14,7 @@ import { InlineAlert } from '../../components/m3/InlineAlert';
 import { Select, SelectItem } from '../../components/m3/Select';
 import { TextArea } from '../../components/m3/TextField';
 import { useDocumentTitle, useFocusOnMount } from '../common/a11y';
+import { useCrumbName } from '../common/CrumbName';
 import { errorMessage, LoadingState, PageHeader, QueryError } from '../common/page';
 import { useRole } from '../common/RoleContext';
 import { useQuery } from '../common/useQuery';
@@ -75,6 +76,7 @@ function EndpointForm({ client, lookups, initial }: EndpointFormProps): ReactNod
   useDocumentTitle(t('title.page.endpoint'));
 
   const provider = lookups.providers.find((p) => p.provider_id === draft.provider_id);
+  useCrumbName(current?.endpoint_id, provider?.nama);
 
   function set<K extends keyof EndpointDraft>(field: K, value: EndpointDraft[K]) {
     setDraft((d) => ({ ...d, [field]: value }));

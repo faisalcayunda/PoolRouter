@@ -294,3 +294,79 @@ for (const bahasa of ['id', 'en'] as const) {
     expect(cspViolations).toEqual([]);
   });
 }
+
+/**
+ * Tiga alur MFA (ARC-216): login dua langkah, pendaftaran, dan kode pemulihan. Backend dijawab stub
+ * dengan nilai sintetis yang jelas palsu; axe dijalankan di setiap layar yang tampil.
+ */
+const MFA_RAHASIA = 'CONTOHSECRETSINTETISBUKANASLI234';
+const MFA_KODE_PEMULIHAN = Array.from(
+  { length: 10 },
+  (_, i) => `CONTOHPM${String(i).padStart(2, '0')}`,
+);
+
+async function stubMfa(page: Page, langkah: 'mfa' | 'daftar_mfa'): Promise<void> {
+  const json = (body: unknown) => ({
+    status: 200,
+    headers: { 'content-type': 'application/json', 'cache-control': 'no-store' },
+    body: JSON.stringify(body),
+  });
+  await page.route('**/admin/v1/auth/login', (route) => route.fulfill(json({ langkah })));
+  await page.route('**/admin/v1/auth/mfa/daftar/konfirmasi', (route) =>
+    route.fulfill(json({ kode_pemulihan: MFA_KODE_PEMULIHAN })),
+  );
+  await page.route('**/admin/v1/auth/mfa/daftar', (route) =>
+    route.fulfill(
+      json({
+        otpauth_uri: `otpauth://totp/PoolRouter:a?secret=${MFA_RAHASIA}&issuer=PoolRouter`,
+        rahasia_base32: MFA_RAHASIA,
+      }),
+    ),
+  );
+}
+
+async function masukSampaiMfa(page: Page, bahasa: 'id' | 'en'): Promise<void> {
+  await page.goto(`/login?bahasa=${bahasa}`);
+  await page.getByRole('textbox').first().fill('a');
+  await page.locator('input[type="password"]').fill('b');
+  await page.locator('form button[type="submit"]').click();
+}
+
+for (const bahasa of ['id', 'en'] as const) {
+  test(`S17 login second step passes axe in ${bahasa}`, async ({ page, cspViolations }) => {
+    await stubMfa(page, 'mfa');
+    await masukSampaiMfa(page, bahasa);
+    await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+    await expect(page.locator('input[autocomplete="one-time-code"]')).toBeVisible();
+    await expectNoAxeViolations(page);
+    expect(cspViolations).toEqual([]);
+  });
+
+  test(`S17a-S17b enrollment passes axe in ${bahasa}`, async ({ page, cspViolations }) => {
+    await stubMfa(page, 'daftar_mfa');
+    await masukSampaiMfa(page, bahasa);
+    const kodeDaftar = page.locator('input[autocomplete="off"]');
+    await expect(kodeDaftar).toBeVisible();
+    await expectNoAxeViolations(page);
+
+    await kodeDaftar.fill('CONTOHDAFTAR');
+    await page.getByRole('button').first().click();
+    await expect(page.getByRole('img').first()).toBeVisible();
+    await expectNoAxeViolations(page);
+    expect(cspViolations).toEqual([]);
+  });
+
+  test(`S17c recovery codes dialog passes axe in ${bahasa}`, async ({ page, cspViolations }) => {
+    await stubMfa(page, 'daftar_mfa');
+    await masukSampaiMfa(page, bahasa);
+    await page.locator('input[autocomplete="off"]').fill('CONTOHDAFTAR');
+    await page.getByRole('button').first().click();
+    await page.locator('input[autocomplete="one-time-code"]').fill('123456');
+    await page.locator('section button').last().click();
+    const dialog = page.getByRole('alertdialog');
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByRole('listitem')).toHaveCount(10);
+    await expectNoAxeViolations(page);
+    expect(cspViolations).toEqual([]);
+  });
+}

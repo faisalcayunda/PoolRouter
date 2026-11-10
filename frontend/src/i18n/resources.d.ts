@@ -49,8 +49,7 @@ export default interface Resources {
         "range_help": "Pilih rentang waktu untuk menampilkan catatan audit.",
         "range_only": "Rentang {{rentang}}",
         "user": "Pengguna",
-        "user_error": "ID pengguna harus berformat UUID, misalnya 123e4567-e89b-12d3-a456-426614174000.",
-        "user_help": "Masukkan ID pengguna dalam format UUID."
+        "user_error": "ID pengguna harus berformat UUID, misalnya 123e4567-e89b-12d3-a456-426614174000."
       },
       "page": {
         "subtitle": "Catatan hanya bisa dibaca. Tidak ada aksi ubah atau hapus.",
@@ -71,6 +70,12 @@ export default interface Resources {
           "use_recovery": "Pakai kode pemulihan",
           "use_totp": "Pakai kode authenticator",
           "verifying": "Memverifikasi…"
+        },
+        "error": {
+          "invalid": "Kode tidak cocok atau sesi sudah habis. Coba lagi, atau kembali ke login.",
+          "invalid_registration": "Kode pendaftaran tidak cocok atau sudah tidak berlaku. Coba lagi, atau kembali ke login.",
+          "network": "Belum bisa terhubung. Periksa jaringan, lalu coba lagi.",
+          "throttled": "Terlalu banyak percobaan. Coba lagi beberapa saat lagi."
         },
         "qr": {
           "account": "Akun: {{account}} · Penerbit: {{issuer}}",
@@ -149,7 +154,6 @@ export default interface Resources {
         "action": "Aktifkan client",
         "done": "Client diaktifkan."
       },
-      "back": "Semua client",
       "col": {
         "limiter": "Limiter penolakan"
       },
@@ -255,16 +259,8 @@ export default interface Resources {
       },
       "close": "Tutup",
       "date": {
-        "format_error": "Tanggal belum sah. Tulis dengan format 03/11/2026.",
-        "format_hint": "Format: 03/11/2026",
-        "from": "Dari",
-        "from_picker": "Pilih tanggal mulai",
-        "from_time": "Jam mulai",
-        "only_note": "Pilih tanggal dan jam mulai serta akhir untuk mencari.",
-        "order_error": "Tanggal akhir harus sama dengan atau setelah tanggal awal.",
-        "to": "Sampai",
-        "to_picker": "Pilih tanggal akhir",
-        "to_time": "Jam akhir"
+        "only_note": "Pilih tanggal mulai dan akhir untuk mencari.",
+        "order_error": "Tanggal akhir harus sama dengan atau setelah tanggal awal."
       },
       "datetime": {
         "wib": "{{tanggal}}, {{jam}} WIB"
@@ -761,6 +757,7 @@ export default interface Resources {
         "field": "NIK (16 digit)",
         "field_help": "Wajib 16 digit angka. Tidak tersimpan di riwayat, URL, atau filter.",
         "payload": "Payload",
+        "range": "Rentang waktu",
         "range_only_note": "Pencarian rentang waktu saja tidak tersedia; NIK wajib diisi.",
         "retention": "Data di luar retensi online belum bisa dicari. Pencarian arsip tersedia di F1.",
         "subtitle": "Setiap pencarian, pembukaan payload, dan ekspor dicatat di audit akses.",
@@ -1131,7 +1128,8 @@ export default interface Resources {
         "name_format": "Nama diawali huruf, lalu huruf, angka, atau garis bawah, paling panjang 64 karakter.",
         "value_required": "Nilai wajib diisi."
       },
-      "masked": "Tersamar",
+      "masked": "••••••••••••",
+      "masked_label": "Tersamar",
       "page": {
         "add": "Tambah secret",
         "replace": "Ganti",

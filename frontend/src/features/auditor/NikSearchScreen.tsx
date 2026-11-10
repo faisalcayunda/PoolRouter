@@ -11,6 +11,7 @@ import {
   type NikCariRequest,
 } from '../../api/client';
 import { Button } from '../../components/m3/Button';
+import { DateRangePicker } from '../../components/m3/DatePicker';
 import { InlineAlert } from '../../components/m3/InlineAlert';
 import { Icon, icons } from '../../icons';
 import { Card } from '../../components/m3/Card';
@@ -18,7 +19,7 @@ import { Pagination } from '../../components/m3/Pagination';
 import { StatusLabel } from '../../components/m3/StatusLabel';
 import { TextField } from '../../components/m3/TextField';
 import { useFormatter } from '../../i18n/useFormatter';
-import { DateRangeField, type DateRange } from '../common/DateRangeField';
+import { dayRangeBounds, todayRange, type DayRange } from '../common/dayRange';
 import { ReasonDialog } from '../common/ReasonDialog';
 import { PageHeader, EmptyState, LoadingState, QueryError } from '../common/page';
 import { useQuery } from '../common/useQuery';
@@ -35,25 +36,6 @@ const NIK_LENGTH = 16;
 /** Table cell classes shared with the other v2 tables (S08 client list). */
 const TH = 'border-b border-outline-variant px-4 py-3 font-medium';
 const TD = 'typescale-body-medium px-4 py-3 align-middle';
-
-function defaultRange(): DateRange {
-  const now = new Date();
-  const start = new Date(now.getTime() - 24 * 3600 * 1000);
-  const iso = (d: Date) => {
-    const wib = new Date(d.getTime() + 7 * 3600 * 1000);
-    return { date: wib.toISOString().slice(0, 10), time: wib.toISOString().slice(11, 16) };
-  };
-  const s = iso(start);
-  const e = iso(now);
-  return {
-    startDate: s.date,
-    startTime: s.time,
-    endDate: e.date,
-    endTime: e.time,
-    from: `${s.date}T${s.time}:00+07:00`,
-    to: `${e.date}T${e.time}:00+07:00`,
-  };
-}
 
 export interface NikSearchScreenProps {
   client?: ApiClient;
@@ -73,7 +55,7 @@ export function NikSearchScreen({ client = api }: NikSearchScreenProps): ReactNo
 
   const [nik, setNik] = useState('');
   const [nikTouched, setNikTouched] = useState(false);
-  const [range, setRange] = useState<DateRange | null>(() => defaultRange());
+  const [range, setRange] = useState<DayRange | null>(todayRange);
   const [rangeError, setRangeError] = useState<string | null>(null);
   const [reasonOpen, setReasonOpen] = useState(false);
   const [reason, setReason] = useState('');
@@ -134,8 +116,7 @@ export function NikSearchScreen({ client = api }: NikSearchScreenProps): ReactNo
     setReasonOpen(false);
     const body: NikCariRequest = {
       nik: nik.trim(),
-      dari: range!.from,
-      sampai: range!.to,
+      ...dayRangeBounds(range!),
       alasan: nextReason,
     };
     setSubmitted({ body, key: JSON.stringify(body) });
@@ -177,7 +158,7 @@ export function NikSearchScreen({ client = api }: NikSearchScreenProps): ReactNo
     setExportNotice(null);
     try {
       const berkas = await client.eksporLog(
-        { nik: nik.trim(), dari: range!.from, sampai: range!.to, alasan },
+        { nik: nik.trim(), ...dayRangeBounds(range!), alasan },
         { alasan },
       );
       saveDownload(berkas);
@@ -247,15 +228,28 @@ export function NikSearchScreen({ client = api }: NikSearchScreenProps): ReactNo
               setNikTouched(true);
             }}
           />
-          <DateRangeField
-            legend={t('log.filter.range')}
-            value={range}
-            onChange={(next) => {
-              setRange(next);
-              if (next) setRangeError(null);
-            }}
-            errorMessage={rangeError}
-          />
+          <div className="flex flex-col gap-1">
+            <DateRangePicker
+              label={t('nik.page.range')}
+              calendarLabel={t('log.filter.range_picker')}
+              separator="–"
+              value={range}
+              onChange={(next) => {
+                if (next && next.end.compare(next.start) < 0) {
+                  setRangeError(t('common.date.order_error'));
+                  return;
+                }
+                setRange(next);
+                setRangeError(null);
+              }}
+              isInvalid={rangeError !== null}
+            />
+            {rangeError ? (
+              <p role="alert" className="typescale-body-small text-error">
+                {rangeError}
+              </p>
+            ) : null}
+          </div>
         </div>
         <div>
           <Button variant="filled" type="submit">

@@ -229,7 +229,7 @@ Bagian ini belum final. Keputusan berikut menunggu owner dan ADR infrastruktur l
 
 - Service backend, frontend, dan mock Dukcapil sudah didefinisikan, tetapi image-nya dibangun di Bagian 2 (SHAA-207 Containerfile). Sampai itu, profile `app` dan `mock` tidak bisa dinyalakan.
 - Subcommand `webserver healthcheck` dan konvensi `*_FILE` ada di lingkup backend SHAA-175 (Flik). Sampai ada, healthcheck backend tidak akan `healthy`.
-- `backend-cli` (ADR-0003 §3.6c, role `ADMIN_API`) tidak punya service Compose sendiri; ia dijalankan lewat `exec` di container `backend-webserver` (lihat Bootstrap admin dan pengguna).
+- Service `backend-cli` (ADR-0003 §3.6c, role `ADMIN_API`) ada di profile `cli` dan dijalankan sekali lewat `compose run --rm`, bukan lewat `up`. Di dev, `make compose-seed ENV=dev` menjalankan `seed pengguna` lalu `seed dukcapil` (ARC-237), sesudah `compose-migrate`. Image backend harus dibangun ulang agar memuat `backend-cli`.
 - Nama variabel `POOLROUTER_DB_*`, `POOLROUTER_REDIS_*`, dan `POOLROUTER_RABBITMQ_*` mengikuti kontrak env backend v1 (final, Shu). Perubahannya hanya lewat revisi kontrak.
 - Job CI V4 (`compose-portability`) diserahkan ke Tessai.
 

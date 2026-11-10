@@ -63,6 +63,9 @@ export function MfaQrScreen({
             <QRCodeSVG
               value={otpauthUri}
               size={200}
+              // Pembungkus role="img" sudah bernama; svg di dalamnya dekoratif (axe svg-img-alt).
+              role="presentation"
+              aria-hidden="true"
               marginSize={4}
               fgColor="var(--md-sys-color-on-surface)"
               bgColor="var(--md-sys-color-surface-container-lowest)"

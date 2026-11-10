@@ -184,6 +184,36 @@ describe('admin API client', () => {
       client(fetchImpl).eksporLog({ nik: '1', dari: 'a', sampai: 'b', alasan: 'x' }),
     ).rejects.toMatchObject({ status: 422, kode: 'ekspor_terlalu_besar' });
   });
+  it('returns the next MFA step from a 200 login and null from a 204', async () => {
+    const mfa = vi.fn().mockResolvedValue(jsonResponse({ langkah: 'daftar_mfa' }));
+    await expect(client(mfa).login({ username: 'a', password: 'b' })).resolves.toBe('daftar_mfa');
+
+    const biasa = vi.fn().mockResolvedValue(new Response(null, { status: 204 }));
+    await expect(client(biasa).login({ username: 'a', password: 'b' })).resolves.toBeNull();
+  });
+
+  it('POSTs each MFA step to its own path with the contract body', async () => {
+    const verif = vi.fn().mockResolvedValue(new Response(null, { status: 204 }));
+    await client(verif).verifikasiMfa({ kode: '123456' });
+    expect(firstCall(verif)[0]).toBe('/admin/v1/auth/mfa');
+    expect(await requestJson(verif)).toEqual({ kode: '123456' });
+
+    const daftar = vi
+      .fn()
+      .mockResolvedValue(jsonResponse({ otpauth_uri: 'otpauth://x', rahasia_base32: 'AAAA' }));
+    await expect(client(daftar).daftarMfa({ kode_pendaftaran: 'CONTOH' })).resolves.toEqual({
+      otpauth_uri: 'otpauth://x',
+      rahasia_base32: 'AAAA',
+    });
+    expect(firstCall(daftar)[0]).toBe('/admin/v1/auth/mfa/daftar');
+
+    const konfirmasi = vi.fn().mockResolvedValue(jsonResponse({ kode_pemulihan: ['CONTOHPM00'] }));
+    await expect(client(konfirmasi).konfirmasiMfa({ kode_totp: '123456' })).resolves.toEqual({
+      kode_pemulihan: ['CONTOHPM00'],
+    });
+    expect(firstCall(konfirmasi)[0]).toBe('/admin/v1/auth/mfa/daftar/konfirmasi');
+  });
+
   it('carries Retry-After from a throttled login as whole seconds', async () => {
     const fetchImpl = vi
       .fn()

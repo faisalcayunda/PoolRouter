@@ -16,6 +16,7 @@ import { Select, SelectItem } from '../../components/m3/Select';
 import { Switch } from '../../components/m3/Switch';
 import { TextArea, TextField } from '../../components/m3/TextField';
 import { useDocumentTitle, useFocusOnMount } from '../common/a11y';
+import { useCrumbName } from '../common/CrumbName';
 import { errorMessage, LoadingState, PageHeader, QueryError } from '../common/page';
 import { useRole } from '../common/RoleContext';
 import { useQuery } from '../common/useQuery';
@@ -75,6 +76,7 @@ function DownstreamForm({
   const snackbar = useSnackbar();
   const titleRef = useFocusOnMount<HTMLHeadingElement>();
   const [current, setCurrent] = useState<DownstreamPool | null>(initial);
+  useCrumbName(current?.downstream_pool_id, current?.nama);
   const [draft, setDraft] = useState<DownstreamDraft>(() =>
     initial ? draftFromPool(initial) : emptyDraft(),
   );

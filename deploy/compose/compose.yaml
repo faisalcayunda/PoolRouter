@@ -235,6 +235,25 @@ services:
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
 
+  # backend-cli (ADR-0003 §3.6c, ARC-237): perintah sekali jalan lewat `compose run --rm`, tidak naik
+  # bersama `up`. Hanya role pr_admin_api; tidak butuh Redis, RabbitMQ, KEK, atau kunci lain.
+  backend-cli:
+    image: ${POOLROUTER_BACKEND_IMAGE:?isi POOLROUTER_BACKEND_IMAGE di file env}
+    profiles: ["cli"]
+    entrypoint: ["backend-cli"]
+    command: ["bantuan"]
+    environment:
+      POOLROUTER_ENV: ${POOLROUTER_ENV:?isi POOLROUTER_ENV di file env}
+      POOLROUTER_DB_HOST: ${POOLROUTER_DB_HOST:-postgres}
+      POOLROUTER_DB_PORT: ${POOLROUTER_DB_PORT:-5432}
+      POOLROUTER_DB_NAME: ${POSTGRES_DB:?isi POSTGRES_DB di file env}
+      POOLROUTER_DB_ADMIN_API_PASSWORD_FILE: /run/secrets/pr_admin_api
+    secrets: [pr_admin_api]
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+
   frontend:
     image: ${POOLROUTER_FRONTEND_IMAGE:?isi POOLROUTER_FRONTEND_IMAGE di file env}
     # Satu origin (ADR-0003 §3.9): nginx mem-proxy /admin/v1/ ke listener admin API webserver

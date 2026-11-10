@@ -3,7 +3,7 @@
     "breadcrumb": {
       "aria": "Breadcrumb",
       "new": "New",
-    "credentials": "Credentials",
+      "credentials": "Credentials",
       "not_found": "Page not found"
     },
     "group": {
@@ -31,7 +31,7 @@
       "endpoint": "Endpoints"
     },
     "env_label": "PoC",
-  "skip_link": "Skip to content"
+    "skip_link": "Skip to content"
   },
   "settings": {
     "page": {
@@ -98,16 +98,8 @@
       "wib": "{{tanggal}}, {{jam}} WIB"
     },
     "date": {
-      "from": "From",
-      "to": "To",
-      "from_time": "Start time",
-      "to_time": "End time",
-      "from_picker": "Choose start date",
-      "to_picker": "Choose end date",
-      "format_hint": "Format: 03/11/2026",
-      "format_error": "The date is not valid yet. Write it as 03/11/2026.",
       "order_error": "The end date must be on or after the start date.",
-      "only_note": "Choose a start and an end date and time to search."
+      "only_note": "Choose a start and an end date to search."
     }
   },
   "account": {
@@ -437,7 +429,8 @@
       "title": "No secrets yet",
       "body": "A secret stores a provider credential, such as USER_ID and PASSWORD. Add a secret before you create a provider template."
     },
-    "masked": "Masked",
+    "masked": "••••••••••••",
+    "masked_label": "Masked",
     "changed_unknown": "Not available yet",
     "unused": "Not in use",
     "row": {
@@ -910,7 +903,6 @@
     }
   },
   "clients": {
-    "back": "All clients",
     "inactive": "Inactive",
     "saved": "Client changes saved.",
     "page": {
@@ -1138,6 +1130,7 @@
       "subtitle": "Every search, payload view, and export is recorded in the access audit.",
       "field": "NIK (16 digits)",
       "field_help": "Required, 16 digits. Not kept in history, URL, or filters.",
+      "range": "Time range",
       "error": "Enter a 16-digit NIK.",
       "range_only_note": "Searching by time range alone isn't available; a NIK is required.",
       "export": "Export results",
@@ -1177,7 +1170,6 @@
     },
     "filter": {
       "user": "User",
-      "user_help": "Enter the user ID as a UUID.",
       "user_error": "The user ID must be a UUID, for example 123e4567-e89b-12d3-a456-426614174000.",
       "action": "Action",
       "nik_range": "NIK + range {{rentang}}",
@@ -1364,6 +1356,12 @@
         "copy_failed": "Copy failed. Select the text manually.",
         "copy_all": "Copy all",
         "acknowledge": "I have saved them"
+      },
+      "error": {
+        "invalid": "The code does not match or the session has expired. Try again, or go back to sign in.",
+        "invalid_registration": "The registration code does not match or is no longer valid. Try again, or go back to sign in.",
+        "throttled": "Too many attempts. Try again in a moment.",
+        "network": "Cannot connect yet. Check the network, then try again."
       }
     }
   },

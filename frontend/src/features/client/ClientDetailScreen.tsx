@@ -7,6 +7,7 @@ import { InlineAlert } from '../../components/m3/InlineAlert';
 import { StatusLabel } from '../../components/m3/StatusLabel';
 import { TextField } from '../../components/m3/TextField';
 import { useDocumentTitle, useFocusOnMount } from '../common/a11y';
+import { useCrumbName } from '../common/CrumbName';
 import { errorMessage, LoadingState, PageHeader, QueryError } from '../common/page';
 import { REASON_MAX, REASON_MIN } from '../common/ReasonDialog';
 import { useRole } from '../common/RoleContext';
@@ -132,6 +133,8 @@ export function ClientDetailScreen({ clientId, client = api }: ClientDetailScree
     },
   );
 
+  useCrumbName(clientId, query.status === 'success' ? query.data.nama : undefined);
+
   if (!allowed) return <Forbidden />;
   const manage = canManageClients(role);
   const data = query.status === 'success' ? query.data : null;
@@ -153,9 +156,8 @@ export function ClientDetailScreen({ clientId, client = api }: ClientDetailScree
         title={data?.nama ?? t('client.page.title')}
         subtitle={t('clients.detail.subtitle')}
         titleRef={titleRef}
-      >
-        <ClientSubnav clientId={clientId} active="detail" />
-      </PageHeader>
+        actions={<ClientSubnav clientId={clientId} active="detail" />}
+      />
 
       {query.status === 'loading' ? <LoadingState label={t('common.state.loading')} /> : null}
       {query.status === 'error' ? <QueryError error={query.error} onRetry={query.reload} /> : null}
