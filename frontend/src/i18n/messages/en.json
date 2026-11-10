@@ -297,7 +297,34 @@
       "info_title": "A new rule applies to new requests only",
       "info_body": "Requests already queued use the rule in force when they entered the queue.",
       "save": "Save rule",
-      "edit_aria": "Edit rule for parameter {{nama}}"
+      "edit_aria": "Edit rule for parameter {{nama}}",
+      "delete_aria": "Delete parameter {{nama}}",
+      "error_title": "The rule couldn't be saved",
+      "editor": {
+        "title_add": "Add parameter",
+        "title_edit": "Edit parameter",
+        "save": "Save parameter",
+        "nama": "Parameter name",
+        "nama_help": "Written exactly as in the provider's documentation, for example USER_ID.",
+        "nilai": "Fixed value (optional)",
+        "nilai_help": "Leave empty when the client sends the value or it is set later.",
+        "jenis": "Rule type",
+        "jenis_none": "No rule",
+        "pola": "Regex pattern",
+        "pola_help": "Example: ^\\d{16}$. The server checks the pattern when you save.",
+        "enum": "Allowed values",
+        "enum_help": "One value per line.",
+        "panjang_min": "Minimum length",
+        "panjang_maks": "Maximum length",
+        "format": "Date format",
+        "format_help": "Example: yyyy-MM-dd.",
+        "error": {
+          "wajib": "Required.",
+          "duplikat": "This parameter name is already used.",
+          "bilangan": "Enter a non-negative whole number.",
+          "rentang": "The maximum can't be smaller than the minimum."
+        }
+      }
     },
     "endpoint": {
       "info": "Only a platform admin can change this value. Every change is recorded in the audit log (who, when, what).",
@@ -337,10 +364,6 @@
         "label": "Configuration schema version",
         "v1": "Version 1 (F0)",
         "v2": "Version 2 (F1, with return data)"
-      },
-      "parameters": {
-        "label": "Parameters and rules (JSON)",
-        "help": "A list of objects with a name, a value, and a rule. Rule types: regex, enum, panjang (length), format_tanggal (date format)."
       },
       "data_balikan": {
         "heading": "Return data",

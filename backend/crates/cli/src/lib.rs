@@ -89,11 +89,13 @@ pub enum GalatArg {
     OpsiTidakDikenal(String),
     #[error("opsi {0} butuh nilai")]
     NilaiHilang(String),
+    #[error("nilai opsi {0} tidak boleh diawali `--`; tulis `{0}=nilai` bila memang disengaja")]
+    NilaiBerawalanOpsi(String),
     #[error("opsi {0} diberikan lebih dari sekali")]
     OpsiGanda(String),
     #[error("opsi {0} wajib")]
     OpsiWajib(&'static str),
-    #[error("argumen tidak dikenal (opsi ditulis `--nama nilai`)")]
+    #[error("argumen tidak dikenal (opsi ditulis `--nama nilai` atau `--nama=nilai`)")]
     ArgumenLepas,
     #[error("peran tidak dikenal; pilih platform_admin, client_owner, operator, atau auditor")]
     PeranTidakDikenal,
@@ -110,27 +112,44 @@ struct Opsi {
 }
 
 impl Opsi {
-    /// Urai `--nama nilai` dengan daftar nama yang diizinkan. Bentuk `--nama=nilai` sengaja tidak
-    /// didukung, dan opsi yang tidak dikenal dilaporkan tanpa nilainya (mis. `--password=...`).
+    /// Urai `--nama nilai` atau `--nama=nilai` dengan daftar nama yang diizinkan. Pada bentuk
+    /// `--nama nilai`, nilai yang diawali `--` ditolak (hampir pasti nilai yang terlewat); bentuk
+    /// `--nama=nilai` menuliskannya secara eksplisit. Opsi yang tidak dikenal dilaporkan tanpa
+    /// nilainya (mis. `--password=...`).
     fn urai(args: &[String], dikenal: &[&str]) -> Result<Self, GalatArg> {
         let mut pasangan: Vec<(String, String)> = Vec::new();
         let mut i = 0;
         while i < args.len() {
             let a = &args[i];
-            let Some(nama) = a.strip_prefix("--") else {
+            let Some(sisa) = a.strip_prefix("--") else {
                 return Err(GalatArg::ArgumenLepas);
             };
-            let nama = nama.split('=').next().unwrap_or_default();
+            let (nama, sebaris) = match sisa.split_once('=') {
+                Some((nama, nilai)) => (nama, Some(nilai)),
+                None => (sisa, None),
+            };
             let opsi = format!("--{nama}");
-            if a.contains('=') || !dikenal.contains(&nama) {
+            if !dikenal.contains(&nama) {
                 return Err(GalatArg::OpsiTidakDikenal(opsi));
             }
             if pasangan.iter().any(|(n, _)| n == nama) {
                 return Err(GalatArg::OpsiGanda(opsi));
             }
-            let nilai = args.get(i + 1).ok_or(GalatArg::NilaiHilang(opsi))?;
-            pasangan.push((nama.to_owned(), nilai.clone()));
-            i += 2;
+            let nilai = match sebaris {
+                Some(nilai) => {
+                    i += 1;
+                    nilai
+                }
+                None => {
+                    let nilai = args.get(i + 1).ok_or(GalatArg::NilaiHilang(opsi.clone()))?;
+                    if nilai.starts_with("--") {
+                        return Err(GalatArg::NilaiBerawalanOpsi(opsi));
+                    }
+                    i += 2;
+                    nilai
+                }
+            };
+            pasangan.push((nama.to_owned(), nilai.to_owned()));
         }
         Ok(Self { pasangan })
     }
@@ -627,6 +646,60 @@ mod tests {
             GalatArg::OpsiTidakDikenal("--password".into())
         );
         assert_eq!(urai(&a(&[])).unwrap(), Perintah::Bantuan);
+    }
+
+    #[test]
+    fn nilai_berawalan_dua_strip_ditolak_kecuali_bentuk_sama_dengan() {
+        // Nilai yang tampak seperti opsi lain hampir pasti salah ketik (nilai terlewat), bukan
+        // nilai yang disengaja.
+        let e = urai(&a(&["bootstrap", "--username", "--alasan", ALASAN])).unwrap_err();
+        assert_eq!(e, GalatArg::NilaiBerawalanOpsi("--username".into()));
+        let e = urai(&a(&[
+            "bootstrap",
+            "--username",
+            "admin",
+            "--alasan",
+            "--oleh",
+        ]))
+        .unwrap_err();
+        assert_eq!(e, GalatArg::NilaiBerawalanOpsi("--alasan".into()));
+        // Pesan galat tidak mencetak nilainya.
+        assert!(!e.to_string().contains("--oleh"));
+
+        // Bentuk `--opsi=nilai` menulis nilai berawalan `--` secara eksplisit.
+        let p = urai(&a(&[
+            "bootstrap",
+            "--username=admin",
+            "--alasan=--teks-alasan-sah",
+        ]))
+        .unwrap();
+        let Perintah::Bootstrap { username, alasan } = p else {
+            panic!("hasil urai bukan Bootstrap");
+        };
+        assert_eq!(username, "admin");
+        assert_eq!(alasan.as_str(), "--teks-alasan-sah");
+    }
+
+    #[test]
+    fn bentuk_sama_dengan_didukung_dan_nilai_boleh_memuat_sama_dengan() {
+        let p = urai(&a(&[
+            "bootstrap",
+            "--username=admin",
+            "--alasan",
+            "a=b penugasan sah",
+        ]))
+        .unwrap();
+        let Perintah::Bootstrap { username, alasan } = p else {
+            panic!("hasil urai bukan Bootstrap");
+        };
+        assert_eq!(username, "admin");
+        assert_eq!(alasan.as_str(), "a=b penugasan sah");
+        // Duplikat lintas bentuk tetap ditolak.
+        let e = urai(&a(&["bootstrap", "--username=a", "--username", "b"])).unwrap_err();
+        assert_eq!(e, GalatArg::OpsiGanda("--username".into()));
+        // Nilai tunggal `-x` (satu strip) tetap nilai biasa.
+        let p = urai(&a(&["bootstrap", "--username", "-x1", "--alasan", ALASAN])).unwrap();
+        assert!(matches!(p, Perintah::Bootstrap { ref username, .. } if username == "-x1"));
     }
 
     #[test]

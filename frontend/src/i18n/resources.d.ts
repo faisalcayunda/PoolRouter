@@ -832,10 +832,6 @@ export default interface Resources {
           "label": "Mode log",
           "metadata_only": "Metadata saja"
         },
-        "parameters": {
-          "help": "Daftar objek berisi nama, nilai, dan rule. Jenis rule: regex, enum, panjang, format_tanggal.",
-          "label": "Parameter dan rule (JSON)"
-        },
         "reason": {
           "heading": "Alasan",
           "help": "{{jumlah}}/{{batas}} karakter, minimal 10. Dicatat di audit konfigurasi dan tidak disimpan di form.",
@@ -922,10 +918,37 @@ export default interface Resources {
           "type": "Jenis rule",
           "value": "Nilai rule"
         },
+        "delete_aria": "Hapus parameter {{nama}}",
         "edit_aria": "Ubah rule parameter {{nama}}",
+        "editor": {
+          "enum": "Nilai yang diizinkan",
+          "enum_help": "Satu nilai per baris.",
+          "error": {
+            "bilangan": "Isi dengan bilangan bulat tidak negatif.",
+            "duplikat": "Nama parameter sudah dipakai.",
+            "rentang": "Maksimum tidak boleh lebih kecil dari minimum.",
+            "wajib": "Wajib diisi."
+          },
+          "format": "Format tanggal",
+          "format_help": "Contoh: yyyy-MM-dd.",
+          "jenis": "Jenis rule",
+          "jenis_none": "Tanpa rule",
+          "nama": "Nama parameter",
+          "nama_help": "Ditulis persis seperti di dokumen provider, misalnya USER_ID.",
+          "nilai": "Nilai tetap (opsional)",
+          "nilai_help": "Kosongkan bila nilainya dikirim client atau ditetapkan nanti.",
+          "panjang_maks": "Panjang maksimum",
+          "panjang_min": "Panjang minimum",
+          "pola": "Pola regex",
+          "pola_help": "Contoh: ^\\d{16}$. Sah-tidaknya pola diperiksa server saat disimpan.",
+          "save": "Simpan parameter",
+          "title_add": "Tambah parameter",
+          "title_edit": "Ubah parameter"
+        },
         "empty": {
           "title": "Belum ada parameter"
         },
+        "error_title": "Rule belum bisa disimpan",
         "info": "Rule baru hanya berlaku untuk request baru. Request yang sudah mengantre memakai rule saat masuk antrean.",
         "info_body": "Request yang sudah mengantre memakai rule saat masuk antrean.",
         "info_title": "Rule baru hanya berlaku untuk request baru",

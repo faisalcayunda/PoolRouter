@@ -297,7 +297,34 @@
       "info_title": "Rule baru hanya berlaku untuk request baru",
       "info_body": "Request yang sudah mengantre memakai rule saat masuk antrean.",
       "save": "Simpan rule",
-      "edit_aria": "Ubah rule parameter {{nama}}"
+      "edit_aria": "Ubah rule parameter {{nama}}",
+      "delete_aria": "Hapus parameter {{nama}}",
+      "error_title": "Rule belum bisa disimpan",
+      "editor": {
+        "title_add": "Tambah parameter",
+        "title_edit": "Ubah parameter",
+        "save": "Simpan parameter",
+        "nama": "Nama parameter",
+        "nama_help": "Ditulis persis seperti di dokumen provider, misalnya USER_ID.",
+        "nilai": "Nilai tetap (opsional)",
+        "nilai_help": "Kosongkan bila nilainya dikirim client atau ditetapkan nanti.",
+        "jenis": "Jenis rule",
+        "jenis_none": "Tanpa rule",
+        "pola": "Pola regex",
+        "pola_help": "Contoh: ^\\d{16}$. Sah-tidaknya pola diperiksa server saat disimpan.",
+        "enum": "Nilai yang diizinkan",
+        "enum_help": "Satu nilai per baris.",
+        "panjang_min": "Panjang minimum",
+        "panjang_maks": "Panjang maksimum",
+        "format": "Format tanggal",
+        "format_help": "Contoh: yyyy-MM-dd.",
+        "error": {
+          "wajib": "Wajib diisi.",
+          "duplikat": "Nama parameter sudah dipakai.",
+          "bilangan": "Isi dengan bilangan bulat tidak negatif.",
+          "rentang": "Maksimum tidak boleh lebih kecil dari minimum."
+        }
+      }
     },
     "endpoint": {
       "info": "Hanya platform admin yang bisa mengubah nilai ini. Setiap perubahan dicatat di audit (siapa, kapan, apa).",
@@ -337,10 +364,6 @@
         "label": "Versi skema konfigurasi",
         "v1": "Versi 1 (F0)",
         "v2": "Versi 2 (F1, dengan data balikan)"
-      },
-      "parameters": {
-        "label": "Parameter dan rule (JSON)",
-        "help": "Daftar objek berisi nama, nilai, dan rule. Jenis rule: regex, enum, panjang, format_tanggal."
       },
       "data_balikan": {
         "heading": "Data balikan",
