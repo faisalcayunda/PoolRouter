@@ -193,3 +193,58 @@ for (const width of WIDTHS) {
     });
   });
 }
+
+/**
+ * Layar detail provider per tab (S03a Umum, S03 Template, S04 Parameter, S03b Respons; ARC-252).
+ * Hanya 1440 dan 375: lebar yang dipakai frame Penpot. Data sintetis; peran platform_admin.
+ */
+const PROVIDER = {
+  provider_id: '00000000-0000-4000-8000-0000000000a1',
+  provider_config_version: 3,
+  aktif: true,
+  nama: 'provider-contoh-a',
+  base_url: 'https://provider.example.test/api',
+  metode: 'POST',
+  tls_trust: 'system',
+  log_mode: 'metadata_only',
+  config_schema_version: 2,
+  body_template: '{"NIK":"{{input.NIK}}"}',
+  parameters: [
+    { nama: 'NIK', rule: { jenis: 'panjang', panjang_min: 16, panjang_maks: 16 } },
+    { nama: 'tanggal_lahir', rule: { jenis: 'format_tanggal', format_tanggal: 'yyyy-MM-dd' } },
+    { nama: 'TRESHOLD', nilai: '90' },
+  ],
+  respons_skema: { status: 'string' },
+  data_balikan: { versi: 2 },
+};
+
+const PROVIDER_TABS = [
+  { tab: 'Umum', berkas: 'provider-umum' },
+  { tab: 'Template', berkas: 'provider-template' },
+  { tab: 'Parameter', berkas: 'provider-rule' },
+  { tab: 'Respons', berkas: 'provider-skema' },
+] as const;
+
+for (const width of [1440, 375] as const) {
+  test.describe(`bukti visual provider @${width}`, () => {
+    test.describe.configure({ mode: 'serial' });
+
+    for (const { tab, berkas } of PROVIDER_TABS) {
+      test(`detail provider tab ${tab} @${width}`, async ({ page }) => {
+        await stub(page);
+        await page.route('**/admin/v1/providers/*', (route) =>
+          route.fulfill({
+            status: 200,
+            headers: { 'content-type': 'application/json', 'cache-control': 'no-store' },
+            body: JSON.stringify(PROVIDER),
+          }),
+        );
+        await page.setViewportSize({ width, height: 900 });
+        await page.goto(`/provider/${PROVIDER.provider_id}?peran=platform_admin`);
+        await expect(page.getByRole('heading', { level: 1 })).toHaveText('provider-contoh-a');
+        await page.getByRole('tab', { name: tab }).click();
+        await shoot(page, berkas, width);
+      });
+    }
+  });
+}
