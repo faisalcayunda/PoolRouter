@@ -864,7 +864,18 @@ describe('English catalog', () => {
     expect(
       await screen.findByRole('heading', { level: 1, name: 'Clients and credentials' }),
     ).toBeVisible();
-    expect(screen.getAllByText('20 burst, refill 1 per second')).toHaveLength(2);
+    const kepala = within(screen.getByRole('table')).getAllByRole('columnheader');
+    expect(kepala.map((kolom) => kolom.textContent?.trim())).toEqual([
+      'Client',
+      'Credential type',
+      'Client ID',
+      'Created',
+      'Status',
+      'Actions',
+    ]);
+    expect(
+      screen.getByRole('link', { name: 'Create a credential for client Aplikasi Contoh A' }),
+    ).toBeVisible();
     cleanup();
 
     asRole('platform_admin', <ClientDetailScreen clientId={CLIENT_ID} client={client} />, 'en');
