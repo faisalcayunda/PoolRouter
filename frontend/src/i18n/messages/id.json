@@ -430,6 +430,7 @@
       "body": "Secret menyimpan kredensial provider, misalnya USER_ID dan PASSWORD. Tambahkan secret sebelum membuat template provider."
     },
     "masked": "••••••••••••",
+    "masked_label": "Tersamar",
     "changed_unknown": "Belum tersedia",
     "unused": "Tidak dipakai",
     "row": {

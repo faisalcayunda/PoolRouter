@@ -537,6 +537,14 @@ describe('S05 secret', () => {
     const table = within(await screen.findByRole('table'));
     // Frame S05: the value column is twelve bullets, and the name is plain text, not monospace.
     expect(table.getAllByText('••••••••••••')).toHaveLength(2);
+    // Titik hanya visual (aria-hidden); sel punya teks aksesibel "Tersamar".
+    for (const dots of table.getAllByText('••••••••••••')) {
+      expect(dots).toHaveAttribute('aria-hidden', 'true');
+    }
+    expect(table.getAllByText('Tersamar')).toHaveLength(2);
+    for (const cell of table.getAllByRole('cell', { name: 'Tersamar' })) {
+      expect(cell).toHaveAccessibleName('Tersamar');
+    }
     expect(table.getByText('USER_ID').className).not.toContain('font-code');
     expect(table.getByText('1 provider')).toBeInTheDocument();
     expect(table.getByText('Tidak dipakai')).toBeInTheDocument();

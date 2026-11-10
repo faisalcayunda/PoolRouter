@@ -430,6 +430,7 @@
       "body": "A secret stores a provider credential, such as USER_ID and PASSWORD. Add a secret before you create a provider template."
     },
     "masked": "••••••••••••",
+    "masked_label": "Masked",
     "changed_unknown": "Not available yet",
     "unused": "Not in use",
     "row": {

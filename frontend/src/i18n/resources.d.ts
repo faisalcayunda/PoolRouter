@@ -1123,6 +1123,7 @@ export default interface Resources {
         "value_required": "Nilai wajib diisi."
       },
       "masked": "••••••••••••",
+      "masked_label": "Tersamar",
       "page": {
         "add": "Tambah secret",
         "replace": "Ganti",
