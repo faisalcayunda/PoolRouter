@@ -33,6 +33,7 @@ export const NAV_GROUPS: NavGroup[] = [
     labelKey: 'nav.group.config',
     items: [
       { href: '/provider', labelKey: 'nav.drawer.provider' },
+      { href: '/endpoint', labelKey: 'nav.drawer.endpoint' },
       { href: '/secret', labelKey: 'nav.drawer.secret' },
       { href: '/upstream', labelKey: 'nav.drawer.upstream' },
       { href: '/downstream', labelKey: 'nav.drawer.downstream' },
