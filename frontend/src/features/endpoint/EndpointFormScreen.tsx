@@ -165,17 +165,36 @@ function EndpointForm({ client, lookups, initial }: EndpointFormProps): ReactNod
   const metadataIssue = errors.fields.metadata_fields;
 
   return (
-    <section className="flex flex-col gap-4">
+    <form noValidate onSubmit={(e) => void submit(e)} className="flex flex-col gap-4">
       <PageHeader
-        title={current ? t('endpoint.form.title_edit') : t('endpoint.page.add')}
+        title={
+          current && provider
+            ? provider.nama
+            : current
+              ? t('endpoint.form.title_edit')
+              : t('endpoint.page.add')
+        }
         subtitle={t('endpoint.form.subtitle')}
         titleRef={titleRef}
         actions={
-          <LinkButton href="/endpoint" variant="text">
-            {t('endpoint.form.back')}
-          </LinkButton>
+          <>
+            <LinkButton href="/endpoint" variant="outlined">
+              {t('common.action.cancel')}
+            </LinkButton>
+            <Button type="submit" isDisabled={saving}>
+              {saving
+                ? t('endpoint.form.saving')
+                : mode === 'update'
+                  ? t('endpoint.form.save_edit')
+                  : t('endpoint.form.save_new')}
+            </Button>
+          </>
         }
       />
+
+      <InlineAlert tone="info" heading={t('endpoint.form.notice.title')}>
+        {t('endpoint.form.notice.body')}
+      </InlineAlert>
 
       {errorCount(errors) > 0 ? (
         <InlineAlert tone="error">
@@ -195,8 +214,8 @@ function EndpointForm({ client, lookups, initial }: EndpointFormProps): ReactNod
         <InlineAlert tone="error">{errorMessage(t, i18n, failure).message}</InlineAlert>
       ) : null}
 
-      <form noValidate onSubmit={(e) => void submit(e)} className="flex flex-col gap-4">
-        <Card variant="outlined" className="flex flex-col gap-4">
+      <div className="flex flex-col gap-4">
+        <Card variant="container" className="flex flex-col gap-4 p-6">
           <h2 className="typescale-title-medium">{t('endpoint.form.section.target')}</h2>
           <div className="flex flex-wrap gap-4">
             <div data-field="provider_id">
@@ -274,8 +293,12 @@ function EndpointForm({ client, lookups, initial }: EndpointFormProps): ReactNod
           </div>
         </Card>
 
-        <Card variant="outlined" className="flex flex-col gap-4">
-          <h2 className="typescale-title-medium">{t('endpoint.form.section.parameters')}</h2>
+        <Card variant="container" className="flex flex-col gap-4 p-6">
+          <h2 className="typescale-title-medium text-on-surface">
+            {provider
+              ? `${t('endpoint.form.constants.title')} ${provider.nama}`
+              : t('endpoint.form.section.parameters')}
+          </h2>
           <div data-field="parameter_literal">
             <TextArea
               label={t('endpoint.form.parameters.label')}
@@ -290,7 +313,7 @@ function EndpointForm({ client, lookups, initial }: EndpointFormProps): ReactNod
           </div>
         </Card>
 
-        <Card variant="outlined" className="flex flex-col gap-4">
+        <Card variant="container" className="flex flex-col gap-4 p-6">
           <h2 className="typescale-title-medium">{t('endpoint.form.section.metadata')}</h2>
           <InlineAlert tone="info">{t('metadata.page.info')}</InlineAlert>
           <MetadataContractTable rows={draft.metadata_fields} />
@@ -309,7 +332,7 @@ function EndpointForm({ client, lookups, initial }: EndpointFormProps): ReactNod
         </Card>
 
         {mode === 'update' ? (
-          <Card variant="outlined" className="flex flex-col gap-4">
+          <Card variant="container" className="flex flex-col gap-4 p-6">
             <h2 className="typescale-title-medium">{t('endpoint.form.reason.heading')}</h2>
             <div data-field="alasan">
               <TextArea
@@ -327,22 +350,9 @@ function EndpointForm({ client, lookups, initial }: EndpointFormProps): ReactNod
             </div>
           </Card>
         ) : null}
-
-        <div className="flex flex-wrap justify-end gap-2">
-          <LinkButton href="/endpoint" variant="text">
-            {t('common.action.cancel')}
-          </LinkButton>
-          <Button type="submit" isDisabled={saving}>
-            {saving
-              ? t('endpoint.form.saving')
-              : mode === 'update'
-                ? t('endpoint.form.save_edit')
-                : t('endpoint.form.save_new')}
-          </Button>
-        </div>
-      </form>
+      </div>
       <SnackbarRegion queue={snackbar.queue} />
-    </section>
+    </form>
   );
 }
 

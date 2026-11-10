@@ -425,6 +425,9 @@ export default interface Resources {
       "form": {
         "back": "Kembali ke daftar endpoint",
         "choose": "Pilih…",
+        "constants": {
+          "title": "Parameter konstan endpoint"
+        },
         "error": {
           "alasan_rentang": "Alasan wajib diisi, 10–500 karakter.",
           "log_mode_lebih_longgar": "Mode log endpoint tidak boleh lebih longgar dari provider. Pilih Metadata saja atau ubah mode log provider.",
@@ -443,6 +446,10 @@ export default interface Resources {
           "help": "Tidak boleh lebih longgar dari mode log provider.",
           "label": "Mode log",
           "metadata_only": "Metadata saja"
+        },
+        "notice": {
+          "body": "Hanya platform admin yang dapat mengubah nilai ini. Setiap perubahan dicatat di audit konfigurasi.",
+          "title": "Konfigurasi tingkat platform admin"
         },
         "parameters": {
           "help": "Satu NAMA=nilai per baris, termasuk TRESHOLD. Contoh: TRESHOLD=90",
@@ -777,6 +784,7 @@ export default interface Resources {
       }
     },
     "provider": {
+      "api_pending": "Menunggu API",
       "empty": {
         "body": "Tambahkan provider untuk mulai menerima request dari aplikasi client. Siapkan dulu secret (USER_ID, PASSWORD, IP_USER) di menu Secret.",
         "goto_secrets": "Buka menu Secret",
@@ -785,6 +793,12 @@ export default interface Resources {
       "endpoint": {
         "info": "Hanya platform admin yang bisa mengubah nilai ini. Setiap perubahan dicatat di audit (siapa, kapan, apa).",
         "threshold_help": "Dikirim ke Dukcapil dari sini. Client tidak boleh mengirim TRESHOLD (ditolak 422)."
+      },
+      "endpoint_tab": {
+        "edit": "Ubah di layar Endpoint",
+        "empty": "Provider ini belum punya endpoint. Buat endpoint di layar Endpoint untuk mengatur parameter konstannya.",
+        "open": "Buka daftar endpoint",
+        "threshold_help": "Nilai TRESHOLD dikirimkan ke Dukcapil langsung dari middleware. Client dilarang mengirimkan nilai ini (ditolak 422)."
       },
       "form": {
         "back": "Kembali ke daftar provider",
@@ -854,8 +868,29 @@ export default interface Resources {
           "label": "Autentikasi",
           "none": "Tanpa autentikasi"
         },
+        "flag": {
+          "help": "Menentukan apakah hasil provider ini boleh digabung dalam blend.",
+          "note": "Penanda tidak bisa dilepas untuk provider yang wajib mencatat NIK di log.",
+          "switch": "Butuh dasar hukum untuk blend",
+          "title": "Penanda data kependudukan"
+        },
+        "identity": {
+          "help": "Nama dan alamat yang dipanggil PoolRouter.",
+          "title": "Identitas provider"
+        },
         "method": "Metode",
+        "method_auth": {
+          "title": "Metode dan autentikasi"
+        },
         "name": "Nama provider",
+        "security": {
+          "help": "Kepercayaan TLS, mode log, dan versi skema konfigurasi. Semuanya ikut disimpan utuh setiap kali provider disimpan.",
+          "title": "Keamanan dan log"
+        },
+        "status": {
+          "help": "Provider nonaktif tidak menerima request baru.",
+          "title": "Status"
+        },
         "url": "Alamat endpoint (URL)"
       },
       "list": {
@@ -879,18 +914,26 @@ export default interface Resources {
       "rules": {
         "add": "Tambah parameter",
         "add_heading": "Tambah rule: pilihan jenis",
+        "caption": "Parameter dan rule provider",
         "col": {
+          "action": "Aksi",
           "param": "Parameter",
           "status": "Status",
           "type": "Jenis rule",
           "value": "Nilai rule"
         },
+        "edit_aria": "Ubah rule parameter {{nama}}",
         "empty": {
           "title": "Belum ada parameter"
         },
         "info": "Rule baru hanya berlaku untuk request baru. Request yang sudah mengantre memakai rule saat masuk antrean.",
+        "info_body": "Request yang sudah mengantre memakai rule saat masuk antrean.",
+        "info_title": "Rule baru hanya berlaku untuk request baru",
         "no_custom": "Fungsi validasi kustom belum tersedia di versi ini.",
         "no_defaults": "Nilai rule dikosongkan sampai ditetapkan BGN (K-06). Sistem tidak mengisi nilai bawaan.",
+        "not_set": "Belum ditetapkan",
+        "panel_title": "Atur jenis rule",
+        "save": "Simpan rule",
         "type": {
           "date_format": "Format tanggal",
           "enum": "Enum",
@@ -900,25 +943,39 @@ export default interface Resources {
         },
         "type_help": "Pilihan: Regex, Enum, Panjang, Format tanggal. Fungsi validasi kustom tidak tersedia di F0.",
         "value": {
-          "digits16": "16 digit angka"
+          "digits16": "16 digit angka",
+          "length": "{{min}} sampai {{maks}} karakter"
         }
       },
       "schema": {
         "add_code": "Tambah kode respons",
         "codes": "Kode respons",
         "col": {
+          "category": "Kategori",
           "code": "Kode",
+          "code_full": "Kode respons",
           "handling": "Perlakuan",
-          "meaning": "Arti"
+          "meaning": "Arti",
+          "middleware": "Perlakuan middleware",
+          "status": "Arti status"
         },
         "help": "Keluaran ke client: status dan skor per elemen yang dikirim. Elemen yang tidak dikirim tidak muncul.",
-        "label": "Skema respons (JSON)",
-        "success": "Sukses"
+        "label": "Skema respons (JSON format)",
+        "success": "Sukses",
+        "table_title": "Tabel penanganan kode respons"
       },
       "snackbar": {
         "saved": "Provider tersimpan"
       },
+      "subtitle": {
+        "endpoint": "Parameter konstan disimpan per endpoint.",
+        "general": "Perubahan berlaku untuk request baru.",
+        "rules": "Rule baru hanya berlaku untuk request baru.",
+        "schema": "Pemetaan skema respons dan kode status.",
+        "template": "Template JSON request body."
+      },
       "tab": {
+        "aria": "Bagian konfigurasi provider",
         "endpoint": "Endpoint",
         "general": "Umum",
         "rules": "Parameter",
@@ -930,11 +987,14 @@ export default interface Resources {
           "alert": "Template belum bisa disimpan. Baris {{nomor_baris}}: {{rincian}}",
           "brace_missing": "kurung kurawal penutup kurang.",
           "goto": "Ke baris {{nomor_baris}}",
-          "secret_missing": "Secret {{nama}} belum dibuat. Buat di menu Secret, lalu simpan template lagi."
+          "line": "Baris {{baris}}: sintaks error",
+          "secret_missing": "Secret {{nama}} belum dibuat. Buat di menu Secret, lalu simpan template lagi.",
+          "title": "Template belum bisa disimpan"
         },
-        "help": "Kunci ditulis persis seperti di dokumen Dukcapil, termasuk ejaan TRESHOLD.",
+        "help": "Variabel secret dan parameter diapit kurung kurawal ganda {{contoh}}. Kunci ditulis persis sesuai dokumen Ditjen Dukcapil.",
         "label": "Template body (JSON)",
-        "save": "Simpan template"
+        "save": "Simpan template",
+        "title": "Editor template JSON request"
       }
     },
     "quota": {

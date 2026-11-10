@@ -200,18 +200,22 @@
       "template": "Template",
       "rules": "Parameter",
       "schema": "Respons",
-      "endpoint": "Endpoint"
+      "endpoint": "Endpoint",
+      "aria": "Bagian konfigurasi provider"
     },
     "template": {
       "label": "Template body (JSON)",
-      "help": "Kunci ditulis persis seperti di dokumen Dukcapil, termasuk ejaan TRESHOLD.",
+      "help": "Variabel secret dan parameter diapit kurung kurawal ganda {{contoh}}. Kunci ditulis persis sesuai dokumen Ditjen Dukcapil.",
       "save": "Simpan template",
       "error": {
         "alert": "Template belum bisa disimpan. Baris {{nomor_baris}}: {{rincian}}",
         "brace_missing": "kurung kurawal penutup kurang.",
         "goto": "Ke baris {{nomor_baris}}",
-        "secret_missing": "Secret {{nama}} belum dibuat. Buat di menu Secret, lalu simpan template lagi."
-      }
+        "secret_missing": "Secret {{nama}} belum dibuat. Buat di menu Secret, lalu simpan template lagi.",
+        "title": "Template belum bisa disimpan",
+        "line": "Baris {{baris}}: sintaks error"
+      },
+      "title": "Editor template JSON request"
     },
     "general": {
       "name": "Nama provider",
@@ -223,19 +227,45 @@
         "header": "API key di header",
         "none": "Tanpa autentikasi",
         "help": "Pilihan F0: kredensial di body, API key di header, tanpa autentikasi. JWT/OIDC menyusul di F2."
+      },
+      "identity": {
+        "title": "Identitas provider",
+        "help": "Nama dan alamat yang dipanggil PoolRouter."
+      },
+      "method_auth": {
+        "title": "Metode dan autentikasi"
+      },
+      "security": {
+        "title": "Keamanan dan log",
+        "help": "Kepercayaan TLS, mode log, dan versi skema konfigurasi. Semuanya ikut disimpan utuh setiap kali provider disimpan."
+      },
+      "flag": {
+        "title": "Penanda data kependudukan",
+        "help": "Menentukan apakah hasil provider ini boleh digabung dalam blend.",
+        "switch": "Butuh dasar hukum untuk blend",
+        "note": "Penanda tidak bisa dilepas untuk provider yang wajib mencatat NIK di log."
+      },
+      "status": {
+        "title": "Status",
+        "help": "Provider nonaktif tidak menerima request baru."
       }
     },
     "schema": {
-      "label": "Skema respons (JSON)",
+      "label": "Skema respons (JSON format)",
       "help": "Keluaran ke client: status dan skor per elemen yang dikirim. Elemen yang tidak dikirim tidak muncul.",
       "add_code": "Tambah kode respons",
       "codes": "Kode respons",
       "col": {
         "code": "Kode",
         "meaning": "Arti",
-        "handling": "Perlakuan"
+        "handling": "Perlakuan",
+        "status": "Arti status",
+        "code_full": "Kode respons",
+        "middleware": "Perlakuan middleware",
+        "category": "Kategori"
       },
-      "success": "Sukses"
+      "success": "Sukses",
+      "table_title": "Tabel penanganan kode respons"
     },
     "rules": {
       "add": "Tambah parameter",
@@ -244,7 +274,8 @@
         "param": "Parameter",
         "type": "Jenis rule",
         "value": "Nilai rule",
-        "status": "Status"
+        "status": "Status",
+        "action": "Aksi"
       },
       "type": {
         "length_regex": "Panjang + regex",
@@ -254,7 +285,8 @@
         "regex": "Regex"
       },
       "value": {
-        "digits16": "16 digit angka"
+        "digits16": "16 digit angka",
+        "length": "{{min}} sampai {{maks}} karakter"
       },
       "add_heading": "Tambah rule: pilihan jenis",
       "type_help": "Pilihan: Regex, Enum, Panjang, Format tanggal. Fungsi validasi kustom tidak tersedia di F0.",
@@ -262,7 +294,14 @@
       "no_custom": "Fungsi validasi kustom belum tersedia di versi ini.",
       "empty": {
         "title": "Belum ada parameter"
-      }
+      },
+      "caption": "Parameter dan rule provider",
+      "not_set": "Belum ditetapkan",
+      "panel_title": "Atur jenis rule",
+      "info_title": "Rule baru hanya berlaku untuk request baru",
+      "info_body": "Request yang sudah mengantre memakai rule saat masuk antrean.",
+      "save": "Simpan rule",
+      "edit_aria": "Ubah rule parameter {{nama}}"
     },
     "endpoint": {
       "info": "Hanya platform admin yang bisa mengubah nilai ini. Setiap perubahan dicatat di audit (siapa, kapan, apa).",
@@ -341,6 +380,20 @@
         "data_balikan_skema_terlalu_baru": "Versi skema data balikan belum didukung.",
         "config_schema_version_tidak_didukung": "Versi skema konfigurasi tidak didukung."
       }
+    },
+    "api_pending": "Menunggu API",
+    "subtitle": {
+      "general": "Perubahan berlaku untuk request baru.",
+      "template": "Template JSON request body.",
+      "rules": "Rule baru hanya berlaku untuk request baru.",
+      "schema": "Pemetaan skema respons dan kode status.",
+      "endpoint": "Parameter konstan disimpan per endpoint."
+    },
+    "endpoint_tab": {
+      "open": "Buka daftar endpoint",
+      "edit": "Ubah di layar Endpoint",
+      "empty": "Provider ini belum punya endpoint. Buat endpoint di layar Endpoint untuk mengatur parameter konstannya.",
+      "threshold_help": "Nilai TRESHOLD dikirimkan ke Dukcapil langsung dari middleware. Client dilarang mengirimkan nilai ini (ditolak 422)."
     }
   },
   "secret": {
@@ -688,6 +741,13 @@
         "nama_field_duplikat": "Nama field {{nama}} sudah dipakai di baris lain.",
         "nilai_diizinkan_wajib": "Isi minimal satu nilai untuk tipe enum.",
         "wajib_hilang": "Endpoint Dukcapil wajib memuat field status_penerima_manfaat di kontrak metadata."
+      },
+      "notice": {
+        "title": "Konfigurasi tingkat platform admin",
+        "body": "Hanya platform admin yang dapat mengubah nilai ini. Setiap perubahan dicatat di audit konfigurasi."
+      },
+      "constants": {
+        "title": "Parameter konstan endpoint"
       }
     },
     "metadata": {

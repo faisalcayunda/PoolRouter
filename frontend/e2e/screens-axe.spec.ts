@@ -202,8 +202,8 @@ const KONFIGURASI = [
   {
     path: `/provider/${PROVIDER.provider_id}`,
     name: 'S03 form provider',
-    heading: { id: 'Ubah provider provider-contoh-a', en: 'Edit provider provider-contoh-a' },
-    ready: (page: Page) => page.getByLabel(/Template body|Body template/),
+    heading: { id: 'provider-contoh-a', en: 'provider-contoh-a' },
+    ready: (page: Page) => page.getByLabel(/Nama provider|Provider name/),
   },
   {
     path: '/secret',
