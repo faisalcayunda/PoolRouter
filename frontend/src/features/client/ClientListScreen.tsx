@@ -15,11 +15,15 @@ import { SnackbarRegion, useSnackbar } from '../common/useSnackbar';
 import { LinkButton } from '../provider/LinkButton';
 import { Forbidden } from '../provider/Forbidden';
 import { canManageClients, canViewClients, clientPath } from './access';
-import { formatRefill, parseNumber, validateClientForm, type ClientFormValues } from './clientForm';
+import { parseNumber, validateClientForm, type ClientFormValues } from './clientForm';
 import { LimiterFields } from './LimiterFields';
 
-const TH = 'border-b border-outline-variant px-4 py-3 font-medium';
-const TD = 'typescale-body-medium px-4 py-3 align-middle';
+// Ukuran mengikuti frame Penpot S08: kepala 40 px berlatar surface, baris 56 px, garis pemisah
+// surface-container-high, padding horizontal 20 px.
+const TH = 'typescale-label-small h-10 bg-surface px-5 font-medium';
+const TD =
+  'typescale-body-medium h-14 border-b border-surface-container-high px-5 py-2 align-middle';
+const KOSONG = '\u2014';
 
 function TambahDialog({
   client,
@@ -100,7 +104,7 @@ export interface ClientListScreenProps {
  * hanya melihat clientnya sendiri (server yang membatasi daftar) dan tidak punya aksi tulis.
  */
 export function ClientListScreen({ client = api }: ClientListScreenProps): ReactNode {
-  const { t, i18n } = useTranslation();
+  const { t } = useTranslation();
   const role = useRole();
   const titleRef = useFocusOnMount<HTMLHeadingElement>();
   const snackbar = useSnackbar();
@@ -145,61 +149,80 @@ export function ClientListScreen({ client = api }: ClientListScreenProps): React
       ) : null}
 
       {rows.length > 0 ? (
-        <Card variant="outlined" className="p-0">
+        <Card
+          variant="outlined"
+          className="overflow-hidden p-0! rounded-large! bg-surface-container-lowest!"
+        >
           <ScrollArea label={t('client.page.title')}>
             <div className="table-card">
               <table className="w-full border-collapse text-left">
                 <caption className="sr-only">{t('client.page.title')}</caption>
                 <thead>
-                  <tr className="typescale-title-small text-on-surface-variant">
+                  <tr className="text-on-surface-variant">
                     <th scope="col" className={TH}>
                       {t('client.col.client')}
+                    </th>
+                    <th scope="col" className={TH}>
+                      {t('client.col.type')}
                     </th>
                     <th scope="col" className={TH}>
                       {t('client.col.id')}
                     </th>
                     <th scope="col" className={TH}>
-                      {t('clients.col.limiter')}
+                      {t('client.col.created')}
                     </th>
                     <th scope="col" className={TH}>
                       {t('client.col.status')}
                     </th>
                     <th scope="col" className={TH}>
-                      {t('client.col.actions')}
+                      <span className="sr-only">{t('client.col.actions')}</span>
                     </th>
                   </tr>
                 </thead>
                 <tbody>
                   {rows.map((row) => (
-                    <tr key={row.client_id} className="border-b border-outline-variant">
-                      <td data-label={t('client.col.client')} className={TD}>
+                    <tr key={row.client_id} className="text-on-surface">
+                      <td data-label={t('client.col.client')} className={`${TD} font-medium`}>
                         {row.nama}
+                      </td>
+                      {/* Belum ada di API: GET /clients tidak memuat jenis kredensial maupun waktu pembuatan. */}
+                      <td
+                        data-label={t('client.col.type')}
+                        className={`${TD} text-on-surface-variant`}
+                      >
+                        {KOSONG}
                       </td>
                       <td data-label={t('client.col.id')} className={TD}>
                         <span className="break-all font-code">{row.client_id}</span>
                       </td>
-                      <td data-label={t('clients.col.limiter')} className={TD}>
-                        {t('clients.limiter.value', {
-                          burst: row.limiter_penolakan_burst,
-                          isi_ulang: formatRefill(
-                            row.limiter_penolakan_isi_ulang_per_detik,
-                            i18n.language,
-                          ),
-                        })}
+                      <td
+                        data-label={t('client.col.created')}
+                        className={`${TD} text-on-surface-variant`}
+                      >
+                        {KOSONG}
                       </td>
                       <td data-label={t('client.col.status')} className={TD}>
                         <StatusLabel tone={row.aktif ? 'success' : 'neutral'}>
                           {row.aktif ? t('common.state.active') : t('clients.inactive')}
                         </StatusLabel>
                       </td>
-                      <td data-label={t('client.col.actions')} className={TD}>
-                        <LinkButton
-                          href={clientPath(row.client_id)}
-                          variant="text"
-                          aria-label={t('clients.row.manage_aria', { nama: row.nama })}
-                        >
-                          {t('clients.row.manage')}
-                        </LinkButton>
+                      <td className={TD}>
+                        <div className="flex flex-nowrap items-center justify-end gap-1 whitespace-nowrap max-[599.98px]:justify-start">
+                          <LinkButton
+                            href={clientPath(row.client_id, 'kredensial')}
+                            variant="text"
+                            aria-label={t('clients.row.credential_aria', { nama: row.nama })}
+                          >
+                            {t('client.credential.create')}
+                          </LinkButton>
+                          <LinkButton
+                            href={clientPath(row.client_id)}
+                            variant="text"
+                            aria-label={t('clients.row.manage_aria', { nama: row.nama })}
+                          >
+                            {t('clients.row.manage')}
+                          </LinkButton>
+                        </div>
                       </td>
                     </tr>
                   ))}
