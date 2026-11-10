@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
-import type { PratinjauK20 } from '../../api/client';
+import { ApiError, type PratinjauK20 } from '../../api/client';
 import { Button } from '../../components/m3/Button';
 import { Dialog } from '../../components/m3/Dialog';
 import { InlineAlert } from '../../components/m3/InlineAlert';
@@ -59,7 +59,7 @@ export function K20Dialog({
       },
     );
     return () => controller.abort();
-    // `loadPreview` is created per dialog opening; `nonce` is the retry handle.
+    // `loadPreview` dibuat ulang tiap render; hanya `nonce` (tombol coba lagi) yang memicu muat ulang.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [nonce]);
 
@@ -145,7 +145,12 @@ export function K20Dialog({
         </section>
         {notes}
         {failure !== null ? (
-          <InlineAlert tone="error">{errorMessage(t, i18n, failure).message}</InlineAlert>
+          <InlineAlert tone="error">
+            {/* 403 dan galat jaringan punya kalimat sendiri; selebihnya aksi dianggap belum berhasil. */}
+            {failure instanceof ApiError && failure.status !== 403
+              ? t('risk.common.action_failed')
+              : errorMessage(t, i18n, failure).message}
+          </InlineAlert>
         ) : null}
         <TextField
           label={t('clients.k20.reason')}

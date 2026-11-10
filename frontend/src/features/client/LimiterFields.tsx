@@ -19,13 +19,11 @@ export function LimiterFields({
   onChange,
   errors,
   showErrors,
-  isReadOnly = false,
 }: {
   values: ClientFormValues;
   onChange: (next: ClientFormValues) => void;
   errors: LimiterErrors;
   showErrors: boolean;
-  isReadOnly?: boolean;
 }): ReactNode {
   const { t, i18n } = useTranslation();
   const refillRange = new Intl.NumberFormat(i18n.language, { minimumFractionDigits: 2 });
@@ -43,7 +41,6 @@ export function LimiterFields({
         value={values.nama}
         onChange={(nama) => onChange({ ...values, nama })}
         autoComplete="off"
-        isReadOnly={isReadOnly}
         isInvalid={showErrors && namaError !== null}
         errorMessage={namaError}
       />
@@ -58,7 +55,6 @@ export function LimiterFields({
         onChange={(burst) => onChange({ ...values, burst })}
         inputMode="numeric"
         autoComplete="off"
-        isReadOnly={isReadOnly}
         isInvalid={showErrors && errors.burst !== undefined}
         errorMessage={
           errors.burst ? t('clients.error.burst_range', { min: BURST_MIN, maks: BURST_MAX }) : null
@@ -75,7 +71,6 @@ export function LimiterFields({
         onChange={(refill) => onChange({ ...values, refill })}
         inputMode="decimal"
         autoComplete="off"
-        isReadOnly={isReadOnly}
         isInvalid={showErrors && errors.refill !== undefined}
         errorMessage={
           errors.refill

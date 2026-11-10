@@ -129,47 +129,47 @@ export interface ApiClient {
   putSecret(nama: string, nilai: string, options?: RequestOptions): Promise<void>;
   /** DELETE /secrets/{nama} — 409 `secret_dipakai` selama provider aktif merujuknya. */
   deleteSecret(nama: string, options?: RequestOptions): Promise<void>;
-  /** GET /clients — platform admin sees all; client_owner only its own. */
+  /** GET /clients — platform admin melihat semua; client_owner hanya clientnya. */
   listClients(options?: RequestOptions): Promise<Client[]>;
-  /** GET /clients/{id} — detail for the client screen. */
+  /** GET /clients/{id} — detail untuk layar client. */
   getClient(id: string, options?: RequestOptions): Promise<Client>;
-  /** POST /clients — platform admin only. */
+  /** POST /clients — hanya platform admin. */
   addClient(body: ClientConfig, options?: RequestOptions): Promise<Client>;
   /** PUT /clients/{id} — `alasan` wajib saat limiter berubah. */
   updateClient(id: string, body: ClientConfig, options?: RequestOptions): Promise<Client>;
-  /** POST /clients/{id}/aktifkan — no K-20 dialog (section 3a.1). */
+  /** POST /clients/{id}/aktifkan — tanpa dialog K-20 (bagian 3a.1). */
   aktifkanClient(id: string, options?: RequestOptions): Promise<Client>;
-  /** GET /clients/{id}/pratinjau-nonaktif — K-20 impact preview. */
+  /** GET /clients/{id}/pratinjau-nonaktif — pratinjau dampak K-20. */
   pratinjauNonaktifClient(id: string, options?: RequestOptions): Promise<PratinjauK20>;
-  /** POST /clients/{id}/nonaktifkan — K-20 with a reason. */
+  /** POST /clients/{id}/nonaktifkan — K-20 dengan alasan. */
   nonaktifkanClient(id: string, alasan: string, options?: RequestOptions): Promise<HasilK20>;
-  /** GET /clients/{id}/credentials — no hash is ever returned. */
+  /** GET /clients/{id}/credentials — hash tidak pernah dikirim. */
   listCredentials(clientId: string, options?: RequestOptions): Promise<Credential[]>;
-  /** POST /clients/{id}/credentials — the secret in the answer is shown exactly once. */
+  /** POST /clients/{id}/credentials — secret di jawaban hanya tampil sekali. */
   createCredential(
     clientId: string,
     body: CredentialCreate,
     options?: RequestOptions,
   ): Promise<CredentialSecret>;
-  /** GET /credentials/{id}/pratinjau-cabut — K-20 impact preview. */
+  /** GET /credentials/{id}/pratinjau-cabut — pratinjau dampak K-20. */
   pratinjauCabutCredential(id: string, options?: RequestOptions): Promise<PratinjauK20>;
-  /** POST /credentials/{id}/cabut — K-20 with a reason; revocation is irreversible. */
+  /** POST /credentials/{id}/cabut — K-20 dengan alasan; pencabutan tidak bisa dibatalkan. */
   cabutCredential(id: string, alasan: string, options?: RequestOptions): Promise<Credential>;
-  /** GET /clients/{id}/webhook — 404 means never configured (the screen treats it as empty). */
+  /** GET /clients/{id}/webhook — 404 berarti belum pernah diatur (layar menganggapnya kosong). */
   getWebhookConfig(clientId: string, options?: RequestOptions): Promise<WebhookConfig>;
-  /** PUT /clients/{id}/webhook — https and allowlisted host, checked on save and on send. */
+  /** PUT /clients/{id}/webhook — wajib https dan host di allowlist, dicek saat simpan dan kirim. */
   putWebhookConfig(
     clientId: string,
     body: WebhookConfigPut,
     options?: RequestOptions,
   ): Promise<WebhookConfig>;
-  /** GET /clients/{id}/webhook/log — first page only; the schema exposes no next cursor. */
+  /** GET /clients/{id}/webhook/log — halaman pertama saja; skema tidak memberi kursor berikutnya. */
   listWebhookLog(
     clientId: string,
     query?: { hasil?: string },
     options?: RequestOptions,
   ): Promise<WebhookLog[]>;
-  /** POST /clients/{id}/webhook/rotasi-secret — new secret, shown exactly once. */
+  /** POST /clients/{id}/webhook/rotasi-secret — secret baru, tampil sekali. */
   rotateWebhookSecret(clientId: string, options?: RequestOptions): Promise<WebhookSecret>;
 }
 

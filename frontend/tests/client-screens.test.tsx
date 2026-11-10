@@ -487,9 +487,8 @@ describe('S08b kredensial', () => {
     const form = within(await screen.findByRole('dialog'));
     await user.click(form.getByRole('button', { name: 'Buat kredensial' }));
 
-    expect(
-      await form.findByText('Data belum bisa dimuat. Periksa koneksi, lalu coba lagi.'),
-    ).toBeInTheDocument();
+    expect(await form.findByText(/sudah punya 2 kredensial aktif/)).toBeInTheDocument();
+    expect(form.queryByText(/Periksa koneksi/)).toBeNull();
     expect(screen.queryByRole('alertdialog')).toBeNull();
   });
 
@@ -544,9 +543,8 @@ describe('S08b kredensial', () => {
     await paste('Alasan', 'Kredensial bocor di log aplikasi.', dialog);
     await user.click(dialog.getByRole('button', { name: 'Cabut kredensial' }));
 
-    expect(
-      await dialog.findByText('Data belum bisa dimuat. Periksa koneksi, lalu coba lagi.'),
-    ).toBeInTheDocument();
+    expect(await dialog.findByText('Aksi belum berhasil. Coba lagi.')).toBeInTheDocument();
+    expect(dialog.queryByText(/Periksa koneksi/)).toBeNull();
     expect(screen.queryByText('Kredensial dicabut.')).toBeNull();
   });
 

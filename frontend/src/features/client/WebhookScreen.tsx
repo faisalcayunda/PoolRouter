@@ -217,7 +217,6 @@ export function WebhookScreen({ clientId, client = api }: WebhookScreenProps): R
     try {
       setSecret(await client.rotateWebhookSecret(clientId));
       setRotating(false);
-      query.reload();
     } catch (error) {
       if (fromDialog) setRotateFailure(error);
       else setSecretError(error);
@@ -406,7 +405,11 @@ export function WebhookScreen({ clientId, client = api }: WebhookScreenProps): R
           title={t('webhook.created.title', { nama_client: nama })}
           fieldLabel={t('webhook.created.field')}
           value={secret.secret}
-          onDone={() => setSecret(null)}
+          onDone={() => {
+            setSecret(null);
+            // Muat ulang setelah dialog tutup: mengganti kartu konfigurasi akan membuang isian yang belum disimpan.
+            query.reload();
+          }}
         />
       ) : null}
       <SnackbarRegion queue={snackbar.queue} />

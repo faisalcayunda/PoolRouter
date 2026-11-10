@@ -2,6 +2,7 @@ import { useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   api,
+  ApiError,
   type ApiClient,
   type Client,
   type Credential,
@@ -97,7 +98,12 @@ function BuatDialog({
     >
       <div className="flex flex-col gap-4 pt-2">
         {failure !== null ? (
-          <InlineAlert tone="error">{errorMessage(t, i18n, failure).message}</InlineAlert>
+          <InlineAlert tone="error">
+            {/* Satu-satunya 409 di sini adalah batas dua kredensial aktif. */}
+            {failure instanceof ApiError && failure.status === 409
+              ? t('credentials.create.max')
+              : errorMessage(t, i18n, failure).message}
+          </InlineAlert>
         ) : null}
         <Select
           label={t('client.col.type')}
@@ -277,7 +283,6 @@ export function CredentialsScreen({ clientId, client = api }: CredentialsScreenP
           onCreated={(created) => {
             setCreating(false);
             setSecret(created);
-            query.reload();
           }}
         />
       ) : null}
@@ -286,7 +291,11 @@ export function CredentialsScreen({ clientId, client = api }: CredentialsScreenP
           title={t('client.credential.dialog_title', { nama_client: nama })}
           fieldLabel={t('secret_once.dialog.client_secret')}
           value={secret.secret}
-          onDone={() => setSecret(null)}
+          onDone={() => {
+            setSecret(null);
+            // Muat ulang setelah dialog tutup: selama terbuka, nama client di judul harus tetap ada.
+            query.reload();
+          }}
         />
       ) : null}
       {revoking ? (
