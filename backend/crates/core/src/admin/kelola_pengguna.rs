@@ -86,6 +86,11 @@ pub enum GalatKelola {
     StatusSama(&'static str),
     #[error("pelaku tidak boleh menonaktifkan dirinya sendiri")]
     NonaktifkanDiriSendiri,
+    #[error(
+        "`{0}` adalah platform_admin aktif terakhir; mencabut peran atau menonaktifkannya \
+         mengunci sistem. Angkat platform_admin lain terlebih dahulu"
+    )]
+    AdminTerakhir(String),
     #[error("bootstrap hanya boleh saat tabel pengguna kosong")]
     BootstrapDitolak,
     #[error("seed hanya boleh di POOLROUTER_ENV dev atau ci")]
