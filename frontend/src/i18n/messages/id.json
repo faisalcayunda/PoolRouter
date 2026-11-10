@@ -1355,6 +1355,12 @@
         "copy_failed": "Gagal menyalin. Pilih teks secara manual.",
         "copy_all": "Salin semua",
         "acknowledge": "Sudah saya simpan"
+      },
+      "error": {
+        "invalid": "Kode tidak cocok atau sesi sudah habis. Coba lagi, atau kembali ke login.",
+        "invalid_registration": "Kode pendaftaran tidak cocok atau sudah tidak berlaku. Coba lagi, atau kembali ke login.",
+        "throttled": "Terlalu banyak percobaan. Coba lagi beberapa saat lagi.",
+        "network": "Belum bisa terhubung. Periksa jaringan, lalu coba lagi."
       }
     }
   },

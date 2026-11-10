@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react';
 import { Trans, useTranslation } from 'react-i18next';
-import { api, ApiError, type ApiClient } from '../../api/client';
+import { api, ApiError, type ApiClient, type LangkahLogin } from '../../api/client';
+import { MfaFlow } from './MfaFlow';
 import { TextField } from '../../components/m3/TextField';
 import { Button } from '../../components/m3/Button';
 import { InlineAlert } from '../../components/m3/InlineAlert';
@@ -26,6 +27,13 @@ export function LoginScreen({ client = api, search = '', onBerhasil }: Props) {
   // Only the server's `Retry-After` can make the throttle copy specific; without it the catalog
   // fallback stands (ADR-0003 3.6: the wait window is the server's, never a guess in the UI).
   const [tungguDetik, setTungguDetik] = useState<number | null>(null);
+  // Peran wajib-MFA: kata sandi benar tetapi sesi baru terbit setelah langkah kedua (AC-9).
+  const [langkah, setLangkah] = useState<LangkahLogin | null>(null);
+
+  const selesai = () => {
+    if (onBerhasil) onBerhasil();
+    else window.location.assign('/');
+  };
 
   const masuk = async (event: FormEvent) => {
     event.preventDefault();
@@ -34,10 +42,14 @@ export function LoginScreen({ client = api, search = '', onBerhasil }: Props) {
     setGalat(null);
     setTungguDetik(null);
     try {
-      await client.login({ username: username.trim(), password });
+      const hasil = await client.login({ username: username.trim(), password });
+      if (hasil === 'mfa' || hasil === 'daftar_mfa') {
+        setPassword('');
+        setLangkah(hasil);
+        return;
+      }
       // Full navigation: the session cookie is now set and every cached screen must start clean.
-      if (onBerhasil) onBerhasil();
-      else window.location.assign('/');
+      selesai();
     } catch (error) {
       if (error instanceof ApiError) {
         if (error.status === 401) setGalat('invalid');
@@ -52,6 +64,18 @@ export function LoginScreen({ client = api, search = '', onBerhasil }: Props) {
       setMengirim(false);
     }
   };
+
+  if (langkah) {
+    return (
+      <MfaFlow
+        client={client}
+        langkah={langkah}
+        username={username.trim()}
+        onSelesai={selesai}
+        onKembali={() => setLangkah(null)}
+      />
+    );
+  }
 
   return (
     <main

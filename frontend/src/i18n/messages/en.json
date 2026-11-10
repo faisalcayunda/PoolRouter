@@ -1364,6 +1364,12 @@
         "copy_failed": "Copy failed. Select the text manually.",
         "copy_all": "Copy all",
         "acknowledge": "I have saved them"
+      },
+      "error": {
+        "invalid": "The code does not match or the session has expired. Try again, or go back to sign in.",
+        "invalid_registration": "The registration code does not match or is no longer valid. Try again, or go back to sign in.",
+        "throttled": "Too many attempts. Try again in a moment.",
+        "network": "Cannot connect yet. Check the network, then try again."
       }
     }
   },

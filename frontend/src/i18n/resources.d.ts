@@ -72,6 +72,12 @@ export default interface Resources {
           "use_totp": "Pakai kode authenticator",
           "verifying": "Memverifikasi…"
         },
+        "error": {
+          "invalid": "Kode tidak cocok atau sesi sudah habis. Coba lagi, atau kembali ke login.",
+          "invalid_registration": "Kode pendaftaran tidak cocok atau sudah tidak berlaku. Coba lagi, atau kembali ke login.",
+          "network": "Belum bisa terhubung. Periksa jaringan, lalu coba lagi.",
+          "throttled": "Terlalu banyak percobaan. Coba lagi beberapa saat lagi."
+        },
         "qr": {
           "account": "Akun: {{account}} · Penerbit: {{issuer}}",
           "code_label": "Kode dari authenticator",
