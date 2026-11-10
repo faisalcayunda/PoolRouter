@@ -455,6 +455,52 @@ fn properti(doc: &Value, nama: &str) -> std::collections::BTreeSet<String> {
         .collect()
 }
 
+/// ARC-250: `POST /auth/login` menjawab 200 `{langkah}` untuk peran wajib MFA dan
+/// 204 untuk peran lain. Keduanya harus ada di spec supaya client generate tidak
+/// membaca `langkah` tanpa tipe.
+#[test]
+fn login_memuat_200_langkah_dan_204() {
+    let doc = admin_doc();
+    let respons = &doc["paths"]["/admin/v1/auth/login"]["post"]["responses"];
+    assert!(respons.get("204").is_some(), "204 login tanpa MFA hilang");
+    let ok = respons.get("200").expect("login tanpa respons 200 langkah");
+    assert_eq!(
+        ok["content"]["application/json"]["schema"]["$ref"],
+        "#/components/schemas/LangkahLogin"
+    );
+    assert!(
+        ok["headers"].get("Set-Cookie").is_some(),
+        "cookie pra-sesi tidak didokumentasikan"
+    );
+    assert!(
+        ok["headers"].get("Cache-Control").is_some(),
+        "200 login tanpa Cache-Control"
+    );
+    let langkah = schema(&doc, "LangkahLogin");
+    assert_eq!(langkah["required"], serde_json::json!(["langkah"]));
+    assert_eq!(
+        langkah["properties"]["langkah"]["$ref"],
+        "#/components/schemas/Langkah"
+    );
+    assert_eq!(
+        schema(&doc, "Langkah")["enum"],
+        serde_json::json!(["mfa", "daftar_mfa"])
+    );
+}
+
+/// ARC-250: handler login memakai tipe yang sama dengan spec, jadi nilai di
+/// kawat tidak bisa menyimpang dari enum yang didokumentasikan.
+#[test]
+fn langkah_login_diserialisasi_sesuai_spec() {
+    let mfa = serde_json::to_value(admin::LangkahLogin {
+        langkah: admin::Langkah::Mfa,
+    })
+    .expect("serialize");
+    assert_eq!(mfa, serde_json::json!({"langkah": "mfa"}));
+    let daftar = serde_json::to_value(admin::Langkah::DaftarMfa).expect("serialize");
+    assert_eq!(daftar, serde_json::json!("daftar_mfa"));
+}
+
 /// A-4: the read model must expose every writable config field (minus `alasan`)
 /// so the Web UI edit form (US-01/04/05/15) can be pre-filled from a read. The
 /// PUT operations are full replacement: a missing field in the response means
