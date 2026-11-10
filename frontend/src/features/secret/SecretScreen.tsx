@@ -21,7 +21,11 @@ const TH = 'border-b border-outline-variant px-4 py-3 font-medium';
 const TD = 'typescale-body-medium px-4 py-3 align-middle';
 
 type Dialogs =
-  { jenis: 'tambah' } | { jenis: 'ganti'; nama: string } | { jenis: 'hapus'; nama: string } | null;
+  | { jenis: 'tambah' }
+  | { jenis: 'ganti'; nama: string }
+  | { jenis: 'hapus'; nama: string }
+  | { jenis: 'dipakai'; nama: string; jumlah: number }
+  | null;
 
 /**
  * Dialog tulis nilai secret (S05 tambah, S05b ganti). Nilai hanya hidup di state dialog ini dan
@@ -108,7 +112,6 @@ function NilaiDialog({
       }
     >
       <form noValidate onSubmit={(e) => void submit(e)} className="flex flex-col gap-4 pt-2">
-        {ganti ? <p>{t('secret.replace.body')}</p> : null}
         {failure !== null ? (
           <InlineAlert tone="error">{errorMessage(t, i18n, failure).message}</InlineAlert>
         ) : null}
@@ -207,6 +210,41 @@ function HapusDialog({
   );
 }
 
+/**
+ * S05 keadaan "Secret masih dipakai": dibuka langsung dari Hapus bila daftar sudah menunjukkan
+ * pemakai aktif, jadi tidak perlu memanggil API. Daftar API hanya memuat jumlah provider, bukan
+ * namanya (celah desain), maka slot daftar provider berisi jumlahnya.
+ */
+function DipakaiDialog({
+  nama,
+  jumlah,
+  onClose,
+}: {
+  nama: string;
+  jumlah: number;
+  onClose: () => void;
+}) {
+  const { t } = useTranslation();
+  return (
+    <Dialog
+      isOpen
+      onOpenChange={(open) => {
+        if (!open) onClose();
+      }}
+      title={t('secret.delete.blocked.title')}
+      closeLabel={t('common.close')}
+      footer={<Button onPress={onClose}>{t('secret.delete.blocked.ack')}</Button>}
+    >
+      <p className="pt-2">
+        {t('secret.delete.blocked.body', {
+          nama,
+          daftar: t('secret.used_by', { count: jumlah }),
+        })}
+      </p>
+    </Dialog>
+  );
+}
+
 export interface SecretScreenProps {
   client?: ApiClient;
 }
@@ -278,6 +316,9 @@ export function SecretScreen({ client = api }: SecretScreenProps): ReactNode {
                       {t('secret.col.used_by')}
                     </th>
                     <th scope="col" className={TH}>
+                      {t('secret.col.changed')}
+                    </th>
+                    <th scope="col" className={TH}>
                       {t('secret.col.actions')}
                     </th>
                   </tr>
@@ -297,6 +338,12 @@ export function SecretScreen({ client = api }: SecretScreenProps): ReactNode {
                           ? t('secret.used_by', { count: row.dipakai_oleh_provider_count })
                           : t('secret.unused')}
                       </td>
+                      <td data-label={t('secret.col.changed')} className={TD}>
+                        {/* Celah desain: GET /secrets belum mengirim waktu ubah (kolom "Diubah" di S05). */}
+                        <span className="text-on-surface-variant">
+                          {t('secret.changed_unknown')}
+                        </span>
+                      </td>
                       <td data-label={t('secret.col.actions')} className={TD}>
                         <div className="flex flex-wrap gap-1">
                           <Button
@@ -310,7 +357,17 @@ export function SecretScreen({ client = api }: SecretScreenProps): ReactNode {
                             variant="text"
                             destructive
                             aria-label={t('secret.row.delete_aria', { nama: row.nama })}
-                            onPress={() => setDialog({ jenis: 'hapus', nama: row.nama })}
+                            onPress={() =>
+                              setDialog(
+                                row.dipakai_oleh_provider_count > 0
+                                  ? {
+                                      jenis: 'dipakai',
+                                      nama: row.nama,
+                                      jumlah: row.dipakai_oleh_provider_count,
+                                    }
+                                  : { jenis: 'hapus', nama: row.nama },
+                              )
+                            }
                           >
                             {t('common.action.delete')}
                           </Button>
@@ -342,6 +399,9 @@ export function SecretScreen({ client = api }: SecretScreenProps): ReactNode {
             secrets.reload();
           }}
         />
+      ) : null}
+      {dialog?.jenis === 'dipakai' ? (
+        <DipakaiDialog nama={dialog.nama} jumlah={dialog.jumlah} onClose={() => setDialog(null)} />
       ) : null}
       {dialog?.jenis === 'hapus' ? (
         <HapusDialog

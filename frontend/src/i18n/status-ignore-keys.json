@@ -46,6 +46,7 @@
       "upstream.col.status",
       "upstream.page.provider",
       "upstream.page.status",
+      "webhook.col.queue_id",
       "webhook.page.title",
       "webhook.reason.http",
       "log.payload.input",

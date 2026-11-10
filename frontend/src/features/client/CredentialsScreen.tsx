@@ -291,6 +291,7 @@ export function CredentialsScreen({ clientId, client = api }: CredentialsScreenP
           title={t('client.credential.dialog_title', { nama_client: nama })}
           fieldLabel={t('secret_once.dialog.client_secret')}
           value={secret.secret}
+          clientId={secret.client_id}
           onDone={() => {
             setSecret(null);
             // Muat ulang setelah dialog tutup: selama terbuka, nama client di judul harus tetap ada.

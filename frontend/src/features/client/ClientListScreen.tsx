@@ -1,13 +1,11 @@
-import { useState, type FormEvent, type ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { api, type ApiClient, type Client } from '../../api/client';
 import { Button } from '../../components/m3/Button';
 import { Card } from '../../components/m3/Card';
-import { Dialog } from '../../components/m3/Dialog';
-import { InlineAlert } from '../../components/m3/InlineAlert';
 import { StatusLabel } from '../../components/m3/StatusLabel';
 import { useDocumentTitle, useFocusOnMount } from '../common/a11y';
-import { errorMessage, LoadingState, PageHeader, QueryError } from '../common/page';
+import { LoadingState, PageHeader, QueryError } from '../common/page';
 import { useRole } from '../common/RoleContext';
 import { ScrollArea } from '../common/ScrollArea';
 import { useQuery } from '../common/useQuery';
@@ -15,81 +13,11 @@ import { SnackbarRegion, useSnackbar } from '../common/useSnackbar';
 import { LinkButton } from '../provider/LinkButton';
 import { Forbidden } from '../provider/Forbidden';
 import { canManageClients, canViewClients, clientPath } from './access';
-import { formatRefill, parseNumber, validateClientForm, type ClientFormValues } from './clientForm';
-import { LimiterFields } from './LimiterFields';
+import { ClientAddDialog } from './ClientAddDialog';
+import { formatRefill } from './clientForm';
 
 const TH = 'border-b border-outline-variant px-4 py-3 font-medium';
 const TD = 'typescale-body-medium px-4 py-3 align-middle';
-
-function TambahDialog({
-  client,
-  onClose,
-  onSaved,
-}: {
-  client: ApiClient;
-  onClose: () => void;
-  onSaved: () => void;
-}) {
-  const { t, i18n } = useTranslation();
-  const [values, setValues] = useState<ClientFormValues>({ nama: '', burst: '', refill: '' });
-  const [attempted, setAttempted] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [failure, setFailure] = useState<unknown>(null);
-  const errors = validateClientForm(values);
-
-  async function submit(event?: FormEvent) {
-    event?.preventDefault();
-    setAttempted(true);
-    if (saving || Object.keys(errors).length > 0) return;
-    setSaving(true);
-    setFailure(null);
-    try {
-      await client.addClient({
-        nama: values.nama.trim(),
-        limiter_penolakan_burst: parseNumber(values.burst) ?? null,
-        limiter_penolakan_isi_ulang_per_detik: parseNumber(values.refill) ?? null,
-      });
-      onSaved();
-    } catch (error) {
-      setFailure(error);
-      setSaving(false);
-    }
-  }
-
-  return (
-    <Dialog
-      isOpen
-      onOpenChange={(open) => {
-        if (!open) onClose();
-      }}
-      title={t('client.form.title')}
-      closeLabel={t('common.close')}
-      footer={
-        <>
-          <Button variant="text" onPress={onClose}>
-            {t('common.action.cancel')}
-          </Button>
-          <Button isDisabled={saving} onPress={() => void submit()}>
-            {saving ? t('provider.form.saving') : t('client.form.save')}
-          </Button>
-        </>
-      }
-    >
-      <form noValidate onSubmit={(e) => void submit(e)} className="flex flex-col gap-4 pt-2">
-        <p>{t('client.form.intro')}</p>
-        {failure !== null ? (
-          <InlineAlert tone="error">{errorMessage(t, i18n, failure).message}</InlineAlert>
-        ) : null}
-        <LimiterFields
-          values={values}
-          onChange={setValues}
-          showErrors={attempted}
-          errors={errors}
-        />
-      </form>
-    </Dialog>
-  );
-}
 
 export interface ClientListScreenProps {
   client?: ApiClient;
@@ -211,12 +139,14 @@ export function ClientListScreen({ client = api }: ClientListScreenProps): React
       ) : null}
 
       {adding ? (
-        <TambahDialog
+        <ClientAddDialog
           client={client}
           onClose={() => setAdding(false)}
-          onSaved={() => {
+          onSaved={(webhookGagal) => {
             setAdding(false);
-            snackbar.notify(t('client.snackbar.saved'));
+            snackbar.notify(
+              t(webhookGagal ? 'client.snackbar.saved_webhook_failed' : 'client.snackbar.saved'),
+            );
             clients.reload();
           }}
         />

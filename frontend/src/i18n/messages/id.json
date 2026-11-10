@@ -355,12 +355,12 @@
     "replace": {
       "title": "Ganti secret {{nama}}",
       "new_value": "Nilai baru",
-      "body": "Nilai lama tidak bisa dilihat. Nilai baru langsung menggantikannya.",
-      "confirm": "Ganti nilai"
+      "confirm": "Simpan"
     },
     "delete": {
       "blocked": {
         "title": "Secret masih dipakai",
+        "ack": "Mengerti",
         "body": "{{nama}} masih dipakai oleh provider aktif: {{daftar}}. Nonaktifkan atau ubah provider itu dulu, lalu hapus secret ini.",
         "short": "{{nama}} masih dipakai provider aktif. Ubah atau nonaktifkan provider itu dulu, lalu hapus secret ini."
       },
@@ -379,6 +379,7 @@
       "body": "Secret menyimpan kredensial provider, misalnya USER_ID dan PASSWORD. Tambahkan secret sebelum membuat template provider."
     },
     "masked": "Tersamar",
+    "changed_unknown": "Belum tersedia",
     "unused": "Tidak dipakai",
     "row": {
       "replace_aria": "Ganti nilai secret {{nama}}",
@@ -776,10 +777,12 @@
       "pool": "Downstream pool",
       "pool_help": "Client hanya bisa memakai pool yang ditautkan.",
       "webhook": "Alamat webhook (opsional)",
+      "webhook_help": "Harus diawali https://",
       "save": "Simpan client"
     },
     "snackbar": {
-      "saved": "Client tersimpan"
+      "saved": "Client tersimpan",
+      "saved_webhook_failed": "Client tersimpan, tetapi webhook belum tersimpan. Atur lewat halaman webhook client."
     },
     "empty": {
       "title": "Belum ada client",
@@ -806,13 +809,15 @@
     },
     "secret": {
       "heading": "Secret tanda tangan",
-      "desc": "Dibuat oleh sistem dan hanya tampil sekali. Pasang di aplikasi Anda untuk memverifikasi webhook.",
+      "desc": "Belum ada secret. Dibuat oleh sistem dan hanya tampil sekali. Pasang di aplikasi Anda untuk memverifikasi webhook.",
+      "active_desc": "Dibuat oleh sistem dan hanya tampil sekali, tidak bisa dilihat lagi. Versi aktif: {{versi}}.",
       "create": "Buat secret",
       "rotate": "Rotasi secret"
     },
     "rotate": {
       "title": "Rotasi secret webhook?",
-      "body": "Secret lama langsung tidak berlaku. Aplikasi {{nama_client}} akan gagal memverifikasi webhook sampai secret baru dipasang di aplikasinya."
+      "body": "Secret lama langsung tidak berlaku. Aplikasi {{nama_client}} akan gagal memverifikasi webhook sampai secret baru dipasang di aplikasinya.",
+      "once": "Secret baru tampil satu kali setelah Anda memilih rotasi."
     },
     "created": {
       "title": "Secret webhook baru untuk {{nama_client}}",
@@ -824,6 +829,7 @@
     },
     "col": {
       "time": "Waktu",
+      "queue_id": "queue_id",
       "request_status": "Status request",
       "reason": "Alasan gagal",
       "note": "Catatan"

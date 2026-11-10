@@ -127,6 +127,11 @@ async function clear(label: string) {
 
 afterEach(cleanup);
 
+/** Benar bila `y` muncul setelah `x` dalam urutan dokumen. */
+function sesudah(x: Element, y: Element): boolean {
+  return (x.compareDocumentPosition(y) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
+}
+
 describe('peran client_owner di shell', () => {
   it('dikenali sebagai peran admin, bukan dibuang menjadi null', () => {
     expect(peranShell(['client_owner'])).toBe('client_owner');
@@ -189,51 +194,98 @@ describe('S08 daftar client', () => {
     expect(listClients).toHaveBeenCalledTimes(2);
   });
 
-  it('validates the form locally and sends defaults as null when limiter is left empty', async () => {
+  it('shows the S08b fields in design order and validates the name locally', async () => {
+    const client = stubClient();
+    asRole('platform_admin', <ClientListScreen client={client} />);
+    await user.click(await screen.findByRole('button', { name: 'Tambah client' }));
+    const dialog = within(await screen.findByRole('dialog', { name: 'Tambah client' }));
+
+    expect(
+      dialog.getByText('Client adalah aplikasi BGN yang memanggil PoolRouter.'),
+    ).toBeInTheDocument();
+    expect(dialog.getByText('Nama unik, misalnya nama aplikasi.')).toBeInTheDocument();
+    expect(dialog.getByText('Client hanya bisa memakai pool yang ditautkan.')).toBeInTheDocument();
+    expect(dialog.getByText('Harus diawali https://')).toBeInTheDocument();
+    const urutan = [
+      'Nama client',
+      'Jenis kredensial',
+      'Downstream pool',
+      'Alamat webhook (opsional)',
+    ].map((l) => dialog.getAllByText(l)[0]!);
+    urutan.slice(1).forEach((el, i) => {
+      expect(sesudah(urutan[i]!, el)).toBe(true);
+    });
+    // Jenis kredensial dan pool belum dikirim API: tampil sebagai placeholder tak aktif.
+    expect(dialog.getByRole('button', { name: /Jenis kredensial/ })).toBeDisabled();
+    expect(dialog.getByRole('button', { name: /Downstream pool/ })).toBeDisabled();
+    expect(dialog.getByRole('button', { name: 'Batal' })).toBeInTheDocument();
+
+    await user.click(dialog.getByRole('button', { name: 'Simpan client' }));
+    expect(await dialog.findByText('Nama client wajib diisi.')).toBeInTheDocument();
+    expect(client.addClient).not.toHaveBeenCalled();
+  });
+
+  it('creates the client with server limiter defaults and no webhook call when the address is empty', async () => {
     const client = stubClient();
     asRole('platform_admin', <ClientListScreen client={client} />);
     await user.click(await screen.findByRole('button', { name: 'Tambah client' }));
     const dialog = within(await screen.findByRole('dialog'));
-
-    await user.click(dialog.getByRole('button', { name: 'Simpan client' }));
-    expect(await dialog.findByText('Nama client wajib diisi.')).toBeInTheDocument();
     await paste('Nama client', 'Aplikasi Baru', dialog);
-    await paste('Burst limiter penolakan', '5000', dialog);
     await user.click(dialog.getByRole('button', { name: 'Simpan client' }));
-    expect(
-      await dialog.findByText('Burst harus bilangan bulat 1 sampai 1000.'),
-    ).toBeInTheDocument();
-    expect(client.addClient).not.toHaveBeenCalled();
 
-    await user.clear(dialog.getByLabelText('Burst limiter penolakan'));
-    await user.click(dialog.getByRole('button', { name: 'Simpan client' }));
     await waitFor(() => expect(client.addClient).toHaveBeenCalledTimes(1));
     expect(client.addClient).toHaveBeenCalledWith({
       nama: 'Aplikasi Baru',
       limiter_penolakan_burst: null,
       limiter_penolakan_isi_ulang_per_detik: null,
     });
+    expect(client.putWebhookConfig).not.toHaveBeenCalled();
     expect(await screen.findByText('Client tersimpan')).toBeInTheDocument();
     await waitFor(() => expect(client.listClients).toHaveBeenCalledTimes(2));
   });
 
-  it('accepts a decimal comma for the refill rate and rejects out-of-range values', async () => {
+  it('refuses a non-https webhook address, then saves it after the client is created', async () => {
     const client = stubClient();
     asRole('platform_admin', <ClientListScreen client={client} />);
     await user.click(await screen.findByRole('button', { name: 'Tambah client' }));
     const dialog = within(await screen.findByRole('dialog'));
     await paste('Nama client', 'Aplikasi Baru', dialog);
-    await paste('Isi ulang limiter per detik', '0,05', dialog);
+    await paste('Alamat webhook (opsional)', 'http://baru.example.test/hook', dialog);
     await user.click(dialog.getByRole('button', { name: 'Simpan client' }));
-    expect(await dialog.findByText(/Isi ulang harus 0,10 sampai 100,00/)).toBeInTheDocument();
+    expect(await dialog.findByText('Alamat webhook harus diawali https://.')).toBeInTheDocument();
+    expect(client.addClient).not.toHaveBeenCalled();
 
-    await user.clear(dialog.getByLabelText('Isi ulang limiter per detik'));
-    await paste('Isi ulang limiter per detik', '2,5', dialog);
+    await user.clear(dialog.getByLabelText('Alamat webhook (opsional)'));
+    await paste('Alamat webhook (opsional)', 'https://baru.example.test/hook', dialog);
     await user.click(dialog.getByRole('button', { name: 'Simpan client' }));
-    await waitFor(() => expect(client.addClient).toHaveBeenCalledTimes(1));
-    expect(client.addClient).toHaveBeenCalledWith(
-      expect.objectContaining({ limiter_penolakan_isi_ulang_per_detik: 2.5 }),
+    await waitFor(() =>
+      expect(client.putWebhookConfig).toHaveBeenCalledWith(CLIENT_ID, {
+        webhook_url: 'https://baru.example.test/hook',
+        aktif: true,
+      }),
     );
+    expect(await screen.findByText('Client tersimpan')).toBeInTheDocument();
+  });
+
+  it('closes after the client is created even when the webhook save fails, and says so', async () => {
+    const putWebhookConfig = vi
+      .fn()
+      .mockRejectedValue(new ApiError(422, { kode: 'validasi_gagal' }));
+    const client = stubClient({ putWebhookConfig });
+    asRole('platform_admin', <ClientListScreen client={client} />);
+    await user.click(await screen.findByRole('button', { name: 'Tambah client' }));
+    const dialog = within(await screen.findByRole('dialog'));
+    await paste('Nama client', 'Aplikasi Baru', dialog);
+    await paste('Alamat webhook (opsional)', 'https://luar.example.test/hook', dialog);
+    await user.click(dialog.getByRole('button', { name: 'Simpan client' }));
+
+    expect(
+      await screen.findByText(
+        'Client tersimpan, tetapi webhook belum tersimpan. Atur lewat halaman webhook client.',
+      ),
+    ).toBeInTheDocument();
+    expect(client.addClient).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole('dialog')).toBeNull();
   });
 
   it('keeps the dialog open and explains a server rejection', async () => {
@@ -425,6 +477,7 @@ describe('S08b kredensial', () => {
     const once = await screen.findByRole('alertdialog', {
       name: 'Kredensial baru untuk Aplikasi Contoh A',
     });
+    expect(within(once).getByLabelText('Client ID')).toHaveValue(CLIENT_ID);
     expect(within(once).getByLabelText('Client secret')).toHaveValue(TAMPIL_SEKALI);
     // Tidak bisa ditutup dengan Esc, hanya lewat tombol.
     await user.keyboard('{Escape}');
@@ -609,8 +662,13 @@ describe('S09 webhook', () => {
     expect(await screen.findByText(/Webhook belum diatur untuk client ini/)).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Coba lagi' })).toBeNull();
     expect(screen.getByLabelText('Alamat webhook')).toHaveValue('');
-    expect(screen.getByText('Belum ada secret tanda tangan.')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Buat secret' })).toBeInTheDocument();
+    const secret = within(
+      screen.getByRole('heading', { name: 'Secret tanda tangan' }).parentElement!,
+    );
+    expect(
+      secret.getByText(/^Belum ada secret\. Dibuat oleh sistem dan hanya tampil sekali/),
+    ).toBeInTheDocument();
+    expect(secret.getByRole('button', { name: 'Buat secret' })).toBeInTheDocument();
   });
 
   it('surfaces any other failure of the config read with a retry', async () => {
@@ -645,15 +703,53 @@ describe('S09 webhook', () => {
     await user.clear(alamat);
     await user.click(alamat);
     await user.paste('https://baru.example.test/poolrouter');
-    await user.click(screen.getByRole('switch', { name: 'Kirim webhook ke alamat ini' }));
     await user.click(screen.getByRole('button', { name: 'Simpan' }));
     await waitFor(() =>
       expect(client.putWebhookConfig).toHaveBeenCalledWith(CLIENT_ID, {
         webhook_url: 'https://baru.example.test/poolrouter',
-        aktif: false,
+        aktif: true,
       }),
     );
     expect(await screen.findByText('Webhook tersimpan')).toBeInTheDocument();
+  });
+
+  it('keeps the stored active flag when saving, since the design has no switch', async () => {
+    const getWebhookConfig = vi.fn().mockResolvedValue({
+      aktif: false,
+      webhook_url: 'https://client.example.test/hook',
+      secret_versi: 2,
+    });
+    const client = stubClient({ getWebhookConfig });
+    asRole('platform_admin', <WebhookScreen clientId={CLIENT_ID} client={client} />);
+    await screen.findByLabelText('Alamat webhook');
+    expect(screen.queryByRole('switch')).toBeNull();
+    await user.click(screen.getByRole('button', { name: 'Simpan' }));
+    await waitFor(() =>
+      expect(client.putWebhookConfig).toHaveBeenCalledWith(CLIENT_ID, {
+        webhook_url: 'https://client.example.test/hook',
+        aktif: false,
+      }),
+    );
+  });
+
+  it('puts the secret card between the address and Simpan/Batal, and Batal restores the saved address', async () => {
+    const client = stubClient();
+    asRole('platform_admin', <WebhookScreen clientId={CLIENT_ID} client={client} />);
+    const alamat = await screen.findByLabelText('Alamat webhook');
+    const kartu = screen.getByRole('heading', { name: 'Secret tanda tangan' });
+    const simpan = screen.getByRole('button', { name: 'Simpan' });
+    const batal = screen.getByRole('button', { name: 'Batal' });
+    expect(sesudah(alamat, kartu)).toBe(true);
+    expect(sesudah(kartu, simpan)).toBe(true);
+    expect(sesudah(simpan, batal)).toBe(true);
+    expect(within(kartu.parentElement!).getByText(/Versi aktif: 2\./)).toBeInTheDocument();
+
+    await user.clear(alamat);
+    await user.click(alamat);
+    await user.paste('https://sementara.example.test/x');
+    await user.click(batal);
+    expect(alamat).toHaveValue('https://client.example.test/hook');
+    expect(client.putWebhookConfig).not.toHaveBeenCalled();
   });
 
   it('explains an allowlist rejection (422) on the address field', async () => {
@@ -676,13 +772,16 @@ describe('S09 webhook', () => {
   it('rotates the secret only after confirmation and shows the new one once', async () => {
     const client = stubClient();
     asRole('platform_admin', <WebhookScreen clientId={CLIENT_ID} client={client} />);
-    expect(await screen.findByText('Secret aktif: versi 2.')).toBeInTheDocument();
+    expect(await screen.findByText(/Versi aktif: 2\./)).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Rotasi secret' }));
 
     const konfirmasi = within(
       await screen.findByRole('dialog', { name: 'Rotasi secret webhook?' }),
     );
     expect(client.rotateWebhookSecret).not.toHaveBeenCalled();
+    expect(
+      konfirmasi.getByText('Secret baru tampil satu kali setelah Anda memilih rotasi.'),
+    ).toBeInTheDocument();
     await user.click(konfirmasi.getByRole('button', { name: 'Rotasi secret' }));
 
     await waitFor(() => expect(client.rotateWebhookSecret).toHaveBeenCalledWith(CLIENT_ID));
@@ -758,50 +857,47 @@ describe('S09 webhook', () => {
   });
 });
 
-describe('S09a riwayat pengiriman', () => {
-  it('lists deliveries with result, reason and the not-resent note', async () => {
+describe('S09a kegagalan pengiriman', () => {
+  it('lists failures in the design columns with a shortened queue_id and the not-resent note', async () => {
     const client = stubClient({ listWebhookLog: vi.fn().mockResolvedValue(LOG) });
     asRole('platform_admin', <WebhookScreen clientId={CLIENT_ID} client={client} />);
 
     const table = within(await screen.findByRole('table'));
-    const terkirim = table.getByRole('row', { name: /0000000000e1/ });
-    expect(within(terkirim).getByText('Terkirim')).toBeInTheDocument();
-    expect(within(terkirim).queryByText('Tidak dikirim ulang')).toBeNull();
+    const kolom = table.getAllByRole('columnheader').map((h) => h.textContent);
+    expect(kolom).toEqual(['Waktu', 'queue_id', 'Status request', 'Alasan gagal', 'Catatan']);
     const gagal = table.getByRole('row', { name: /0000000000e2/ });
-    expect(within(gagal).getByText('Gagal: respons HTTP')).toBeInTheDocument();
+    expect(within(gagal).getByText('0000…00e2', { exact: false })).toBeInTheDocument();
     expect(within(gagal).getByText('HTTP 503')).toBeInTheDocument();
     expect(within(gagal).getByText('Gangguan sementara di tujuan')).toBeInTheDocument();
     expect(within(gagal).getByText('Tidak dikirim ulang')).toBeInTheDocument();
     expect(table.getByRole('row', { name: /0000000000e3/ })).toHaveTextContent('Waktu habis');
-    expect(screen.getByText('Menampilkan halaman pertama riwayat.')).toBeInTheDocument();
+    expect(client.listWebhookLog).toHaveBeenLastCalledWith(
+      CLIENT_ID,
+      { hasil: 'gagal' },
+      expect.anything(),
+    );
   });
 
-  it('counts only failures from the last 24 hours in the warning', async () => {
+  it('counts only failures from the last 24 hours in the warning, under the failures heading', async () => {
     const client = stubClient({ listWebhookLog: vi.fn().mockResolvedValue(LOG) });
     asRole('platform_admin', <WebhookScreen clientId={CLIENT_ID} client={client} />);
 
+    expect(await screen.findByRole('heading', { name: 'Kegagalan pengiriman' })).toBeVisible();
     const peringatan = await screen.findByText(/webhook gagal dalam 24 jam terakhir/);
     expect(peringatan).toHaveTextContent('1 webhook gagal dalam 24 jam terakhir');
   });
 
-  it('shows the empty state and sends the chosen result filter', async () => {
+  it('shows the no-failures line and offers no result filter', async () => {
     const listWebhookLog = vi.fn().mockResolvedValue([]);
     asRole(
       'platform_admin',
       <WebhookScreen clientId={CLIENT_ID} client={stubClient({ listWebhookLog })} />,
     );
-    expect(await screen.findByText('Belum ada pengiriman yang cocok.')).toBeInTheDocument();
-    expect(listWebhookLog).toHaveBeenLastCalledWith(CLIENT_ID, {}, expect.anything());
-
-    await user.click(screen.getByRole('button', { name: /Hasil pengiriman/ }));
-    await user.click(await screen.findByRole('option', { name: 'Semua yang gagal' }));
-    await waitFor(() =>
-      expect(listWebhookLog).toHaveBeenLastCalledWith(
-        CLIENT_ID,
-        { hasil: 'gagal' },
-        expect.anything(),
-      ),
-    );
+    expect(
+      await screen.findByText('Tidak ada kegagalan dalam 24 jam terakhir.'),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Hasil pengiriman/ })).toBeNull();
+    expect(screen.queryByRole('table')).toBeNull();
   });
 
   it('retries a failed log read without touching the config card', async () => {
@@ -827,6 +923,9 @@ describe('English catalog', () => {
       await screen.findByRole('heading', { level: 1, name: 'Clients and credentials' }),
     ).toBeVisible();
     expect(screen.getAllByText('20 burst, refill 1 per second')).toHaveLength(2);
+    await user.click(screen.getByRole('button', { name: 'Add client' }));
+    const tambah = within(await screen.findByRole('dialog', { name: 'Add client' }));
+    expect(tambah.getByText('Must start with https://')).toBeInTheDocument();
     cleanup();
 
     asRole('platform_admin', <ClientDetailScreen clientId={CLIENT_ID} client={client} />, 'en');
@@ -849,8 +948,9 @@ describe('English catalog', () => {
     cleanup();
 
     asRole('platform_admin', <WebhookScreen clientId={CLIENT_ID} client={client} />, 'en');
-    expect(await screen.findByText('Active secret: version 2.')).toBeInTheDocument();
-    expect(await screen.findByText('Failed: HTTP response')).toBeInTheDocument();
+    expect(await screen.findByText(/Active version: 2\./)).toBeInTheDocument();
+    expect(await screen.findByText('HTTP 503')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Delivery failures' })).toBeVisible();
     expect(screen.getByText('Temporary destination fault')).toBeInTheDocument();
   });
 });
