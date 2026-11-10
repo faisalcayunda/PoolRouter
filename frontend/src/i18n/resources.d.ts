@@ -43,12 +43,14 @@ export default interface Resources {
         "action": "Aksi",
         "nik_range": "NIK + rentang {{rentang}}",
         "nik_search": "Pencarian per NIK",
-        "note": "Filter diterapkan pada catatan audit akses.",
+        "note": "Kolom 'Filter atau kueri' menampilkan jenis filter, bukan nilai NIK.",
         "open_logs": "Buka log transaksi",
         "range": "Rentang waktu",
         "range_help": "Pilih rentang waktu untuk menampilkan catatan audit.",
         "range_only": "Rentang {{rentang}}",
-        "user": "Pengguna"
+        "user": "Pengguna",
+        "user_error": "ID pengguna harus berformat UUID, misalnya 123e4567-e89b-12d3-a456-426614174000.",
+        "user_help": "Masukkan ID pengguna dalam format UUID."
       },
       "page": {
         "subtitle": "Catatan hanya bisa dibaca. Tidak ada aksi ubah atau hapus.",
@@ -732,7 +734,7 @@ export default interface Resources {
         "export": "Ekspor hasil",
         "export_help": "Masukkan NIK 16 digit yang sah untuk mengaktifkan ekspor.",
         "field": "NIK (16 digit)",
-        "field_help": "Hanya angka.",
+        "field_help": "Wajib 16 digit angka. Tidak tersimpan di riwayat, URL, atau filter.",
         "payload": "Payload",
         "range_only_note": "Pencarian rentang waktu saja tidak tersedia; NIK wajib diisi.",
         "retention": "Data di luar retensi online belum bisa dicari. Pencarian arsip tersedia di F1.",

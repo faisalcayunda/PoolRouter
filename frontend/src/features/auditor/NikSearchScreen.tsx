@@ -13,7 +13,6 @@ import {
 import { Button } from '../../components/m3/Button';
 import { InlineAlert } from '../../components/m3/InlineAlert';
 import { Icon, icons } from '../../icons';
-import { IconButton } from '../../components/m3/IconButton';
 import { Card } from '../../components/m3/Card';
 import { Pagination } from '../../components/m3/Pagination';
 import { StatusLabel } from '../../components/m3/StatusLabel';
@@ -32,6 +31,10 @@ import { SnackbarRegion, useSnackbar } from '../common/useSnackbar';
 import { enumLabel } from '../../i18n/enums';
 
 const NIK_LENGTH = 16;
+
+/** Table cell classes shared with the other v2 tables (S08 client list). */
+const TH = 'border-b border-outline-variant px-4 py-3 font-medium';
+const TD = 'typescale-body-medium px-4 py-3 align-middle';
 
 function defaultRange(): DateRange {
   const now = new Date();
@@ -189,26 +192,44 @@ export function NikSearchScreen({ client = api }: NikSearchScreenProps): ReactNo
 
   const rows = query.status === 'success' ? query.data.baris : [];
 
+  const searched = query.status === 'success';
+  const lastPage = searched && !query.data.kursor;
+
   return (
     <section className="flex flex-col gap-4">
       <PageHeader
         title={t('nik.page.title')}
         subtitle={t('nik.page.subtitle')}
         titleRef={titleRef}
+        actions={
+          // Frame S12: "Ekspor hasil" sits top right and only exists once there are results (S12c has none).
+          searched ? (
+            <Button
+              variant="outlined"
+              isDisabled={!nikValid || exporting}
+              onPress={() => {
+                setNikTouched(true);
+                if (!nikValid || !range) return;
+                setExportNotice(null);
+                setExportOpen(true);
+              }}
+            >
+              <Icon icon={icons.download} aria-hidden="true" />
+              {exporting ? t('common.state.loading') : t('nik.page.export')}
+            </Button>
+          ) : null
+        }
       />
 
-      <Card variant="outlined">
-        <form
-          className="flex flex-col gap-3"
-          onSubmit={(event) => {
-            event.preventDefault();
-            requestReason();
-          }}
-          aria-describedby="nik-range-note"
-        >
-          <p id="nik-range-note" className="typescale-body-small text-on-surface-variant">
-            {t('nik.page.range_only_note')}
-          </p>
+      <form
+        className="flex flex-col gap-4"
+        onSubmit={(event) => {
+          event.preventDefault();
+          requestReason();
+        }}
+        aria-describedby={nikError ? 'nik-range-note' : undefined}
+      >
+        <div className="grid grid-cols-1 gap-4 expanded:grid-cols-2">
           <TextField
             label={t('nik.page.field')}
             description={t('nik.page.field_help')}
@@ -235,34 +256,19 @@ export function NikSearchScreen({ client = api }: NikSearchScreenProps): ReactNo
             }}
             errorMessage={rangeError}
           />
-          <div>
-            <Button variant="filled" type="submit">
-              {t('common.action.search')}
-            </Button>
-          </div>
-        </form>
-      </Card>
-
-      <p className="typescale-body-small text-on-surface-variant">{t('nik.page.retention')}</p>
-
-      {/* "Ekspor hasil" belongs to S12 (handoff spec section 6): enabled once a NIK is valid. */}
-      <div className="flex flex-col gap-1">
-        <Button
-          variant="outlined"
-          isDisabled={!nikValid || exporting}
-          onPress={() => {
-            setNikTouched(true);
-            if (!nikValid || !range) return;
-            setExportNotice(null);
-            setExportOpen(true);
-          }}
-        >
-          <Icon icon={icons.download} aria-hidden="true" />
-          {exporting ? t('common.state.loading') : t('nik.page.export')}
-        </Button>
-        {/* Section 7: a disabled action says why it is disabled. */}
-        <p className="typescale-body-small text-on-surface-variant">{t('nik.page.export_help')}</p>
-      </div>
+        </div>
+        <div>
+          <Button variant="filled" type="submit">
+            {t('common.action.search')}
+          </Button>
+        </div>
+        {/* Frame S12c: the rule that a range alone is not enough shows with the NIK error. */}
+        {nikError ? (
+          <p id="nik-range-note" className="typescale-body-small text-on-surface-variant">
+            {t('nik.page.range_only_note')}
+          </p>
+        ) : null}
+      </form>
 
       {exportNotice === 'too_large' ? (
         <InlineAlert tone="warning" live="polite" heading={t('export.error.title')}>
@@ -284,43 +290,51 @@ export function NikSearchScreen({ client = api }: NikSearchScreenProps): ReactNo
         rows.length === 0 ? (
           <EmptyState title={t('nik.empty.title')} body={t('common.empty.logs.body')} />
         ) : (
-          <Card variant="filled" className="p-0">
+          <Card variant="outlined" className="p-0">
             <ScrollArea label={t('nik.page.title')}>
               <div className="table-card">
-                <table className="w-full border-collapse">
+                <table className="w-full border-collapse text-left">
                   <caption className="sr-only">{t('nik.page.title')}</caption>
                   <thead>
-                    <tr>
-                      <th scope="col" className="typescale-label-large px-4 py-3 text-left">
+                    <tr className="typescale-title-small text-on-surface-variant">
+                      <th scope="col" className={TH}>
                         {t('log.col.time')}
                       </th>
-                      <th scope="col" className="hide-md typescale-label-large px-4 py-3 text-left">
-                        {t('log.col.code')}
-                      </th>
-                      <th scope="col" className="hide-md typescale-label-large px-4 py-3 text-left">
-                        {t('log.col.client')}
-                      </th>
-                      <th scope="col" className="typescale-label-large px-4 py-3 text-left">
+                      <th scope="col" className={TH}>
                         {t('log.col.nik')}
                       </th>
-                      <th scope="col" className="typescale-label-large px-4 py-3 text-left">
+                      <th scope="col" className={TH}>
                         {t('log.col.access')}
                       </th>
-                      <th scope="col" className="typescale-label-large px-4 py-3 text-left">
-                        {t('log.payload.open')}
+                      <th scope="col" className={`hide-md ${TH}`}>
+                        {t('log.col.code')}
+                      </th>
+                      <th scope="col" className={`hide-md ${TH}`}>
+                        {t('log.col.client')}
+                      </th>
+                      <th scope="col" className={TH}>
+                        <span className="sr-only">{t('audit.col.action')}</span>
                       </th>
                     </tr>
                   </thead>
                   <tbody>
                     {rows.map((row) => (
-                      <tr key={`${row.kode_transaksi}-${row.requested_at}`} className="h-10">
-                        <td data-label={t('log.col.time')} className="typescale-body-medium px-4">
+                      <tr
+                        key={`${row.kode_transaksi}-${row.requested_at}`}
+                        className="border-b border-outline-variant text-on-surface"
+                      >
+                        <td data-label={t('log.col.time')} className={TD}>
                           {format.tanggalWaktu(row.requested_at)}
                         </td>
-                        <td
-                          data-label={t('log.col.code')}
-                          className="hide-md typescale-body-medium px-4"
-                        >
+                        <td data-label={t('log.col.nik')} className={TD}>
+                          <MaskedNik value={row.nik} />
+                        </td>
+                        <td data-label={t('log.col.access')} className={TD}>
+                          <StatusLabel tone={accessTone(row.status_akses)}>
+                            {enumLabel(i18n, 'status_akses', row.status_akses)}
+                          </StatusLabel>
+                        </td>
+                        <td data-label={t('log.col.code')} className={`hide-md ${TD}`}>
                           <Link
                             href={`/log/${encodeURIComponent(row.kode_transaksi)}`}
                             className="m3-focus rounded-small text-primary underline-offset-2 hover:underline"
@@ -329,28 +343,18 @@ export function NikSearchScreen({ client = api }: NikSearchScreenProps): ReactNo
                             {row.kode_transaksi}
                           </Link>
                         </td>
-                        <td
-                          data-label={t('log.col.client')}
-                          className="hide-md typescale-body-medium px-4"
-                        >
+                        <td data-label={t('log.col.client')} className={`hide-md ${TD}`}>
                           {row.client_nama}
                         </td>
-                        <td data-label={t('log.col.nik')} className="typescale-body-medium px-4">
-                          <MaskedNik value={row.nik} />
-                        </td>
-                        <td data-label={t('log.col.access')} className="typescale-body-medium px-4">
-                          <StatusLabel tone={accessTone(row.status_akses)}>
-                            {enumLabel(i18n, 'status_akses', row.status_akses)}
-                          </StatusLabel>
-                        </td>
-                        {/* The action cell carries no data-label: its single button names itself. */}
-                        <td className="px-4">
-                          <IconButton
+                        {/* Inline action column (as S08/S10): a text button that names its row. */}
+                        <td className={TD}>
+                          <Button
+                            variant="text"
                             aria-label={`${t('log.payload.open')} — ${row.kode_transaksi}`}
                             onPress={() => setPayloadFor(row)}
                           >
-                            <Icon icon={icons.visibility} />
-                          </IconButton>
+                            {t('nik.page.payload')}
+                          </Button>
                         </td>
                       </tr>
                     ))}
@@ -362,8 +366,12 @@ export function NikSearchScreen({ client = api }: NikSearchScreenProps): ReactNo
         )
       ) : null}
 
-      {query.status === 'success' && (page > 1 || query.data.kursor) ? (
-        <div className="flex justify-end">
+      {searched && rows.length > 0 ? (
+        <div className="flex flex-wrap items-center justify-end gap-4">
+          {/* Gap: the API is cursor-only (no page-size parameter, no total), so the size shown is the rows on this page. */}
+          <p className="typescale-body-small text-on-surface-variant">
+            {t('common.pagination.rows_per_page')}: {rows.length}
+          </p>
           <Pagination
             page={page}
             pageCount={query.data.kursor ? page + 1 : page}
@@ -374,10 +382,21 @@ export function NikSearchScreen({ client = api }: NikSearchScreenProps): ReactNo
             prevLabel={t('common.pagination.prev_page')}
             nextLabel={t('common.pagination.next_page')}
             label={t('nik.page.title')}
-            rangeText={t('common.pagination.page_current', { ke: page })}
+            rangeText={
+              // The total is only known on the last page of a single-page result.
+              lastPage && page === 1
+                ? t('common.pagination.page_range', {
+                    dari: 1,
+                    sampai: rows.length,
+                    total: rows.length,
+                  })
+                : t('common.pagination.page_current', { ke: page })
+            }
           />
         </div>
       ) : null}
+
+      {searched ? <InlineAlert tone="info">{t('nik.page.retention')}</InlineAlert> : null}
 
       <ReasonDialog
         isOpen={reasonOpen}
@@ -406,6 +425,12 @@ export function NikSearchScreen({ client = api }: NikSearchScreenProps): ReactNo
         kodeTransaksi={payloadFor?.kode_transaksi ?? ''}
         initialReason={reason}
         client={client}
+        reasonCopy={{
+          body: t('nik.payload.body'),
+          fieldLabel: t('nik.reason.field'),
+          fieldHint: t('nik.payload.help'),
+          confirmLabel: t('nik.payload.open'),
+        }}
         onOpened={() => snackbar.notify(t('log.payload.snackbar.opened'))}
         onClose={() => setPayloadFor(null)}
       />

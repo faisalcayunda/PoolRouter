@@ -1054,7 +1054,7 @@
       "title": "Pencarian log per NIK",
       "subtitle": "Setiap pencarian, pembukaan payload, dan ekspor dicatat di audit akses.",
       "field": "NIK (16 digit)",
-      "field_help": "Hanya angka.",
+      "field_help": "Wajib 16 digit angka. Tidak tersimpan di riwayat, URL, atau filter.",
       "error": "Masukkan NIK 16 digit.",
       "range_only_note": "Pencarian rentang waktu saja tidak tersedia; NIK wajib diisi.",
       "export": "Ekspor hasil",
@@ -1094,6 +1094,8 @@
     },
     "filter": {
       "user": "Pengguna",
+      "user_help": "Masukkan ID pengguna dalam format UUID.",
+      "user_error": "ID pengguna harus berformat UUID, misalnya 123e4567-e89b-12d3-a456-426614174000.",
       "action": "Aksi",
       "nik_range": "NIK + rentang {{rentang}}",
       "nik_search": "Pencarian per NIK",
@@ -1101,7 +1103,7 @@
       "range_only": "Rentang {{rentang}}",
       "range": "Rentang waktu",
       "range_help": "Pilih rentang waktu untuk menampilkan catatan audit.",
-      "note": "Filter diterapkan pada catatan audit akses."
+      "note": "Kolom 'Filter atau kueri' menampilkan jenis filter, bukan nilai NIK."
     },
     "col": {
       "user": "Pengguna",

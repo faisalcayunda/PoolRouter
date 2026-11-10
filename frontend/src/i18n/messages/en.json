@@ -1059,7 +1059,7 @@
       "title": "Search logs by NIK",
       "subtitle": "Every search, payload view, and export is recorded in the access audit.",
       "field": "NIK (16 digits)",
-      "field_help": "Digits only.",
+      "field_help": "Required, 16 digits. Not kept in history, URL, or filters.",
       "error": "Enter a 16-digit NIK.",
       "range_only_note": "Searching by time range alone isn't available; a NIK is required.",
       "export": "Export results",
@@ -1099,6 +1099,8 @@
     },
     "filter": {
       "user": "User",
+      "user_help": "Enter the user ID as a UUID.",
+      "user_error": "The user ID must be a UUID, for example 123e4567-e89b-12d3-a456-426614174000.",
       "action": "Action",
       "nik_range": "NIK + range {{rentang}}",
       "nik_search": "NIK search",
@@ -1106,7 +1108,7 @@
       "range_only": "Range {{rentang}}",
       "range": "Time range",
       "range_help": "Choose a time range to show access audit records.",
-      "note": "The filter applies to access audit records."
+      "note": "The 'Filter or query' column shows the filter type, not the NIK value."
     },
     "col": {
       "user": "User",
