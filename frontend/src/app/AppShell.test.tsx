@@ -48,7 +48,7 @@ describe('AppShell — compact window size class', () => {
   it('hides the drawer and exposes a menu button that opens it as a modal', async () => {
     renderShell();
     // Drawer navigation is not in the tree until opened.
-    expect(screen.queryByRole('navigation')).not.toBeInTheDocument();
+    expect(screen.queryByRole('navigation', { name: 'Navigasi utama' })).not.toBeInTheDocument();
     const opener = screen.getByRole('button', { name: 'Buka menu navigasi' });
     await userEvent.click(opener);
     const dialog = await screen.findByRole('dialog', { name: 'Navigasi utama' });
@@ -111,8 +111,9 @@ describe('AppShell — structure and a11y', () => {
   it('every drawer label comes from the catalog (no missing key)', () => {
     // createI18n({ throwOnMissingKey: true }) throws on any key absent from id.json.
     expect(() => renderShell()).not.toThrow();
-    expect(screen.getByText('Pemantauan')).toBeInTheDocument();
-    expect(screen.getByText('Konfigurasi')).toBeInTheDocument();
+    const drawer = screen.getByRole('complementary', { name: 'Navigasi utama' });
+    expect(within(drawer).getByText('Pemantauan')).toBeInTheDocument();
+    expect(within(drawer).getByText('Konfigurasi')).toBeInTheDocument();
   });
 });
 
@@ -180,7 +181,7 @@ describe('AppShell — breadcrumbs', () => {
     renderShell('/kuota');
     const trail = screen.getByRole('navigation', { name: 'Jejak halaman' });
     expect(trail).toHaveTextContent('Pemantauan');
-    expect(screen.getByText('Kuota', { selector: '[aria-current="page"]' })).toBeInTheDocument();
+    expect(within(trail).getByText('Kuota')).toHaveAttribute('aria-current', 'page');
   });
 
   it('links back to the list from a detail route', () => {
