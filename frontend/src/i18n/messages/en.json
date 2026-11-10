@@ -399,7 +399,8 @@
       "add": "Add upstream pool",
       "deactivate": "Deactivate pool",
       "quota_per_day": "{{jumlah, number}} / day",
-      "deactivate_row": "Deactivate"
+      "deactivate_row": "Deactivate",
+      "subtitle": "Daily quota, hourly rate limit and sync share per provider."
     },
     "tab": {
       "quota": "Quota and rate",
@@ -424,6 +425,77 @@
     "empty": {
       "title": "No upstream pools yet",
       "body": "Add an upstream pool to set the daily quota and hourly rate limit for a provider."
+    },
+    "status": {
+      "inactive": "Inactive"
+    },
+    "list": {
+      "activate": "Activate",
+      "edit_aria": "Edit upstream pool {{nama}}",
+      "activate_aria": "Activate upstream pool {{nama}}",
+      "deactivate_aria": "Deactivate upstream pool {{nama}}"
+    },
+    "activate": {
+      "done": "Upstream pool {{nama}} activated."
+    },
+    "deactivate": {
+      "title": "Deactivate upstream pool?",
+      "done": "Upstream pool {{nama}} deactivated: {{dibatalkan, number}} cancelled, {{gagal, number}} failed."
+    },
+    "form": {
+      "title_edit": "Edit upstream pool {{nama}}",
+      "subtitle": "Saving replaces the whole configuration; the fields start from the current configuration.",
+      "back": "Back to the list",
+      "provider_placeholder": "Choose a provider",
+      "save_new": "Save upstream pool",
+      "save_edit": "Save changes",
+      "saved": "Upstream pool saved.",
+      "group": {
+        "general": "General",
+        "reset": "Quota reset",
+        "retry": "Retry and margin"
+      },
+      "jendela": {
+        "bergulir_24j": "Rolling 24 hours",
+        "kalender": "Calendar day"
+      },
+      "reason": {
+        "heading": "Reason",
+        "label": "Reason for the change",
+        "optional": "Reason (optional)",
+        "help": "{{jumlah}} of {{batas}} characters. Required when editing and with the calendar day window."
+      },
+      "field": {
+        "jendela_kuota": "Quota period",
+        "kuota_harian": "Daily quota (requests)",
+        "rate_limit_per_jam": "Hourly rate limit (requests)",
+        "porsi_sync_persen": "Sync share (%)",
+        "ambang_berdampingan": "Concurrency threshold (requests)",
+        "jeda_min": "Minimum delay (ms)",
+        "jeda_maks": "Maximum delay (ms)",
+        "reset_kuota_jam": "Reset hour (0 to 23)",
+        "reset_kuota_zona": "Reset time zone",
+        "batas_percobaan": "Attempts per request (1 to 5)",
+        "retry_backoff_base_detik": "Backoff base (seconds)",
+        "retry_backoff_cap_detik": "Backoff cap (seconds)",
+        "retry_min_per_jam": "Minimum retry budget per hour",
+        "retry_rasio": "Retry budget ratio (0 to 0.5)",
+        "margin_kuota": "Quota margin (0.001 to 0.2)"
+      },
+      "error": {
+        "summary": "{{jumlah}} fields need fixing.",
+        "lainnya": "The server rejected {{jumlah}} other fields that are not on this form.",
+        "wajib": "This field is required.",
+        "bilangan": "Enter a valid number.",
+        "bilangan_bulat": "Enter a whole number.",
+        "minimal": "At least {{min}}.",
+        "rentang": "Must be between {{min}} and {{max}}.",
+        "jeda_terbalik": "Maximum delay cannot be smaller than the minimum delay.",
+        "jeda_melebihi_rate": "The delay may be at most {{batas}} ms for the hourly rate limit to be reachable.",
+        "cap_di_bawah_base": "The backoff cap cannot be below {{batas}} seconds (the backoff base).",
+        "alasan_rentang": "Write a reason of {{min}} to {{max}} characters.",
+        "server": "The server rejected this value."
+      }
     }
   },
   "antipattern": {
@@ -452,7 +524,8 @@
       "name": "Name",
       "mode": "Mode",
       "upstream": "Upstream pool",
-      "ttl": "Queue TTL"
+      "ttl": "Queue TTL",
+      "alokasi": "Allocation"
     },
     "mode": {
       "async": "Async",
@@ -460,11 +533,68 @@
     },
     "deactivate": {
       "title": "Deactivate downstream pool?",
-      "done": "Downstream pool deactivated."
+      "done": "Downstream pool deactivated.",
+      "done_counts": "Downstream pool {{nama}} deactivated: {{dibatalkan, number}} cancelled, {{gagal, number}} failed."
     },
     "empty": {
       "title": "No downstream pools yet",
       "body": "Add a downstream pool and link it to one upstream pool."
+    },
+    "activate": {
+      "done": "Downstream pool {{nama}} activated."
+    },
+    "list": {
+      "edit_aria": "Edit downstream pool {{nama}}",
+      "activate_aria": "Activate downstream pool {{nama}}",
+      "deactivate_aria": "Deactivate downstream pool {{nama}}",
+      "no_alokasi": "No allocation",
+      "alokasi_tetap": "{{nilai}} requests per period",
+      "alokasi_persen": "{{nilai}}% of effective quota",
+      "boleh_pinjam": "may borrow",
+      "ttl_hours": "{{jam}} h"
+    },
+    "form": {
+      "title_edit": "Edit downstream pool {{nama}}",
+      "back": "Back to the list",
+      "group": {
+        "general": "General",
+        "alokasi": "Budget allocation"
+      },
+      "upstream_placeholder": "Choose an upstream pool",
+      "save_new": "Save downstream pool",
+      "save_edit": "Save changes",
+      "saved": "Downstream pool {{nama}} saved.",
+      "alokasi": {
+        "jenis": "Allocation type",
+        "jenis_none": "No allocation",
+        "jenis_tetap": "Fixed amount per period",
+        "jenis_persentase": "Percent of effective quota",
+        "nilai_tetap": "Requests per period",
+        "nilai_persen": "Percent of effective quota (0.01 to 100)",
+        "sifat": "Budget type",
+        "sifat_placeholder": "Choose a type",
+        "sifat_reserved": "Reserved: used by its owner only",
+        "sifat_shareable": "Shareable: other downstream pools may borrow",
+        "boleh_pinjam": "May borrow the remainder and shareable budgets",
+        "none_help": "Without an allocation the pool uses the remainder and may borrow."
+      },
+      "reason": {
+        "heading": "Reason",
+        "label": "Reason for the change",
+        "help": "{{jumlah}} of {{batas}} characters. Required when editing."
+      },
+      "error": {
+        "summary": "{{jumlah}} fields need fixing.",
+        "lainnya": "The server rejected {{jumlah}} other fields that are not on this form.",
+        "wajib": "This field is required.",
+        "ttl_positif": "TTL must be a number above 0 hours, or leave it empty.",
+        "tetap_bulat": "Enter a whole number, at least 1.",
+        "rentang": "Must be between {{min}} and {{max}}.",
+        "alasan_rentang": "Write a reason of {{min}} to {{max}} characters.",
+        "alokasi_kelebihan": "Total allocation exceeds the effective quota by {{batas, number}} requests.",
+        "alokasi_kelebihan_umum": "Total allocation exceeds the upstream pool effective quota.",
+        "server": "The server rejected this value."
+      }
     }
   },
   "metadata": {
@@ -1023,6 +1153,24 @@
         "copy_all": "Copy all",
         "acknowledge": "I have saved them"
       }
+    }
+  },
+  "k20": {
+    "body": "Review the impact below before deactivating {{nama}}.",
+    "confirm": "Deactivate",
+    "submitting": "Processing…",
+    "preview": {
+      "heading": "Impact of deactivation",
+      "cancelled": "{{jumlah, number}} queued requests will be cancelled.",
+      "failed": "{{jumlah, number}} requests waiting for retry will be failed.",
+      "downstream_count": "Used by {{jumlah, number}} downstream pools.",
+      "computed": "Computed at {{waktu}}.",
+      "last_active_heading": "Last active upstream for these downstream pools"
+    },
+    "reason": {
+      "label": "Reason for deactivation",
+      "help": "{{min}} to {{maks}} characters. The reason is recorded in the audit trail.",
+      "error": "Write a reason of {{min}} to {{maks}} characters."
     }
   }
 }

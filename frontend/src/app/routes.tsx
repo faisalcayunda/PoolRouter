@@ -48,6 +48,22 @@ const CredentialsScreen = lazy(() =>
 const WebhookScreen = lazy(() =>
   import('../features/client/WebhookScreen').then((m) => ({ default: m.WebhookScreen })),
 );
+const UpstreamListScreen = lazy(() =>
+  import('../features/pool/UpstreamListScreen').then((m) => ({ default: m.UpstreamListScreen })),
+);
+const UpstreamFormScreen = lazy(() =>
+  import('../features/pool/UpstreamFormScreen').then((m) => ({ default: m.UpstreamFormScreen })),
+);
+const DownstreamListScreen = lazy(() =>
+  import('../features/pool/DownstreamListScreen').then((m) => ({
+    default: m.DownstreamListScreen,
+  })),
+);
+const DownstreamFormScreen = lazy(() =>
+  import('../features/pool/DownstreamFormScreen').then((m) => ({
+    default: m.DownstreamFormScreen,
+  })),
+);
 
 function NotFound(): ReactNode {
   const { t } = useTranslation();
@@ -68,6 +84,9 @@ const PROVIDER_DETAIL = /^\/provider\/([^/]+)$/;
 
 /** `/client/<id>[/kredensial|/webhook]` — S08, S08b, S09 dan S09a (ARC-104). */
 const CLIENT_DETAIL = /^\/client\/([^/]+)(?:\/(kredensial|webhook))?$/;
+/** `/upstream/<id>` dan `/downstream/<id>` — form pool (S06b, S07, ARC-102); `baru` membuat baru. */
+const UPSTREAM_DETAIL = /^\/upstream\/([^/]+)$/;
+const DOWNSTREAM_DETAIL = /^\/downstream\/([^/]+)$/;
 
 /** Path → screen. Longest exact match wins; anything else renders the not-found panel. */
 export function ScreenForPath({ pathname }: { pathname: string }): ReactNode {
@@ -89,6 +108,16 @@ export function ScreenForPath({ pathname }: { pathname: string }): ReactNode {
     if (clientDetail[2] === 'webhook') return <WebhookScreen clientId={id} />;
     return <ClientDetailScreen clientId={id} />;
   }
+  const upstreamDetail = UPSTREAM_DETAIL.exec(clean);
+  if (upstreamDetail) {
+    const id = decodeURIComponent(upstreamDetail[1] ?? '');
+    return <UpstreamFormScreen poolId={id === 'baru' ? undefined : id} />;
+  }
+  const downstreamDetail = DOWNSTREAM_DETAIL.exec(clean);
+  if (downstreamDetail) {
+    const id = decodeURIComponent(downstreamDetail[1] ?? '');
+    return <DownstreamFormScreen poolId={id === 'baru' ? undefined : id} />;
+  }
   switch (clean) {
     case '/':
       return <LogPageScreen />;
@@ -104,6 +133,10 @@ export function ScreenForPath({ pathname }: { pathname: string }): ReactNode {
       return <SecretScreen />;
     case '/client':
       return <ClientListScreen />;
+    case '/upstream':
+      return <UpstreamListScreen />;
+    case '/downstream':
+      return <DownstreamListScreen />;
     default:
       return <NotFound />;
   }
