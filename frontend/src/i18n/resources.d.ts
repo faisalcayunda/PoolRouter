@@ -140,6 +140,96 @@ export default interface Resources {
         "oauth": "OAuth2 client credentials"
       }
     },
+    "clients": {
+      "activate": {
+        "action": "Aktifkan client",
+        "done": "Client diaktifkan."
+      },
+      "back": "Semua client",
+      "col": {
+        "limiter": "Limiter penolakan"
+      },
+      "detail": {
+        "settings": "Pengaturan client",
+        "subtitle": "Pengaturan, kredensial, dan webhook satu client."
+      },
+      "empty": {
+        "owner": "Belum ada client yang terhubung dengan akun Anda. Hubungi platform admin."
+      },
+      "error": {
+        "burst_range": "Burst harus bilangan bulat {{min}} sampai {{maks}}.",
+        "name_required": "Nama client wajib diisi.",
+        "name_too_long": "Nama client paling panjang {{maks}} karakter.",
+        "refill_range": "Isi ulang harus {{min}} sampai {{maks}} per detik."
+      },
+      "form": {
+        "burst": "Burst limiter penolakan",
+        "burst_help": "Bilangan bulat {{min}} sampai {{maks}}. Kosong berarti bawaan {{bawaan}}.",
+        "reason": "Alasan perubahan limiter",
+        "reason_help": "Wajib bila limiter berubah, 10 sampai 500 karakter. Dicatat di audit konfigurasi.",
+        "refill": "Isi ulang limiter per detik",
+        "refill_help": "{{min}} sampai {{maks}} per detik. Kosong berarti bawaan {{bawaan}}."
+      },
+      "inactive": "Nonaktif",
+      "k20": {
+        "preview_loading": "Menghitung perkiraan dampak…",
+        "reason": "Alasan",
+        "reason_help": "10 sampai 500 karakter. Dicatat di audit konfigurasi.",
+        "result": "{{cancelled, number}} request dibatalkan dan {{failed, number}} ditandai gagal."
+      },
+      "limiter": {
+        "value": "{{burst, number}} burst, isi ulang {{isi_ulang}} per detik"
+      },
+      "page": {
+        "subtitle": "Aplikasi BGN yang memanggil PoolRouter, beserta kredensial dan webhook-nya."
+      },
+      "row": {
+        "manage": "Kelola",
+        "manage_aria": "Kelola client {{nama}}"
+      },
+      "saved": "Perubahan client tersimpan.",
+      "tab": {
+        "aria": "Bagian client",
+        "credentials": "Kredensial",
+        "detail": "Detail client",
+        "webhook": "Webhook dan riwayat"
+      },
+      "webhook": {
+        "active": "Kirim webhook ke alamat ini",
+        "hasil": {
+          "ditolak_allowlist": "Ditolak allowlist",
+          "gagal_http": "Gagal: respons HTTP",
+          "gagal_internal": "Gagal: internal",
+          "gagal_jaringan": "Gagal: jaringan",
+          "terkirim": "Terkirim"
+        },
+        "kelas": {
+          "koneksi": "Koneksi gagal",
+          "provider_sementara": "Gangguan sementara di tujuan",
+          "rate_limit_provider": "Rate limit tujuan",
+          "respons_tidak_valid": "Respons tidak valid",
+          "timeout": "Waktu habis",
+          "tls": "Galat TLS"
+        },
+        "log": {
+          "col": {
+            "request": "ID request",
+            "result": "Hasil",
+            "version": "Versi secret"
+          },
+          "empty": "Belum ada pengiriman yang cocok.",
+          "failed_any": "Semua yang gagal",
+          "filter": "Hasil pengiriman",
+          "first_page": "Menampilkan halaman pertama riwayat.",
+          "heading": "Riwayat pengiriman"
+        },
+        "no_secret": "Belum ada secret tanda tangan.",
+        "not_configured": "Webhook belum diatur untuk client ini. Isi alamat https lalu simpan.",
+        "rejected": "Alamat ditolak. Gunakan https dan domain yang ada di allowlist.",
+        "secret_version": "Secret aktif: versi {{versi}}.",
+        "subtitle": "Alamat tujuan, secret tanda tangan, dan riwayat pengiriman webhook client ini."
+      }
+    },
     "common": {
       "action": {
         "all": "Semua",
@@ -194,6 +284,36 @@ export default interface Resources {
         "optional": "Opsional",
         "required": "Wajib"
       }
+    },
+    "credentials": {
+      "col": {
+        "expires": "Berlaku sampai",
+        "id": "ID kredensial"
+      },
+      "create": {
+        "days_other": "{{count, number}} hari",
+        "expiry": "Masa berlaku",
+        "max": "Client ini sudah punya 2 kredensial aktif. Cabut salah satu sebelum membuat yang baru.",
+        "once": "Secret ditampilkan satu kali setelah kredensial dibuat.",
+        "title": "Buat kredensial"
+      },
+      "empty": {
+        "body": "Buat kredensial agar aplikasi client bisa memanggil PoolRouter.",
+        "title": "Belum ada kredensial"
+      },
+      "no_expiry": "Tanpa batas",
+      "page": {
+        "subtitle": "Satu client maksimal punya 2 kredensial aktif. Secret hanya tampil sekali saat dibuat.",
+        "title": "Kredensial · {{nama_client}}"
+      },
+      "revoke_aria": "Cabut kredensial {{id}}",
+      "revoked_at": "Dicabut {{waktu}}",
+      "status": {
+        "aktif": "Aktif",
+        "dicabut": "Dicabut",
+        "kedaluwarsa": "Kedaluwarsa"
+      },
+      "table": "Daftar kredensial"
     },
     "downstream": {
       "col": {

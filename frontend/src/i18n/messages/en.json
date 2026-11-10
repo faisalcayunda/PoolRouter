@@ -587,6 +587,127 @@
       "no_failures": "No failures in the last 24 hours."
     }
   },
+  "clients": {
+    "back": "All clients",
+    "inactive": "Inactive",
+    "saved": "Client changes saved.",
+    "page": {
+      "subtitle": "BGN applications that call PoolRouter, with their credentials and webhooks."
+    },
+    "empty": {
+      "owner": "No client is linked to your account yet. Contact a platform admin."
+    },
+    "col": {
+      "limiter": "Rejection limiter"
+    },
+    "limiter": {
+      "value": "{{burst, number}} burst, refill {{isi_ulang}} per second"
+    },
+    "row": {
+      "manage": "Manage",
+      "manage_aria": "Manage client {{nama}}"
+    },
+    "tab": {
+      "aria": "Client sections",
+      "detail": "Client details",
+      "credentials": "Credentials",
+      "webhook": "Webhook and history"
+    },
+    "detail": {
+      "subtitle": "Settings, credentials, and webhook of one client.",
+      "settings": "Client settings"
+    },
+    "form": {
+      "burst": "Rejection limiter burst",
+      "burst_help": "Whole number {{min}} to {{maks}}. Empty means the default {{bawaan}}.",
+      "refill": "Limiter refill per second",
+      "refill_help": "{{min}} to {{maks}} per second. Empty means the default {{bawaan}}.",
+      "reason": "Reason for the limiter change",
+      "reason_help": "Required when the limiter changes, 10 to 500 characters. Recorded in the configuration audit."
+    },
+    "error": {
+      "name_required": "Client name is required.",
+      "name_too_long": "Client name can be at most {{maks}} characters.",
+      "burst_range": "Burst must be a whole number from {{min}} to {{maks}}.",
+      "refill_range": "Refill must be {{min}} to {{maks}} per second."
+    },
+    "activate": {
+      "action": "Activate client",
+      "done": "Client activated."
+    },
+    "k20": {
+      "reason": "Reason",
+      "reason_help": "10 to 500 characters. Recorded in the configuration audit.",
+      "preview_loading": "Calculating the estimated impact…",
+      "result": "{{cancelled, number}} requests cancelled and {{failed, number}} marked failed."
+    },
+    "webhook": {
+      "subtitle": "Destination address, signing secret, and delivery history of this client's webhook.",
+      "not_configured": "No webhook is set for this client yet. Enter an https address and save.",
+      "active": "Send webhooks to this address",
+      "rejected": "Address rejected. Use https and a domain that is on the allowlist.",
+      "secret_version": "Active secret: version {{versi}}.",
+      "no_secret": "No signing secret yet.",
+      "hasil": {
+        "terkirim": "Delivered",
+        "gagal_http": "Failed: HTTP response",
+        "gagal_jaringan": "Failed: network",
+        "ditolak_allowlist": "Blocked by allowlist",
+        "gagal_internal": "Failed: internal"
+      },
+      "kelas": {
+        "timeout": "Timeout",
+        "koneksi": "Connection failed",
+        "rate_limit_provider": "Destination rate limit",
+        "respons_tidak_valid": "Invalid response",
+        "tls": "TLS error",
+        "provider_sementara": "Temporary destination fault"
+      },
+      "log": {
+        "heading": "Delivery history",
+        "filter": "Delivery result",
+        "failed_any": "All failures",
+        "empty": "No matching deliveries yet.",
+        "first_page": "Showing the first page of the history.",
+        "col": {
+          "request": "Request ID",
+          "result": "Result",
+          "version": "Secret version"
+        }
+      }
+    }
+  },
+  "credentials": {
+    "page": {
+      "title": "Credentials · {{nama_client}}",
+      "subtitle": "A client can have at most 2 active credentials. The secret is shown only once, when it is created."
+    },
+    "table": "Credential list",
+    "revoke_aria": "Revoke credential {{id}}",
+    "no_expiry": "No expiry",
+    "revoked_at": "Revoked {{waktu}}",
+    "col": {
+      "id": "Credential ID",
+      "expires": "Valid until"
+    },
+    "status": {
+      "aktif": "Active",
+      "kedaluwarsa": "Expired",
+      "dicabut": "Revoked"
+    },
+    "empty": {
+      "title": "No credentials yet",
+      "body": "Create a credential so the client application can call PoolRouter."
+    },
+    "create": {
+      "title": "Create credential",
+      "expiry": "Validity",
+      "days_one": "{{count, number}} day",
+      "days_other": "{{count, number}} days",
+      "once": "The secret is shown once, right after the credential is created.",
+      "max": "This client already has 2 active credentials. Revoke one before creating a new one."
+    }
+  },
   "quota": {
     "page": {
       "title": "Quota",
