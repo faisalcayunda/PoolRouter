@@ -14,6 +14,9 @@ use poolrouter_core::admin::kelola_pengguna::{
     GalatKelola, SEED_ADMIN_AUDITOR, SEED_AUDITOR, SEED_CLIENT_OWNER, SEED_OPERATOR,
     SEED_PENYETUJU, SEED_PLATFORM_ADMIN,
 };
+use poolrouter_core::admin::seed_dukcapil::{
+    SEED_DOWNSTREAM, SEED_ENDPOINT, SEED_PROVIDER, SEED_UPSTREAM,
+};
 use poolrouter_core::admin::sesi_store::SesiStore;
 use poolrouter_core::audit::{Alasan, Peran};
 use poolrouter_core::config::Environment;
@@ -517,4 +520,105 @@ async fn seed_pengguna_hanya_dev_ci_dan_idempoten() {
         "{teks}"
     );
     assert_eq!(hitung_semua(&u).await, setelah_pertama);
+}
+
+async fn hitung_rantai_dukcapil(u: &Uji) -> (i64, i64, i64, i64, i64, i64, i64) {
+    sqlx::query_as(
+        "SELECT (SELECT count(*) FROM provider), (SELECT count(*) FROM provider_config_versi), \
+                (SELECT count(*) FROM upstream_pool), (SELECT count(*) FROM downstream_pool), \
+                (SELECT count(*) FROM downstream_pool_rute), \
+                (SELECT count(*) FROM downstream_endpoint), \
+                (SELECT count(*) FROM audit_konfigurasi)",
+    )
+    .fetch_one(&u.su)
+    .await
+    .unwrap()
+}
+
+/// Namanya diurutkan sesudah `seed_pengguna_hanya_dev_ci_dan_idempoten` (uji berjalan menurut abjad
+/// dengan `--test-threads=1`): uji itu menghitung pengguna seed dari nol, sedangkan uji ini
+/// menjalankan `seed pengguna` sendiri karena `seed dukcapil` membutuhkannya.
+#[tokio::test]
+#[ignore]
+async fn seed_pengguna_lalu_seed_dukcapil_hanya_dev_ci_dan_idempoten() {
+    let u = Uji::baru().await;
+    u.jalankan_di(Environment::Ci, Some(NILAI_UJI), Perintah::SeedPengguna)
+        .await
+        .unwrap();
+
+    // Di luar dev/ci: ditolak tanpa perubahan di tabel mana pun.
+    let awal = hitung_rantai_dukcapil(&u).await;
+    for env in [Environment::Staging, Environment::Poc, Environment::Prod] {
+        let e = u
+            .jalankan_di(env, None, Perintah::SeedDukcapil)
+            .await
+            .unwrap_err();
+        assert!(
+            matches!(e, GalatCli::Kelola(GalatKelola::SeedDitolak)),
+            "{e}"
+        );
+        assert_ne!(e.kode_keluar(), 0);
+    }
+    assert_eq!(hitung_rantai_dukcapil(&u).await, awal);
+
+    let teks = u
+        .jalankan_di(Environment::Ci, None, Perintah::SeedDukcapil)
+        .await
+        .unwrap();
+    let pertama = hitung_rantai_dukcapil(&u).await;
+    assert!(
+        teks.contains(
+            "1 provider baru, 1 upstream pool baru, 1 downstream pool baru, 1 endpoint baru"
+        ),
+        "{teks}"
+    );
+    // provider, versi provider, upstream, downstream, rute, endpoint, lima baris audit.
+    assert_eq!(
+        (
+            pertama.0 - awal.0,
+            pertama.1 - awal.1,
+            pertama.2 - awal.2,
+            pertama.3 - awal.3,
+            pertama.4 - awal.4,
+            pertama.5 - awal.5,
+            pertama.6 - awal.6
+        ),
+        (1, 1, 1, 1, 1, 1, 4)
+    );
+
+    // Rantai utuh: endpoint aktif -> downstream pool -> rute -> upstream pool -> provider, dan
+    // kedua penunjuk versi aktif menunjuk versi yang ada.
+    let utuh: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM downstream_endpoint e \
+         JOIN downstream_pool dp ON dp.downstream_pool_id = e.downstream_pool_id \
+         JOIN downstream_pool_rute r ON r.downstream_pool_id = dp.downstream_pool_id \
+         JOIN upstream_pool up ON up.upstream_pool_id = r.upstream_pool_id \
+         JOIN provider p ON p.provider_id = up.provider_id AND p.provider_id = e.provider_id \
+         JOIN provider_config_versi pv \
+           ON pv.provider_id = p.provider_id AND pv.versi = p.config_versi_aktif \
+         JOIN endpoint_config_versi ev \
+           ON ev.downstream_endpoint_id = e.downstream_endpoint_id AND ev.versi = e.config_versi_aktif \
+         WHERE e.nama = $1 AND e.aktif AND dp.nama = $2 AND up.nama = $3 AND p.nama = $4 AND p.aktif",
+    )
+    .bind(SEED_ENDPOINT)
+    .bind(SEED_DOWNSTREAM)
+    .bind(SEED_UPSTREAM)
+    .bind(SEED_PROVIDER)
+    .fetch_one(&u.su)
+    .await
+    .unwrap();
+    assert_eq!(utuh, 1, "rantai seed dukcapil utuh");
+
+    // Jalan kedua: tidak ada baris tambahan, termasuk audit.
+    let teks = u
+        .jalankan_di(Environment::Dev, None, Perintah::SeedDukcapil)
+        .await
+        .unwrap();
+    assert!(
+        teks.contains(
+            "0 provider baru, 0 upstream pool baru, 0 downstream pool baru, 0 endpoint baru"
+        ),
+        "{teks}"
+    );
+    assert_eq!(hitung_rantai_dukcapil(&u).await, pertama);
 }

@@ -32,7 +32,7 @@ COMPOSE := $(COMPOSE_ENV) $(CONTAINER_ENGINE) compose -p $(PROJECT) $(COMPOSE_FI
 LINT_ENV_FILES := $(COMPOSE_DIR)/env/dev.env.example
 IMAGE_TAG ?= dev
 
-.PHONY: check-env compose-up compose-down compose-ps compose-logs compose-config compose-migrate compose-lint compose-test-dind image image-frontend
+.PHONY: check-env compose-up compose-down compose-ps compose-logs compose-config compose-migrate compose-seed compose-lint compose-test-dind image image-frontend
 
 check-env:
 	@case "$(ENV)" in dev|staging|prod) ;; *) echo "ENV harus dev, staging, atau prod" >&2; exit 2 ;; esac
@@ -50,6 +50,13 @@ compose-up: check-env
 # compose-migrate: jalankan setelah compose-up (bundled-infra sudah healthy). Tidak menaikkan app.
 compose-migrate: check-env
 	$(COMPOSE) $(PROFILE_ARGS) --profile migrate run --rm migrate
+
+# compose-seed: seed sintetis di compose dev (ARC-237). Jalankan setelah compose-migrate. Profil `cli`
+# memakai image backend yang memuat backend-cli. Hanya ENV=dev; di luar itu backend-cli menolak juga.
+compose-seed: check-env
+	@test "$(ENV)" = dev || { echo "compose-seed hanya untuk ENV=dev" >&2; exit 2; }
+	$(COMPOSE) $(PROFILE_ARGS) --profile cli run --rm backend-cli seed pengguna
+	$(COMPOSE) $(PROFILE_ARGS) --profile cli run --rm backend-cli seed dukcapil
 
 compose-down: check-env
 	$(COMPOSE) $(PROFILE_ARGS) down
@@ -93,7 +100,7 @@ STACKS := backend $(if $(wildcard frontend/Makefile),frontend)
 
 help:
 	@echo "gate resmi: make setup test lint RUNNER=docker FRONTEND_RUNNER=docker CONTAINER_LABEL=arctiva.issue=ARC-<n>"
-	@echo "targets: setup test lint fmt clean (gate repo, delegasi ke stack); test-dry-run (uji regresi make -n, tanpa Docker); compose-up compose-down compose-ps compose-logs compose-config compose-migrate compose-lint compose-test-dind image image-frontend"
+	@echo "targets: setup test lint fmt clean (gate repo, delegasi ke stack); test-dry-run (uji regresi make -n, tanpa Docker); compose-up compose-down compose-ps compose-logs compose-config compose-migrate compose-seed compose-lint compose-test-dind image image-frontend"
 	@echo "Push: tidak ada push langsung ke main. Branch agent/<ID>-<slug> -> PR ke main -> merge Operator (CLAUDE.md)."
 
 # push-main: sengaja menolak. Arctiva tidak mengizinkan push langsung ke main, dan jalur push
