@@ -12,8 +12,8 @@ use chrono::{DateTime, Duration, Utc};
 use poolrouter_cli::{GalatCli, Konteks, PembacaPassword, Perintah, jalankan};
 use poolrouter_core::admin::TokenSesi;
 use poolrouter_core::admin::kelola_pengguna::{
-    self as kelola, GalatKelola, SEED_ADMIN_AUDITOR, SEED_AUDITOR, SEED_CLIENT_OWNER, SEED_OPERATOR,
-    SEED_PENYETUJU, SEED_PLATFORM_ADMIN,
+    self as kelola, GalatKelola, SEED_ADMIN_AUDITOR, SEED_AUDITOR, SEED_CLIENT_OWNER,
+    SEED_OPERATOR, SEED_PENYETUJU, SEED_PLATFORM_ADMIN,
 };
 use poolrouter_core::admin::sesi_store::SesiStore;
 use poolrouter_core::audit::{Alasan, Peran};
@@ -559,7 +559,9 @@ fn cabut_admin(username: &str, oleh: &str) -> Perintah {
 #[ignore]
 async fn platform_admin_aktif_terakhir_tidak_bisa_dicabut_perannya() {
     let u = Uji::baru().await;
-    let (a, nama_a) = u.pengguna("pa-terakhir", &[Peran::PlatformAdmin], true).await;
+    let (a, nama_a) = u
+        .pengguna("pa-terakhir", &[Peran::PlatformAdmin], true)
+        .await;
     let (b, nama_b) = u.pengguna("pa-lain", &[Peran::PlatformAdmin], true).await;
     let dinonaktifkan = u.sisakan_admin(&[a, b]).await;
     u.sesi(b).await;
@@ -580,7 +582,10 @@ async fn platform_admin_aktif_terakhir_tidak_bisa_dicabut_perannya() {
         matches!(e, GalatCli::Kelola(GalatKelola::AdminTerakhir(_))),
         "{e}"
     );
-    assert!(e.to_string().contains("platform_admin aktif terakhir"), "{e}");
+    assert!(
+        e.to_string().contains("platform_admin aktif terakhir"),
+        "{e}"
+    );
     assert_ne!(e.kode_keluar(), 0);
     assert_eq!(peran_b, vec!["platform_admin".to_owned()], "peran utuh");
     assert_eq!(sesi_b, 1, "sesi tidak dicabut oleh operasi yang ditolak");
