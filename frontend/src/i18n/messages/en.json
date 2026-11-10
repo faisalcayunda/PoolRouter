@@ -355,12 +355,12 @@
     "replace": {
       "title": "Replace secret {{nama}}",
       "new_value": "New value",
-      "body": "The old value can't be viewed. The new value replaces it right away.",
-      "confirm": "Replace value"
+      "confirm": "Save"
     },
     "delete": {
       "blocked": {
         "title": "Secret is still in use",
+        "ack": "Got it",
         "body": "{{nama}} is still used by active providers: {{daftar}}. Deactivate or change those providers first, then delete this secret.",
         "short": "{{nama}} is still used by an active provider. Change or deactivate that provider first, then delete this secret."
       },
@@ -379,6 +379,7 @@
       "body": "A secret stores a provider credential, such as USER_ID and PASSWORD. Add a secret before you create a provider template."
     },
     "masked": "Masked",
+    "changed_unknown": "Not available yet",
     "unused": "Not in use",
     "row": {
       "replace_aria": "Replace the value of secret {{nama}}",
