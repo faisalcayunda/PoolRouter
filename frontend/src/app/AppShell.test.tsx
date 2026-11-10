@@ -6,6 +6,7 @@ import type { i18n } from 'i18next';
 import { AppI18nProvider } from '../i18n/provider';
 import { AppShell } from './AppShell';
 import { activeHref, crumbsFor, navGroupsFor } from './nav';
+import { useCrumbName } from '../features/common/CrumbName';
 import type { AdminRole } from '../features/common/RoleContext';
 
 /** Drive the `large` (>= 1200 px) media query without a real viewport. */
@@ -23,6 +24,12 @@ function setLarge(matches: boolean) {
 }
 
 let instance: i18n;
+
+/** A screen that knows the name of the record in the URL, like the provider and client screens. */
+function NamedScreen({ id, name }: { id: string; name: string }) {
+  useCrumbName(id, name);
+  return <p>ISI Halaman</p>;
+}
 
 function renderShell(
   pathname = '/',
@@ -287,6 +294,34 @@ describe('AppShell — breadcrumbs', () => {
     expect(trail.querySelectorAll('[aria-hidden="true"]')).toHaveLength(2);
   });
 
+  it('shows the record name the screen reports instead of the raw id', async () => {
+    const id = '00000000-0000-4000-8000-0000000000a1';
+    render(
+      <AppI18nProvider i18n={instance}>
+        <AppShell pathname={`/provider/${id}`}>
+          <NamedScreen id={id} name="API Dukcapil" />
+        </AppShell>
+      </AppI18nProvider>,
+    );
+    const trail = screen.getByRole('navigation', { name: 'Jejak halaman' });
+    await waitFor(() =>
+      expect(within(trail).getByText('API Dukcapil')).toHaveAttribute('aria-current', 'page'),
+    );
+    expect(within(trail).queryByText(id)).not.toBeInTheDocument();
+  });
+
+  it('keeps the id when the reported name belongs to another record', () => {
+    render(
+      <AppI18nProvider i18n={instance}>
+        <AppShell pathname="/provider/b2">
+          <NamedScreen id="a1" name="API Dukcapil" />
+        </AppShell>
+      </AppI18nProvider>,
+    );
+    const trail = screen.getByRole('navigation', { name: 'Jejak halaman' });
+    expect(within(trail).getByText('b2')).toHaveAttribute('aria-current', 'page');
+  });
+
   it('has a trail on the not-found route too', () => {
     renderShell('/tidak-ada');
     const trail = screen.getByRole('navigation', { name: 'Jejak halaman' });
@@ -330,6 +365,14 @@ describe('crumbsFor', () => {
       { text: 'c1', href: '/client/c1' },
       { labelKey: 'nav.breadcrumb.credentials' },
     ]);
+    // A reported name replaces the id crumb, also on a client sub page where the crumb is a link.
+    expect(crumbsFor('/client/c1/webhook', { id: 'c1', name: 'MPM' })).toEqual([
+      { labelKey: 'nav.group.client' },
+      { labelKey: 'nav.drawer.client', href: '/client' },
+      { text: 'MPM', href: '/client/c1' },
+      { labelKey: 'nav.drawer.webhook' },
+    ]);
+    expect(crumbsFor('/client/c1', { id: 'x', name: 'MPM' }).at(-1)).toEqual({ text: 'c1' });
     expect(crumbsFor('/provider/a/webhook')).toEqual([{ labelKey: 'nav.breadcrumb.not_found' }]);
     // Segmen berformat salah tidak boleh melempar URIError (akar tidak boleh unmount).
     for (const path of ['/provider/%/kredensial', '/upstream/100%/webhook', '/log/%zz/webhook']) {

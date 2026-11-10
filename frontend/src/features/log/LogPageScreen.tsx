@@ -1,7 +1,6 @@
 import { useMemo, useState, type FormEvent, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-aria-components';
-import { today, type DateValue } from '@internationalized/date';
 import {
   api,
   type ApiClient,
@@ -29,23 +28,9 @@ import { MaskedNik } from '../common/MaskedNik';
 import { ScrollArea } from '../common/ScrollArea';
 import { useRole } from '../common/RoleContext';
 import { SnackbarRegion, useSnackbar } from '../common/useSnackbar';
+import { dayRangeBounds, todayRange, type DayRange } from '../common/dayRange';
 import { accessTone } from './accessTone';
 import { PayloadDialog } from './PayloadDialog';
-
-/** Satu-satunya zona waktu layar ini (WIB); rentang tanggal dikirim sebagai hari penuh WIB. */
-const ZONE = 'Asia/Jakarta';
-
-/** Rentang dua tanggal; bentuknya sama dengan `RangeValue` milik React Aria. */
-interface DayRange {
-  start: DateValue;
-  end: DateValue;
-}
-
-/** Default kunjungan pertama: hari ini (WIB), seperti rentang di frame Penpot. */
-function todayRange(): DayRange {
-  const day = today(ZONE);
-  return { start: day, end: day };
-}
 
 /**
  * `queue_id` dan `kode_transaksi` sama-sama UUID, dan server menggabungkan filter dengan AND. Isian
@@ -81,10 +66,7 @@ async function cariGabungan(
 }
 
 function buildRequest(term: string, clientId: string | null, range: DayRange): LogCariRequest {
-  const body: LogCariRequest = {
-    dari: `${range.start.toString()}T00:00:00+07:00`,
-    sampai: `${range.end.toString()}T23:59:59+07:00`,
-  };
+  const body: LogCariRequest = dayRangeBounds(range);
   const q = term.trim();
   if (q) body.kode_transaksi = q;
   if (clientId) body.client_id = clientId;

@@ -10,6 +10,7 @@ import {
   type Credential,
   type WebhookLog,
 } from '../src/api/client';
+import { AppShell } from '../src/app/AppShell';
 import { peranShell } from '../src/app/AppRoot';
 import { ClientDetailScreen } from '../src/features/client/ClientDetailScreen';
 import { ClientListScreen } from '../src/features/client/ClientListScreen';
@@ -154,7 +155,11 @@ describe('S08 daftar client', () => {
     ]);
     const baris = within(table.getByRole('row', { name: /Aplikasi Contoh A/ }));
     expect(baris.getByText('Aktif')).toBeInTheDocument();
-    expect(baris.getByText(CLIENT_ID)).toBeInTheDocument();
+    // The long id stays on one line: truncated with the full value in the title.
+    const id = baris.getByText(CLIENT_ID);
+    expect(id).toHaveAttribute('title', CLIENT_ID);
+    expect(id).toHaveClass('truncate');
+    expect(id).not.toHaveClass('break-all');
     // Jenis kredensial dan waktu buat belum ada di GET /clients: placeholder, bukan nilai karangan.
     expect(baris.getAllByText('\u2014')).toHaveLength(2);
     expect(baris.queryByText(/burst, isi ulang/)).toBeNull();
@@ -466,16 +471,41 @@ describe('S08 detail client', () => {
     );
   });
 
-  it('marks the active section in the sub navigation', async () => {
+  it('names the client in the breadcrumb on the detail, credential and webhook screens', async () => {
+    const screens: [string, ReactNode][] = [
+      [`/client/${CLIENT_ID}`, <ClientDetailScreen clientId={CLIENT_ID} client={stubClient()} />],
+      [
+        `/client/${CLIENT_ID}/kredensial`,
+        <CredentialsScreen clientId={CLIENT_ID} client={stubClient()} />,
+      ],
+      [
+        `/client/${CLIENT_ID}/webhook`,
+        <WebhookScreen clientId={CLIENT_ID} client={stubClient()} />,
+      ],
+    ];
+    for (const [pathname, ui] of screens) {
+      const view = asRole('platform_admin', <AppShell pathname={pathname}>{ui}</AppShell>);
+      const trail = within(screen.getByRole('navigation', { name: 'Jejak halaman' }));
+      expect(await trail.findByText('Aplikasi Contoh A')).toBeInTheDocument();
+      expect(trail.queryByText(CLIENT_ID)).toBeNull();
+      view.unmount();
+    }
+  });
+
+  it('links to the other sections as actions, not as tab chips (frames S08, S09)', async () => {
     asRole('platform_admin', <ClientDetailScreen clientId={CLIENT_ID} client={stubClient()} />);
     const nav = within(await screen.findByRole('navigation', { name: 'Bagian client' }));
-    expect(nav.getByRole('link', { name: 'Detail client' })).toHaveAttribute(
-      'aria-current',
-      'page',
+    expect(nav.getByRole('link', { name: 'Kredensial' })).toHaveAttribute(
+      'href',
+      `/client/${CLIENT_ID}/kredensial`,
     );
-    expect(nav.getByRole('link', { name: 'Webhook dan riwayat' })).not.toHaveAttribute(
-      'aria-current',
+    expect(nav.getByRole('link', { name: 'Webhook dan riwayat' })).toHaveAttribute(
+      'href',
+      `/client/${CLIENT_ID}/webhook`,
     );
+    // The current section and the back chip are gone: the breadcrumb leads back to the list.
+    expect(nav.queryByRole('link', { name: 'Detail client' })).toBeNull();
+    expect(screen.queryByRole('link', { name: 'Semua client' })).toBeNull();
   });
 });
 

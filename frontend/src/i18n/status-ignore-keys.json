@@ -52,7 +52,8 @@
       "webhook.reason.http",
       "log.payload.input",
       "log.payload.metadata",
-      "log.filter.queue"
+      "log.filter.queue",
+      "secret.masked"
     ]
   }
 }

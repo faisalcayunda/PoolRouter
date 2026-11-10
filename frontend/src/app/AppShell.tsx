@@ -8,6 +8,7 @@ import { NavigationDrawer } from '../components/m3/NavigationDrawer';
 import { TopAppBar } from '../components/m3/TopAppBar';
 import { enumLabel } from '../i18n/enums';
 import { Icon, icons } from '../icons';
+import { CrumbNameProvider, type CrumbRecord } from '../features/common/CrumbName';
 import type { AdminRole } from '../features/common/RoleContext';
 import { activeHref, crumbsFor, navGroupsFor } from './nav';
 
@@ -129,6 +130,7 @@ export function AppShell({ pathname = '/', user, role = null, children }: AppShe
   const isLarge = useIsLarge();
   const [drawerOpen, setDrawerOpen] = useState(false);
   const closeDrawer = useCallback(() => setDrawerOpen(false), []);
+  const [record, setRecord] = useState<CrumbRecord | null>(null);
 
   // Drawer modal hanya ada di bawah large; diturunkan dari `isLarge` supaya tidak perlu efek
   // sinkronisasi dan tidak pernah tersisa terbuka setelah jendela diperlebar.
@@ -175,7 +177,7 @@ export function AppShell({ pathname = '/', user, role = null, children }: AppShe
           title={
             <Breadcrumbs
               aria-label={t('nav.breadcrumb.aria')}
-              items={crumbsFor(pathname).map((c) => ({
+              items={crumbsFor(pathname, record).map((c) => ({
                 label: c.labelKey ? t(c.labelKey) : c.text,
                 ...(c.href ? { href: c.href } : {}),
               }))}
@@ -194,7 +196,7 @@ export function AppShell({ pathname = '/', user, role = null, children }: AppShe
             <Suspense
               fallback={<p className="typescale-body-medium">{t('common.state.loading')}</p>}
             >
-              {children}
+              <CrumbNameProvider onChange={setRecord}>{children}</CrumbNameProvider>
             </Suspense>
           </div>
         </main>

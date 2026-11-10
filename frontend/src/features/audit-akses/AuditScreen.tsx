@@ -1,6 +1,7 @@
-import { useMemo, useState, type ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { api, type ApiClient, type AuditAksesPage, type AuditCariRequest } from '../../api/client';
+import { DateRangePicker } from '../../components/m3/DatePicker';
 import { Button } from '../../components/m3/Button';
 import { Card } from '../../components/m3/Card';
 import { Pagination } from '../../components/m3/Pagination';
@@ -11,36 +12,11 @@ import { TextField } from '../../components/m3/TextField';
 import idMessages from '../../i18n/messages/id.json';
 import { useFormatter } from '../../i18n/useFormatter';
 import { enumLabel } from '../../i18n/enums';
-import {
-  DateRangeField,
-  formatTypedDate,
-  parseTypedDate,
-  type DateRange,
-  type DateRangeFieldErrors,
-} from '../common/DateRangeField';
+import { dayRangeBounds, todayRange, type DayRange } from '../common/dayRange';
 import { PageHeader, EmptyState, QueryError } from '../common/page';
 import { useDocumentTitle, useFocusOnMount } from '../common/a11y';
 import { useQuery } from '../common/useQuery';
 import { ScrollArea } from '../common/ScrollArea';
-
-function lastDay(): DateRange {
-  const now = new Date();
-  const start = new Date(now.getTime() - 24 * 3600 * 1000);
-  const iso = (d: Date) => {
-    const wib = new Date(d.getTime() + 7 * 3600 * 1000);
-    return { date: wib.toISOString().slice(0, 10), time: wib.toISOString().slice(11, 16) };
-  };
-  const s = iso(start);
-  const e = iso(now);
-  return {
-    from: `${s.date}T${s.time}:00+07:00`,
-    to: `${e.date}T${e.time}:59+07:00`,
-    startDate: s.date,
-    startTime: s.time,
-    endDate: e.date,
-    endTime: e.time,
-  };
-}
 
 /** Actions the catalog can name; the filter offers exactly these (`enum.aksi_audit`). */
 const AKSI_VALUES = Object.keys(idMessages.enum.aksi_audit);
@@ -78,15 +54,9 @@ export function AuditScreen({ client = api }: AuditScreenProps): ReactNode {
   const titleRef = useFocusOnMount<HTMLHeadingElement>();
   useDocumentTitle(t('title.page.audit'));
 
-  const initial = useMemo(() => lastDay(), []);
-  const [range, setRange] = useState<DateRange>(initial);
-  const [typed, setTyped] = useState({
-    start: formatTypedDate(initial.startDate),
-    end: formatTypedDate(initial.endDate),
-  });
-  const [errors, setErrors] = useState<DateRangeFieldErrors>({});
+  const [range, setRange] = useState<DayRange>(todayRange);
   const [rangeError, setRangeError] = useState<string | null>(null);
-  const [query, setQuery] = useState<AuditCariRequest>({ dari: initial.from, sampai: initial.to });
+  const [query, setQuery] = useState<AuditCariRequest>(() => dayRangeBounds(todayRange()));
 
   const [aksi, setAksi] = useState('semua');
   const [pengguna, setPengguna] = useState('');
@@ -105,37 +75,26 @@ export function AuditScreen({ client = api }: AuditScreenProps): ReactNode {
 
   const rows = audit.data?.baris ?? [];
 
-  function submit(event: React.FormEvent) {
-    event.preventDefault();
-    const next: DateRangeFieldErrors = {};
-    const startIso = parseTypedDate(typed.start);
-    const endIso = parseTypedDate(typed.end);
-    if (!startIso) next.startDate = t('common.date.format_error');
-    if (!endIso) next.endDate = t('common.date.format_error');
-    setErrors(next);
-    // `pengguna_id` is a UUID in the admin contract; free text is never sent.
-    const userId = pengguna.trim();
-    const userInvalid = userId !== '' && !UUID_RE.test(userId);
-    setPenggunaError(userInvalid ? t('audit.filter.user_error') : null);
-    if (userInvalid) {
-      setRangeError(null);
-      return;
-    }
-    if (!startIso || !endIso) {
-      setRangeError(null);
-      return;
-    }
-    // The range itself is the query: the date fields are the source of truth on submit.
-    const from = range.startTime ? `${startIso}T${range.startTime}:00+07:00` : '';
-    const to = range.endTime ? `${endIso}T${range.endTime}:59+07:00` : '';
-    if (!from || !to || from > to) {
+  function changeRange(next: DayRange | null) {
+    if (!next) return;
+    // A picked end before the start never reaches the request; the field says why.
+    if (next.end.compare(next.start) < 0) {
       setRangeError(t('common.date.order_error'));
       return;
     }
     setRangeError(null);
+    setRange(next);
+  }
+
+  function submit(event: React.FormEvent) {
+    event.preventDefault();
+    // `pengguna_id` is a UUID in the admin contract; free text is never sent.
+    const userId = pengguna.trim();
+    const userInvalid = userId !== '' && !UUID_RE.test(userId);
+    setPenggunaError(userInvalid ? t('audit.filter.user_error') : null);
+    if (userInvalid || rangeError) return;
     setQuery({
-      dari: from,
-      sampai: to,
+      ...dayRangeBounds(range),
       ...(aksi === 'semua' ? {} : { aksi }),
       ...(userId ? { pengguna_id: userId } : {}),
     });
@@ -150,52 +109,56 @@ export function AuditScreen({ client = api }: AuditScreenProps): ReactNode {
         titleRef={titleRef}
       />
 
-      <form className="flex flex-col gap-4" onSubmit={submit}>
-        <div className="grid grid-cols-1 gap-4 expanded:grid-cols-2">
-          <TextField
-            label={t('audit.filter.user')}
-            value={pengguna}
-            autoComplete="off"
-            isInvalid={penggunaError !== null}
-            errorMessage={penggunaError}
-            description={t('audit.filter.user_help')}
-            onChange={(value) => {
-              setPengguna(value);
-              setPenggunaError(null);
-            }}
+      {/* Frame S13: Pengguna, Aksi and Rentang waktu share one row; the button closes it. */}
+      <form
+        className="flex flex-col gap-4 expanded:flex-row expanded:items-start"
+        onSubmit={submit}
+      >
+        <TextField
+          label={t('audit.filter.user')}
+          value={pengguna}
+          autoComplete="off"
+          isInvalid={penggunaError !== null}
+          errorMessage={penggunaError}
+          className="expanded:w-72"
+          onChange={(value) => {
+            setPengguna(value);
+            setPenggunaError(null);
+          }}
+        />
+        <Select
+          label={t('audit.filter.action')}
+          selectedKey={aksi}
+          onSelectionChange={(key) => {
+            if (key !== null) setAksi(String(key));
+          }}
+          className="expanded:w-52 [&>button]:w-full"
+        >
+          <SelectItem id="semua">{t('common.action.all')}</SelectItem>
+          {AKSI_VALUES.map((value) => (
+            <SelectItem key={value} id={value}>
+              {enumLabel(i18n, 'aksi_audit', value)}
+            </SelectItem>
+          ))}
+        </Select>
+        <div className="flex flex-col gap-1 expanded:w-[280px]">
+          <DateRangePicker
+            label={t('audit.filter.range')}
+            calendarLabel={t('log.filter.range_picker')}
+            separator="–"
+            value={range}
+            onChange={changeRange}
+            isInvalid={rangeError !== null}
           />
-          <Select
-            label={t('audit.filter.action')}
-            selectedKey={aksi}
-            onSelectionChange={(key) => {
-              if (key !== null) setAksi(String(key));
-            }}
-          >
-            <SelectItem id="semua">{t('common.action.all')}</SelectItem>
-            {AKSI_VALUES.map((value) => (
-              <SelectItem key={value} id={value}>
-                {enumLabel(i18n, 'aksi_audit', value)}
-              </SelectItem>
-            ))}
-          </Select>
-          <div className="expanded:col-span-2">
-            <DateRangeField
-              legend={t('audit.filter.range')}
-              value={range}
-              typed={typed}
-              onTypedChange={setTyped}
-              onChange={(next) => {
-                if (next) setRange(next);
-                setRangeError(null);
-              }}
-              errors={errors}
-              errorMessage={rangeError}
-            />
-          </div>
+          {rangeError ? (
+            <p role="alert" className="typescale-body-small text-error">
+              {rangeError}
+            </p>
+          ) : null}
         </div>
-        <div className="flex flex-wrap gap-2">
-          <Button type="submit">{t('common.action.search')}</Button>
-        </div>
+        <Button type="submit" className="expanded:mt-6">
+          {t('common.action.search')}
+        </Button>
       </form>
 
       {audit.status === 'loading' ? (

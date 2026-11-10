@@ -11,6 +11,7 @@ import { Switch } from '../../components/m3/Switch';
 import { Tab, TabList, TabPanel, Tabs } from '../../components/m3/Tabs';
 import { TextArea, TextField } from '../../components/m3/TextField';
 import { useDocumentTitle, useFocusOnMount } from '../common/a11y';
+import { useCrumbName } from '../common/CrumbName';
 import { errorMessage, LoadingState, PageHeader, QueryError } from '../common/page';
 import { useRole } from '../common/RoleContext';
 import { useQuery } from '../common/useQuery';
@@ -182,6 +183,7 @@ function ProviderForm({ client, initial }: ProviderFormProps): ReactNode {
 
   const mode = current ? 'update' : 'create';
   useDocumentTitle(t('title.page.provider'));
+  useCrumbName(current?.provider_id, current?.nama);
 
   function set<K extends DraftField>(field: K, value: ProviderDraft[K]) {
     setDraft((d) => ({ ...d, [field]: value }));
