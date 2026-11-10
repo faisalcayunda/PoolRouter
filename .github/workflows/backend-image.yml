@@ -16,6 +16,7 @@ on:
     branches: [main]
     paths:
       - "backend/**"
+      - "scripts/test-image-cli.sh"
       - ".github/workflows/backend-image.yml"
   workflow_dispatch:
 
@@ -73,7 +74,7 @@ jobs:
           REGISTRY_TOKEN: ${{ github.token }}
         run: printf '%s' "$REGISTRY_TOKEN" | docker login ghcr.io -u "$REGISTRY_USER" --password-stdin
 
-      - name: Verifikasi Buildah (podman build, linux/amd64, tanpa push)
+      - name: Verifikasi Buildah (podman build, linux/amd64, tanpa push) dan uji biner image
         if: steps.gate.outputs.present == 'true'
         run: |
           set -eu
@@ -84,6 +85,8 @@ jobs:
             --build-arg REVISION="${GITHUB_SHA}" \
             --build-arg CREATED="$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
             -f backend/Containerfile -t localhost/poolrouter-backend:buildah-verify backend
+          # ARC-236: semua biner ada di image dan `backend-cli --help` berjalan di dalamnya.
+          IMAGE=localhost/poolrouter-backend:buildah-verify CONTAINER_ENGINE="sudo podman" sh scripts/test-image-cli.sh
           sudo podman image rm -f localhost/poolrouter-backend:buildah-verify >/dev/null 2>&1 || true
 
       - name: Build dan push BuildKit (linux/amd64, by digest)

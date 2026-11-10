@@ -114,6 +114,24 @@ make compose-migrate ENV=<env> ENV_FILE=<file>
 
 Target ini menjalankan `run --rm migrate`, memakai `CONTAINER_ENGINE` yang sama dengan target lain. Hanya service `migrate` yang menerima secret `poolrouter_owner` (ADR-0001 §7.2, dijaga `compose-lint`). Urutan terhadap `bundled-infra`: infra harus `healthy` dulu (`compose-up`), baru migrasi.
 
+### Bootstrap admin dan pengguna (backend-cli)
+
+Image backend memuat `backend-cli` di `/usr/local/bin`, sama dengan `webserver`, `controller`, dan `worker` (ADR-0003 §3.6c, ARC-236). Tidak ada service Compose terpisah: CLI dijalankan lewat `exec` di container `backend-webserver`, yang sudah menerima `POOLROUTER_DB_*` dan secret role `pr_admin_api`. Jalankan setelah `compose-up` dan `compose-migrate`; platform admin pertama hanya sah saat tabel pengguna masih kosong.
+
+```sh
+# CT = nama container backend-webserver (lihat kolom NAME dari make compose-ps).
+make compose-ps ENV=<env> ENV_FILE=<file>
+CT=<nama-container-backend-webserver>
+
+podman exec "$CT" backend-cli --help
+podman exec -it "$CT" backend-cli bootstrap \
+  --username <admin> --alasan "<alasan 10-500 karakter, rujukan BA>"
+```
+
+Password diminta dari TTY (dua kali, tanpa echo); tanpa TTY, `exec -i` dan kirim satu baris lewat stdin. Password tidak pernah lewat argumen. Gunakan `docker exec` bila `CONTAINER_ENGINE=docker`. Perintah lain (`pengguna`, `peran`, `daftar`, `seed pengguna`) ada di `backend/README.md`. Akses `exec` ke container dibatasi untuk petugas infrastruktur.
+
+Bukti image memuat CLI: `make image test-image-cli IMAGE=localhost/poolrouter-backend:dev` (membangun image, lalu menjalankan `backend-cli --help` di dalamnya). Workflow `backend-image` menjalankan pemeriksaan yang sama pada image hasil build Buildah sebelum push. `make test` di `backend/` memeriksa Containerfile secara statis.
+
 ### Membersihkan
 
 Dua kasus berbeda. Jangan campur.
@@ -211,7 +229,7 @@ Bagian ini belum final. Keputusan berikut menunggu owner dan ADR infrastruktur l
 
 - Service backend, frontend, dan mock Dukcapil sudah didefinisikan, tetapi image-nya dibangun di Bagian 2 (SHAA-207 Containerfile). Sampai itu, profile `app` dan `mock` tidak bisa dinyalakan.
 - Subcommand `webserver healthcheck` dan konvensi `*_FILE` ada di lingkup backend SHAA-175 (Flik). Sampai ada, healthcheck backend tidak akan `healthy`.
-- Service `backend-cli` (ADR-0003 §3.6c, role `ADMIN_API`) belum didefinisikan. Menunggu image di Bagian 2.
+- `backend-cli` (ADR-0003 §3.6c, role `ADMIN_API`) tidak punya service Compose sendiri; ia dijalankan lewat `exec` di container `backend-webserver` (lihat Bootstrap admin dan pengguna).
 - Nama variabel `POOLROUTER_DB_*`, `POOLROUTER_REDIS_*`, dan `POOLROUTER_RABBITMQ_*` mengikuti kontrak env backend v1 (final, Shu). Perubahannya hanya lewat revisi kontrak.
 - Job CI V4 (`compose-portability`) diserahkan ke Tessai.
 
