@@ -116,19 +116,21 @@ Target ini menjalankan `run --rm migrate`, memakai `CONTAINER_ENGINE` yang sama 
 
 ### Bootstrap admin dan pengguna (backend-cli)
 
-Image backend memuat `backend-cli` di `/usr/local/bin`, sama dengan `webserver`, `controller`, dan `worker` (ADR-0003 §3.6c, ARC-236). Tidak ada service Compose terpisah: CLI dijalankan lewat `exec` di container `backend-webserver`, yang sudah menerima `POOLROUTER_DB_*` dan secret role `pr_admin_api`. Jalankan setelah `compose-up` dan `compose-migrate`; platform admin pertama hanya sah saat tabel pengguna masih kosong.
+Image backend memuat `backend-cli` di `/usr/local/bin`, sama dengan `webserver`, `controller`, dan `worker` (ADR-0003 §3.6c, ARC-236). Cara utama di Compose adalah service `backend-cli` (profile `cli`, ARC-237): perintah sekali jalan lewat `compose run --rm`, bukan `up`. Service ini hanya menerima `POOLROUTER_DB_*` dan secret role `pr_admin_api`; di dev ia juga satu-satunya yang menerima `POOLROUTER_SEED_PASSWORD_FILE`. Jalankan setelah `compose-up` dan `compose-migrate`; platform admin pertama hanya sah saat tabel pengguna masih kosong.
+
+Dev: `make compose-seed ENV=dev ENV_FILE=<file>` menjalankan `seed pengguna` lalu `seed dukcapil`.
+
+Perintah lain memakai bentuk yang sama dengan baris `compose-seed` di Makefile. Makefile belum punya target generik untuk perintah selain seed, jadi ambil awalan `compose -p ... --env-file ...` dari keluaran `make -n compose-seed ENV=<env> ENV_FILE=<file>`, lalu ganti perintah akhirnya:
 
 ```sh
-# CT = nama container backend-webserver (lihat kolom NAME dari make compose-ps).
-make compose-ps ENV=<env> ENV_FILE=<file>
-CT=<nama-container-backend-webserver>
-
-podman exec "$CT" backend-cli --help
-podman exec -it "$CT" backend-cli bootstrap \
+<awalan compose> --profile cli run --rm backend-cli --help
+<awalan compose> --profile cli run --rm backend-cli bootstrap \
   --username <admin> --alasan "<alasan 10-500 karakter, rujukan BA>"
 ```
 
-Password diminta dari TTY (dua kali, tanpa echo); tanpa TTY, `exec -i` dan kirim satu baris lewat stdin. Password tidak pernah lewat argumen. Gunakan `docker exec` bila `CONTAINER_ENGINE=docker`. Perintah lain (`pengguna`, `peran`, `daftar`, `seed pengguna`) ada di `backend/README.md`. Akses `exec` ke container dibatasi untuk petugas infrastruktur.
+Password diminta dari TTY (dua kali, tanpa echo); tanpa TTY, tambahkan `-T` dan kirim satu baris lewat stdin. Password tidak pernah lewat argumen.
+
+`exec` di container backend tetap mungkin karena binarinya ada di image, mis. untuk investigasi di container yang sedang berjalan. Untuk bootstrap dan seed tetap pakai service `backend-cli`: konfigurasinya paling sempit dan satu-satunya yang menerima password seed. Akses `exec` ke container dibatasi untuk petugas infrastruktur.
 
 Bukti image memuat CLI: `make image test-image-cli IMAGE=localhost/poolrouter-backend:dev` (membangun image, lalu menjalankan `backend-cli --help` di dalamnya). Workflow `backend-image` menjalankan pemeriksaan yang sama pada image hasil build Buildah sebelum push. `make test` di `backend/` memeriksa Containerfile secara statis.
 
