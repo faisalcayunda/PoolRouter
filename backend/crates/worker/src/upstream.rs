@@ -65,6 +65,14 @@ pub use poolrouter_adapter_provider::hasil::ResponsMentah;
 /// Satu panggilan ke provider. `Err` hanya untuk kegagalan transport
 /// (timeout, koneksi, TLS); respons HTTP non-2xx tetap `Ok`.
 pub trait PemanggilProvider: Send + Sync {
+    /// Siapkan klien untuk `trust` sebelum slot dan baris log disentuh, supaya
+    /// bahan yang tidak bisa dibangun menjadi klien ditolak tanpa efek samping
+    /// (M-03), sama dengan `siapkan` di jalur sync. Pesan galat tidak memuat
+    /// bahan. Bawaan: tidak ada yang perlu disiapkan (pemanggil palsu).
+    fn siapkan_trust(&self, _trust: &TlsTrust) -> Result<(), String> {
+        Ok(())
+    }
+
     fn panggil(
         &self,
         permintaan: &PermintaanKabel,
@@ -97,8 +105,10 @@ impl PemanggilReqwest {
 
     /// Klien untuk satu trust. `ca_kustom` dan `pin_spki` dirakit sekali lewat
     /// kode adapter yang sama dengan sync; kegagalan merakit (PEM yang bukan
-    /// sertifikat) adalah `Tls`, tanpa koneksi keluar. Pesannya hanya memuat
-    /// jenis galat, tidak pernah bahannya.
+    /// sertifikat) adalah `Tls`, tanpa koneksi keluar. Handler memanggilnya
+    /// lebih dulu lewat `siapkan_trust` (sebelum CAS), jadi `panggil` selalu
+    /// mendapat klien dari cache. Pesannya hanya memuat jenis galat, tidak
+    /// pernah bahannya.
     fn klien_untuk(&self, trust: &TlsTrust) -> Result<reqwest::Client, GagalPanggilProvider> {
         if matches!(trust, TlsTrust::System) {
             return Ok(self.klien.clone());
@@ -115,6 +125,13 @@ impl PemanggilReqwest {
 }
 
 impl PemanggilProvider for PemanggilReqwest {
+    fn siapkan_trust(&self, trust: &TlsTrust) -> Result<(), String> {
+        self.klien_untuk(trust).map(drop).map_err(|e| match e {
+            GagalPanggilProvider::Tls(pesan) => pesan,
+            _ => "klien tidak bisa dibangun".to_owned(),
+        })
+    }
+
     async fn panggil(
         &self,
         permintaan: &PermintaanKabel,

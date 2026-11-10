@@ -314,6 +314,9 @@ where
         // tidak ada baris log dan kuota untuk panggilan yang tidak pernah keluar
         // (M-03), sama dengan `siapkan` di jalur sync.
         let trust = dok.trust().map_err(|e| konfigurasi(e.to_string()))?;
+        self.pemanggil
+            .siapkan_trust(&trust)
+            .map_err(|e| konfigurasi(format!("klien TLS provider: {e}")))?;
         let dok_endpoint: Option<Json<Value>> = kol(&b, "dokumen_endpoint")?;
         let literal = render::parameter_literal(dok_endpoint.as_ref().map(|j| &j.0));
         let input_payload: Option<Json<Value>> = kol(&b, "input_payload")?;

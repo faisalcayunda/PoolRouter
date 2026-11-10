@@ -9,8 +9,6 @@
 //!
 //! Tanpa PostgreSQL dan Redis; jalan di `make test`.
 
-use std::net::SocketAddr;
-use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use poolrouter_adapter_provider::{GagalPanggilProvider, kelas_error};
@@ -19,105 +17,12 @@ use poolrouter_worker::render::baca_dokumen_provider;
 use poolrouter_worker::upstream::{
     PemanggilProvider, PemanggilReqwest, PermintaanKabel, ResponsMentah,
 };
-use rcgen::{BasicConstraints, CertificateParams, DnType, IsCa, KeyPair};
-use rustls::pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer};
 use serde_json::{Value, json};
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::TcpListener;
-use tokio_rustls::TlsAcceptor;
+use tls_uji::{MockHttps, mock_https as mock_https_jawaban, sertifikat};
+
+mod tls_uji;
 
 const JAWABAN: &str = r#"{"content":[{"NAMA_LGKP":"Sesuai (90)"}]}"#;
-
-/// CA sintetis plus satu sertifikat server ber-SAN 127.0.0.1 yang ditandatangani CA itu.
-struct Sertifikat {
-    ca_pem: String,
-    cert_der: CertificateDer<'static>,
-    key_der: Vec<u8>,
-    /// SHA-256 dari SPKI sertifikat server, base64 standar (bentuk `tls_pin_spki`).
-    pin: String,
-}
-
-fn sertifikat(nama: &str) -> Sertifikat {
-    use base64::Engine as _;
-    let ca_key = KeyPair::generate().unwrap();
-    let mut ca_params = CertificateParams::new(Vec::new()).unwrap();
-    ca_params.is_ca = IsCa::Ca(BasicConstraints::Unconstrained);
-    ca_params
-        .distinguished_name
-        .push(DnType::CommonName, format!("uji-ca-{nama}"));
-    let ca = ca_params.self_signed(&ca_key).unwrap();
-
-    let key = KeyPair::generate().unwrap();
-    let mut params = CertificateParams::new(vec!["127.0.0.1".to_owned()]).unwrap();
-    params
-        .distinguished_name
-        .push(DnType::CommonName, format!("uji-server-{nama}"));
-    let cert = params.signed_by(&key, &ca, &ca_key).unwrap();
-
-    let hash = aws_lc_rs::digest::digest(&aws_lc_rs::digest::SHA256, &key.public_key_der());
-    Sertifikat {
-        ca_pem: ca.pem(),
-        cert_der: cert.der().clone(),
-        key_der: key.serialize_der(),
-        pin: base64::engine::general_purpose::STANDARD.encode(hash.as_ref()),
-    }
-}
-
-struct MockHttps {
-    alamat: SocketAddr,
-    /// Byte data aplikasi yang diterima setelah handshake berhasil.
-    data: Arc<Mutex<Vec<u8>>>,
-}
-
-async fn mock_https(s: &Sertifikat) -> MockHttps {
-    let config = rustls::ServerConfig::builder_with_provider(Arc::new(
-        rustls::crypto::aws_lc_rs::default_provider(),
-    ))
-    .with_safe_default_protocol_versions()
-    .unwrap()
-    .with_no_client_auth()
-    .with_single_cert(
-        vec![s.cert_der.clone()],
-        PrivateKeyDer::from(PrivatePkcs8KeyDer::from(s.key_der.clone())),
-    )
-    .unwrap();
-    let acceptor = TlsAcceptor::from(Arc::new(config));
-    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let alamat = listener.local_addr().unwrap();
-    let data = Arc::new(Mutex::new(Vec::new()));
-    let catat = Arc::clone(&data);
-    tokio::spawn(async move {
-        while let Ok((tcp, _)) = listener.accept().await {
-            let acceptor = acceptor.clone();
-            let catat = Arc::clone(&catat);
-            tokio::spawn(async move {
-                let Ok(mut aliran) = acceptor.accept(tcp).await else {
-                    return;
-                };
-                let mut buf = [0u8; 4096];
-                loop {
-                    let n = match aliran.read(&mut buf).await {
-                        Ok(0) | Err(_) => return,
-                        Ok(n) => n,
-                    };
-                    let mut d = catat.lock().unwrap();
-                    d.extend_from_slice(&buf[..n]);
-                    // Body uji kecil: kepala lengkap = pesan lengkap.
-                    if d.windows(4).any(|w| w == b"\r\n\r\n") {
-                        break;
-                    }
-                }
-                let respons = format!(
-                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{JAWABAN}",
-                    JAWABAN.len()
-                );
-                let _ = aliran.write_all(respons.as_bytes()).await;
-                let _ = aliran.shutdown().await;
-            });
-        }
-    });
-    MockHttps { alamat, data }
-}
 
 /// Dokumen versi provider seperti yang ditulis admin API, plus bahan TLS.
 fn dokumen(mock: &MockHttps, tls: &Value) -> Value {
@@ -142,15 +47,20 @@ fn dokumen(mock: &MockHttps, tls: &Value) -> Value {
     dok
 }
 
-/// Langkah yang sama dengan handler: dokumen → `trust()` → permintaan kabel →
-/// `PemanggilReqwest`. `None` = bahan ditolak sebelum koneksi keluar (handler
-/// menolak sebelum CAS).
+async fn mock_https(s: &tls_uji::Sertifikat) -> MockHttps {
+    mock_https_jawaban(s, JAWABAN).await
+}
+
+/// Langkah yang sama dengan handler: dokumen → `trust()` → `siapkan_trust` →
+/// permintaan kabel → `PemanggilReqwest`. `None` = bahan ditolak sebelum
+/// koneksi keluar (handler menolak sebelum CAS).
 async fn panggil(
     pemanggil: &PemanggilReqwest,
     dok: &Value,
 ) -> Option<Result<ResponsMentah, GagalPanggilProvider>> {
     let dok = baca_dokumen_provider(dok).ok()?;
     let trust = dok.trust().ok()?;
+    pemanggil.siapkan_trust(&trust).ok()?;
     let kabel = PermintaanKabel {
         metode: dok.metode.clone(),
         url: dok.base_url.clone(),
@@ -270,17 +180,29 @@ async fn satu_pemanggil_beberapa_provider_tidak_tertukar() {
 }
 
 /// PEM yang lolos `trust()` tetapi tidak bisa dibangun menjadi klien (bukan
-/// sertifikat) menjadi `tls`, tidak pernah jatuh ke trust sistem.
+/// sertifikat) ditolak oleh `siapkan_trust`, yang dipanggil handler sebelum
+/// CAS (M-03), tanpa koneksi keluar. `panggil` sendiri tetap `tls` (tidak
+/// pernah jatuh ke trust sistem) bila dipanggil tanpa persiapan itu.
 #[tokio::test]
-async fn pem_rusak_menjadi_tls_tanpa_koneksi() {
+async fn pem_rusak_ditolak_siapkan_trust_dan_panggil_tetap_tls() {
     let s = sertifikat("a");
     let mock = mock_https(&s).await;
     let dok = dokumen(
         &mock,
         &json!({"tls_trust": "ca_kustom", "tls_ca_pem": "bukan pem"}),
     );
-    let h = panggil(&PemanggilReqwest::baru().unwrap(), &dok).await;
-    assert!(gagal_tls(&h), "{h:?}");
+    let pemanggil = PemanggilReqwest::baru().unwrap();
+    assert!(panggil(&pemanggil, &dok).await.is_none());
+
+    let dok = baca_dokumen_provider(&dok).unwrap();
+    let kabel = PermintaanKabel {
+        metode: dok.metode.clone(),
+        url: dok.base_url.clone(),
+        body: Some("{}".to_owned()),
+        trust: dok.trust().unwrap(),
+        batas_total: Duration::from_secs(10),
+    };
+    assert!(gagal_tls(&Some(pemanggil.panggil(&kabel).await)));
     assert!(mock.data.lock().unwrap().is_empty());
 }
 

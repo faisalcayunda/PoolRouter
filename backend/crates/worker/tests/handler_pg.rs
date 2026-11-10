@@ -38,6 +38,8 @@ use uuid::Uuid;
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
+mod tls_uji;
+
 const KEK_UJI: &str = "a2VrLXVqaS1hcmM3My1wcm9kdWtzaS1qYW5nYW4tZGk=";
 const NIK: &str = "0012345678901234";
 const SECRET: &str = "rahasia-sintetis-arc71";
@@ -158,6 +160,16 @@ struct Fixture {
 
 impl Fixture {
     async fn baru(l: &Lingkungan, timeout_detik: i64) -> Self {
+        Self::baru_dengan(l, timeout_detik, |_| {}).await
+    }
+
+    /// `ubah_dokumen` menyesuaikan dokumen provider versi 1 sebelum ditulis
+    /// (bahan TLS, `base_url`).
+    async fn baru_dengan(
+        l: &Lingkungan,
+        timeout_detik: i64,
+        ubah_dokumen: impl FnOnce(&mut Value),
+    ) -> Self {
         let su = l.su.clone();
         let admin_id = Uuid::now_v7();
         let client_id = Uuid::now_v7();
@@ -207,7 +219,7 @@ impl Fixture {
              \"USER_ID\":\"{{{{secret.{nama_secret}}}}}\",\"TRESHOLD\":\"{{{{endpoint.TRESHOLD}}}}\",\
              \"transactionId\":\"{{{{system.kode_transaksi}}}}\"}}"
         );
-        let dokumen = json!({
+        let mut dokumen = json!({
             "metode": "POST",
             "base_url": format!("{}/kesesuaian", l.mock.uri()),
             "body_template": body_template,
@@ -223,6 +235,7 @@ impl Fixture {
             "tls_trust": "system",
             "log_mode": "full_payload"
         });
+        ubah_dokumen(&mut dokumen);
         sqlx::query(
             "INSERT INTO provider_config_versi
                     (provider_id, versi, config_schema_version, log_mode, dokumen, dibuat_oleh)
@@ -653,6 +666,85 @@ async fn sukses_log_sebelum_panggilan_lalu_done() {
         .unwrap();
     assert_eq!(attempts, 1);
     assert!(!slot_ada(&l.redis, &f, id, 1).await);
+}
+
+/// Bahan TLS dari dokumen provider (ARC-239) sampai ke panggilan upstream:
+/// `ca_kustom` dan `pin_spki` terhadap mock HTTPS lokal berakhir `done`, dan
+/// provider tidak lagi gagal tertutup.
+#[tokio::test]
+#[ignore = "butuh PostgreSQL + Redis: make -C backend uji-pg"]
+async fn bahan_tls_dokumen_provider_dipakai_sampai_done() {
+    let l = lingkungan().await;
+    for mode in ["ca_kustom", "pin_spki"] {
+        let s = tls_uji::sertifikat(mode);
+        let mock = tls_uji::mock_https(&s, &respons_sukses().to_string()).await;
+        let port = mock.alamat.port();
+        let tls = if mode == "ca_kustom" {
+            json!({"tls_trust": "ca_kustom", "tls_ca_pem": s.ca_pem})
+        } else {
+            json!({"tls_trust": "pin_spki", "tls_pin_spki": [s.pin]})
+        };
+        let f = Fixture::baru_dengan(&l, 5, |d| {
+            d["base_url"] = json!(format!("https://127.0.0.1:{port}/kesesuaian"));
+            for (k, v) in tls.as_object().unwrap() {
+                d[k] = v.clone();
+            }
+        })
+        .await;
+        let id = f.request(0, StdDuration::from_secs(3600)).await;
+        pesan_slot(&l.store, &f, id, 1).await;
+
+        let hasil = l.handler(l.store.clone()).proses(id).await.expect("proses");
+        assert_eq!(hasil, Hasil::Done, "{mode}");
+        let r = baris_request(&l.su, id).await;
+        assert_eq!(r.status, "done", "{mode}");
+        let log = log_request(&l.su, id).await;
+        assert_eq!(log.len(), 1);
+        assert_eq!(log[0].status_akses.as_deref(), Some("berhasil"), "{mode}");
+        assert!(
+            !mock.data.lock().unwrap().is_empty(),
+            "{mode}: mock tersentuh"
+        );
+    }
+}
+
+/// Bahan yang tidak cocok dengan mode, atau yang tidak bisa dibangun menjadi
+/// klien, ditolak sebelum CAS (M-03): handler galat, request tetap `dispatched`
+/// dengan `attempt_count` 0, tanpa baris log, tanpa satu byte ke provider.
+#[tokio::test]
+#[ignore = "butuh PostgreSQL + Redis: make -C backend uji-pg"]
+async fn bahan_tls_tidak_valid_ditolak_sebelum_cas() {
+    let l = lingkungan().await;
+    let s = tls_uji::sertifikat("tolak");
+    let mock = tls_uji::mock_https(&s, &respons_sukses().to_string()).await;
+    let port = mock.alamat.port();
+    let kasus = [
+        // Mode tanpa bahan, dan bahan yang bukan milik modenya.
+        json!({"tls_trust": "ca_kustom"}),
+        json!({"tls_trust": "pin_spki"}),
+        json!({"tls_trust": "system", "tls_ca_pem": s.ca_pem}),
+        // Lolos `trust()`, gagal dirakit menjadi klien.
+        json!({"tls_trust": "ca_kustom", "tls_ca_pem": "bukan pem"}),
+    ];
+    for tls in kasus {
+        let f = Fixture::baru_dengan(&l, 5, |d| {
+            d["base_url"] = json!(format!("https://127.0.0.1:{port}/kesesuaian"));
+            for (k, v) in tls.as_object().unwrap() {
+                d[k] = v.clone();
+            }
+        })
+        .await;
+        let id = f.request(0, StdDuration::from_secs(3600)).await;
+        pesan_slot(&l.store, &f, id, 1).await;
+
+        let hasil = l.handler(l.store.clone()).proses(id).await;
+        assert!(hasil.is_err(), "{tls}: harus ditolak, bukan {hasil:?}");
+        let r = baris_request(&l.su, id).await;
+        assert_eq!(r.status, "dispatched", "{tls}");
+        assert_eq!(r.attempt_count, 0, "{tls}");
+        assert!(log_request(&l.su, id).await.is_empty(), "{tls}");
+    }
+    assert!(mock.data.lock().unwrap().is_empty());
 }
 
 /// Consumer palsu: mengirim daftar `request_id` berurutan ke handler.
