@@ -26,6 +26,15 @@ export type SesiStatus = Schemas['SesiStatus'];
 export type Provider = Schemas['Provider'];
 export type ProviderConfig = Schemas['ProviderConfig'];
 export type SecretRingkas = Schemas['SecretRingkas'];
+export type Client = Schemas['Client'];
+export type ClientConfig = Schemas['ClientConfig'];
+export type Credential = Schemas['Credential'];
+export type CredentialCreate = Schemas['CredentialCreate'];
+export type CredentialSecret = Schemas['CredentialSecret'];
+export type WebhookConfig = Schemas['WebhookConfig'];
+export type WebhookConfigPut = Schemas['WebhookConfigPut'];
+export type WebhookLog = Schemas['WebhookLog'];
+export type WebhookSecret = Schemas['WebhookSecret'];
 
 const ADMIN_PREFIX = '/admin/v1';
 
@@ -164,6 +173,48 @@ export interface ApiClient {
   putSecret(nama: string, nilai: string, options?: RequestOptions): Promise<void>;
   /** DELETE /secrets/{nama} — 409 `secret_dipakai` selama provider aktif merujuknya. */
   deleteSecret(nama: string, options?: RequestOptions): Promise<void>;
+  /** GET /clients — platform admin melihat semua; client_owner hanya clientnya. */
+  listClients(options?: RequestOptions): Promise<Client[]>;
+  /** GET /clients/{id} — detail untuk layar client. */
+  getClient(id: string, options?: RequestOptions): Promise<Client>;
+  /** POST /clients — hanya platform admin. */
+  addClient(body: ClientConfig, options?: RequestOptions): Promise<Client>;
+  /** PUT /clients/{id} — `alasan` wajib saat limiter berubah. */
+  updateClient(id: string, body: ClientConfig, options?: RequestOptions): Promise<Client>;
+  /** POST /clients/{id}/aktifkan — tanpa dialog K-20 (bagian 3a.1). */
+  aktifkanClient(id: string, options?: RequestOptions): Promise<Client>;
+  /** GET /clients/{id}/pratinjau-nonaktif — pratinjau dampak K-20. */
+  pratinjauNonaktifClient(id: string, options?: RequestOptions): Promise<PratinjauK20>;
+  /** POST /clients/{id}/nonaktifkan — K-20 dengan alasan. */
+  nonaktifkanClient(id: string, alasan: string, options?: RequestOptions): Promise<HasilK20>;
+  /** GET /clients/{id}/credentials — hash tidak pernah dikirim. */
+  listCredentials(clientId: string, options?: RequestOptions): Promise<Credential[]>;
+  /** POST /clients/{id}/credentials — secret di jawaban hanya tampil sekali. */
+  createCredential(
+    clientId: string,
+    body: CredentialCreate,
+    options?: RequestOptions,
+  ): Promise<CredentialSecret>;
+  /** GET /credentials/{id}/pratinjau-cabut — pratinjau dampak K-20. */
+  pratinjauCabutCredential(id: string, options?: RequestOptions): Promise<PratinjauK20>;
+  /** POST /credentials/{id}/cabut — K-20 dengan alasan; pencabutan tidak bisa dibatalkan. */
+  cabutCredential(id: string, alasan: string, options?: RequestOptions): Promise<Credential>;
+  /** GET /clients/{id}/webhook — 404 berarti belum pernah diatur (layar menganggapnya kosong). */
+  getWebhookConfig(clientId: string, options?: RequestOptions): Promise<WebhookConfig>;
+  /** PUT /clients/{id}/webhook — wajib https dan host di allowlist, dicek saat simpan dan kirim. */
+  putWebhookConfig(
+    clientId: string,
+    body: WebhookConfigPut,
+    options?: RequestOptions,
+  ): Promise<WebhookConfig>;
+  /** GET /clients/{id}/webhook/log — halaman pertama saja; skema tidak memberi kursor berikutnya. */
+  listWebhookLog(
+    clientId: string,
+    query?: { hasil?: string },
+    options?: RequestOptions,
+  ): Promise<WebhookLog[]>;
+  /** POST /clients/{id}/webhook/rotasi-secret — secret baru, tampil sekali. */
+  rotateWebhookSecret(clientId: string, options?: RequestOptions): Promise<WebhookSecret>;
 }
 
 /** A 401 from any endpoint ends the shell session; screens do not each need their own wiring. */
@@ -561,6 +612,147 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
         }),
       );
     },
+    listClients: async (opts = {}) =>
+      ok(
+        await client.GET(`${ADMIN_PREFIX}/clients`, {
+          headers: headers(opts),
+          signal: opts.signal,
+        }),
+      ),
+
+    getClient: async (id, opts = {}) =>
+      ok(
+        await client.GET(`${ADMIN_PREFIX}/clients/{id}`, {
+          params: { path: { id } },
+          headers: headers(opts),
+          signal: opts.signal,
+        }),
+      ),
+
+    addClient: async (body, opts = {}) =>
+      ok(
+        await client.POST(`${ADMIN_PREFIX}/clients`, {
+          body,
+          headers: headers(opts),
+          signal: opts.signal,
+        }),
+      ),
+
+    updateClient: async (id, body, opts = {}) =>
+      ok(
+        await client.PUT(`${ADMIN_PREFIX}/clients/{id}`, {
+          params: { path: { id } },
+          body,
+          headers: headers(opts),
+          signal: opts.signal,
+        }),
+      ),
+
+    aktifkanClient: async (id, opts = {}) =>
+      ok(
+        await client.POST(`${ADMIN_PREFIX}/clients/{id}/aktifkan`, {
+          params: { path: { id } },
+          headers: headers(opts),
+          signal: opts.signal,
+        }),
+      ),
+
+    pratinjauNonaktifClient: async (id, opts = {}) =>
+      ok(
+        await client.GET(`${ADMIN_PREFIX}/clients/{id}/pratinjau-nonaktif`, {
+          params: { path: { id } },
+          headers: headers(opts),
+          signal: opts.signal,
+        }),
+      ),
+
+    nonaktifkanClient: async (id, alasan, opts = {}) =>
+      ok(
+        await client.POST(`${ADMIN_PREFIX}/clients/{id}/nonaktifkan`, {
+          params: { path: { id } },
+          body: { alasan },
+          headers: headers(opts),
+          signal: opts.signal,
+        }),
+      ),
+
+    listCredentials: async (clientId, opts = {}) =>
+      ok(
+        await client.GET(`${ADMIN_PREFIX}/clients/{id}/credentials`, {
+          params: { path: { id: clientId } },
+          headers: headers(opts),
+          signal: opts.signal,
+        }),
+      ),
+
+    createCredential: async (clientId, body, opts = {}) =>
+      ok(
+        await client.POST(`${ADMIN_PREFIX}/clients/{id}/credentials`, {
+          params: { path: { id: clientId } },
+          body,
+          headers: headers(opts),
+          signal: opts.signal,
+        }),
+      ),
+
+    pratinjauCabutCredential: async (id, opts = {}) =>
+      ok(
+        await client.GET(`${ADMIN_PREFIX}/credentials/{id}/pratinjau-cabut`, {
+          params: { path: { id } },
+          headers: headers(opts),
+          signal: opts.signal,
+        }),
+      ),
+
+    cabutCredential: async (id, alasan, opts = {}) =>
+      ok(
+        await client.POST(`${ADMIN_PREFIX}/credentials/{id}/cabut`, {
+          params: { path: { id } },
+          body: { alasan },
+          headers: headers(opts),
+          signal: opts.signal,
+        }),
+      ),
+
+    getWebhookConfig: async (clientId, opts = {}) =>
+      ok(
+        await client.GET(`${ADMIN_PREFIX}/clients/{id}/webhook`, {
+          params: { path: { id: clientId } },
+          headers: headers(opts),
+          signal: opts.signal,
+        }),
+      ),
+
+    putWebhookConfig: async (clientId, body, opts = {}) =>
+      ok(
+        await client.PUT(`${ADMIN_PREFIX}/clients/{id}/webhook`, {
+          params: { path: { id: clientId } },
+          body,
+          headers: headers(opts),
+          signal: opts.signal,
+        }),
+      ),
+
+    listWebhookLog: async (clientId, query = {}, opts = {}) =>
+      ok(
+        await client.GET(`${ADMIN_PREFIX}/clients/{id}/webhook/log`, {
+          params: {
+            path: { id: clientId },
+            query: query.hasil ? { hasil: query.hasil } : {},
+          },
+          headers: headers(opts),
+          signal: opts.signal,
+        }),
+      ),
+
+    rotateWebhookSecret: async (clientId, opts = {}) =>
+      ok(
+        await client.POST(`${ADMIN_PREFIX}/clients/{id}/webhook/rotasi-secret`, {
+          params: { path: { id: clientId } },
+          headers: headers(opts),
+          signal: opts.signal,
+        }),
+      ),
   };
 }
 
