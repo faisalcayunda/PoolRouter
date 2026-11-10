@@ -330,7 +330,7 @@
       },
       "tls_pin_spki": {
         "label": "SPKI pins (base64 SHA-256)",
-        "help": "One pin per line, exactly 32 bytes in base64. Matched against the leaf certificate.",
+        "help": "One pin per line, exactly 32 bytes in base64. Matched against the leaf certificate. Compute it from the leaf certificate, not the intermediate: openssl x509 -in leaf.pem -pubkey -noout | openssl pkey -pubin -outform der | openssl dgst -sha256 -binary | base64",
         "single": "Only one pin is set. Two pins (old and new) are recommended so a certificate rotation does not cut the provider off."
       },
       "log_mode": {

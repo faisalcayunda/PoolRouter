@@ -861,7 +861,7 @@ export default interface Resources {
           "label": "Sertifikat CA kustom (PEM)"
         },
         "tls_pin_spki": {
-          "help": "Satu pin per baris, tepat 32 byte dalam base64. Dicocokkan dengan sertifikat leaf.",
+          "help": "Satu pin per baris, tepat 32 byte dalam base64. Dicocokkan dengan sertifikat leaf. Hitung dari sertifikat leaf, bukan intermediate: openssl x509 -in leaf.pem -pubkey -noout | openssl pkey -pubin -outform der | openssl dgst -sha256 -binary | base64",
           "label": "Pin SPKI (base64 SHA-256)",
           "single": "Hanya ada satu pin. Disarankan dua pin (lama dan baru) supaya rotasi sertifikat tidak memutus provider."
         },

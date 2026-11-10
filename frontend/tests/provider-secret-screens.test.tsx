@@ -734,6 +734,16 @@ describe('S03 bahan TLS provider (ARC-239)', () => {
     expect(screen.queryByLabelText('Pin SPKI (base64 SHA-256)')).not.toBeInTheDocument();
   });
 
+  it('shows the openssl command that computes the SPKI pin of the leaf certificate', async () => {
+    asRole('platform_admin', <ProviderFormScreen client={stubClient()} />);
+    await pilihMode('Pin SPKI');
+    expect(
+      screen.getByText(
+        /openssl x509 -in leaf\.pem -pubkey -noout \| openssl pkey -pubin -outform der \| openssl dgst -sha256 -binary \| base64/,
+      ),
+    ).toBeInTheDocument();
+  });
+
   it('sends tls_ca_pem for ca_kustom and nothing for the hidden pin field', async () => {
     const createProvider = vi
       .fn()
