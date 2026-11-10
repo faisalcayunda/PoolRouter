@@ -14,6 +14,11 @@ export type AuditCariRequest = Schemas['AuditCariRequest'];
 export type AuditAksesPage = Schemas['AuditAksesPage'];
 export type AuditAksesBaris = Schemas['AuditAksesBaris'];
 export type UpstreamPool = Schemas['UpstreamPool'];
+export type UpstreamPoolConfig = Schemas['UpstreamPoolConfig'];
+export type DownstreamPool = Schemas['DownstreamPool'];
+export type DownstreamPoolConfig = Schemas['DownstreamPoolConfig'];
+export type PratinjauK20 = Schemas['PratinjauK20'];
+export type HasilK20 = Schemas['HasilK20'];
 export type ValidasiErrorAdmin = Schemas['ValidasiErrorAdmin'];
 export type LoginRequest = Schemas['LoginRequest'];
 export type Me = Schemas['Me'];
@@ -23,9 +28,15 @@ export type ProviderConfig = Schemas['ProviderConfig'];
 export type SecretRingkas = Schemas['SecretRingkas'];
 export type Endpoint = Schemas['Endpoint'];
 export type EndpointConfig = Schemas['EndpointConfig'];
-export type DownstreamPool = Schemas['DownstreamPool'];
-export type PratinjauK20 = Schemas['PratinjauK20'];
-export type HasilK20 = Schemas['HasilK20'];
+export type Client = Schemas['Client'];
+export type ClientConfig = Schemas['ClientConfig'];
+export type Credential = Schemas['Credential'];
+export type CredentialCreate = Schemas['CredentialCreate'];
+export type CredentialSecret = Schemas['CredentialSecret'];
+export type WebhookConfig = Schemas['WebhookConfig'];
+export type WebhookConfigPut = Schemas['WebhookConfigPut'];
+export type WebhookLog = Schemas['WebhookLog'];
+export type WebhookSecret = Schemas['WebhookSecret'];
 
 const ADMIN_PREFIX = '/admin/v1';
 
@@ -109,6 +120,47 @@ export interface ApiClient {
   kuota(upstreamPoolId?: string, options?: RequestOptions): Promise<KuotaTracker[]>;
   /** GET /upstream-pools — read-only lookup for the quota tracker filter. */
   upstreamPools(options?: RequestOptions): Promise<UpstreamPool[]>;
+  /** GET /upstream-pools/{id} — detail for the edit form. */
+  getUpstreamPool(id: string, options?: RequestOptions): Promise<UpstreamPool>;
+  /** POST /upstream-pools — platform admin only. */
+  createUpstreamPool(body: UpstreamPoolConfig, options?: RequestOptions): Promise<UpstreamPool>;
+  /** PUT /upstream-pools/{id} — full replacement; `alasan` required. */
+  updateUpstreamPool(
+    id: string,
+    body: UpstreamPoolConfig,
+    options?: RequestOptions,
+  ): Promise<UpstreamPool>;
+  /** POST /upstream-pools/{id}/aktifkan. */
+  aktifkanUpstreamPool(id: string, options?: RequestOptions): Promise<UpstreamPool>;
+  /** GET /upstream-pools/{id}/pratinjau-nonaktif (K-20). */
+  pratinjauNonaktifUpstreamPool(id: string, options?: RequestOptions): Promise<PratinjauK20>;
+  /** POST /upstream-pools/{id}/nonaktifkan (K-20). */
+  nonaktifkanUpstreamPool(id: string, alasan: string, options?: RequestOptions): Promise<HasilK20>;
+  /** GET /downstream-pools. */
+  listDownstreamPools(options?: RequestOptions): Promise<DownstreamPool[]>;
+  /** GET /downstream-pools/{id}. */
+  getDownstreamPool(id: string, options?: RequestOptions): Promise<DownstreamPool>;
+  /** POST /downstream-pools. */
+  createDownstreamPool(
+    body: DownstreamPoolConfig,
+    options?: RequestOptions,
+  ): Promise<DownstreamPool>;
+  /** PUT /downstream-pools/{id} — `alasan` required. */
+  updateDownstreamPool(
+    id: string,
+    body: DownstreamPoolConfig,
+    options?: RequestOptions,
+  ): Promise<DownstreamPool>;
+  /** POST /downstream-pools/{id}/aktifkan. */
+  aktifkanDownstreamPool(id: string, options?: RequestOptions): Promise<DownstreamPool>;
+  /** GET /downstream-pools/{id}/pratinjau-nonaktif (K-20). */
+  pratinjauNonaktifDownstreamPool(id: string, options?: RequestOptions): Promise<PratinjauK20>;
+  /** POST /downstream-pools/{id}/nonaktifkan (K-20). */
+  nonaktifkanDownstreamPool(
+    id: string,
+    alasan: string,
+    options?: RequestOptions,
+  ): Promise<HasilK20>;
   /** GET /providers — platform admin only. */
   listProviders(options?: RequestOptions): Promise<Provider[]>;
   /** GET /providers/{id} — provider detail for the edit form. */
@@ -139,6 +191,48 @@ export interface ApiClient {
   putSecret(nama: string, nilai: string, options?: RequestOptions): Promise<void>;
   /** DELETE /secrets/{nama} — 409 `secret_dipakai` selama provider aktif merujuknya. */
   deleteSecret(nama: string, options?: RequestOptions): Promise<void>;
+  /** GET /clients — platform admin melihat semua; client_owner hanya clientnya. */
+  listClients(options?: RequestOptions): Promise<Client[]>;
+  /** GET /clients/{id} — detail untuk layar client. */
+  getClient(id: string, options?: RequestOptions): Promise<Client>;
+  /** POST /clients — hanya platform admin. */
+  addClient(body: ClientConfig, options?: RequestOptions): Promise<Client>;
+  /** PUT /clients/{id} — `alasan` wajib saat limiter berubah. */
+  updateClient(id: string, body: ClientConfig, options?: RequestOptions): Promise<Client>;
+  /** POST /clients/{id}/aktifkan — tanpa dialog K-20 (bagian 3a.1). */
+  aktifkanClient(id: string, options?: RequestOptions): Promise<Client>;
+  /** GET /clients/{id}/pratinjau-nonaktif — pratinjau dampak K-20. */
+  pratinjauNonaktifClient(id: string, options?: RequestOptions): Promise<PratinjauK20>;
+  /** POST /clients/{id}/nonaktifkan — K-20 dengan alasan. */
+  nonaktifkanClient(id: string, alasan: string, options?: RequestOptions): Promise<HasilK20>;
+  /** GET /clients/{id}/credentials — hash tidak pernah dikirim. */
+  listCredentials(clientId: string, options?: RequestOptions): Promise<Credential[]>;
+  /** POST /clients/{id}/credentials — secret di jawaban hanya tampil sekali. */
+  createCredential(
+    clientId: string,
+    body: CredentialCreate,
+    options?: RequestOptions,
+  ): Promise<CredentialSecret>;
+  /** GET /credentials/{id}/pratinjau-cabut — pratinjau dampak K-20. */
+  pratinjauCabutCredential(id: string, options?: RequestOptions): Promise<PratinjauK20>;
+  /** POST /credentials/{id}/cabut — K-20 dengan alasan; pencabutan tidak bisa dibatalkan. */
+  cabutCredential(id: string, alasan: string, options?: RequestOptions): Promise<Credential>;
+  /** GET /clients/{id}/webhook — 404 berarti belum pernah diatur (layar menganggapnya kosong). */
+  getWebhookConfig(clientId: string, options?: RequestOptions): Promise<WebhookConfig>;
+  /** PUT /clients/{id}/webhook — wajib https dan host di allowlist, dicek saat simpan dan kirim. */
+  putWebhookConfig(
+    clientId: string,
+    body: WebhookConfigPut,
+    options?: RequestOptions,
+  ): Promise<WebhookConfig>;
+  /** GET /clients/{id}/webhook/log — halaman pertama saja; skema tidak memberi kursor berikutnya. */
+  listWebhookLog(
+    clientId: string,
+    query?: { hasil?: string },
+    options?: RequestOptions,
+  ): Promise<WebhookLog[]>;
+  /** POST /clients/{id}/webhook/rotasi-secret — secret baru, tampil sekali. */
+  rotateWebhookSecret(clientId: string, options?: RequestOptions): Promise<WebhookSecret>;
 }
 
 /** A 401 from any endpoint ends the shell session; screens do not each need their own wiring. */
@@ -352,6 +446,126 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
         }),
       ),
 
+    getUpstreamPool: async (id, opts = {}) =>
+      ok(
+        await client.GET(`${ADMIN_PREFIX}/upstream-pools/{id}`, {
+          params: { path: { id } },
+          headers: headers(opts),
+          signal: opts.signal,
+        }),
+      ),
+
+    createUpstreamPool: async (body, opts = {}) =>
+      ok(
+        await client.POST(`${ADMIN_PREFIX}/upstream-pools`, {
+          body,
+          headers: headers(opts),
+          signal: opts.signal,
+        }),
+      ),
+
+    updateUpstreamPool: async (id, body, opts = {}) =>
+      ok(
+        await client.PUT(`${ADMIN_PREFIX}/upstream-pools/{id}`, {
+          params: { path: { id } },
+          body,
+          headers: headers(opts),
+          signal: opts.signal,
+        }),
+      ),
+
+    aktifkanUpstreamPool: async (id, opts = {}) =>
+      ok(
+        await client.POST(`${ADMIN_PREFIX}/upstream-pools/{id}/aktifkan`, {
+          params: { path: { id } },
+          headers: headers(opts),
+          signal: opts.signal,
+        }),
+      ),
+
+    pratinjauNonaktifUpstreamPool: async (id, opts = {}) =>
+      ok(
+        await client.GET(`${ADMIN_PREFIX}/upstream-pools/{id}/pratinjau-nonaktif`, {
+          params: { path: { id } },
+          headers: headers(opts),
+          signal: opts.signal,
+        }),
+      ),
+
+    nonaktifkanUpstreamPool: async (id, alasan, opts = {}) =>
+      ok(
+        await client.POST(`${ADMIN_PREFIX}/upstream-pools/{id}/nonaktifkan`, {
+          params: { path: { id } },
+          body: { alasan },
+          headers: headers(opts),
+          signal: opts.signal,
+        }),
+      ),
+
+    listDownstreamPools: async (opts = {}) =>
+      ok(
+        await client.GET(`${ADMIN_PREFIX}/downstream-pools`, {
+          headers: headers(opts),
+          signal: opts.signal,
+        }),
+      ),
+
+    getDownstreamPool: async (id, opts = {}) =>
+      ok(
+        await client.GET(`${ADMIN_PREFIX}/downstream-pools/{id}`, {
+          params: { path: { id } },
+          headers: headers(opts),
+          signal: opts.signal,
+        }),
+      ),
+
+    createDownstreamPool: async (body, opts = {}) =>
+      ok(
+        await client.POST(`${ADMIN_PREFIX}/downstream-pools`, {
+          body,
+          headers: headers(opts),
+          signal: opts.signal,
+        }),
+      ),
+
+    updateDownstreamPool: async (id, body, opts = {}) =>
+      ok(
+        await client.PUT(`${ADMIN_PREFIX}/downstream-pools/{id}`, {
+          params: { path: { id } },
+          body,
+          headers: headers(opts),
+          signal: opts.signal,
+        }),
+      ),
+
+    aktifkanDownstreamPool: async (id, opts = {}) =>
+      ok(
+        await client.POST(`${ADMIN_PREFIX}/downstream-pools/{id}/aktifkan`, {
+          params: { path: { id } },
+          headers: headers(opts),
+          signal: opts.signal,
+        }),
+      ),
+
+    pratinjauNonaktifDownstreamPool: async (id, opts = {}) =>
+      ok(
+        await client.GET(`${ADMIN_PREFIX}/downstream-pools/{id}/pratinjau-nonaktif`, {
+          params: { path: { id } },
+          headers: headers(opts),
+          signal: opts.signal,
+        }),
+      ),
+
+    nonaktifkanDownstreamPool: async (id, alasan, opts = {}) =>
+      ok(
+        await client.POST(`${ADMIN_PREFIX}/downstream-pools/{id}/nonaktifkan`, {
+          params: { path: { id } },
+          body: { alasan },
+          headers: headers(opts),
+          signal: opts.signal,
+        }),
+      ),
+
     listProviders: async (opts = {}) =>
       ok(
         await client.GET(`${ADMIN_PREFIX}/providers`, {
@@ -488,6 +702,147 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
         }),
       );
     },
+    listClients: async (opts = {}) =>
+      ok(
+        await client.GET(`${ADMIN_PREFIX}/clients`, {
+          headers: headers(opts),
+          signal: opts.signal,
+        }),
+      ),
+
+    getClient: async (id, opts = {}) =>
+      ok(
+        await client.GET(`${ADMIN_PREFIX}/clients/{id}`, {
+          params: { path: { id } },
+          headers: headers(opts),
+          signal: opts.signal,
+        }),
+      ),
+
+    addClient: async (body, opts = {}) =>
+      ok(
+        await client.POST(`${ADMIN_PREFIX}/clients`, {
+          body,
+          headers: headers(opts),
+          signal: opts.signal,
+        }),
+      ),
+
+    updateClient: async (id, body, opts = {}) =>
+      ok(
+        await client.PUT(`${ADMIN_PREFIX}/clients/{id}`, {
+          params: { path: { id } },
+          body,
+          headers: headers(opts),
+          signal: opts.signal,
+        }),
+      ),
+
+    aktifkanClient: async (id, opts = {}) =>
+      ok(
+        await client.POST(`${ADMIN_PREFIX}/clients/{id}/aktifkan`, {
+          params: { path: { id } },
+          headers: headers(opts),
+          signal: opts.signal,
+        }),
+      ),
+
+    pratinjauNonaktifClient: async (id, opts = {}) =>
+      ok(
+        await client.GET(`${ADMIN_PREFIX}/clients/{id}/pratinjau-nonaktif`, {
+          params: { path: { id } },
+          headers: headers(opts),
+          signal: opts.signal,
+        }),
+      ),
+
+    nonaktifkanClient: async (id, alasan, opts = {}) =>
+      ok(
+        await client.POST(`${ADMIN_PREFIX}/clients/{id}/nonaktifkan`, {
+          params: { path: { id } },
+          body: { alasan },
+          headers: headers(opts),
+          signal: opts.signal,
+        }),
+      ),
+
+    listCredentials: async (clientId, opts = {}) =>
+      ok(
+        await client.GET(`${ADMIN_PREFIX}/clients/{id}/credentials`, {
+          params: { path: { id: clientId } },
+          headers: headers(opts),
+          signal: opts.signal,
+        }),
+      ),
+
+    createCredential: async (clientId, body, opts = {}) =>
+      ok(
+        await client.POST(`${ADMIN_PREFIX}/clients/{id}/credentials`, {
+          params: { path: { id: clientId } },
+          body,
+          headers: headers(opts),
+          signal: opts.signal,
+        }),
+      ),
+
+    pratinjauCabutCredential: async (id, opts = {}) =>
+      ok(
+        await client.GET(`${ADMIN_PREFIX}/credentials/{id}/pratinjau-cabut`, {
+          params: { path: { id } },
+          headers: headers(opts),
+          signal: opts.signal,
+        }),
+      ),
+
+    cabutCredential: async (id, alasan, opts = {}) =>
+      ok(
+        await client.POST(`${ADMIN_PREFIX}/credentials/{id}/cabut`, {
+          params: { path: { id } },
+          body: { alasan },
+          headers: headers(opts),
+          signal: opts.signal,
+        }),
+      ),
+
+    getWebhookConfig: async (clientId, opts = {}) =>
+      ok(
+        await client.GET(`${ADMIN_PREFIX}/clients/{id}/webhook`, {
+          params: { path: { id: clientId } },
+          headers: headers(opts),
+          signal: opts.signal,
+        }),
+      ),
+
+    putWebhookConfig: async (clientId, body, opts = {}) =>
+      ok(
+        await client.PUT(`${ADMIN_PREFIX}/clients/{id}/webhook`, {
+          params: { path: { id: clientId } },
+          body,
+          headers: headers(opts),
+          signal: opts.signal,
+        }),
+      ),
+
+    listWebhookLog: async (clientId, query = {}, opts = {}) =>
+      ok(
+        await client.GET(`${ADMIN_PREFIX}/clients/{id}/webhook/log`, {
+          params: {
+            path: { id: clientId },
+            query: query.hasil ? { hasil: query.hasil } : {},
+          },
+          headers: headers(opts),
+          signal: opts.signal,
+        }),
+      ),
+
+    rotateWebhookSecret: async (clientId, opts = {}) =>
+      ok(
+        await client.POST(`${ADMIN_PREFIX}/clients/{id}/webhook/rotasi-secret`, {
+          params: { path: { id: clientId } },
+          headers: headers(opts),
+          signal: opts.signal,
+        }),
+      ),
   };
 }
 
