@@ -1020,6 +1020,7 @@ export default interface Resources {
         "save": "Simpan secret",
         "value": "Nilai"
       },
+      "changed_unknown": "Belum tersedia",
       "col": {
         "actions": "Aksi",
         "changed": "Diubah",
@@ -1029,6 +1030,7 @@ export default interface Resources {
       },
       "delete": {
         "blocked": {
+          "ack": "Mengerti",
           "body": "{{nama}} masih dipakai oleh provider aktif: {{daftar}}. Nonaktifkan atau ubah provider itu dulu, lalu hapus secret ini.",
           "short": "{{nama}} masih dipakai provider aktif. Ubah atau nonaktifkan provider itu dulu, lalu hapus secret ini.",
           "title": "Secret masih dipakai"
@@ -1055,8 +1057,7 @@ export default interface Resources {
         "write_only": "Nilai tersamar. Setelah disimpan, nilai tidak bisa dilihat atau disalin."
       },
       "replace": {
-        "body": "Nilai lama tidak bisa dilihat. Nilai baru langsung menggantikannya.",
-        "confirm": "Ganti nilai",
+        "confirm": "Simpan",
         "new_value": "Nilai baru",
         "title": "Ganti secret {{nama}}"
       },
