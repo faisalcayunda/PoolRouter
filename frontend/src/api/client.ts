@@ -22,6 +22,11 @@ export type HasilK20 = Schemas['HasilK20'];
 export type ValidasiErrorAdmin = Schemas['ValidasiErrorAdmin'];
 export type LoginRequest = Schemas['LoginRequest'];
 export type Me = Schemas['Me'];
+export type KodeMfaRequest = Schemas['KodeMfaRequest'];
+export type DaftarMfaRequest = Schemas['DaftarMfaRequest'];
+export type KonfirmasiMfaRequest = Schemas['KonfirmasiMfaRequest'];
+export type MfaDaftar = Schemas['MfaDaftar'];
+export type MfaKonfirmasi = Schemas['MfaKonfirmasi'];
 export type SesiStatus = Schemas['SesiStatus'];
 export type Provider = Schemas['Provider'];
 export type ProviderConfig = Schemas['ProviderConfig'];
@@ -95,9 +100,24 @@ export interface RequestOptions {
   alasan?: string;
 }
 
+/**
+ * Langkah lanjutan setelah kata sandi benar untuk peran wajib-MFA (AC-9). Server menjawab 200
+ * `{langkah}` dengan cookie pra-sesi `__Host-pr_mfa`; spec OpenAPI baru mendokumentasikan 204.
+ */
+export type LangkahLogin = 'mfa' | 'daftar_mfa';
+
 export interface ApiClient {
-  /** POST /auth/login — success sets the `__Host-pr_session` cookie. */
-  login(body: LoginRequest, options?: RequestOptions): Promise<void>;
+  /**
+   * POST /auth/login — 204 menerbitkan cookie `__Host-pr_session` (hasil null); 200 `{langkah}`
+   * berarti masih perlu langkah MFA.
+   */
+  login(body: LoginRequest, options?: RequestOptions): Promise<LangkahLogin | null | void>;
+  /** POST /auth/mfa — langkah kedua login: kode TOTP atau kode pemulihan; 204 menerbitkan sesi. */
+  verifikasiMfa(body: KodeMfaRequest, options?: RequestOptions): Promise<void>;
+  /** POST /auth/mfa/daftar — kode pendaftaran ditukar dengan URI otpauth, ditampilkan sekali. */
+  daftarMfa(body: DaftarMfaRequest, options?: RequestOptions): Promise<MfaDaftar>;
+  /** POST /auth/mfa/daftar/konfirmasi — kode TOTP pertama; menerbitkan sesi dan kode pemulihan. */
+  konfirmasiMfa(body: KonfirmasiMfaRequest, options?: RequestOptions): Promise<MfaKonfirmasi>;
   /** POST /auth/logout — clears the session cookie. */
   logout(options?: RequestOptions): Promise<void>;
   /** GET /auth/me — current identity (role drives the shell). */
@@ -318,14 +338,43 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
 
   return {
     async login(body, opts = {}) {
-      ok(
+      const hasil = ok(
         await client.POST(`${ADMIN_PREFIX}/auth/login`, {
+          body,
+          headers: headers(opts),
+          signal: opts.signal,
+        }),
+      ) as { langkah?: unknown } | undefined;
+      return hasil?.langkah === 'mfa' || hasil?.langkah === 'daftar_mfa' ? hasil.langkah : null;
+    },
+
+    async verifikasiMfa(body, opts = {}) {
+      ok(
+        await client.POST(`${ADMIN_PREFIX}/auth/mfa`, {
           body,
           headers: headers(opts),
           signal: opts.signal,
         }),
       );
     },
+
+    daftarMfa: async (body, opts = {}) =>
+      ok(
+        await client.POST(`${ADMIN_PREFIX}/auth/mfa/daftar`, {
+          body,
+          headers: headers(opts),
+          signal: opts.signal,
+        }),
+      ),
+
+    konfirmasiMfa: async (body, opts = {}) =>
+      ok(
+        await client.POST(`${ADMIN_PREFIX}/auth/mfa/daftar/konfirmasi`, {
+          body,
+          headers: headers(opts),
+          signal: opts.signal,
+        }),
+      ),
 
     async logout(opts = {}) {
       ok(
