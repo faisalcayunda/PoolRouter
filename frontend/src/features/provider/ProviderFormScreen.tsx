@@ -266,9 +266,10 @@ function ProviderForm({ client, initial }: ProviderFormProps): ReactNode {
     };
   };
   // Versi 2 disembunyikan untuk provider baru sampai layar S03 dengan editor rule terstruktur dan
-  // data balikan ada (ARC-242, sisa S03a/S03b/S04). Provider yang sudah berversi 2 tetap melihatnya.
+  // data balikan ada (ARC-242, sisa S03a/S03b/S04). Provider yang tersimpan berversi 2 tetap melihatnya,
+  // walau draf sempat dipindah ke versi 1, supaya penurunan tidak tak bisa dibatalkan dari form.
   const versiTersedia = CONFIG_SCHEMA_VERSIONS.filter(
-    (v) => v === 1 || draft.config_schema_version === v,
+    (v) => v === 1 || current?.config_schema_version === v,
   );
   const showDataBalikan = draft.config_schema_version === 2 || draft.data_balikan.trim() !== '';
   const templateIssue = errors.body_template;

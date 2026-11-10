@@ -74,16 +74,24 @@ async function paste(label: string, text: string) {
 }
 
 /**
- * AC-14: nilai secret tidak boleh tertinggal di layar. `innerHTML` tidak memuat `value` input yang
- * sedang terisi, jadi tiap input dan textarea diperiksa sendiri.
+ * AC-14: nilai secret tidak boleh tertinggal di layar. Dua pemeriksaan terpisah: `innerHTML` (input
+ * terkontrol ikut menyinkronkan atribut `value`, jadi nilainya tampak di sana selagi terisi) dan
+ * `value` tiap input dan textarea (menangkap input tak terkontrol atau nilai yang atributnya tidak
+ * tersinkron).
  */
-function expectNoSecretHeld(nilai: string) {
+function expectNoSecretInMarkup(nilai: string) {
   expect(document.body.innerHTML).not.toContain(nilai);
-  for (const field of document.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>(
-    'input, textarea',
-  )) {
-    expect(field.value).not.toContain(nilai);
-  }
+}
+
+function secretHeldByField(nilai: string) {
+  return [
+    ...document.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>('input, textarea'),
+  ].some((field) => field.value.includes(nilai));
+}
+
+function expectNoSecretHeld(nilai: string) {
+  expectNoSecretInMarkup(nilai);
+  expect(secretHeldByField(nilai)).toBe(false);
 }
 
 /** Klien asli di atas fetch palsu yang selalu 401, supaya event sesi berakhir ikut diuji. */
@@ -392,6 +400,22 @@ describe('S03–S04 form provider', () => {
     ]);
   });
 
+  it('keeps version 2 selectable after the draft is switched to version 1', async () => {
+    asRole(
+      'platform_admin',
+      <ProviderFormScreen client={stubClient()} providerId={PROVIDER.provider_id} />,
+    );
+    await screen.findByRole('heading', { level: 1, name: 'provider-contoh-a' });
+    await user.click(screen.getByRole('button', { name: /Versi skema konfigurasi/ }));
+    await user.click(await screen.findByRole('option', { name: 'Versi 1 (F0)' }));
+    await user.click(screen.getByRole('button', { name: /Versi skema konfigurasi/ }));
+    const options = await screen.findAllByRole('option');
+    expect(options.map((o) => o.textContent)).toEqual([
+      'Versi 1 (F0)',
+      'Versi 2 (F1, dengan data balikan)',
+    ]);
+  });
+
   it('validates required fields before calling the API and focuses the first one', async () => {
     const client = stubClient();
     asRole('platform_admin', <ProviderFormScreen client={client} />);
@@ -690,8 +714,10 @@ describe('S05 secret', () => {
     expect(nilai).toHaveAttribute('autocomplete', 'off');
     await user.click(nilai);
     await user.paste(NILAI);
-    // Penjaga uji: selagi dialog terbuka, pemeriksaan input memang melihat nilainya.
-    expect(() => expectNoSecretHeld(NILAI)).toThrow();
+    // Penjaga uji: selagi dialog terbuka, kedua pemeriksaan memang melihat nilainya, masing-masing
+    // lewat jalurnya sendiri.
+    expect(secretHeldByField(NILAI)).toBe(true);
+    expect(() => expectNoSecretInMarkup(NILAI)).toThrow();
     await user.click(within(dialog).getByRole('button', { name: 'Simpan secret' }));
 
     await waitFor(() => expect(client.putSecret).toHaveBeenCalledWith('TOKEN_UJI', NILAI));
