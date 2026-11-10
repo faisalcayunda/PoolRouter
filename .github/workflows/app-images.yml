@@ -1,4 +1,4 @@
-# Image aplikasi F0 di CI (ARC-76, f0-ops T1): frontend dan mock Dukcapil.
+# Image aplikasi F0 di CI (ARC-76, f0-ops T1): frontend, mock Dukcapil, dan PostgreSQL + pgBackRest (ARC-215).
 # Dibangun dari Containerfile di commit yang sama (linux/amd64), lalu didorong ke GHCR
 # dengan tag sha-<12 hex>. Tanpa tag latest. Tidak memakai secret repo: login GHCR
 # memakai GITHUB_TOKEN dengan izin packages: write yang hanya ada di job push ini.
@@ -13,6 +13,7 @@ on:
     paths:
       - "frontend/**"
       - "perf/mock-dukcapil/**"
+      - "deploy/compose/backup/**"
       - ".github/workflows/app-images.yml"
   workflow_dispatch:
 
@@ -129,6 +130,51 @@ jobs:
           printf '%s' "$digest" | grep -Eq '^sha256:[0-9a-f]{64}$' || { echo "digest tidak valid: ${digest}" >&2; exit 1; }
           {
             echo "### Image mock Dukcapil"
+            echo "- image: ${IMAGE}:${tag}"
+            echo "- commit: ${GITHUB_SHA}"
+            echo "- digest: ${digest}"
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+
+  postgres-backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: write
+    env:
+      IMAGE: ghcr.io/faisalcayunda/poolrouter-postgres
+      LOCAL_IMAGE: localhost/poolrouter-postgres:dev
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Build image linux/amd64
+        run: |
+          set -eu
+          docker buildx build --platform linux/amd64 --load \
+            --build-arg VERSION=0.1.0 \
+            --build-arg REVISION="${GITHUB_SHA}" \
+            --build-arg CREATED="$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            -f deploy/compose/backup/Containerfile -t "${LOCAL_IMAGE}" deploy/compose/backup
+
+      - name: Login GHCR
+        env:
+          REGISTRY_USER: ${{ github.actor }}
+          REGISTRY_TOKEN: ${{ github.token }}
+        run: printf '%s' "$REGISTRY_TOKEN" | docker login ghcr.io -u "$REGISTRY_USER" --password-stdin
+
+      - name: Push sha-<12 hex> dan catat digest
+        run: |
+          set -eu
+          tag="sha-${GITHUB_SHA:0:12}"
+          docker tag "${LOCAL_IMAGE}" "${IMAGE}:${tag}"
+          docker push "${IMAGE}:${tag}"
+          digest="$(docker buildx imagetools inspect --format '{{.Manifest.Digest}}' "${IMAGE}:${tag}")"
+          printf '%s' "$digest" | grep -Eq '^sha256:[0-9a-f]{64}$' || { echo "digest tidak valid: ${digest}" >&2; exit 1; }
+          {
+            echo "### Image postgres (pgBackRest)"
             echo "- image: ${IMAGE}:${tag}"
             echo "- commit: ${GITHUB_SHA}"
             echo "- digest: ${digest}"
