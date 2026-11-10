@@ -631,14 +631,16 @@ function ProviderForm({ client, initial }: ProviderFormProps): ReactNode {
               <p className="typescale-body-medium text-on-surface-variant">
                 {t('provider.rules.no_defaults')}
               </p>
-              <div className="flex flex-wrap items-center justify-end gap-2">
-                <LinkButton href="/provider" variant="outlined">
-                  {t('common.action.cancel')}
-                </LinkButton>
-                <Button type="submit" isDisabled={saving}>
-                  {saveLabel}
-                </Button>
-              </div>
+              {tab === 'parameter' ? (
+                <div className="flex flex-wrap items-center justify-end gap-2">
+                  <LinkButton href="/provider" variant="outlined">
+                    {t('common.action.cancel')}
+                  </LinkButton>
+                  <Button type="submit" isDisabled={saving}>
+                    {saveLabel}
+                  </Button>
+                </div>
+              ) : null}
             </Card>
           </div>
         </TabPanel>
