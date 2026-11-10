@@ -111,7 +111,7 @@ async fn dengan_batas(
 ) -> Result<(), QueueError> {
     tokio::time::timeout(batas, kerja).await.map_err(|_| {
         QueueError::Transport(format!(
-            "publish tidak dikonfirmasi broker dalam {} detik",
+            "broker tidak menjawab dalam {} detik",
             batas.as_secs_f32()
         ))
     })?
@@ -162,11 +162,19 @@ impl ApalisQueue {
 
     /// Deklarasikan topologi untuk `queue` (idempoten, AC-3). Lihat
     /// [`topologi`].
+    ///
+    /// Sambung ulang channel publish dan RPC deklarasi dibatasi
+    /// [`BATAS_CONFIRM`], sama seperti publish: dispatcher memanggil
+    /// `declare` sebelum `publish` sambil memegang kunci, jadi broker yang
+    /// tidak menjawab tidak boleh menahannya tanpa batas.
     pub async fn declare(&self, queue: &str) -> Result<(), QueueError> {
-        let channel = self.channel_publish().await?;
-        topologi::deklarasi(&channel, queue)
-            .await
-            .map_err(transport)
+        dengan_batas(BATAS_CONFIRM, async {
+            let channel = self.channel_publish().await?;
+            topologi::deklarasi(&channel, queue)
+                .await
+                .map_err(transport)
+        })
+        .await
     }
 
     /// Channel publish yang tersambung. Koneksi atau channel yang sudah putus
@@ -476,7 +484,7 @@ mod tests {
     async fn publish_tanpa_confirm_habis_waktu_menjadi_galat_transport() {
         let hasil = dengan_batas(Duration::from_millis(50), std::future::pending()).await;
         assert!(
-            matches!(hasil, Err(QueueError::Transport(ref pesan)) if pesan.contains("tidak dikonfirmasi")),
+            matches!(hasil, Err(QueueError::Transport(ref pesan)) if pesan.contains("tidak menjawab")),
             "{hasil:?}"
         );
     }
