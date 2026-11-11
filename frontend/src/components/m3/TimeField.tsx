@@ -11,7 +11,7 @@ import type { ReactNode } from 'react';
 import { cx } from './cx';
 
 const FIELD =
-  'm3-focus typescale-body-large flex h-14 w-full items-center gap-1 rounded-extra-small border border-outline bg-surface px-4 text-on-surface data-[focus-within]:border-2 data-[focus-within]:border-secondary';
+  'm3-focus typescale-body-medium flex h-10 w-full items-center gap-1 rounded-extra-small border border-outline bg-surface px-3 text-on-surface data-[focus-within]:border-2 data-[focus-within]:border-secondary';
 
 /**
  * M3 outlined time field (katalog 7.1). Carries time segments only; the zone is
@@ -36,7 +36,7 @@ function DateSegment({ segment }: { segment: Parameters<typeof RacDateSegment>[0
   return (
     <RacDateSegment
       segment={segment}
-      className="typescale-body-large rounded-sm px-0.5 text-on-surface caret-primary-text outline-none data-[placeholder]:text-on-surface-variant data-[focused]:bg-secondary-container"
+      className="typescale-body-medium rounded-sm px-0.5 text-on-surface caret-primary-text outline-none data-[placeholder]:text-on-surface-variant data-[focused]:bg-secondary-container"
     />
   );
 }

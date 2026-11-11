@@ -4,8 +4,8 @@ import { cx } from './cx';
 /**
  * M3 linear progress indicator (katalog 7.1).
  * Indeterminate when `isIndeterminate` is set or no `value` is given.
- * `size="large"` mengikuti bilah kartu metrik Penpot: trek 8 px `surface-container-low`, isi
- * `primary-container`, tanpa angka di atas bilah (angkanya tertulis di teks kartu).
+ * Kedua ukuran mengikuti Figma 2:21304: trek `surface-container`, isi `accent`. Standard 4 px dengan
+ * angka di atas bilah; `size="large"` 8 px untuk kartu metrik, tanpa angka (angkanya di teks kartu).
  */
 export function LinearProgress({
   className,

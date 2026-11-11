@@ -8,8 +8,8 @@ const VARIANT: Record<CardVariant, string> = {
   filled: 'bg-surface-container-highest',
   outlined: 'border border-outline-variant bg-surface-container-lowest',
   /** Kartu isi layar (acuan ARC-261): putih, border tipis, sudut 16 px (Figma 2:22107), shadow level1, tanpa padding. */
-  container:
-    'rounded-large border border-outline-variant bg-surface-container-lowest shadow-level1',
+  // prettier-ignore
+  container: 'rounded-large border border-outline-variant bg-surface-container-lowest shadow-level1',
 };
 
 export interface CardProps {

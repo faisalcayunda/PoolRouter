@@ -246,9 +246,9 @@ export interface AppShellProps {
 }
 
 /**
- * Application shell (acuan ARC-261, `.takeover/design/arc-261/spec.md`): link lompat, sidebar
- * putih, bar atas 64 px berisi breadcrumb, pencarian dekoratif, label lingkungan dan avatar, lalu
- * konten di panel slate-50.
+ * Application shell (spec ui-v3-figma §4/§6, ARC-366): link lompat, sidebar putih 272 px, bar atas
+ * 65 px berisi breadcrumb, label lingkungan dan avatar, lalu konten di panel
+ * `surface-container-lowest` dengan padding L1.
  *
  * - large (>= 1200 px): `NavigationDrawer variant="standard"`, selalu tampil, tinggi penuh; bar atas
  *   dan konten ada di kanannya.
