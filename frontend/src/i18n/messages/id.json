@@ -27,6 +27,8 @@
       "audit": "Audit akses",
       "open_menu": "Buka menu navigasi",
       "close_menu": "Tutup menu",
+      "collapse_menu": "Ciutkan sidebar",
+      "expand_menu": "Perluas sidebar",
       "aria": "Navigasi utama",
       "endpoint": "Endpoint"
     },

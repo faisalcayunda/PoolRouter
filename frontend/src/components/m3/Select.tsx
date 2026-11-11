@@ -20,7 +20,7 @@ export interface SelectProps<T extends object> extends Omit<RacSelectProps<T>, '
   children: ReactNode;
 }
 
-/** M3 outlined select: value button + popover listbox. Keyboard: Enter opens, arrows navigate. */
+/** Dropdown (acuan ARC-261): tombol nilai outline + popover kartu putih. Keyboard: Enter membuka, panah memilih. */
 export function Select<T extends object>({
   label,
   items,
@@ -30,15 +30,15 @@ export function Select<T extends object>({
 }: SelectProps<T>) {
   return (
     <RacSelect {...props} className={cx('flex flex-col gap-1', className)}>
-      {label ? <Label>{label}</Label> : null}
-      <RacButton className="m3-state m3-focus typescale-body-large flex h-14 w-64 items-center justify-between rounded-extra-small border border-outline bg-surface px-4 text-on-surface data-[focused]:border-2 data-[focused]:border-primary data-[pressed]:border-2 data-[pressed]:border-primary">
+      {label ? <Label className="typescale-label-large text-on-surface">{label}</Label> : null}
+      <RacButton className="typescale-body-medium flex h-10 w-64 cursor-pointer items-center justify-between rounded-small border border-outline-soft bg-surface-container-lowest pr-2 pl-3 text-on-surface outline-none data-[focused]:border-secondary data-[focused]:ring-3 data-[focused]:ring-accent-container data-[pressed]:border-secondary">
         <SelectValue className="data-[placeholder]:text-on-surface-variant" />
         <Icon icon={icons.arrowDropDown} className="text-on-surface-variant" />
       </RacButton>
-      <Popover className="min-w-(--trigger-width) rounded-medium bg-surface-container shadow-level2">
+      <Popover className="min-w-(--trigger-width) rounded-medium border border-outline-variant bg-surface-container-lowest shadow-level2">
         <ListBox
           items={items}
-          className="typescale-body-large max-h-72 overflow-auto p-2 text-on-surface outline-none"
+          className="typescale-body-medium max-h-72 overflow-auto p-1 text-on-surface outline-none"
         >
           {children}
         </ListBox>
@@ -61,8 +61,8 @@ export function SelectItem({
       id={id}
       textValue={textValue}
       className={cx(
-        'm3-state m3-focus typescale-body-large flex cursor-pointer items-center justify-between rounded-small px-3 py-2.5 text-on-surface outline-none',
-        'data-[focused]:bg-on-surface/8 data-[selected]:text-primary',
+        'typescale-body-medium flex cursor-pointer items-center justify-between rounded-small px-3 py-2 text-on-surface outline-none',
+        'data-[focused]:bg-surface-container data-[selected]:font-semibold',
       )}
     >
       {children}

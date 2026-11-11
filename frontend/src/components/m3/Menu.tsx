@@ -25,7 +25,7 @@ export function Menu<T extends object = object>({ children, className, ...props 
   return (
     <Popover
       className={cx(
-        'min-w-44 rounded-extra-small bg-surface-container p-2 shadow-level2 outline-none',
+        'min-w-44 rounded-medium border border-outline-variant bg-surface-container-lowest p-1 shadow-level2 outline-none',
         className,
       )}
     >
@@ -47,8 +47,8 @@ export function MenuItem({
     <RacMenuItem
       {...props}
       className={cx(
-        'm3-state m3-focus typescale-label-large flex cursor-pointer items-center gap-3 rounded-small px-3 py-2.5 text-on-surface outline-none select-none',
-        'data-[focused]:bg-on-surface/8 data-[disabled]:text-on-surface/38',
+        'typescale-body-medium flex cursor-pointer items-center gap-3 rounded-small px-3 py-2 text-on-surface outline-none select-none',
+        'data-[focused]:bg-surface-container data-[disabled]:text-on-surface/38',
         className,
       )}
     />

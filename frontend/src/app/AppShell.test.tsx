@@ -89,7 +89,7 @@ describe('AppShell — di bawah large (modal)', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Buka menu navigasi' }));
     const dialog = await screen.findByRole('dialog', { name: 'Navigasi utama' });
     const close = within(dialog).getByRole('button', { name: 'Tutup menu' });
-    expect(close.className).toContain('outline-inverse-primary!');
+    expect(close.className).toContain('m3-focus');
     await userEvent.click(close);
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
   });
@@ -230,20 +230,20 @@ describe('AppShell — menu per role', () => {
     expect(within(drawer).queryByRole('link', { name: 'Log transaksi' })).not.toBeInTheDocument();
   });
 
-  it('uses the inverse surface for the drawer', () => {
+  it('uses a white surface for the drawer', () => {
     renderShell('/', 'auditor');
     expect(screen.getByRole('complementary', { name: 'Navigasi utama' }).className).toContain(
-      'bg-inverse-surface',
+      'bg-surface-container-lowest',
     );
   });
 
-  it('marks the active item with a 12 % inverse-on-surface indicator and an inverse-primary icon', () => {
+  it('marks the active item with a light grey fill and a thin border', () => {
     renderShell('/audit', 'auditor');
     const active = screen.getByRole('link', { name: 'Audit akses' });
-    expect(active.className).toContain('bg-inverse-on-surface/12');
-    expect(active.querySelector('svg')?.getAttribute('class')).toContain('text-inverse-primary');
+    expect(active.className).toContain('bg-surface-container-low');
+    expect(active.className).toContain('border-outline-variant');
     const other = screen.getByRole('link', { name: 'Log transaksi' });
-    expect(other.className).not.toContain('bg-inverse-on-surface/12');
+    expect(other.className).not.toContain('border-outline-variant');
     // Tailwind 4: outline-none mematikan style, jadi ring fokus butuh outline-solid.
     expect(active.className).toContain('focus-visible:outline-solid');
     expect(active.className).toContain('focus-visible:outline-3');
@@ -261,7 +261,8 @@ describe('AppShell — menu per role', () => {
   it('opens the account menu from the identity button and signs out', async () => {
     const onKeluar = vi.fn();
     renderShell('/', 'operator', { username: 'adm.contoh', peran: 'operator' }, onKeluar);
-    const trigger = screen.getByRole('button', { name: 'Menu akun adm.contoh' });
+    const drawer = screen.getByRole('complementary', { name: 'Navigasi utama' });
+    const trigger = within(drawer).getByRole('button', { name: 'Menu akun adm.contoh' });
     expect(within(trigger).getByText('Operator')).toBeInTheDocument();
     await userEvent.click(trigger);
     await userEvent.click(await screen.findByRole('menuitem', { name: 'Keluar' }));
@@ -271,7 +272,9 @@ describe('AppShell — menu per role', () => {
   it('reaches the sign-out item with the keyboard', async () => {
     const onKeluar = vi.fn();
     renderShell('/', 'operator', { username: 'adm.contoh', peran: 'operator' }, onKeluar);
-    screen.getByRole('button', { name: 'Menu akun adm.contoh' }).focus();
+    within(screen.getByRole('complementary', { name: 'Navigasi utama' }))
+      .getByRole('button', { name: 'Menu akun adm.contoh' })
+      .focus();
     await userEvent.keyboard('{Enter}');
     await screen.findByRole('menuitem', { name: 'Keluar' });
     await userEvent.keyboard('{Enter}');
@@ -290,6 +293,8 @@ describe('AppShell — menu per role', () => {
   it('lets the drawer links be reached with Tab', async () => {
     renderShell('/', 'auditor');
     await userEvent.tab(); // skip link
+    await userEvent.tab(); // tombol ciutkan sidebar, di atas daftar tautan
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Ciutkan sidebar' }));
     await userEvent.tab();
     expect(document.activeElement).toBe(screen.getByRole('link', { name: 'Log transaksi' }));
   });

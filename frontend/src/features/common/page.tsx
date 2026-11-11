@@ -60,8 +60,9 @@ export function QueryError({ error, onRetry }: { error: unknown; onRetry: () => 
 
 /**
  * Single `h1` per screen with its subtitle; `tabIndex=-1` so navigation can move focus here.
+ * Acuan ARC-261: judul H1 32/36 bold di kiri, aksi sekunder (tombol outline kecil) di kanan.
  * Tanpa `m3-focus`: fokus ke judul hanya programatik (tidak ada di urutan Tab), jadi bingkai fokus
- * hanya muncul sebagai kotak aneh setelah klik atau navigasi, dan frame Penpot tidak menggambarnya.
+ * hanya muncul sebagai kotak aneh setelah klik atau navigasi.
  */
 export function PageHeader({
   title,
@@ -77,12 +78,12 @@ export function PageHeader({
   actions?: ReactNode;
 }) {
   return (
-    <div className="mb-4 flex flex-col gap-2">
-      <div className="flex flex-wrap items-start justify-between gap-3">
+    <div className="mb-2 flex flex-col gap-2">
+      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-3">
         <h1
           ref={titleRef}
           tabIndex={-1}
-          className="typescale-headline-small text-on-surface outline-none"
+          className="typescale-headline-large text-on-surface outline-none"
         >
           {title}
         </h1>

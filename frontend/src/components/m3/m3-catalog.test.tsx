@@ -230,7 +230,7 @@ describe('DateRangePicker (DV-7)', () => {
     wrap(<DateRangePicker label="Rentang waktu" calendarLabel="Kalender" separator="s/d" />);
     const cls = screen.getAllByRole('group')[0]!.className;
     expect(cls).toContain('flex-wrap');
-    expect(cls).toContain('expanded:h-14');
+    expect(cls).toContain('expanded:h-10');
     expect(cls).toContain('expanded:flex-nowrap');
   });
 

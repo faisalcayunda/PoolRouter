@@ -1,11 +1,20 @@
 /* Tailwind 4 theme: maps utilities onto the M3 tokens only (ADR-0003 3.5). Default colour, radius and breakpoint scales are removed. */
 @import 'tailwindcss';
-@import '@fontsource-variable/inter';
 @import '@fontsource/jetbrains-mono/400.css';
 @import './color.css';
 @import './tokens.css';
 @import './components.css';
 @import './tables.css';
+
+/* Open Sans (SIL OFL 1.1, lisensi di src/assets/fonts/OFL.txt): satu berkas variabel, subset Latin, dilayani dari origin sendiri (font-src 'self'). */
+@font-face {
+  font-family: 'Open Sans';
+  font-style: normal;
+  font-weight: 300 800;
+  font-stretch: 75% 100%;
+  font-display: swap;
+  src: url('../../assets/fonts/OpenSans-latin.woff2') format('woff2');
+}
 
 @theme inline {
   --color-*: initial;
@@ -49,6 +58,9 @@
   --color-inverse-primary: var(--md-sys-color-inverse-primary);
   --color-outline: var(--md-sys-color-outline);
   --color-outline-variant: var(--md-sys-color-outline-variant);
+  --color-outline-soft: var(--md-sys-color-outline-soft);
+  --color-accent: var(--md-sys-color-accent);
+  --color-accent-container: var(--md-sys-color-accent-container);
   --color-scrim: var(--md-sys-color-scrim);
   --color-shadow: var(--md-sys-color-shadow);
   --color-success: var(--md-sys-color-success);
@@ -75,21 +87,11 @@
   --radius-extra-large: var(--md-sys-shape-corner-extra-large);
   --radius-full: var(--md-sys-shape-corner-full);
   --shadow-level0: none;
-  --shadow-level1:
-    0 1px 2px 0 color-mix(in srgb, var(--md-sys-color-shadow) 30%, transparent),
-    0 1px 3px 1px color-mix(in srgb, var(--md-sys-color-shadow) 15%, transparent);
-  --shadow-level2:
-    0 1px 2px 0 color-mix(in srgb, var(--md-sys-color-shadow) 30%, transparent),
-    0 2px 6px 2px color-mix(in srgb, var(--md-sys-color-shadow) 15%, transparent);
-  --shadow-level3:
-    0 1px 3px 0 color-mix(in srgb, var(--md-sys-color-shadow) 30%, transparent),
-    0 4px 8px 3px color-mix(in srgb, var(--md-sys-color-shadow) 15%, transparent);
-  --shadow-level4:
-    0 2px 3px 0 color-mix(in srgb, var(--md-sys-color-shadow) 30%, transparent),
-    0 6px 10px 4px color-mix(in srgb, var(--md-sys-color-shadow) 15%, transparent);
-  --shadow-level5:
-    0 4px 4px 0 color-mix(in srgb, var(--md-sys-color-shadow) 30%, transparent),
-    0 8px 12px 6px color-mix(in srgb, var(--md-sys-color-shadow) 15%, transparent);
+  --shadow-level1: 0 1px 2px 0 color-mix(in srgb, var(--md-sys-color-shadow) 5%, transparent);
+  --shadow-level2: 0 4px 16px -4px color-mix(in srgb, var(--md-sys-color-shadow) 14%, transparent);
+  --shadow-level3: 0 8px 24px -6px color-mix(in srgb, var(--md-sys-color-shadow) 16%, transparent);
+  --shadow-level4: 0 12px 32px -8px color-mix(in srgb, var(--md-sys-color-shadow) 18%, transparent);
+  --shadow-level5: 0 16px 40px -8px color-mix(in srgb, var(--md-sys-color-shadow) 20%, transparent);
 }
 
 @utility typescale-headline-large {

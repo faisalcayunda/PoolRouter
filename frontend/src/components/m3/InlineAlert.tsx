@@ -22,18 +22,26 @@ export interface InlineAlertProps {
 }
 
 /**
- * Penpot S16 fills `info` and `success` with the `info-container` and `success-container`
- * tokens (radius 12, padding 16). There is no `warning-container` token, so warning reuses
- * `error-container`. The icon and the message text carry the tone as well.
+ * Acuan ARC-261: latar tint, border tipis, radius 12, padding 16. Ikon dan teks pesan ikut
+ * membawa nada, jadi warna bukan satu-satunya penanda.
  */
 const TONE: Record<
   NonNullable<InlineAlertProps['tone']>,
   { box: string; icon: keyof typeof icons }
 > = {
-  info: { box: 'bg-info-container text-on-info-container', icon: 'info' },
-  success: { box: 'bg-success-container text-on-success-container', icon: 'checkCircle' },
-  warning: { box: 'bg-error-container text-on-error-container', icon: 'warning' },
-  error: { box: 'bg-error-container text-on-error-container', icon: 'error' },
+  info: { box: 'border border-info/25 bg-info-container text-on-info-container', icon: 'info' },
+  success: {
+    box: 'border border-success/30 bg-success-container text-on-success-container',
+    icon: 'checkCircle',
+  },
+  warning: {
+    box: 'border border-warning/35 bg-warning-container text-on-warning-container',
+    icon: 'warning',
+  },
+  error: {
+    box: 'border border-error/25 bg-error-container text-on-error-container',
+    icon: 'error',
+  },
 };
 
 export function InlineAlert({

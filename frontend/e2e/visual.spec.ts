@@ -123,8 +123,8 @@ async function shoot(page: Page, screen: string, width: number) {
     () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
   );
   expect(overflow, `dokumen melebar ${overflow}px pada ${width}px`).toBeLessThanOrEqual(0);
-  // Medan rentang tanggal hanya boleh membungkus pada lebar compact; di 1024 ke atas satu baris 56 px
-  // dan seluruh isinya (termasuk tombol kalender 48 px) berada di dalam batas medan.
+  // Medan rentang tanggal hanya boleh membungkus pada lebar compact; di 1024 ke atas satu baris 40 px
+  // dan seluruh isinya (termasuk tombol kalender 32 px) berada di dalam batas medan.
   if (width >= 1024) {
     const medan = await page.evaluate(() =>
       Array.from(document.querySelectorAll('[data-testid="date-range-field"]')).map((el) => {
@@ -142,7 +142,7 @@ async function shoot(page: Page, screen: string, width: number) {
       expect(medan.length, `tidak ada medan rentang pada ${screen}@${width}`).toBeGreaterThan(0);
     }
     for (const m of medan) {
-      expect(m.tinggi, `tinggi medan rentang pada ${width}px`).toBe(56);
+      expect(m.tinggi, `tinggi medan rentang pada ${width}px`).toBe(40);
       expect(m.tombolKanan, `tombol kalender keluar medan pada ${width}px`).toBeLessThanOrEqual(
         m.grupKanan,
       );

@@ -27,6 +27,8 @@
       "audit": "Access audit",
       "open_menu": "Open navigation menu",
       "close_menu": "Close menu",
+      "collapse_menu": "Collapse sidebar",
+      "expand_menu": "Expand sidebar",
       "aria": "Main navigation",
       "endpoint": "Endpoints"
     },

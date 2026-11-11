@@ -28,6 +28,8 @@ import ReceiptLong from '@material-symbols/svg-400/outlined/receipt_long.svg?rea
 import Settings from '@material-symbols/svg-400/outlined/settings.svg?react';
 import Search from '@material-symbols/svg-400/outlined/search.svg?react';
 import Lock from '@material-symbols/svg-400/outlined/lock.svg?react';
+import LeftPanelClose from '@material-symbols/svg-400/outlined/left_panel_close.svg?react';
+import LeftPanelOpen from '@material-symbols/svg-400/outlined/left_panel_open.svg?react';
 
 export type IconComponent = ComponentType<SVGProps<SVGSVGElement>>;
 
@@ -62,6 +64,8 @@ export const icons = {
   settings: Settings,
   search: Search,
   lock: Lock,
+  leftPanelClose: LeftPanelClose,
+  leftPanelOpen: LeftPanelOpen,
 } satisfies Record<string, IconComponent>;
 
 export function Icon({ icon: Svg, className }: { icon: IconComponent; className?: string }) {
