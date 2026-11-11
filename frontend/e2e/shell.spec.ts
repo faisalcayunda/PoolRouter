@@ -95,17 +95,27 @@ test.describe('app shell', () => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto('/');
     await expect(page.locator('main#main-content')).toBeVisible();
-    await page.evaluate(() => document.fonts.ready);
+    // Font dimuat malas per glyph; paksa muat kedua keluarga, lalu cek apa yang benar-benar terpakai.
+    const loadedFaces = await page.evaluate(async () => {
+      const faces = [
+        ...(await document.fonts.load('600 14px "Hanken Grotesk Variable"', 'PoolRouter')),
+        ...(await document.fonts.load('400 14px "Inter Variable"', 'PoolRouter')),
+      ];
+      return faces.map((f) => `${f.family}|${f.status}`);
+    });
+    expect(loadedFaces).toContain('Hanken Grotesk Variable|loaded');
+    expect(loadedFaces).toContain('Inter Variable|loaded');
 
     const origin = new URL(page.url()).origin;
     expect(fontRequests.length, 'font harus dimuat').toBeGreaterThan(0);
     for (const url of fontRequests) expect(new URL(url).origin, url).toBe(origin);
-    const loaded = await page.evaluate(() =>
-      [...document.fonts].filter((f) => f.status === 'loaded').map((f) => f.family),
-    );
-    expect(loaded.join(',')).toMatch(/Hanken Grotesk Variable/);
-    expect(loaded.join(',')).toMatch(/Inter Variable/);
-    expect(loaded.join(',')).not.toMatch(/Open Sans/);
+    expect(fontRequests.join(',')).not.toMatch(/open-?sans/i);
+    expect(
+      await page
+        .locator('.typescale-title-large')
+        .first()
+        .evaluate((el) => getComputedStyle(el).fontFamily),
+    ).toMatch(/^"Hanken Grotesk Variable"/);
 
     const drawer = page.getByRole('complementary', { name: 'Navigasi utama' });
     expect((await drawer.boundingBox())?.width).toBe(272);

@@ -79,17 +79,24 @@ function AccountMenu({
 }) {
   const { t, i18n } = useTranslation();
   const initial = (
+    // Inisial lewat `content: attr()`, bukan simpul teks: axe menghitung teks ini sebagai isi tombol
+    // walau aria-hidden, sehingga "A a Auditor" tidak pernah cocok dengan labelnya.
     <span
       aria-hidden="true"
-      className="typescale-label-large flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-accent-container text-on-secondary-container"
-    >
-      {initialOf(user.username)}
-    </span>
+      data-initial={initialOf(user.username)}
+      className="typescale-label-large flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-accent-container text-on-secondary-container before:content-[attr(data-initial)]"
+    />
   );
   return (
     <MenuTrigger>
       <RacButton
-        aria-label={t('account.menu.menu', { nama_pengguna: user.username })}
+        // WCAG 2.5.3 (axe label-content-name-mismatch): blok penuh menampilkan nama dan peran, jadi
+        // keduanya ada di label, dan spasi di antara span membuat teksnya terbaca "nama peran".
+        aria-label={
+          variant === 'block' && !compact
+            ? `${t('account.menu.menu', { nama_pengguna: user.username })} ${enumLabel(i18n, 'peran', user.peran)}`
+            : t('account.menu.menu', { nama_pengguna: user.username })
+        }
         className={cx(
           'cursor-pointer outline-none focus-visible:outline-solid focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-secondary',
           variant === 'avatar'
@@ -102,7 +109,7 @@ function AccountMenu({
         {initial}
         {variant === 'block' && !compact ? (
           <span className="flex min-w-0 flex-col">
-            <span className="typescale-label-large truncate">{user.username}</span>
+            <span className="typescale-label-large truncate">{user.username}</span>{' '}
             <span className="typescale-body-small text-on-surface-variant">
               {enumLabel(i18n, 'peran', user.peran)}
             </span>
