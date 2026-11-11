@@ -110,7 +110,7 @@ function DrawerContent({
               <span className="typescale-body-medium">{user.username}</span>
               <span className="typescale-label-medium">{enumLabel(i18n, 'peran', user.peran)}</span>
             </RacButton>
-            <Menu placement="top start" onAction={() => onKeluar?.()}>
+            <Menu onAction={() => onKeluar?.()}>
               <MenuItem id="keluar">{t('account.menu.sign_out')}</MenuItem>
             </Menu>
           </MenuTrigger>
