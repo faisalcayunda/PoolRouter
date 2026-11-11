@@ -8,6 +8,11 @@ import {
   toProviderConfig,
 } from '../src/features/provider/providerForm';
 
+/** Pin sintetis: base64 dari 32 byte. */
+const PIN_A = 'AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=';
+const PIN_B = 'ICEiIyQlJicoKSorLC0uLzAxMjM0NTY3ODk6Ozw9Pj8=';
+const PEM = '-----BEGIN CERTIFICATE-----\nMIIBsynthetic\n-----END CERTIFICATE-----';
+
 /** Provider v2 sintetis lengkap; `data_balikan` dan `parameters` harus kembali utuh saat PUT. */
 const PROVIDER_V2 = {
   provider_id: '00000000-0000-4000-8000-0000000000a1',
@@ -17,6 +22,7 @@ const PROVIDER_V2 = {
   base_url: 'https://provider.example.test/api',
   metode: 'POST',
   tls_trust: 'pin_spki',
+  tls_pin_spki: [PIN_A, PIN_B],
   log_mode: 'metadata_only',
   config_schema_version: 2,
   body_template: '{"NIK":"{{input.NIK}}","PWD":"{{secret.PASSWORD}}"}',
@@ -37,6 +43,7 @@ describe('toProviderConfig (PUT penggantian penuh, ARC-101)', () => {
       base_url: 'https://provider.example.test/api',
       metode: 'POST',
       tls_trust: 'pin_spki',
+      tls_pin_spki: [PIN_A, PIN_B],
       log_mode: 'metadata_only',
       config_schema_version: 2,
       body_template: PROVIDER_V2.body_template,
@@ -145,5 +152,89 @@ describe('serverErrors (422 validasi_gagal)', () => {
 
   it('returns null for a problem without field errors', () => {
     expect(serverErrors({ kode: 'akses_ditolak' })).toBeNull();
+  });
+});
+
+describe('bahan TLS per mode (ARC-239)', () => {
+  const dasar = {
+    ...emptyDraft(),
+    nama: 'provider-contoh-a',
+    base_url: 'https://provider.example.test/api',
+    body_template: '{}',
+  };
+
+  it('sends tls_ca_pem only for ca_kustom and omits the pins', () => {
+    const built = toProviderConfig(
+      { ...dasar, tls_trust: 'ca_kustom', tls_ca_pem: ` ${PEM}\n`, tls_pin_spki: PIN_A },
+      'create',
+    );
+    expect(built.ok).toBe(true);
+    if (!built.ok) return;
+    expect(built.body.tls_ca_pem).toBe(PEM);
+    expect(built.body).not.toHaveProperty('tls_pin_spki');
+  });
+
+  it('sends one pin per non-empty line for pin_spki and omits the PEM', () => {
+    const built = toProviderConfig(
+      {
+        ...dasar,
+        tls_trust: 'pin_spki',
+        tls_ca_pem: PEM,
+        tls_pin_spki: `${PIN_A}\r\n\n ${PIN_B} `,
+      },
+      'create',
+    );
+    expect(built.ok).toBe(true);
+    if (!built.ok) return;
+    expect(built.body.tls_pin_spki).toEqual([PIN_A, PIN_B]);
+    expect(built.body).not.toHaveProperty('tls_ca_pem');
+  });
+
+  it('sends neither for system, even when the draft still holds leftovers', () => {
+    const built = toProviderConfig(
+      { ...dasar, tls_trust: 'system', tls_ca_pem: PEM, tls_pin_spki: PIN_A },
+      'create',
+    );
+    expect(built.ok).toBe(true);
+    if (built.ok) {
+      expect(built.body).not.toHaveProperty('tls_ca_pem');
+      expect(built.body).not.toHaveProperty('tls_pin_spki');
+    }
+  });
+
+  it('requires the material of the chosen mode', () => {
+    const ca = toProviderConfig({ ...dasar, tls_trust: 'ca_kustom' }, 'create');
+    const pin = toProviderConfig(
+      { ...dasar, tls_trust: 'pin_spki', tls_pin_spki: ' \n' },
+      'create',
+    );
+    expect(ca.ok || ca.errors.tls_ca_pem?.kode).toBe('wajib');
+    expect(pin.ok || pin.errors.tls_pin_spki?.kode).toBe('wajib');
+  });
+
+  it('round-trips a ca_kustom provider through the draft', () => {
+    const ca = {
+      ...PROVIDER_V2,
+      tls_trust: 'ca_kustom',
+      tls_ca_pem: PEM,
+      tls_pin_spki: null,
+    } as unknown as Provider;
+    const draft = draftFromProvider(ca);
+    expect(draft.tls_ca_pem).toBe(PEM);
+    expect(draft.tls_pin_spki).toBe('');
+  });
+
+  it('maps server 422 codes on the TLS fields, including a pin index', () => {
+    const mapped = serverErrors({
+      kode: 'validasi_gagal',
+      errors: [
+        { field: '/tls_ca_pem', kode: 'pem_tidak_sah' },
+        { field: '/tls_pin_spki/1', kode: 'pin_tidak_sah' },
+      ],
+    } as never);
+    expect(mapped?.fields.tls_ca_pem?.kode).toBe('pem_tidak_sah');
+    expect(mapped?.fields.tls_pin_spki?.kode).toBe('pin_tidak_sah');
+    expect(mapped?.lainnya).toEqual([]);
+    expect(firstInvalid(mapped?.fields ?? {})).toBe('tls_ca_pem');
   });
 });

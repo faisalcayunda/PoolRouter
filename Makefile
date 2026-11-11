@@ -32,7 +32,7 @@ COMPOSE := $(COMPOSE_ENV) $(CONTAINER_ENGINE) compose -p $(PROJECT) $(COMPOSE_FI
 LINT_ENV_FILES := $(COMPOSE_DIR)/env/dev.env.example
 IMAGE_TAG ?= dev
 
-.PHONY: check-env compose-up compose-down compose-ps compose-logs compose-config compose-migrate compose-seed compose-lint compose-test-dind image image-frontend image-postgres
+.PHONY: check-env compose-up compose-down compose-ps compose-logs compose-config compose-migrate compose-seed compose-lint compose-test-dind image image-frontend image-postgres e2e-api-asli
 
 check-env:
 	@case "$(ENV)" in dev|staging|prod) ;; *) echo "ENV harus dev, staging, atau prod" >&2; exit 2 ;; esac
@@ -44,8 +44,10 @@ check-env:
 compose-config: check-env
 	$(COMPOSE) --profile '*' config -q
 
+# COMPOSE_UP_SERVICES: bila diisi, hanya service itu (dan dependensinya) yang dinaikkan; kosong = semua.
+COMPOSE_UP_SERVICES ?=
 compose-up: check-env
-	$(COMPOSE) $(PROFILE_ARGS) up -d --wait
+	$(COMPOSE) $(PROFILE_ARGS) up -d --wait $(COMPOSE_UP_SERVICES)
 
 # compose-migrate: jalankan setelah compose-up (bundled-infra sudah healthy). Tidak menaikkan app.
 compose-migrate: check-env
@@ -58,8 +60,10 @@ compose-seed: check-env
 	$(COMPOSE) $(PROFILE_ARGS) --profile cli run --rm backend-cli seed pengguna
 	$(COMPOSE) $(PROFILE_ARGS) --profile cli run --rm backend-cli seed dukcapil
 
+# COMPOSE_DOWN_FLAGS: mis. `-v` untuk ikut menghapus volume proyek (harness e2e-api-asli).
+COMPOSE_DOWN_FLAGS ?=
 compose-down: check-env
-	$(COMPOSE) $(PROFILE_ARGS) down
+	$(COMPOSE) $(PROFILE_ARGS) down $(COMPOSE_DOWN_FLAGS)
 
 compose-ps: check-env
 	$(COMPOSE) $(PROFILE_ARGS) ps
@@ -77,6 +81,15 @@ compose-lint:
 compose-test-dind:
 	ARC_ISSUE="$(ARC_ISSUE)" ENV_FILE="$(ENV_FILE)" PROFILES="$(EFF_PROFILES)" \
 	sh $(COMPOSE_DIR)/test/dind.sh
+
+# e2e-api-asli: suite Playwright `@api-asli` terhadap stack dev sungguhan (ARC-251). Menyalakan stack
+# berlabel, migrasi + seed sintetis, menjalankan suite, lalu membersihkan resource berlabel itu.
+# Image backend dan frontend harus sudah ada (`make image image-frontend`) atau beri E2E_BUILD_IMAGES=1.
+# Wajib: CONTAINER_LABEL=arctiva.issue=ARC-<n>. Lihat scripts/e2e-api-asli.sh untuk batas dan urutan.
+E2E_BUILD_IMAGES ?=
+e2e-api-asli:
+	@CONTAINER_LABEL="$(CONTAINER_LABEL)" E2E_BUILD_IMAGES="$(E2E_BUILD_IMAGES)" IMAGE_TAG="$(IMAGE_TAG)" JOBS="$(JOBS)" \
+		MAKE="$(SUBMAKE)" sh scripts/e2e-api-asli.sh
 
 # image: membangun image dari Containerfile dengan engine terpilih (Addendum §3.2).
 # Compose tidak dipakai untuk build di staging dan produksi.

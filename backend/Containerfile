@@ -1,5 +1,6 @@
 # Image backend PoolRouter (ADR-0001 Addendum A §3.1, §3.3, §6, §7).
-# Satu image memuat binary webserver, controller, worker, dan backend-cli. Compose memilih proses lewat `command:`;
+# Satu image memuat binary webserver, controller, worker, backend-cli, dan migrate (migrasi skema, ARC-254).
+# Compose memilih proses lewat `command:`;
 # backend-cli dijalankan lewat service backend-cli (profile cli, `compose run --rm`) atau `exec` di container backend
 # (ADR-0003 §3.6c, docs/runbook/deploy.md).
 # Build (dari akar repo): podman build -f backend/Containerfile backend   (atau docker build, konteks backend/)
@@ -26,9 +27,9 @@ COPY . .
 # Cache registry dan target hanya ada selama build; binary disalin ke /out dalam RUN yang sama.
 RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
     --mount=type=cache,target=/src/target,sharing=locked \
-    cargo build --release --locked --bin webserver --bin controller --bin worker --bin backend-cli \
+    cargo build --release --locked --bin webserver --bin controller --bin worker --bin backend-cli --bin migrate \
  && mkdir -p /out \
- && cp target/release/webserver target/release/controller target/release/worker target/release/backend-cli /out/
+ && cp target/release/webserver target/release/controller target/release/worker target/release/backend-cli target/release/migrate /out/
 
 # Runtime glibc (bookworm, sama dengan build stage). Digest index multi-arch, diambil 2026-11-03.
 FROM docker.io/library/debian:bookworm-slim@sha256:99c0b25c46d0214d5a2091092e7908907dcaecd6a962cde0ac700acee222b6f3
@@ -43,10 +44,16 @@ LABEL org.opencontainers.image.source="https://github.com/faisalcayunda/PoolRout
       org.opencontainers.image.licenses="UNLICENSED"
 # bookworm-slim 12.15 masih membawa apt/libapt-pkg6.0 2.6.1 yang terkena CVE-2026-109518;
 # belum ada digest bookworm-slim yang memuat 2.6.2, jadi upgrade di sini lalu bersihkan daftar apt.
+# ca-certificates (ARC-254): bookworm-slim tidak memuatnya, dan reqwest 0.13 panik saat Client::new() tanpa CA
+# sistem, sehingga `webserver healthcheck`, `controller healthcheck`, dan `worker liveness` mati walau /readyz
+# menjawab 200. Versi dikunci seperti pgbackrest di deploy/compose/backup/Containerfile; bump lewat
+# `apt-cache policy ca-certificates` di image dasar. `--only-upgrade` tidak memasang paket baru, jadi
+# ca-certificates ada di perintah install terpisah.
 RUN apt-get update \
  && apt-get install -y --no-install-recommends --only-upgrade apt \
+ && apt-get install -y --no-install-recommends ca-certificates=20250419~deb12u2 \
  && rm -rf /var/lib/apt/lists/*
-COPY --from=build /out/webserver /out/controller /out/worker /out/backend-cli /usr/local/bin/
+COPY --from=build /out/webserver /out/controller /out/worker /out/backend-cli /out/migrate /usr/local/bin/
 # User numerik tetap (ADR-0001 Addendum A §6, D5). Tidak bergantung pada entri /etc/passwd.
 USER 10001:10001
 WORKDIR /

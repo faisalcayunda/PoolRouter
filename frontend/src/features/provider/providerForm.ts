@@ -27,6 +27,10 @@ export interface ProviderDraft {
   base_url: string;
   metode: MetodeProvider;
   tls_trust: TlsTrust;
+  /** PEM CA kustom; hanya dikirim bila `tls_trust = ca_kustom` (ARC-239). */
+  tls_ca_pem: string;
+  /** Satu pin SPKI base64 per baris; hanya dikirim bila `tls_trust = pin_spki` (ARC-239). */
+  tls_pin_spki: string;
   log_mode: LogMode;
   config_schema_version: number;
   body_template: string;
@@ -45,6 +49,8 @@ export const FIELD_ORDER: readonly DraftField[] = [
   'base_url',
   'metode',
   'tls_trust',
+  'tls_ca_pem',
+  'tls_pin_spki',
   'log_mode',
   'config_schema_version',
   'body_template',
@@ -74,6 +80,8 @@ export function emptyDraft(): ProviderDraft {
     base_url: '',
     metode: 'POST',
     tls_trust: 'system',
+    tls_ca_pem: '',
+    tls_pin_spki: '',
     log_mode: 'metadata_only',
     config_schema_version: 1,
     body_template: '',
@@ -91,6 +99,8 @@ export function draftFromProvider(provider: Provider): ProviderDraft {
     base_url: provider.base_url,
     metode: provider.metode,
     tls_trust: provider.tls_trust,
+    tls_ca_pem: provider.tls_ca_pem ?? '',
+    tls_pin_spki: (provider.tls_pin_spki ?? []).join('\n'),
     log_mode: provider.log_mode,
     config_schema_version: provider.config_schema_version,
     body_template: provider.body_template,
@@ -100,6 +110,14 @@ export function draftFromProvider(provider: Provider): ProviderDraft {
     data_balikan: provider.data_balikan == null ? '' : json(provider.data_balikan),
     alasan: '',
   };
+}
+
+/** Daftar pin dari teks isian: satu per baris, baris kosong diabaikan. */
+export function parsePins(text: string): string[] {
+  return text
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line !== '');
 }
 
 type Parsed = { ok: true; value: unknown } | { ok: false };
@@ -146,6 +164,12 @@ export function toProviderConfig(draft: ProviderDraft, mode: 'create' | 'update'
     errors.data_balikan = { kode: 'required_untuk_versi_2' };
   }
 
+  const pins = parsePins(draft.tls_pin_spki);
+  if (draft.tls_trust === 'ca_kustom' && !draft.tls_ca_pem.trim()) {
+    errors.tls_ca_pem = { kode: 'wajib' };
+  }
+  if (draft.tls_trust === 'pin_spki' && pins.length === 0) errors.tls_pin_spki = { kode: 'wajib' };
+
   const alasan = draft.alasan.trim();
   if (mode === 'update' && (alasan.length < ALASAN_MIN || alasan.length > ALASAN_MAKS)) {
     errors.alasan = { kode: 'alasan_rentang' };
@@ -165,6 +189,9 @@ export function toProviderConfig(draft: ProviderDraft, mode: 'create' | 'update'
     parameters: (parameters as { value: unknown }).value as ProviderConfig['parameters'],
     respons_skema: (respons as { value: unknown }).value as ProviderConfig['respons_skema'],
   };
+  // Bahan TLS harus cocok dengan mode (422 `tidak_untuk_mode`): field mode lain tidak dikirim.
+  if (draft.tls_trust === 'ca_kustom') body.tls_ca_pem = draft.tls_ca_pem.trim();
+  if (draft.tls_trust === 'pin_spki') body.tls_pin_spki = pins;
   if (dataBalikan?.ok) body.data_balikan = dataBalikan.value as ProviderConfig['data_balikan'];
   if (mode === 'update') body.alasan = alasan;
   return { ok: true, body };
@@ -174,6 +201,8 @@ export function toProviderConfig(draft: ProviderDraft, mode: 'create' | 'update'
 const TEXT_FIELDS = new Set<string>([
   'nama',
   'base_url',
+  'tls_ca_pem',
+  'tls_pin_spki',
   'body_template',
   'parameters',
   'respons_skema',

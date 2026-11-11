@@ -20,8 +20,10 @@
 
 mod item;
 mod konfigurasi;
+mod metrik;
 mod pemicu;
 mod pengirim;
+mod pengirim_handler;
 mod penyusun;
 
 pub use item::ItemDataBalikan;
@@ -35,4 +37,5 @@ pub use pengirim::{
     BatchKeluar, HasilAck, HasilDiprogam, HasilKirimBatch, KelasGagal, PengirimDataBalikan,
     PengirimTiruan, RekamanKirim,
 };
+pub use pengirim_handler::{GalatPengirim, jalankan_job_pengirim};
 pub use penyusun::{GalatPenyusun, HasilPenyusun, jalankan_job_balikan};
