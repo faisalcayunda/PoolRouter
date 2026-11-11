@@ -92,7 +92,7 @@ describe('component map (spec §4)', () => {
     const s = src('NavigationDrawer.tsx');
     expect(s).toContain('w-[272px]');
     expect(s).not.toContain('w-60');
-    expect(s).toMatch(/const BASE =\s*'[^']*border-r border-outline-variant/);
+    expect(s.match(/border-r border-outline-variant/g)?.length).toBeGreaterThanOrEqual(2);
   });
 
   it('Dialog title is headline-small and the surface uses corner extra-large', () => {
@@ -102,13 +102,19 @@ describe('component map (spec §4)', () => {
   });
 
   it('Card container is the Figma card: radius 16 via corner-large, outline-variant, level1', () => {
-    expect(src('Card.tsx')).toMatch(
-      /container:\s*'rounded-large border border-outline-variant bg-surface-container-lowest shadow-level1'/,
+    expect(src('Card.tsx')).toContain(
+      "container: 'rounded-large border border-outline-variant bg-surface-container-lowest shadow-level1'",
     );
   });
 
   it('text fields are 40 px with corner extra-small (Figma Input 2:22114)', () => {
-    for (const file of ['TextField.tsx', 'Select.tsx', 'ComboBox.tsx', 'DatePicker.tsx']) {
+    for (const file of [
+      'TextField.tsx',
+      'Select.tsx',
+      'ComboBox.tsx',
+      'DatePicker.tsx',
+      'TimeField.tsx',
+    ]) {
       expect(src(file), file).toMatch(/h-10[^']*rounded-extra-small|rounded-extra-small[^']*h-10/);
     }
   });
@@ -116,5 +122,9 @@ describe('component map (spec §4)', () => {
   it('TopAppBar carries no search field or notification bell', () => {
     const s = src('TopAppBar.tsx');
     expect(s).not.toMatch(/search|notification|bell/i);
+  });
+
+  it('AppShell, where the decorative search used to live, has no search or bell either', () => {
+    expect(src('../../app/AppShell.tsx')).not.toMatch(/search|pencarian|notif|bell|lonceng/i);
   });
 });

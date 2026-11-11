@@ -282,7 +282,7 @@ describe('AppShell — menu per role', () => {
     const onKeluar = vi.fn();
     renderShell('/', 'operator', { username: 'adm.contoh', peran: 'operator' }, onKeluar);
     const drawer = screen.getByRole('complementary', { name: 'Navigasi utama' });
-    const trigger = within(drawer).getByRole('button', { name: 'Menu akun adm.contoh Operator' });
+    const trigger = within(drawer).getByRole('button', { name: 'Menu akun adm.contoh' });
     expect(within(trigger).getByText('Operator')).toBeInTheDocument();
     // Kartu profil tanpa border: pemicu dikenali dari isinya dan cincin fokusnya, bukan dari batas abu.
     expect(trigger.className).not.toMatch(/(^|\s)border/);
@@ -296,7 +296,7 @@ describe('AppShell — menu per role', () => {
     const onKeluar = vi.fn();
     renderShell('/', 'operator', { username: 'adm.contoh', peran: 'operator' }, onKeluar);
     within(screen.getByRole('complementary', { name: 'Navigasi utama' }))
-      .getByRole('button', { name: 'Menu akun adm.contoh Operator' })
+      .getByRole('button', { name: 'Menu akun adm.contoh' })
       .focus();
     await userEvent.keyboard('{Enter}');
     await screen.findByRole('menuitem', { name: 'Keluar' });
