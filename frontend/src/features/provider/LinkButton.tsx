@@ -17,18 +17,23 @@ export function LinkButton({
   variant = 'filled',
   className,
   'aria-label': ariaLabel,
+  newTab = false,
   children,
 }: {
   href: string;
   variant?: keyof typeof VARIANT;
   className?: string;
   'aria-label'?: string;
+  /** Buka di tab baru, mis. supaya isian form yang belum disimpan tidak hilang. */
+  newTab?: boolean;
   children: ReactNode;
 }) {
   return (
     <Link
       href={href}
       aria-label={ariaLabel}
+      target={newTab ? '_blank' : undefined}
+      rel={newTab ? 'noopener noreferrer' : undefined}
       className={cx(
         'm3-state m3-focus typescale-label-large inline-flex h-10 min-w-12 items-center justify-center gap-2 rounded-full no-underline',
         VARIANT[variant],

@@ -274,6 +274,12 @@ function ProviderForm({ client, initial }: ProviderFormProps): ReactNode {
       errorMessage: issue ? issueMessage(i18n, issue) : undefined,
     };
   };
+  // Versi 2 disembunyikan untuk provider baru sampai layar S03 dengan editor rule terstruktur dan
+  // data balikan ada (ARC-242, sisa S03a/S03b/S04). Provider yang tersimpan berversi 2 tetap melihatnya,
+  // walau draf sempat dipindah ke versi 1, supaya penurunan tidak tak bisa dibatalkan dari form.
+  const versiTersedia = CONFIG_SCHEMA_VERSIONS.filter(
+    (v) => v === 1 || current?.config_schema_version === v,
+  );
   const showDataBalikan = draft.config_schema_version === 2 || draft.data_balikan.trim() !== '';
   const templateIssue = errors.body_template;
   const rules = parseParameters(draft.parameters);
@@ -310,6 +316,12 @@ function ProviderForm({ client, initial }: ProviderFormProps): ReactNode {
       {templateIssue ? (
         <InlineAlert tone="error" heading={t('provider.template.error.title')}>
           {issueMessage(i18n, templateIssue)}
+          {templateIssue.kode === 'template_secret_tidak_ada' && templateIssue.nama ? (
+            // Tab baru: template yang belum disimpan tetap ada di layar ini.
+            <LinkButton href="/secret" variant="text" newTab className="mt-2">
+              {t('provider.template.error.secret_create', { nama: templateIssue.nama })}
+            </LinkButton>
+          ) : null}
         </InlineAlert>
       ) : null}
       {invalidCount > 0 ? (
@@ -481,11 +493,11 @@ function ProviderForm({ client, initial }: ProviderFormProps): ReactNode {
                     label={t('provider.form.version.label')}
                     selectedKey={draft.config_schema_version}
                     onSelectionChange={(key) => {
-                      const found = CONFIG_SCHEMA_VERSIONS.find((v) => v === key);
+                      const found = versiTersedia.find((v) => v === key);
                       if (found !== undefined) set('config_schema_version', found);
                     }}
                   >
-                    {CONFIG_SCHEMA_VERSIONS.map((v) => (
+                    {versiTersedia.map((v) => (
                       <SelectItem key={v} id={v}>
                         {tDynamic(i18n, `provider.form.version.v${v}`)}
                       </SelectItem>
