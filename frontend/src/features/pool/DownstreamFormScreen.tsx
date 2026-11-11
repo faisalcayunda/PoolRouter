@@ -321,11 +321,6 @@ function DownstreamForm({
                     <p className="typescale-body-small text-error">{err('sifat').errorMessage}</p>
                   ) : null}
                 </div>
-                <div data-field="boleh_pinjam" className="flex items-end pb-2">
-                  <Switch isSelected={draft.boleh_pinjam} onChange={(v) => set('boleh_pinjam', v)}>
-                    {t('downstream.form.alokasi.boleh_pinjam')}
-                  </Switch>
-                </div>
               </>
             ) : (
               <p className="typescale-body-medium col-span-full text-on-surface-variant">
@@ -333,6 +328,14 @@ function DownstreamForm({
               </p>
             )}
           </FieldGrid>
+          {/* Saklar berlabel di sampingnya, jadi di luar grid field (L4: label di atas field). */}
+          {beralokasi ? (
+            <div data-field="boleh_pinjam">
+              <Switch isSelected={draft.boleh_pinjam} onChange={(v) => set('boleh_pinjam', v)}>
+                {t('downstream.form.alokasi.boleh_pinjam')}
+              </Switch>
+            </div>
+          ) : null}
         </SectionCard>
 
         {mode === 'update' ? (
