@@ -10,8 +10,8 @@
 # hanya lewat filter label itu, termasuk saat gagal.
 #
 # Batas (dicatat, bukan disembunyikan):
-#   - controller dan worker tidak dinaikkan: layar provider/secret hanya butuh webserver, Postgres,
-#     Redis (pembatas login) dan RabbitMQ (dibaca konfigurasi webserver).
+#   - controller dinaikkan karena readiness webserver menunggu pr:siap yang ditulis controller saat
+#     rebuild Redis; worker tidak dinaikkan (layar provider/secret tidak butuh worker).
 #   - mock-dukcapil tidak dinaikkan (profil `mock`).
 #   - login lewat UI (password + MFA TOTP) tidak diuji di sini; pengguna uji masuk lewat baris
 #     admin_session dari SQL fixture, sesuai AC-4.
@@ -51,8 +51,18 @@ cleanup() {
   if [ "$rc" != 0 ]; then
     echo "== DIAG (rc=$rc): container berlabel $issue" >&2
     $ENGINE ps -a --filter "label=$label" --format '{{.Names}} {{.Status}}' >&2 || true
-    for c in $($ENGINE ps -a --filter "label=$label" --filter "label=com.docker.compose.service=backend-webserver" -q); do
-      $ENGINE logs --tail 40 "$c" >&2 2>&1 || true
+    # /readyz komponen backend, dibaca dari container postgres (busybox wget) lewat jaringan compose.
+    pgd=$($ENGINE ps -q --filter "label=$label" --filter "label=com.docker.compose.service=postgres" | head -n 1)
+    for svc in backend-controller backend-webserver; do
+      [ -n "$pgd" ] && { echo "-- readyz $svc" >&2; $ENGINE exec "$pgd" wget -q -O - -T 3 "http://$project-$svc-1:9090/readyz" >&2 2>&1 || true; echo >&2; }
+    done
+    for svc in backend-controller backend-webserver; do
+      for c in $($ENGINE ps -a --filter "label=$label" --filter "label=com.docker.compose.service=$svc" -q); do
+        echo "-- health $svc" >&2
+        $ENGINE inspect --format '{{json .State.Health}}' "$c" >&2 2>&1 || true
+        echo "-- logs $svc" >&2
+        $ENGINE logs --tail 40 "$c" >&2 2>&1 || true
+      done
     done
   fi
   # Resource berlabel milik tiket ini saja (CLAUDE.md: tanpa prune global).
@@ -105,8 +115,21 @@ sed -e "s#^POOLROUTER_SECRETS_DIR=.*#POOLROUTER_SECRETS_DIR=$secrets#" \
 # --- Overlay label: semua service (termasuk run --rm), volume, dan network ---------------------
 {
   echo "services:"
-  for s in postgres redis rabbitmq migrate backend-webserver backend-controller backend-worker backend-cli frontend mock-dukcapil; do
+  for s in postgres redis rabbitmq migrate backend-worker backend-cli frontend mock-dukcapil; do
     echo "  $s: {labels: {arctiva.issue: $issue}}"
+  done
+  # Healthcheck bawaan (`webserver|controller healthcheck`) panik di image dev: reqwest 0.13 gagal memuat
+  # CA sistem ("No CA certificates were loaded"), karena image runtime tidak memuat ca-certificates,
+  # sehingga container selalu unhealthy meski /readyz menjawab 200. Harness mengganti probe dengan
+  # GET /readyz lewat bash /dev/tcp (bash ada di image). Cacat image itu di luar ARC-251 (tiket sendiri).
+  # `$$` supaya Compose tidak menginterpolasi variabel shell.
+  probe='exec 3<>/dev/tcp/127.0.0.1/9090; printf "GET /readyz HTTP/1.0\r\n\r\n" >&3; read -r l <&3; case "$$l" in *" 200 "*) ;; *) exit 1;; esac'
+  for s in backend-controller backend-webserver; do
+    echo "  $s:"
+    echo "    labels: {arctiva.issue: $issue}"
+    echo "    healthcheck:"
+    # printf %s, bukan echo: echo dash menafsirkan \r\n di dalam probe.
+    printf '%s\n' "      test: !override [\"CMD\", \"bash\", \"-c\", '$probe']"
   done
   # db-bootstrap memasang ./../db (deploy/db, tidak ada); skripnya ada di backend/db.
   echo "  db-bootstrap:"
@@ -135,9 +158,29 @@ roles=$($ENGINE exec "$pg" sh -c 'psql -U "$POSTGRES_USER" -d postgres -tAc "sel
 echo "db-bootstrap: $roles role dibuat"
 [ "${E2E_UPTO:-}" = bootstrap ] && { echo "E2E_UPTO=bootstrap: berhenti sebelum migrate"; exit 0; }
 echo "== migrate"
-mk compose-migrate
+# Image backend tidak punya biner `migrate` (hanya backend-cli, controller, webserver, worker), jadi
+# `compose run migrate` gagal: crun "executable file `migrate` not found" (tampil sebagai "unable to
+# upgrade to tcp, received 500"). Harness menerapkan backend/migrations dengan cara yang sama seperti
+# backend/db/test/run.sh: berurutan, SET ROLE poolrouter_owner, berkas `-- no-transaction` terpisah.
+# Celah compose-migrate itu di luar ARC-251 dan butuh tiket sendiri.
+pgdb=$(sed -n 's/^POSTGRES_DB=//p' "$envf" | tail -n 1)
+psql_pg() { $ENGINE exec -i "$pg" sh -c 'exec psql -v ON_ERROR_STOP=1 -q -U "$POSTGRES_USER" "$@"' sh -d "$pgdb" "$@"; }
+terapkan_tx() { { echo "SET ROLE poolrouter_owner;"; for m; do echo "-- $(basename "$m")"; cat "$m"; echo; done; } | psql_pg -1; }
+set --
+for f in "$repo"/backend/migrations/*.sql; do
+  if head -n 1 "$f" | grep -qx -- '-- no-transaction'; then
+    [ $# -eq 0 ] || { terapkan_tx "$@"; set --; }
+    { echo "SET ROLE poolrouter_owner;"; cat "$f"; } | psql_pg
+  else
+    set -- "$@" "$f"
+  fi
+done
+[ $# -eq 0 ] || terapkan_tx "$@"
+echo "migrate: ok"
 echo "== seed sintetis"
 mk compose-seed
+echo "== controller (rebuild Redis: webserver baru siap setelah pr:siap ditulis controller)"
+mk compose-up COMPOSE_UP_SERVICES="backend-controller"
 echo "== webserver + frontend"
 mk compose-up COMPOSE_UP_SERVICES="backend-webserver frontend"
 
