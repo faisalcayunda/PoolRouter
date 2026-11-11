@@ -6,7 +6,8 @@ import { LogPageScreen } from '../features/log/LogPageScreen';
 /*
  * Screen routing for the F0 console (ADR-0003 5.1). F0 is a handful of screens with no nested
  * navigation, so a table lookup on `location.pathname` is the whole router; there is no router
- * dependency in `package.json` and the shell already receives the pathname it renders.
+ * dependency in `package.json`. `AppRoot` keeps the pathname in state (`useLokasi`) and the shell
+ * receives the pathname it renders.
  *
  * SHAA-202/203 own these routes (see `src/app/nav.ts`); the heavier screens are lazy so the shell
  * stays the only thing in the first chunk.
@@ -187,7 +188,7 @@ export function RoutedScreens({
   return (
     <RoleProvider current={roleFromSearch(search) ?? role ?? null}>
       <Suspense fallback={null}>
-        <ScreenForPath pathname={pathname} />
+        <ScreenForPath key={pathname} pathname={pathname} />
       </Suspense>
     </RoleProvider>
   );
