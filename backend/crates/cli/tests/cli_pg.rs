@@ -12,8 +12,8 @@ use chrono::{DateTime, Duration, Utc};
 use poolrouter_cli::{GalatCli, Konteks, PembacaPassword, Perintah, jalankan};
 use poolrouter_core::admin::TokenSesi;
 use poolrouter_core::admin::kelola_pengguna::{
-    self as kelola, GalatKelola, SEED_ADMIN_AUDITOR, SEED_AUDITOR, SEED_CLIENT_OWNER,
-    SEED_OPERATOR, SEED_PENYETUJU, SEED_PLATFORM_ADMIN,
+    self as kelola, GalatKelola, PemberianPeran, SEED_ADMIN_AUDITOR, SEED_AUDITOR,
+    SEED_CLIENT_OWNER, SEED_OPERATOR, SEED_PENYETUJU, SEED_PLATFORM_ADMIN,
 };
 use poolrouter_core::admin::seed_dukcapil::{
     SEED_DOWNSTREAM, SEED_ENDPOINT, SEED_PROVIDER, SEED_UPSTREAM,
@@ -609,6 +609,69 @@ async fn seed_pengguna_menolak_pengguna_seed_nonaktif() {
     assert!(teks.contains("0 pengguna baru, 0 peran baru"), "{teks}");
 }
 
+/// AC-41: peran yang diberikan seed ke pengguna seed yang SUDAH ada mencabut sesinya, seperti
+/// `peran beri`. Seed tanpa pemberian baru tidak menyentuh sesi siapa pun. Namanya diurutkan sesudah
+/// `seed_pengguna_hanya_dev_ci_dan_idempoten` (uji itu menghitung pengguna seed dari nol).
+#[tokio::test]
+#[ignore]
+async fn seed_pengguna_mencabut_sesi_pengguna_seed_yang_diberi_peran_ulang() {
+    let u = Uji::baru().await;
+    u.jalankan_di(Environment::Ci, Some(NILAI_UJI), Perintah::SeedPengguna)
+        .await
+        .unwrap();
+    let operator = u.id(SEED_OPERATOR).await;
+    let auditor = u.id(SEED_AUDITOR).await;
+    u.sesi(operator).await;
+    u.sesi(operator).await;
+    u.sesi(auditor).await;
+
+    // Seed tanpa pemberian baru: semua sesi utuh.
+    let teks = u
+        .jalankan_di(Environment::Ci, Some(NILAI_UJI), Perintah::SeedPengguna)
+        .await
+        .unwrap();
+    assert!(teks.contains("0 pengguna baru, 0 peran baru"), "{teks}");
+    assert_eq!(u.jumlah_sesi(operator).await, 2);
+    assert_eq!(u.jumlah_sesi(auditor).await, 1);
+
+    // Peran operator seed dicabut di luar seed; seed memberikannya lagi ke pengguna yang sudah ada.
+    sqlx::query(
+        "UPDATE admin_user_peran SET dicabut_at = now() WHERE pengguna_id = $1 AND peran = 'operator'",
+    )
+    .bind(operator)
+    .execute(&u.su)
+    .await
+    .unwrap();
+    let sebelum = u.jumlah_ubah_peran(operator).await;
+    let teks = u
+        .jalankan_di(Environment::Ci, Some(NILAI_UJI), Perintah::SeedPengguna)
+        .await
+        .unwrap();
+    assert!(teks.contains("0 pengguna baru, 1 peran baru"), "{teks}");
+    assert_eq!(u.peran(SEED_OPERATOR).await, vec!["operator".to_owned()]);
+    assert_eq!(
+        u.jumlah_sesi(operator).await,
+        0,
+        "sesi pengguna yang diberi peran ulang dicabut"
+    );
+    assert_eq!(
+        u.jumlah_sesi(auditor).await,
+        1,
+        "pengguna lain tidak disentuh"
+    );
+    assert_eq!(u.jumlah_ubah_peran(operator).await, sebelum + 1);
+    let dicabut: String = sqlx::query_scalar(
+        "SELECT filter_kueri->'rincian'->>'sesi_dicabut' FROM audit_akses \
+         WHERE aksi = 'ubah_peran' AND filter_kueri->>'target_pengguna_id' = $1::text \
+         ORDER BY terjadi_at DESC LIMIT 1",
+    )
+    .bind(operator)
+    .fetch_one(&u.su)
+    .await
+    .unwrap();
+    assert_eq!(dicabut, "2", "audit mencatat jumlah sesi yang dicabut");
+}
+
 fn cabut_admin(username: &str, oleh: &str) -> Perintah {
     Perintah::PeranCabut {
         username: username.to_owned(),
@@ -769,6 +832,139 @@ async fn dua_pencabutan_peran_bersamaan_tidak_mengunci_sistem() {
             "putaran {i}: {ditolak}"
         );
     }
+}
+
+/// Pasang trigger yang menahan setiap tulis ke `tabel` untuk `target` selama 0,3 detik di dalam
+/// transaksi, supaya dua perintah bersamaan pada target yang sama pasti tumpang tindih. Tanpa
+/// penahan ini balapan hanya kebetulan terjadi. Trigger hanya menyala untuk `target` (uji lain di
+/// basis data yang sama tidak terpengaruh) dan dilepas lewat [`Self::lepas`].
+struct Penahan {
+    tabel: &'static str,
+    nama: String,
+}
+
+impl Penahan {
+    async fn pasang(u: &Uji, tabel: &'static str, kejadian: &str, target: Uuid) -> Self {
+        let nama = format!("uji_tahan_{}", Uuid::now_v7().simple());
+        let baris = if kejadian == "UPDATE" { "OLD" } else { "NEW" };
+        sqlx::query(sqlx::AssertSqlSafe(format!(
+            "CREATE FUNCTION {nama}() RETURNS trigger LANGUAGE plpgsql AS \
+             $$ BEGIN PERFORM pg_sleep(0.3); RETURN NEW; END $$"
+        )))
+        .execute(&u.su)
+        .await
+        .unwrap();
+        sqlx::query(sqlx::AssertSqlSafe(format!(
+            "CREATE TRIGGER {nama} BEFORE {kejadian} ON {tabel} FOR EACH ROW \
+             WHEN ({baris}.pengguna_id = '{target}') EXECUTE FUNCTION {nama}()"
+        )))
+        .execute(&u.su)
+        .await
+        .unwrap();
+        Self { tabel, nama }
+    }
+
+    async fn lepas(self, u: &Uji) {
+        sqlx::query(sqlx::AssertSqlSafe(format!(
+            "DROP TRIGGER {} ON {}",
+            self.nama, self.tabel
+        )))
+        .execute(&u.su)
+        .await
+        .unwrap();
+        sqlx::query(sqlx::AssertSqlSafe(format!(
+            "DROP FUNCTION {}()",
+            self.nama
+        )))
+        .execute(&u.su)
+        .await
+        .unwrap();
+    }
+}
+
+/// ARC-238 butir 3: dua `pengguna aktifkan` bersamaan pada target yang sama. Tanpa kunci baris
+/// target, keduanya membaca `aktif = false` lalu sama-sama menulis, sehingga ada dua pasang baris
+/// audit untuk satu perubahan. Dengan kunci, yang kedua menunggu lalu ditolak `StatusSama`.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+#[ignore]
+async fn dua_aktifkan_bersamaan_menulis_satu_audit() {
+    let u = Uji::baru().await;
+    let (_, admin) = u.pengguna("pa", &[Peran::PlatformAdmin], true).await;
+    let (target, nama) = u.pengguna("staf-mati", &[], false).await;
+    let tahan = Penahan::pasang(&u, "admin_user", "UPDATE", target).await;
+    let gerbang = Arc::new(Barrier::new(2));
+    let aktifkan = || {
+        let (pool, gerbang) = (u.admin.clone(), gerbang.clone());
+        let (nama, admin) = (nama.clone(), admin.clone());
+        tokio::spawn(async move {
+            gerbang.wait().await;
+            kelola::ubah_aktif(&pool, &nama, true, &admin, &alasan(), Utc::now()).await
+        })
+    };
+    let (t1, t2) = (aktifkan(), aktifkan());
+    let (r1, r2) = (t1.await.unwrap(), t2.await.unwrap());
+    tahan.lepas(&u).await;
+
+    assert_eq!(
+        [r1.is_ok(), r2.is_ok()].iter().filter(|b| **b).count(),
+        1,
+        "tepat satu berhasil ({r1:?} / {r2:?})"
+    );
+    let ditolak = r1.err().or(r2.err()).unwrap();
+    assert!(matches!(ditolak, GalatKelola::StatusSama(_)), "{ditolak}");
+    assert_eq!(u.jumlah_ubah_peran(target).await, 1, "satu audit_akses");
+    assert_eq!(
+        u.jumlah_konfigurasi(target).await,
+        1,
+        "satu audit_konfigurasi"
+    );
+}
+
+/// ARC-238 butir 3: dua `peran beri` yang sama bersamaan. Tanpa kunci baris target keduanya
+/// melihat peran belum ada dan sama-sama menulis audit.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+#[ignore]
+async fn dua_beri_peran_bersamaan_menulis_satu_audit() {
+    let u = Uji::baru().await;
+    let (_, admin) = u.pengguna("pa", &[Peran::PlatformAdmin], true).await;
+    let (target, nama) = u.pengguna("calon-admin", &[], true).await;
+    let tahan = Penahan::pasang(&u, "admin_user_peran", "INSERT", target).await;
+    let gerbang = Arc::new(Barrier::new(2));
+    let beri_admin = || {
+        let (pool, gerbang) = (u.admin.clone(), gerbang.clone());
+        let (nama, admin) = (nama.clone(), admin.clone());
+        tokio::spawn(async move {
+            gerbang.wait().await;
+            let p = PemberianPeran {
+                target: &nama,
+                peran: Peran::PlatformAdmin,
+                oleh: &admin,
+                disetujui_oleh: None,
+                berlaku_sampai: None,
+            };
+            kelola::beri_peran(&pool, &p, &alasan(), Environment::Ci, Utc::now()).await
+        })
+    };
+    let (t1, t2) = (beri_admin(), beri_admin());
+    let (r1, r2) = (t1.await.unwrap(), t2.await.unwrap());
+    tahan.lepas(&u).await;
+
+    assert_eq!(
+        [r1.is_ok(), r2.is_ok()].iter().filter(|b| **b).count(),
+        1,
+        "tepat satu berhasil ({r1:?} / {r2:?})"
+    );
+    let ditolak = r1.err().or(r2.err()).unwrap();
+    assert!(
+        matches!(ditolak, GalatKelola::PeranSudahAda(_)),
+        "{ditolak}"
+    );
+    assert_eq!(u.jumlah_ubah_peran(target).await, 1, "satu audit_akses");
+    assert_eq!(
+        u.jumlah_konfigurasi(target).await,
+        1,
+        "satu audit_konfigurasi"
+    );
 }
 
 async fn hitung_rantai_dukcapil(u: &Uji) -> (i64, i64, i64, i64, i64, i64, i64) {

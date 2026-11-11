@@ -7,6 +7,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use poolrouter_adapter_provider::client::TlsTrust;
 use poolrouter_adapter_provider::{GagalPanggilProvider, kelas_error};
 use poolrouter_core::retry::ErrorClass;
 use poolrouter_worker::upstream::{PemanggilProvider, PemanggilReqwest, PermintaanKabel};
@@ -62,7 +63,7 @@ fn permintaan(url: String) -> PermintaanKabel {
         metode: "GET".to_owned(),
         url,
         body: Some("{\"NIK\":\"0012345678901234\"}".to_owned()),
-        tls_trust: "system".to_owned(),
+        trust: TlsTrust::System,
         batas_total: Duration::from_secs(5),
     }
 }
@@ -95,18 +96,4 @@ async fn galat_tls_tidak_membawa_url() {
         panic!("harus Tls");
     };
     assert!(!pesan.contains("0012345678901234"), "{pesan}");
-}
-
-/// Mode trust selain `system` tetap ditolak tanpa koneksi keluar (perilaku
-/// lama worker, tidak berubah).
-#[tokio::test]
-async fn tls_trust_selain_system_ditolak_sebagai_tls() {
-    let pemanggil = PemanggilReqwest::baru().unwrap();
-    let mut p = permintaan("https://127.0.0.1:1/uji".to_owned());
-    p.tls_trust = "pin_spki".to_owned();
-    let hasil = pemanggil.panggil(&p).await;
-    assert!(
-        matches!(hasil, Err(GagalPanggilProvider::Tls(_))),
-        "{hasil:?}"
-    );
 }

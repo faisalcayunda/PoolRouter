@@ -4,6 +4,8 @@ import userEvent from '@testing-library/user-event';
 import type { ReactNode } from 'react';
 import {
   ApiError,
+  createApiClient,
+  SESI_BERAKHIR_EVENT,
   type ApiClient,
   type Endpoint,
   type Provider,
@@ -70,6 +72,100 @@ async function paste(label: string, text: string) {
   await user.click(field);
   await user.paste(text);
 }
+
+/**
+ * AC-14: nilai secret tidak boleh tertinggal di layar. Dua pemeriksaan terpisah: `innerHTML` (input
+ * terkontrol ikut menyinkronkan atribut `value`, jadi nilainya tampak di sana selagi terisi) dan
+ * `value` tiap input dan textarea (menangkap input tak terkontrol atau nilai yang atributnya tidak
+ * tersinkron).
+ */
+function expectNoSecretInMarkup(nilai: string) {
+  expect(document.body.innerHTML).not.toContain(nilai);
+}
+
+function secretHeldByField(nilai: string) {
+  return [
+    ...document.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>('input, textarea'),
+  ].some((field) => field.value.includes(nilai));
+}
+
+function expectNoSecretHeld(nilai: string) {
+  expectNoSecretInMarkup(nilai);
+  expect(secretHeldByField(nilai)).toBe(false);
+}
+
+/** Klien asli di atas fetch palsu yang selalu 401, supaya event sesi berakhir ikut diuji. */
+function client401() {
+  const fetch = vi.fn(
+    async () =>
+      new Response(JSON.stringify({ status: 401, kode: 'tidak_terautentikasi' }), {
+        status: 401,
+        headers: { 'Content-Type': 'application/problem+json' },
+      }),
+  );
+  return createApiClient({ origin: 'http://localhost', fetch });
+}
+
+const SESI_BERAKHIR_COPY = 'Sesi Anda telah berakhir. Masuk lagi untuk melanjutkan.';
+
+describe('S16 sesi berakhir (401) pada layar provider dan secret', () => {
+  async function expectSessionEnded(heard: ReturnType<typeof vi.fn>) {
+    expect(await screen.findByText(SESI_BERAKHIR_COPY)).toBeInTheDocument();
+    // Pesan jaringan menyesatkan: sesi habis bukan koneksi putus.
+    expect(screen.queryByText(/periksa koneksi/i)).toBeNull();
+    expect(heard).toHaveBeenCalled();
+  }
+
+  function listen() {
+    const heard = vi.fn();
+    window.addEventListener(SESI_BERAKHIR_EVENT, heard);
+    return { heard, stop: () => window.removeEventListener(SESI_BERAKHIR_EVENT, heard) };
+  }
+
+  it('S02 daftar provider: announces the end of the session and says so', async () => {
+    const { heard, stop } = listen();
+    asRole('platform_admin', <ProviderListScreen client={client401()} />);
+    await expectSessionEnded(heard);
+    stop();
+  });
+
+  it('S03 detail provider: announces the end of the session and says so', async () => {
+    const { heard, stop } = listen();
+    asRole(
+      'platform_admin',
+      <ProviderFormScreen client={client401()} providerId={PROVIDER.provider_id} />,
+    );
+    await expectSessionEnded(heard);
+    stop();
+  });
+
+  it('S05 secret: announces the end of the session and says so', async () => {
+    const { heard, stop } = listen();
+    asRole('platform_admin', <SecretScreen client={client401()} />);
+    await expectSessionEnded(heard);
+    stop();
+  });
+
+  it('S05 secret: a 401 on save keeps the dialog open with the session copy', async () => {
+    const putSecret = vi
+      .fn()
+      .mockRejectedValue(new ApiError(401, { kode: 'tidak_terautentikasi' }));
+    asRole('platform_admin', <SecretScreen client={stubClient({ putSecret })} />);
+
+    await user.click(await screen.findByRole('button', { name: 'Tambah secret' }));
+    const dialog = await screen.findByRole('dialog');
+    await user.click(within(dialog).getByLabelText('Nama'));
+    await user.paste('TOKEN_UJI');
+    await user.click(within(dialog).getByLabelText('Nilai'));
+    await user.paste(NILAI);
+    await user.click(within(dialog).getByRole('button', { name: 'Simpan secret' }));
+
+    expect(await within(dialog).findByText(SESI_BERAKHIR_COPY)).toBeInTheDocument();
+    // Dialog tetap terbuka, jadi nilai masih ada, tetapi hanya di input password dan bukan di teks.
+    expect(within(dialog).getByLabelText('Nilai')).toHaveAttribute('type', 'password');
+    expect(within(dialog).queryByText(NILAI)).toBeNull();
+  });
+});
 
 describe('S02 daftar provider', () => {
   it('shows the empty state with both actions', async () => {
@@ -273,6 +369,51 @@ describe('S03–S04 form provider', () => {
         'Secret PASSWORD belum dibuat. Buat di menu Secret, lalu simpan template lagi.',
       ),
     ).toBeInTheDocument();
+    // Galat ini bisa dibereskan dari sini: tautan ke layar Secret, bukan hanya petunjuk teks.
+    const link = screen.getByRole('link', { name: 'Buat secret PASSWORD' });
+    expect(link).toHaveAttribute('href', '/secret');
+    // Tab baru, supaya template yang belum disimpan tidak hilang.
+    expect(link).toHaveAttribute('target', '_blank');
+  });
+
+  // Versi 2 (data balikan) belum bisa dipilih untuk provider baru: layar S03 yang memuat editor
+  // rule terstruktur dan data balikan belum ada (ARC-242, sisa S03a/S03b/S04). Provider yang sudah
+  // berversi 2 tetap menampilkannya supaya tidak diturunkan diam-diam.
+  it('offers only version 1 for a new provider', async () => {
+    asRole('platform_admin', <ProviderFormScreen client={stubClient()} />);
+    await user.click(screen.getByRole('button', { name: /Versi skema konfigurasi/ }));
+    const options = await screen.findAllByRole('option');
+    expect(options.map((o) => o.textContent)).toEqual(['Versi 1 (F0)']);
+  });
+
+  it('keeps version 2 selectable on a provider that already uses it', async () => {
+    asRole(
+      'platform_admin',
+      <ProviderFormScreen client={stubClient()} providerId={PROVIDER.provider_id} />,
+    );
+    await screen.findByRole('heading', { level: 1, name: 'provider-contoh-a' });
+    await user.click(screen.getByRole('button', { name: /Versi skema konfigurasi/ }));
+    const options = await screen.findAllByRole('option');
+    expect(options.map((o) => o.textContent)).toEqual([
+      'Versi 1 (F0)',
+      'Versi 2 (F1, dengan data balikan)',
+    ]);
+  });
+
+  it('keeps version 2 selectable after the draft is switched to version 1', async () => {
+    asRole(
+      'platform_admin',
+      <ProviderFormScreen client={stubClient()} providerId={PROVIDER.provider_id} />,
+    );
+    await screen.findByRole('heading', { level: 1, name: 'provider-contoh-a' });
+    await user.click(screen.getByRole('button', { name: /Versi skema konfigurasi/ }));
+    await user.click(await screen.findByRole('option', { name: 'Versi 1 (F0)' }));
+    await user.click(screen.getByRole('button', { name: /Versi skema konfigurasi/ }));
+    const options = await screen.findAllByRole('option');
+    expect(options.map((o) => o.textContent)).toEqual([
+      'Versi 1 (F0)',
+      'Versi 2 (F1, dengan data balikan)',
+    ]);
   });
 
   it('validates required fields before calling the API and focuses the first one', async () => {
@@ -581,14 +722,17 @@ describe('S05 secret', () => {
     expect(nilai).toHaveAttribute('autocomplete', 'new-password');
     await user.click(nilai);
     await user.paste(NILAI);
+    // Penjaga uji: selagi dialog terbuka, kedua pemeriksaan memang melihat nilainya, masing-masing
+    // lewat jalurnya sendiri.
+    expect(secretHeldByField(NILAI)).toBe(true);
+    expect(() => expectNoSecretInMarkup(NILAI)).toThrow();
     await user.click(within(dialog).getByRole('button', { name: 'Simpan secret' }));
 
     await waitFor(() => expect(client.putSecret).toHaveBeenCalledWith('TOKEN_UJI', NILAI));
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     expect(await screen.findByText('Secret TOKEN_UJI tersimpan.')).toBeInTheDocument();
-    expect(document.body.innerHTML).not.toContain(NILAI);
+    expectNoSecretHeld(NILAI);
     expect(screen.queryByLabelText('Nilai')).toBeNull();
-    expect([...document.querySelectorAll('input')].every((el) => el.value !== NILAI)).toBe(true);
     await waitFor(() => expect(client.listSecrets).toHaveBeenCalledTimes(2));
   });
 
@@ -641,9 +785,8 @@ describe('S05 secret', () => {
 
     await waitFor(() => expect(client.putSecret).toHaveBeenCalledWith('USER_ID', NILAI));
     expect(await screen.findByText('Nilai secret USER_ID sudah diganti.')).toBeInTheDocument();
-    expect(document.body.innerHTML).not.toContain(NILAI);
+    expectNoSecretHeld(NILAI);
     expect(screen.queryByLabelText('Nilai baru')).toBeNull();
-    expect([...document.querySelectorAll('input')].every((el) => el.value !== NILAI)).toBe(true);
   });
 
   it('opens "Secret masih dipakai" straight from Hapus when a provider uses it (S05)', async () => {
@@ -711,6 +854,127 @@ describe('S05 secret', () => {
       screen.getByRole('heading', { level: 1, name: 'Akses tidak diizinkan' }),
     ).toBeInTheDocument();
     expect(client.listSecrets).not.toHaveBeenCalled();
+  });
+});
+
+describe('S03 bahan TLS provider (ARC-239)', () => {
+  const PIN_A = 'AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=';
+  const PIN_B = 'ICEiIyQlJicoKSorLC0uLzAxMjM0NTY3ODk6Ozw9Pj8=';
+  const PEM = '-----BEGIN CERTIFICATE-----\nMIIBsynthetic\n-----END CERTIFICATE-----';
+
+  async function pilihMode(nama: string) {
+    await user.click(screen.getByRole('button', { name: /Kepercayaan TLS/ }));
+    await user.click(await screen.findByRole('option', { name: nama }));
+  }
+
+  async function isiDasar() {
+    await paste('Nama provider', 'provider-contoh-a');
+    await paste('Alamat endpoint (URL)', 'https://provider.example.test/api');
+    await openTab('Template');
+    await paste('Template body (JSON)', '{"NIK":"{{input.NIK}}"}');
+    await openTab('Umum');
+  }
+
+  it('shows the PEM field only for ca_kustom and the pin field only for pin_spki', async () => {
+    asRole('platform_admin', <ProviderFormScreen client={stubClient()} />);
+    expect(screen.queryByLabelText('Sertifikat CA kustom (PEM)')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Pin SPKI (base64 SHA-256)')).not.toBeInTheDocument();
+
+    await pilihMode('CA kustom');
+    expect(screen.getByLabelText('Sertifikat CA kustom (PEM)')).toBeInTheDocument();
+    expect(screen.queryByLabelText('Pin SPKI (base64 SHA-256)')).not.toBeInTheDocument();
+
+    await pilihMode('Pin SPKI');
+    expect(screen.queryByLabelText('Sertifikat CA kustom (PEM)')).not.toBeInTheDocument();
+    expect(screen.getByLabelText('Pin SPKI (base64 SHA-256)')).toBeInTheDocument();
+
+    await pilihMode('Sertifikat sistem');
+    expect(screen.queryByLabelText('Pin SPKI (base64 SHA-256)')).not.toBeInTheDocument();
+  });
+
+  it('shows the openssl command that computes the SPKI pin of the leaf certificate', async () => {
+    asRole('platform_admin', <ProviderFormScreen client={stubClient()} />);
+    await pilihMode('Pin SPKI');
+    expect(
+      screen.getByText(
+        /openssl x509 -in leaf\.pem -pubkey -noout \| openssl pkey -pubin -outform der \| openssl dgst -sha256 -binary \| base64/,
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it('sends tls_ca_pem for ca_kustom and nothing for the hidden pin field', async () => {
+    const createProvider = vi
+      .fn()
+      .mockResolvedValue({ ...PROVIDER, tls_trust: 'ca_kustom', tls_ca_pem: PEM });
+    asRole('platform_admin', <ProviderFormScreen client={stubClient({ createProvider })} />);
+    await isiDasar();
+    await pilihMode('CA kustom');
+    await paste('Sertifikat CA kustom (PEM)', PEM);
+    await user.click(screen.getByRole('button', { name: 'Simpan provider' }));
+
+    await waitFor(() => expect(createProvider).toHaveBeenCalledTimes(1));
+    const body = createProvider.mock.calls[0]![0] as ProviderConfig;
+    expect(body.tls_trust).toBe('ca_kustom');
+    expect(body.tls_ca_pem).toBe(PEM);
+    expect(body).not.toHaveProperty('tls_pin_spki');
+  });
+
+  it('sends the pins for pin_spki and warns while only one pin is set', async () => {
+    const createProvider = vi
+      .fn()
+      .mockResolvedValue({ ...PROVIDER, tls_trust: 'pin_spki', tls_pin_spki: [PIN_A, PIN_B] });
+    asRole('platform_admin', <ProviderFormScreen client={stubClient({ createProvider })} />);
+    await isiDasar();
+    await pilihMode('Pin SPKI');
+    const peringatan = /Hanya ada satu pin/;
+    expect(screen.queryByText(peringatan)).not.toBeInTheDocument();
+
+    await paste('Pin SPKI (base64 SHA-256)', PIN_A);
+    expect(screen.getByText(peringatan)).toBeInTheDocument();
+
+    await paste('Pin SPKI (base64 SHA-256)', `\n${PIN_B}`);
+    expect(screen.queryByText(peringatan)).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Simpan provider' }));
+    await waitFor(() => expect(createProvider).toHaveBeenCalledTimes(1));
+    const body = createProvider.mock.calls[0]![0] as ProviderConfig;
+    expect(body.tls_pin_spki).toEqual([PIN_A, PIN_B]);
+    expect(body).not.toHaveProperty('tls_ca_pem');
+  }, 15_000);
+
+  it('maps a 422 on /tls_pin_spki/1 to the pin field and focuses it', async () => {
+    const createProvider = vi.fn().mockRejectedValue(
+      new ApiError(422, {
+        kode: 'validasi_gagal',
+        errors: [{ field: '/tls_pin_spki/1', kode: 'pin_tidak_sah' }],
+      }),
+    );
+    asRole('platform_admin', <ProviderFormScreen client={stubClient({ createProvider })} />);
+    await isiDasar();
+    await pilihMode('Pin SPKI');
+    await paste('Pin SPKI (base64 SHA-256)', `${PIN_A}\nbukan-pin`);
+    await user.click(screen.getByRole('button', { name: 'Simpan provider' }));
+
+    const pin = screen.getByLabelText('Pin SPKI (base64 SHA-256)');
+    expect(
+      await screen.findByText('Pin belum sah: harus base64 dari 32 byte.'),
+    ).toBeInTheDocument();
+    expect(pin).toHaveAttribute('aria-invalid', 'true');
+    await waitFor(() => expect(pin).toHaveFocus());
+  });
+
+  it('fills the fields from a stored ca_kustom provider', async () => {
+    const getProvider = vi.fn().mockResolvedValue({
+      ...PROVIDER,
+      tls_trust: 'ca_kustom',
+      tls_ca_pem: PEM,
+      tls_pin_spki: null,
+    });
+    asRole(
+      'platform_admin',
+      <ProviderFormScreen client={stubClient({ getProvider })} providerId={PROVIDER.provider_id} />,
+    );
+    expect(await screen.findByLabelText('Sertifikat CA kustom (PEM)')).toHaveValue(PEM);
   });
 });
 

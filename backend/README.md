@@ -20,7 +20,8 @@ hanya boleh lewat berkas `<NAMA>_FILE`.
 Aturan yang berlaku untuk semua perintah tulis:
 
 - `--oleh` (username platform admin yang aktif) dan `--alasan` (10–500 karakter) wajib. Untuk peran
-  auditor dan operator, isi alasan dengan rujukan SPTJM atau NDA (C-07).
+  auditor dan operator, isi alasan dengan rujukan SPTJM atau NDA (C-07). Perintah baca `daftar`
+  tidak memakainya; `bootstrap` memakai `--alasan` saja (belum ada pelaku).
 - Password tidak pernah lewat argumen. Opsi `--password` tidak dikenal. Password dibaca dari TTY
   tanpa echo (diminta dua kali) atau, bila stdin bukan TTY, satu baris dari stdin. Minimal 15
   karakter dan tidak boleh password umum (R-11).
@@ -51,6 +52,8 @@ Aturan peran (A-02, contract §8.1):
 
 - Peran `auditor` dan `operator` wajib `--disetujui-oleh`, yaitu platform admin aktif yang berbeda
   dari pelaku dan dari target. Pelaku tidak bisa memberi dirinya sendiri peran auditor atau operator.
+  Penanggung jawab (penandatangan SPTJM) adalah peran organisasi BGN, bukan status di sistem: sistem
+  hanya menegakkan penyetuju = platform admin aktif lain, dan rujukan SPTJM-nya ditulis di `--alasan`.
 - `client_owner` hanya untuk pengguna yang dibuat dengan `--client`.
 - Di `POOLROUTER_ENV=poc`, peran auditor wajib `--berlaku-sampai` (kontrol kompensasi R-12).
   Format `YYYY-MM-DD` berarti sampai akhir hari itu WIB; format RFC 3339 juga diterima.
