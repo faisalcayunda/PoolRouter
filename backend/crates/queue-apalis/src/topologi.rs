@@ -57,8 +57,8 @@ fn argumen_quorum() -> FieldTable {
 /// Argumen deklarasi DLQ: quorum + retensi. Terpisah dari antrean job supaya
 /// TTL dan batas panjang tidak pernah ikut membuang job yang masih hidup.
 /// `drop-head` (bawaan quorum, ditulis eksplisit) membuang pesan tertua saat
-/// penuh; `reject-publish` dihindari karena membuat dead-lettering dari
-/// antrean job tersangkut.
+/// penuh; `reject-publish` tidak dipakai karena menolak pesan terbaru,
+/// padahal untuk diagnosis yang terbaru paling berguna.
 pub(crate) fn argumen_dlq() -> FieldTable {
     let mut argumen = argumen_quorum();
     argumen.insert(

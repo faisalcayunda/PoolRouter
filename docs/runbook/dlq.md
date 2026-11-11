@@ -22,7 +22,7 @@ Argumen deklarasi DLQ ada di `backend/crates/queue-apalis/src/topologi.rs` (`arg
 | `x-queue-type` | `quorum` | Sama dengan antrean job (ADR-0001 bagian 5). |
 | `x-message-ttl` | 604800000 ms (7 hari) | Cukup untuk investigasi lewat akhir pekan; lebih lama hanya menyimpan salinan `request_id` yang sudah dipulihkan reconciler. |
 | `x-max-length` | 10000 pesan per DLQ | Body kecil; batas ini mencegah satu pool yang rusak memenuhi disk broker. |
-| `x-overflow` | `drop-head` | Pesan tertua dibuang saat penuh. `reject-publish` tidak dipakai: DLQ penuh akan membuat dead-lettering dari antrean job tersangkut. |
+| `x-overflow` | `drop-head` | Pesan tertua dibuang saat penuh. `reject-publish` tidak dipakai: DLQ penuh akan menolak pesan terbaru, padahal untuk diagnosis yang terbaru paling berguna. |
 
 Pesan yang kedaluwarsa atau dibuang tidak masuk antrean lain (DLQ tidak punya DLX).
 
