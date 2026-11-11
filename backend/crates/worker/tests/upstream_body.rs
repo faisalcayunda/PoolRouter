@@ -6,7 +6,7 @@
 use std::time::Duration;
 
 use poolrouter_adapter_provider::GagalPanggilProvider;
-use poolrouter_adapter_provider::client::BATAS_BODY_RESPONS;
+use poolrouter_adapter_provider::client::{BATAS_BODY_RESPONS, TlsTrust};
 use poolrouter_worker::upstream::{PemanggilProvider, PemanggilReqwest, PermintaanKabel};
 use wiremock::matchers::method;
 use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -23,7 +23,7 @@ async fn panggil(n: usize) -> Result<usize, GagalPanggilProvider> {
         metode: "POST".to_owned(),
         url: format!("{}/api", server.uri()),
         body: Some("{}".to_owned()),
-        tls_trust: "system".to_owned(),
+        trust: TlsTrust::System,
         batas_total: Duration::from_secs(10),
     };
     p.panggil(&permintaan).await.map(|r| r.body.len())
