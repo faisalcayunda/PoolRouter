@@ -4,6 +4,7 @@ import { AppI18nProvider } from './i18n/provider';
 import { appI18n, loadLanguage } from './i18n/i18n';
 import { DEFAULT_LOCALE, isBahasaUi } from './i18n/locales';
 import { AppRoot } from './app/AppRoot';
+import { pasangPemulihanChunk } from './app/pemulihanChunk';
 import './styles/m3/tailwind.css';
 
 const root = document.getElementById('root');
@@ -29,4 +30,5 @@ async function start(): Promise<void> {
   );
 }
 
+pasangPemulihanChunk();
 void start();
