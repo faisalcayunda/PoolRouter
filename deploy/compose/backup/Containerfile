@@ -4,7 +4,11 @@
 # Build (dari akar repo): docker build -f deploy/compose/backup/Containerfile deploy/compose/backup
 # Tanpa fitur khusus BuildKit: tanpa `# syntax=`, tanpa HEALTHCHECK (healthcheck di Compose), tanpa SHELL/ONBUILD.
 
-FROM docker.io/library/postgres:17-bookworm@sha256:839fbb5a4942a7758dd93e18b42ea5649807491a0545b5eeeb8f0b8bb11857a5
+# Prosedur naik digest (ARC-255): `podman pull docker.io/library/postgres:17-bookworm`, ambil digest indeks
+# manifest dari `podman image inspect --format '{{.Digest}}'`, lalu ganti digest di bawah. Jalankan Trivy
+# (opsi CI: --severity HIGH,CRITICAL --ignore-unfixed) pada image hasil build; digest 9da3effe (5 Nov 2026,
+# PostgreSQL 17.11) membawa apt 2.6.2 yang sudah memperbaiki CVE-2026-109518.
+FROM docker.io/library/postgres:17-bookworm@sha256:9da3effe923ca751b92343f54bb9a90674895c52975e0bd10efd568d6be49b21
 
 ARG VERSION=0.1.0
 ARG REVISION=unknown
@@ -20,6 +24,12 @@ LABEL org.opencontainers.image.source="https://github.com/faisalcayunda/PoolRout
 RUN apt-get update \
  && apt-get install -y --no-install-recommends pgbackrest=2.60.0-1.pgdg12+1 \
  && rm -rf /var/lib/apt/lists/*
+
+# gosu (Go 1.24.6, 26 CVE HIGH/CRITICAL yang sudah ada perbaikannya) bawaan image resmi hanya dipakai
+# docker-entrypoint.sh saat berjalan sebagai root. Image ini selalu berjalan sebagai 10001:10001 (USER di
+# bawah), jadi gosu tidak pernah dipanggil dan dibuang. Bila upstream menaikkan gosu ke Go yang sudah
+# diperbaiki, tetap aman dibuang selama USER tetap non-root.
+RUN rm -f /usr/local/bin/gosu
 
 # Paket Debian memasang /etc/pgbackrest.conf milik postgres mode 0640, tidak terbaca oleh user 10001.
 # Konfigurasi memakai variabel PGBACKREST_* dari Compose; berkas ini hanya kerangka kosong yang bisa dibaca.
