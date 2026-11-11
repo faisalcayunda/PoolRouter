@@ -96,7 +96,7 @@ function AccountMenu({
             ? 'flex h-9 w-9 items-center justify-center rounded-full'
             : compact
               ? 'flex h-10 w-10 items-center justify-center self-center rounded-full'
-              : 'flex w-full items-center gap-3 rounded-medium border border-outline p-3 text-left hover:bg-surface-container-low',
+              : 'flex w-full items-center gap-3 rounded-medium bg-surface-container-low p-3 text-left hover:bg-surface-container data-[pressed]:bg-surface-container',
         )}
       >
         {initial}

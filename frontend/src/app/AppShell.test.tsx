@@ -264,6 +264,9 @@ describe('AppShell — menu per role', () => {
     const drawer = screen.getByRole('complementary', { name: 'Navigasi utama' });
     const trigger = within(drawer).getByRole('button', { name: 'Menu akun adm.contoh' });
     expect(within(trigger).getByText('Operator')).toBeInTheDocument();
+    // Kartu profil tanpa border: pemicu dikenali dari isinya dan cincin fokusnya, bukan dari batas abu.
+    expect(trigger.className).not.toMatch(/(^|\s)border/);
+    expect(trigger.className).toContain('focus-visible:outline-3');
     await userEvent.click(trigger);
     await userEvent.click(await screen.findByRole('menuitem', { name: 'Keluar' }));
     expect(onKeluar).toHaveBeenCalledTimes(1);
