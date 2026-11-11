@@ -9,6 +9,12 @@
 //! Pelaku di CLI dinyatakan lewat `--oleh`, tidak dibuktikan (risiko sisa §3.6c). Karena itu baris
 //! `audit_akses` dari jalur ini memakai penanda tetap [`SUMBER_IP_CLI`] dan [`SESI_CLI`].
 //!
+//! Penyetuju peran auditor/operator (A-02) adalah platform_admin aktif lain, berbeda dari pelaku dan
+//! target; hanya itu yang ditegakkan sistem. "Penanggung jawab" (penandatangan SPTJM) adalah peran
+//! organisasi BGN yang dibuktikan lewat rujukan SPTJM di `--alasan`, bukan status di basis data
+//! (keputusan Operator 10 November 2026, ARC-238). Operasi baca (`daftar`) tidak butuh pelaku
+//! maupun alasan; operasi tulis butuh keduanya.
+//!
 //! Password tidak pernah masuk struktur audit, pesan galat, maupun `Debug`: modul ini hanya menerima
 //! `&str` lalu langsung meng-hash-nya di luar transaksi.
 
@@ -129,6 +135,8 @@ pub struct PemberianPeran<'a> {
     pub target: &'a str,
     pub peran: Peran,
     pub oleh: &'a str,
+    /// Penyetuju A-02: platform_admin aktif lain. Bukan status "penanggung jawab" di basis data;
+    /// rujukan SPTJM-nya ada di alasan (ARC-238).
     pub disetujui_oleh: Option<&'a str>,
     pub berlaku_sampai: Option<DateTime<Utc>>,
 }
@@ -161,6 +169,16 @@ struct BarisPengguna {
     client_id: Option<Uuid>,
 }
 
+impl From<(Uuid, bool, Option<Uuid>)> for BarisPengguna {
+    fn from((pengguna_id, aktif, client_id): (Uuid, bool, Option<Uuid>)) -> Self {
+        Self {
+            pengguna_id,
+            aktif,
+            client_id,
+        }
+    }
+}
+
 async fn cari(
     conn: &mut PgConnection,
     username: &str,
@@ -170,11 +188,7 @@ async fn cari(
             .bind(username)
             .fetch_optional(conn)
             .await?;
-    Ok(baris.map(|(pengguna_id, aktif, client_id)| BarisPengguna {
-        pengguna_id,
-        aktif,
-        client_id,
-    }))
+    Ok(baris.map(BarisPengguna::from))
 }
 
 async fn peran_berlaku(
@@ -219,9 +233,24 @@ async fn pelaku_admin(
     Ok(p.pengguna_id)
 }
 
+/// Baca target dan kunci barisnya sampai transaksi selesai. Dua perintah bersamaan pada target yang
+/// sama (aktifkan dua kali, beri peran yang sama dua kali) diserialkan di sini: yang kedua menunggu,
+/// lalu membaca keadaan yang sudah di-commit yang pertama dan ditolak (`StatusSama`, `PeranSudahAda`,
+/// `PeranTidakAda`) alih-alih menulis baris audit ganda. Wajib dipanggil SEBELUM membaca status atau
+/// peran target. Memakai `FOR NO KEY UPDATE`, bukan `FOR UPDATE`: `FOR UPDATE` bentrok dengan
+/// `FOR KEY SHARE` yang diambil FK audit pada baris pelaku, sehingga dua admin yang saling menjadi
+/// target dan pelaku bisa saling menunggu (deadlock). Ini juga tidak bentrok dengan
+/// [`kunci_admin_aktif`], yang memakai mode sama dan urutan `pengguna_id`.
 async fn target(conn: &mut PgConnection, username: &str) -> Result<BarisPengguna, GalatKelola> {
-    cari(conn, username)
-        .await?
+    let baris: Option<(Uuid, bool, Option<Uuid>)> = sqlx::query_as(
+        "SELECT pengguna_id, aktif, client_id FROM admin_user WHERE username = $1 \
+         FOR NO KEY UPDATE",
+    )
+    .bind(username)
+    .fetch_optional(conn)
+    .await?;
+    baris
+        .map(BarisPengguna::from)
         .ok_or_else(|| GalatKelola::TargetTidakAda(username.to_owned()))
 }
 
@@ -338,6 +367,11 @@ async fn cabut_sesi(conn: &mut PgConnection, target: Uuid) -> Result<u64, sqlx::
 
 /// Satu baris `audit_akses` `ubah_peran`. Target dan perubahan masuk `filter_kueri`, karena
 /// `target_pengguna_id` hanya boleh terisi untuk aksi MFA (`chk_audit_target_pengguna`).
+///
+/// Diterima, bukan diperbaiki (ARC-238 butir 5): auditor mencari target lewat
+/// `filter_kueri->>'target_pengguna_id'` (jsonb), bukan kolom `target_pengguna_id`. Memindahkannya ke
+/// kolom butuh migrasi yang melonggarkan CHECK di tabel audit append-only dan mengubah kontrak data
+/// (kolom itu sengaja khusus MFA). Volume `ubah_peran` kecil (puluhan pengguna), jadi tanpa indeks.
 async fn catat_ubah_peran(
     tx: &mut Transaction<'static, Postgres>,
     pelaku: Uuid,
@@ -768,7 +802,8 @@ fn seed_harus_aktif(p: &BarisPengguna, username: &str) -> Result<Uuid, GalatKelo
 
 /// `seed pengguna` (AC-42): satu pengguna sintetis per peran plus platform admin yang juga auditor,
 /// semuanya dengan password seed yang sama. Ditolak tanpa perubahan di luar `dev`/`ci`. Idempoten:
-/// pengguna, client, dan peran yang sudah ada tidak dibuat ulang dan tidak menulis audit baru.
+/// pengguna, client, dan peran yang sudah ada tidak dibuat ulang dan tidak menulis audit baru. Peran
+/// yang diberikan ke pengguna seed yang sudah ada mencabut sesinya (AC-41), seperti [`beri_peran`].
 /// Pengguna seed yang nonaktif membuat seed ditolak ([`GalatKelola::SeedNonaktif`]).
 pub async fn seed_pengguna(
     pool: &PgPool,
@@ -854,6 +889,8 @@ pub async fn seed_pengguna(
                 None
             };
             simpan_peran(&mut tx, id, *peran, admin, disetujui, None).await?;
+            // AC-41: pemberian peran berlaku seketika, juga ke pengguna seed yang sudah punya sesi.
+            let sesi = cabut_sesi(&mut tx, id).await?;
             let sebelum = sekarang_dipegang.clone();
             sekarang_dipegang.push(*peran);
             sekarang_dipegang.sort_by_key(|r| r.as_str());
@@ -866,7 +903,7 @@ pub async fn seed_pengguna(
                 "beri",
                 &sebelum,
                 &sekarang_dipegang,
-                json!({ "operasi_seed": true, "disetujui_oleh": disetujui }),
+                json!({ "operasi_seed": true, "disetujui_oleh": disetujui, "sesi_dicabut": sesi }),
                 &alasan,
             )
             .await?;
