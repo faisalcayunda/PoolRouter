@@ -241,9 +241,9 @@ describe('AppShell — menu per role', () => {
     renderShell('/audit', 'auditor');
     const active = screen.getByRole('link', { name: 'Audit akses' });
     expect(active.className).toContain('bg-surface-container-low');
-    expect(active.className).toContain('border-outline-variant');
+    expect(active.classList.contains('border-outline')).toBe(true);
     const other = screen.getByRole('link', { name: 'Log transaksi' });
-    expect(other.className).not.toContain('border-outline-variant');
+    expect(other.classList.contains('border-outline')).toBe(false);
     // Tailwind 4: outline-none mematikan style, jadi ring fokus butuh outline-solid.
     expect(active.className).toContain('focus-visible:outline-solid');
     expect(active.className).toContain('focus-visible:outline-3');
