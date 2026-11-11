@@ -370,3 +370,160 @@ for (const bahasa of ['id', 'en'] as const) {
     expect(cspViolations).toEqual([]);
   });
 }
+
+/**
+ * ui-v3 (ARC-363 §5, AC1): rute `routes.tsx` yang belum tercakup di atas, dua bahasa. Stub per path
+ * supaya tabel dan form terisi saat axe berjalan; data sintetis.
+ */
+const UP_ID = '00000000-0000-4000-8000-0000000000b1';
+const DOWN_ID = '00000000-0000-4000-8000-0000000000c1';
+const ENDPOINT_ID = '00000000-0000-4000-8000-0000000000c5';
+const CLIENT_ID = '00000000-0000-4000-8000-0000000000e0';
+
+const UPSTREAM = {
+  ...UPSTREAM_POOLS[0],
+  upstream_pool_id: UP_ID,
+  provider_id: PROVIDER.provider_id,
+  jendela_kuota: 'bergulir_24j',
+  kuota_harian: 500,
+  margin_kuota: 0.05,
+  porsi_sync: 0.1,
+  rate_limit_per_jam: 60,
+  reset_kuota_jam: 0,
+  reset_kuota_zona: 'Asia/Jakarta',
+  retry_backoff_base_detik: 2,
+  retry_backoff_cap_detik: 60,
+  retry_min_per_jam: 10,
+  retry_rasio: 0.5,
+};
+
+const DOWNSTREAM = {
+  downstream_pool_id: DOWN_ID,
+  nama: 'pool-hilir-contoh',
+  aktif: true,
+  boleh_pinjam: false,
+  prioritas: 1,
+  ttl_antrean_detik: 86_400,
+  upstream_pool_ids: [UP_ID],
+  alokasi_jenis: 'persen',
+  alokasi_nilai: 25,
+  sifat: 'reserved',
+};
+
+const ENDPOINT = {
+  endpoint_id: ENDPOINT_ID,
+  provider_id: PROVIDER.provider_id,
+  downstream_pool_id: DOWN_ID,
+  parameter_literal: { TRESHOLD: '90' },
+  log_mode: 'metadata_only',
+  metadata_fields: [
+    {
+      nama_field: 'status_penerima_manfaat',
+      tipe: 'string',
+      wajib: true,
+      klasifikasi: 'Internal',
+      kirim_ke_data_balikan: true,
+      deskripsi: 'Status penerima',
+    },
+  ],
+  config_schema_version: 1,
+  endpoint_config_version: 3,
+  aktif: true,
+};
+
+const CLIENT = {
+  client_id: CLIENT_ID,
+  nama: 'Aplikasi Contoh A',
+  aktif: true,
+  limiter_penolakan_burst: 20,
+  limiter_penolakan_isi_ulang_per_detik: 1,
+};
+
+async function stubSemuaRute(page: Page): Promise<void> {
+  await page.route('**/admin/v1/**', (route) => {
+    const path = new URL(route.request().url()).pathname.replace('/admin/v1', '');
+    const json = (body: unknown) =>
+      route.fulfill({
+        status: 200,
+        headers: { 'content-type': 'application/json', 'cache-control': 'no-store' },
+        body: JSON.stringify(body),
+      });
+    if (/^\/upstream-pools\/[^/]+$/.test(path)) return json(UPSTREAM);
+    if (path.startsWith('/upstream-pools')) return json([UPSTREAM]);
+    if (/^\/downstream-pools\/[^/]+$/.test(path)) return json(DOWNSTREAM);
+    if (path.startsWith('/downstream-pools')) return json([DOWNSTREAM]);
+    if (/^\/providers\/[^/]+$/.test(path)) return json(PROVIDER);
+    if (path.startsWith('/providers')) return json([PROVIDER]);
+    if (/^\/endpoints\/[^/]+$/.test(path)) return json(ENDPOINT);
+    if (path.startsWith('/endpoints')) return json([ENDPOINT]);
+    if (/^\/clients\/[^/]+\/credentials$/.test(path)) {
+      return json([
+        {
+          credential_id: '00000000-0000-4000-8000-0000000000d1',
+          jenis: 'oauth2',
+          status: 'aktif',
+          kedaluwarsa_at: '2027-01-05T03:00:00Z',
+        },
+      ]);
+    }
+    if (/^\/clients\/[^/]+\/webhook\/log$/.test(path)) {
+      return json([
+        {
+          request_id: '00000000-0000-4000-8000-0000000000f1',
+          sent_at: '2026-11-03T07:30:00.000Z',
+          hasil: 'gagal_http',
+          http_status: 503,
+          error_class: 'provider_sementara',
+          secret_versi: 2,
+        },
+      ]);
+    }
+    if (/^\/clients\/[^/]+\/webhook$/.test(path)) {
+      return json({
+        aktif: true,
+        webhook_url: 'https://client.example.test/hook',
+        secret_versi: 2,
+      });
+    }
+    if (/^\/clients\/[^/]+$/.test(path)) return json(CLIENT);
+    if (path.startsWith('/clients')) return json([CLIENT]);
+    return json(LOG_PAGE);
+  });
+  await stubSesi(page, { peran: 'platform_admin' });
+}
+
+const RUTE_V3 = [
+  { name: 'S11 detail log', path: '/log/TRX-2026-0042', peran: 'operator' },
+  { name: 'S03 provider baru', path: '/provider/baru', peran: 'platform_admin' },
+  { name: 'S04b daftar endpoint', path: '/endpoint', peran: 'platform_admin' },
+  { name: 'S04b form endpoint', path: `/endpoint/${ENDPOINT_ID}`, peran: 'platform_admin' },
+  { name: 'S04b endpoint baru', path: '/endpoint/baru', peran: 'platform_admin' },
+  { name: 'S08 daftar client', path: '/client', peran: 'platform_admin' },
+  { name: 'S08 detail client', path: `/client/${CLIENT_ID}`, peran: 'platform_admin' },
+  {
+    name: 'S08b kredensial client',
+    path: `/client/${CLIENT_ID}/kredensial`,
+    peran: 'platform_admin',
+  },
+  { name: 'S09 webhook client', path: `/client/${CLIENT_ID}/webhook`, peran: 'platform_admin' },
+  { name: 'S06 daftar upstream', path: '/upstream', peran: 'platform_admin' },
+  { name: 'S06 form upstream', path: `/upstream/${UP_ID}`, peran: 'platform_admin' },
+  { name: 'S06 upstream baru', path: '/upstream/baru', peran: 'platform_admin' },
+  { name: 'S07 daftar downstream', path: '/downstream', peran: 'platform_admin' },
+  { name: 'S07 form downstream', path: `/downstream/${DOWN_ID}`, peran: 'platform_admin' },
+  { name: 'S07 downstream baru', path: '/downstream/baru', peran: 'platform_admin' },
+  { name: 'not found', path: '/halaman-tidak-ada', peran: 'platform_admin' },
+] as const;
+
+for (const rute of RUTE_V3) {
+  for (const bahasa of ['id', 'en'] as const) {
+    test(`${rute.name} passes axe in ${bahasa}`, async ({ page, cspViolations }) => {
+      await stubSemuaRute(page);
+      await page.goto(`${rute.path}?peran=${rute.peran}&bahasa=${bahasa}`);
+      await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+      await expect(page.getByText(/^(Memuat…|Loading…)$/).filter({ visible: true })).toHaveCount(0);
+      await expectNoAxeViolations(page);
+      expect(cspViolations).toEqual([]);
+    });
+  }
+}
