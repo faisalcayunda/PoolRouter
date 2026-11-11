@@ -107,7 +107,7 @@ function DrawerContent({
               aria-label={t('account.menu.menu', { nama_pengguna: user.username })}
               className="flex w-full cursor-pointer flex-col gap-1 rounded-medium px-4 py-3 text-left outline-none hover:bg-inverse-on-surface/8 focus-visible:outline-solid focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-inverse-primary"
             >
-              <span className="typescale-body-medium">{user.username}</span>
+              <span className="typescale-body-medium truncate">{user.username}</span>
               <span className="typescale-label-medium">{enumLabel(i18n, 'peran', user.peran)}</span>
             </RacButton>
             <Menu onAction={() => onKeluar?.()}>

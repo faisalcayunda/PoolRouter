@@ -251,7 +251,7 @@ export function LogPageScreen({
 
       <Card variant="outlined" className="flex flex-col rounded-large! p-0!">
         <form
-          className="flex flex-col gap-3 p-5 expanded:flex-row expanded:items-end"
+          className="flex flex-col gap-3 p-5 expanded:flex-row expanded:items-start"
           onSubmit={submit}
         >
           {/* Frame Penpot tidak punya tombol "Cari": Enter di kolom cari mengirim form. Tombol
@@ -282,7 +282,7 @@ export function LogPageScreen({
               </SelectItem>
             ))}
           </Select>
-          <div className="relative flex flex-col gap-1 expanded:w-[280px]">
+          <div className="flex flex-col gap-1 expanded:w-[280px]">
             <DateRangePicker
               label={t('log.filter.range')}
               calendarLabel={t('log.filter.range_picker')}
@@ -294,7 +294,7 @@ export function LogPageScreen({
             {rangeError ? (
               <p
                 role="alert"
-                className="typescale-body-small text-error expanded:absolute expanded:top-full expanded:mt-1"
+                className="typescale-body-small text-error"
               >
                 {rangeError}
               </p>
@@ -303,7 +303,7 @@ export function LogPageScreen({
           <Button
             variant="outlined"
             onPress={clearFilters}
-            className="shrink-0 self-start whitespace-nowrap expanded:h-14! expanded:self-auto"
+            className="shrink-0 self-start whitespace-nowrap expanded:mt-7 expanded:h-14!"
           >
             {t('common.action.clear_filters')}
           </Button>
