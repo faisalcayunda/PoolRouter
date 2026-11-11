@@ -28,6 +28,7 @@ use tokio_util::sync::CancellationToken;
 
 use poolrouter_controller::balikan::Balikan;
 use poolrouter_controller::dispatcher::jalankan_loop_dispatcher;
+use poolrouter_controller::dlq::{DlqMetrik, UkurDlq};
 use poolrouter_controller::jadwal::{INTERVAL_SIKLUS, Pekerjaan, SumberLeader, jalankan_loop};
 use poolrouter_controller::leader::KotakFutur;
 use poolrouter_controller::leader::{Leader, PemegangLeader};
@@ -136,6 +137,7 @@ async fn jalankan(cfg: &Config) -> Result<(), String> {
         Box::new(Penyapu::baru(pool.clone(), redis.clone())),
         Box::new(Webhook::baru(pg_pool_webhook(cfg)?, brankas)),
         Box::new(Balikan::baru(pool.clone(), publisher.clone())),
+        Box::new(DlqMetrik::baru(pool.clone(), publisher.clone())),
     ];
 
     // The first leader was acquired above; the source hands it over once and
@@ -222,6 +224,18 @@ impl JobPublisher for PublisherDeklarasi {
             }
         }
         self.antrean.publish(queue, request_id).await
+    }
+}
+
+impl UkurDlq for PublisherDeklarasi {
+    fn jumlah_dlq(&self, queue: &str) -> KotakFutur<'_, Result<u32, String>> {
+        let queue = queue.to_owned();
+        Box::pin(async move {
+            self.antrean
+                .jumlah_dlq(&queue)
+                .await
+                .map_err(|e| e.to_string())
+        })
     }
 }
 

@@ -10,7 +10,7 @@ use axum::extract::State;
 use axum::http::{HeaderValue, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
-use metrics_exporter_prometheus::PrometheusBuilder;
+use metrics_exporter_prometheus::{PrometheusBuilder, PrometheusHandle};
 use redis::IntoConnectionInfo;
 use secrecy::ExposeSecret;
 use tokio::net::TcpListener;
@@ -304,14 +304,47 @@ pub fn spawn_ready_server_with_liveness_on(
     );
 }
 
+/// Handle `/metrics` untuk seluruh proses. Recorder Prometheus dipasang
+/// global satu kali supaya `metrics::counter!`/`gauge!` dari kode aplikasi
+/// benar-benar tercatat; `build_recorder()` saja membuat recorder yang tidak
+/// pernah menerima apa pun. Bila proses sudah punya recorder global lain,
+/// `/metrics` memakai recorder kosong seperti sebelumnya.
+///
+/// Recorder yang dipasang lewat `install_recorder` tidak punya upkeep
+/// sendiri; histogram akan tumbuh tanpa batas bila `run_upkeep` tidak
+/// dipanggil berkala. Harus dipanggil dari dalam runtime tokio.
+fn handle_metrik() -> PrometheusHandle {
+    static HANDLE: std::sync::OnceLock<PrometheusHandle> = std::sync::OnceLock::new();
+    HANDLE
+        .get_or_init(|| match PrometheusBuilder::new().install_recorder() {
+            Ok(handle) => {
+                let upkeep = handle.clone();
+                tokio::spawn(async move {
+                    let mut tik = tokio::time::interval(Duration::from_secs(5));
+                    loop {
+                        tik.tick().await;
+                        upkeep.run_upkeep();
+                    }
+                });
+                handle
+            }
+            Err(galat) => {
+                tracing::warn!(error = %galat, "recorder metrik global tidak bisa dipasang");
+                PrometheusBuilder::new().build_recorder().handle()
+            }
+        })
+        .clone()
+}
+
 fn spawn_probe_server(addr: &str, state: ProbeState) {
     let addr = addr.to_owned();
+    // Dipasang sebelum task jalan: metrik yang dicatat segera setelah
+    // `spawn_ready_server` kembali sudah tercatat.
+    let metrics_handle = handle_metrik();
     tokio::spawn(async move {
         let Ok(listener) = TcpListener::bind(&addr).await else {
             return;
         };
-        let metrics = PrometheusBuilder::new().build_recorder().handle();
-        let metrics_handle = metrics.clone();
         let app = Router::new()
             .route("/healthz", get(healthz))
             .route("/readyz", get(readyz))
@@ -458,6 +491,26 @@ mod tests {
             .await
             .unwrap();
         assert!(healthz.status().is_success());
+    }
+
+    /// `metrics::gauge!` dari kode aplikasi harus muncul di `/metrics`:
+    /// recorder Prometheus harus terpasang global, bukan hanya dibangun.
+    #[tokio::test]
+    async fn metrics_memuat_metrik_yang_dicatat_aplikasi() {
+        let addr = "127.0.0.1:19199";
+        spawn_ready_server_on(addr, Arc::new(Ready));
+        metrics::gauge!("poolrouter_uji_runtime_metrics").set(42.0);
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        let badan = reqwest::get(format!("http://{addr}/metrics"))
+            .await
+            .unwrap()
+            .text()
+            .await
+            .unwrap();
+        assert!(
+            badan.contains("poolrouter_uji_runtime_metrics 42"),
+            "{badan}"
+        );
     }
 
     #[tokio::test]
