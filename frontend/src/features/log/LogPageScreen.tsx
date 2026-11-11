@@ -292,10 +292,7 @@ export function LogPageScreen({
               isInvalid={rangeError !== null}
             />
             {rangeError ? (
-              <p
-                role="alert"
-                className="typescale-body-small text-error"
-              >
+              <p role="alert" className="typescale-body-small text-error">
                 {rangeError}
               </p>
             ) : null}
