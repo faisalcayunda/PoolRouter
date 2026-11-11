@@ -35,10 +35,16 @@ function renderShell(
   pathname = '/',
   role: AdminRole | null = null,
   user?: { username: string; peran: string },
+  onKeluar?: () => void,
 ) {
   return render(
     <AppI18nProvider i18n={instance}>
-      <AppShell pathname={pathname} role={role} {...(user ? { user } : {})}>
+      <AppShell
+        pathname={pathname}
+        role={role}
+        {...(user ? { user } : {})}
+        {...(onKeluar ? { onKeluar } : {})}
+      >
         <p>ISI Halaman</p>
       </AppShell>
     </AppI18nProvider>,
@@ -250,6 +256,26 @@ describe('AppShell — menu per role', () => {
     expect(within(drawer).getByText('adm.contoh')).toBeInTheDocument();
     expect(within(drawer).getByText('Operator')).toBeInTheDocument();
     expect(within(screen.getByRole('banner')).queryByText(/adm\.contoh/)).not.toBeInTheDocument();
+  });
+
+  it('opens the account menu from the identity button and signs out', async () => {
+    const onKeluar = vi.fn();
+    renderShell('/', 'operator', { username: 'adm.contoh', peran: 'operator' }, onKeluar);
+    const trigger = screen.getByRole('button', { name: 'Menu akun adm.contoh' });
+    expect(within(trigger).getByText('Operator')).toBeInTheDocument();
+    await userEvent.click(trigger);
+    await userEvent.click(await screen.findByRole('menuitem', { name: 'Keluar' }));
+    expect(onKeluar).toHaveBeenCalledTimes(1);
+  });
+
+  it('reaches the sign-out item with the keyboard', async () => {
+    const onKeluar = vi.fn();
+    renderShell('/', 'operator', { username: 'adm.contoh', peran: 'operator' }, onKeluar);
+    screen.getByRole('button', { name: 'Menu akun adm.contoh' }).focus();
+    await userEvent.keyboard('{Enter}');
+    await screen.findByRole('menuitem', { name: 'Keluar' });
+    await userEvent.keyboard('{Enter}');
+    expect(onKeluar).toHaveBeenCalledTimes(1);
   });
 
   it('puts the product name in the drawer and the environment label in the top bar', () => {

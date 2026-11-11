@@ -1080,7 +1080,7 @@
       "trend_heading": "7-day usage",
       "trend_unit": "% of daily quota",
       "trend_pending_title": "Waiting for the quota history API",
-      "trend_pending_body": "The 7-day usage chart waits until getQuotaTracker provides daily history.",
+      "trend_pending_body": "The 7-day usage history is not available yet.",
       "reload": "Reload",
       "pool_filter": "Pool",
       "pool_unknown": "Upstream pool",

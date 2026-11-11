@@ -260,7 +260,7 @@ describe('quota tracker', () => {
     expect(trend.getByText('% dari kuota harian')).toBeInTheDocument();
     const title = trend.getByText('Menunggu API riwayat kuota');
     expect(title.parentElement!.className).toContain('border-dashed');
-    expect(trend.getByText(/getQuotaTracker menyediakan riwayat harian/)).toBeInTheDocument();
+    expect(trend.getByText('Riwayat pemakaian 7 hari belum tersedia.')).toBeInTheDocument();
   });
 
   it('puts pool and update time under the title and the caveat in the sync card, once', async () => {

@@ -1063,7 +1063,7 @@ export default interface Resources {
         "title": "Kuota",
         "today": "Hari ini",
         "trend_heading": "Pemakaian 7 hari",
-        "trend_pending_body": "Chart pemakaian 7 hari ditunda sampai getQuotaTracker menyediakan riwayat harian.",
+        "trend_pending_body": "Riwayat pemakaian 7 hari belum tersedia.",
         "trend_pending_title": "Menunggu API riwayat kuota",
         "trend_unit": "% dari kuota harian",
         "used_left": "Terpakai {{persen, number}}%, sisa {{sisa, number}}"
