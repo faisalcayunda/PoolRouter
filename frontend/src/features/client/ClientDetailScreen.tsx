@@ -174,7 +174,7 @@ export function ClientDetailScreen({ clientId, client = api }: ClientDetailScree
       {query.status === 'error' ? <QueryError error={query.error} onRetry={query.reload} /> : null}
 
       {data ? (
-        <Card variant="container" className="flex flex-col gap-6 p-6 large:p-8">
+        <Card variant="container" className="flex flex-col gap-6 p-6">
           <div className="flex flex-wrap items-center gap-3">
             <h2 className="typescale-title-large text-primary-text">
               {t('clients.detail.settings')}

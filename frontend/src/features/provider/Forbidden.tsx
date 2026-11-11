@@ -14,7 +14,7 @@ export function Forbidden(): ReactNode {
   const { t } = useTranslation();
   const titleRef = useFocusOnMount<HTMLHeadingElement>();
   return (
-    <Card variant="container" className="mx-auto w-full max-w-[640px] p-6 large:p-8">
+    <Card variant="container" className="mx-auto w-full max-w-[640px] p-6">
       <EmptyState
         icon="lock"
         tone="error"
