@@ -237,17 +237,37 @@ describe('AppShell — menu per role', () => {
     );
   });
 
-  it('marks the active item with a light grey fill and a thin border', () => {
+  it('marks the active item with primary-container on a 44 px item (spec §4, Sidebar 2:22461)', () => {
     renderShell('/audit', 'auditor');
     const active = screen.getByRole('link', { name: 'Audit akses' });
-    expect(active.className).toContain('bg-surface-container-low');
-    expect(active.classList.contains('border-outline')).toBe(true);
+    expect(active.classList.contains('bg-primary-container')).toBe(true);
+    expect(active.classList.contains('text-on-primary-container')).toBe(true);
+    expect(active.classList.contains('h-11')).toBe(true);
     const other = screen.getByRole('link', { name: 'Log transaksi' });
-    expect(other.classList.contains('border-outline')).toBe(false);
+    expect(other.classList.contains('bg-primary-container')).toBe(false);
+    expect(other.classList.contains('h-11')).toBe(true);
+    expect(other.classList.contains('text-on-surface-variant')).toBe(true);
     // Tailwind 4: outline-none mematikan style, jadi ring fokus butuh outline-solid.
     expect(active.className).toContain('focus-visible:outline-solid');
     expect(active.className).toContain('focus-visible:outline-3');
     expect(other.querySelector('svg')).not.toBeNull();
+  });
+
+  it('keeps the top bar free of search and notifications (spec §4)', () => {
+    renderShell('/', 'auditor');
+    const banner = screen.getByRole('banner');
+    // Kolom dekoratif lama aria-hidden, jadi dicek dari DOM, bukan dari role.
+    expect(banner.querySelector('input')).toBeNull();
+    expect(within(banner).queryByRole('button', { name: /notifikasi|notification/i })).toBeNull();
+  });
+
+  it('pads main per L1 (16/24/36) with a 1280 px max width (spec §6)', () => {
+    renderShell('/', 'auditor');
+    const main = screen.getByRole('main');
+    for (const c of ['px-4', 'medium:px-6', 'large:px-9']) {
+      expect(main.className.split(/\s+/), c).toContain(c);
+    }
+    expect(main.firstElementChild?.className).toContain('max-w-[1280px]');
   });
 
   it('shows the signed-in identity at the bottom of the drawer, not in the top bar', () => {

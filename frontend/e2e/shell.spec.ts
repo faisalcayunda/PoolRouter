@@ -83,4 +83,56 @@ test.describe('app shell', () => {
     await expectNoAxeViolations(page);
     expect(cspViolations).toEqual([]);
   });
+
+  test('ui-v3: self-hosted Hanken Grotesk and Inter, 272 px drawer, 44 px items, no search (ARC-366)', async ({
+    page,
+    cspViolations,
+  }, testInfo) => {
+    const fontRequests: string[] = [];
+    page.on('request', (r) => {
+      if (r.resourceType() === 'font') fontRequests.push(r.url());
+    });
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto('/');
+    await expect(page.locator('main#main-content')).toBeVisible();
+    await page.evaluate(() => document.fonts.ready);
+
+    const origin = new URL(page.url()).origin;
+    expect(fontRequests.length, 'font harus dimuat').toBeGreaterThan(0);
+    for (const url of fontRequests) expect(new URL(url).origin, url).toBe(origin);
+    const loaded = await page.evaluate(() =>
+      [...document.fonts].filter((f) => f.status === 'loaded').map((f) => f.family),
+    );
+    expect(loaded.join(',')).toMatch(/Hanken Grotesk Variable/);
+    expect(loaded.join(',')).toMatch(/Inter Variable/);
+    expect(loaded.join(',')).not.toMatch(/Open Sans/);
+
+    const drawer = page.getByRole('complementary', { name: 'Navigasi utama' });
+    expect((await drawer.boundingBox())?.width).toBe(272);
+    const item = drawer.getByRole('link').first();
+    expect((await item.boundingBox())?.height).toBe(44);
+    await expect(page.getByRole('banner').locator('input')).toHaveCount(0);
+
+    // Fokus selalu secondary (spec §3): rgb(13, 94, 186).
+    await item.focus();
+    await page.keyboard.press('Shift+Tab');
+    await page.keyboard.press('Tab');
+    await expect(item).toBeFocused();
+    expect(await item.evaluate((el) => getComputedStyle(el).outlineColor)).toBe('rgb(13, 94, 186)');
+    await item.blur();
+
+    await page.screenshot({ path: testInfo.outputPath('shell@1440.png'), fullPage: true });
+    await expectNoAxeViolations(page);
+    expect(cspViolations).toEqual([]);
+  });
+
+  test('ui-v3: compact shell at 390 px', async ({ page, cspViolations }, testInfo) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto('/');
+    await expect(page.locator('main#main-content')).toBeVisible();
+    await page.evaluate(() => document.fonts.ready);
+    await page.screenshot({ path: testInfo.outputPath('shell@390.png'), fullPage: true });
+    await expectNoAxeViolations(page);
+    expect(cspViolations).toEqual([]);
+  });
 });
