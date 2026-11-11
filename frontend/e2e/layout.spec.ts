@@ -292,7 +292,10 @@ async function cekGrid(page: Page, kolom: number, label: string, wajib: boolean)
         const field = Array.from(g.children)
           .filter((c): c is HTMLElement => c instanceof HTMLElement && c.offsetParent !== null)
           .map((c) => {
-            const lbl = c.querySelector('label');
+            // Select menyisipkan <label> native tersembunyi (lebar 1 px) sebelum label yang tampil.
+            const lbl = Array.from(c.querySelectorAll('label, span[id]')).find(
+              (el) => el.getBoundingClientRect().width > 1,
+            );
             const kontrol = c.querySelector('input, textarea, button, [role="group"]');
             const l = lbl?.getBoundingClientRect();
             const k = kontrol?.getBoundingClientRect();
@@ -377,7 +380,11 @@ for (const width of WIDTHS) {
       const baris = await sel.evaluate((td) => {
         const range = document.createRange();
         range.selectNodeContents(td);
-        return new Set(Array.from(range.getClientRects()).map((r) => Math.round(r.top))).size;
+        // Kotak elemen dan teks di baris yang sama bisa beda 1 px; baris baru selisih ≥ tinggi baris.
+        const atas = Array.from(range.getClientRects())
+          .map((r) => r.top)
+          .sort((x, y) => x - y);
+        return atas.filter((t, i) => i === 0 || t - atas[i - 1]! > 4).length;
       });
       expect(baris, `NIK patah baris pada ${width}px`).toBe(1);
     });

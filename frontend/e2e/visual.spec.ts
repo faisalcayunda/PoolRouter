@@ -506,7 +506,9 @@ for (const width of [1440, 390] as const) {
         await page.setViewportSize({ width, height: 900 });
         await page.goto(`${rute.path}?peran=${rute.peran}`);
         await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
-        await expect(page.getByText(/^(Memuat…|Loading…)$/).filter({ visible: true })).toHaveCount(0);
+        await expect(page.getByText(/^(Memuat…|Loading…)$/).filter({ visible: true })).toHaveCount(
+          0,
+        );
         await shoot(page, rute.berkas, width);
       });
     }
