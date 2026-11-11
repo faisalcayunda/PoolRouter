@@ -137,11 +137,11 @@ Deploy selalu memakai digest, bukan tag.
 make compose-migrate ENV=<env> ENV_FILE=<file>
 ```
 
-Target ini menjalankan `run --rm migrate`, memakai `CONTAINER_ENGINE` yang sama dengan target lain. Hanya service `migrate` yang menerima secret `poolrouter_owner` (ADR-0001 §7.2, dijaga `compose-lint`). Urutan terhadap `bundled-infra`: infra harus `healthy` dulu (`compose-up`), baru migrasi.
+Target ini menjalankan `run --rm migrate`, memakai `CONTAINER_ENGINE` yang sama dengan target lain. Service `migrate` menjalankan biner `migrate` di image backend (ARC-254): ia menerapkan `backend/migrations/` yang disematkan saat build sebagai `poolrouter_owner`, mencatatnya di `_sqlx_migrations`, dan aman diulang (migrasi yang sudah tercatat dilewati, checksum dicek). Role dibuat lebih dulu oleh service `db-bootstrap` (`backend/db/bootstrap.sh`, dipasang dari `backend/db`). Basis data yang pernah dimigrasi manual lewat psql tidak punya `_sqlx_migrations`; tandai dulu sebelum menjalankan `migrate`. Hanya service `migrate` yang menerima secret `poolrouter_owner` (ADR-0001 §7.2, dijaga `compose-lint`). Urutan terhadap `bundled-infra`: infra harus `healthy` dulu (`compose-up`), baru migrasi.
 
 ### Bootstrap admin dan pengguna (backend-cli)
 
-Image backend memuat `backend-cli` di `/usr/local/bin`, sama dengan `webserver`, `controller`, dan `worker` (ADR-0003 §3.6c, ARC-236). Cara utama di Compose adalah service `backend-cli` (profile `cli`, ARC-237): perintah sekali jalan lewat `compose run --rm`, bukan `up`. Service ini hanya menerima `POOLROUTER_DB_*` dan secret role `pr_admin_api`; di dev ia juga satu-satunya yang menerima `POOLROUTER_SEED_PASSWORD_FILE`. Jalankan setelah `compose-up` dan `compose-migrate`; platform admin pertama hanya sah saat tabel pengguna masih kosong.
+Image backend memuat `backend-cli` di `/usr/local/bin`, sama dengan `webserver`, `controller`, `worker`, dan `migrate` (ADR-0003 §3.6c, ARC-236). Cara utama di Compose adalah service `backend-cli` (profile `cli`, ARC-237): perintah sekali jalan lewat `compose run --rm`, bukan `up`. Service ini hanya menerima `POOLROUTER_DB_*` dan secret role `pr_admin_api`; di dev ia juga satu-satunya yang menerima `POOLROUTER_SEED_PASSWORD_FILE`. Jalankan setelah `compose-up` dan `compose-migrate`; platform admin pertama hanya sah saat tabel pengguna masih kosong.
 
 Dev: `make compose-seed ENV=dev ENV_FILE=<file>` menjalankan `seed pengguna` lalu `seed dukcapil`.
 
