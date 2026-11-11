@@ -30,7 +30,7 @@ export function ComboBox<T extends object>({
   return (
     <RacComboBox {...props} className={cx('flex w-64 flex-col gap-1', className)}>
       {label ? <Label className="typescale-label-large text-on-surface">{label}</Label> : null}
-      <div className="flex h-10 items-center rounded-small border border-outline-soft bg-surface-container-lowest pr-1 focus-within:border-secondary focus-within:ring-3 focus-within:ring-accent-container">
+      <div className="flex h-10 items-center rounded-small border border-outline bg-surface-container-lowest pr-1 focus-within:border-secondary focus-within:ring-3 focus-within:ring-accent-container">
         <Input className="typescale-body-medium h-full min-w-0 flex-1 bg-transparent px-3 text-on-surface outline-none placeholder:text-on-surface-variant" />
         {/* Trigger label comes from RAC's own localized strings; inventoried in
             src/components/m3/README.md (Addendum A 5.4). */}
@@ -65,7 +65,7 @@ export function ComboBoxItem({
       textValue={textValue}
       className={cx(
         'typescale-body-medium cursor-pointer rounded-small px-3 py-2 text-on-surface outline-none',
-        'data-[focused]:bg-surface-container data-[selected]:font-semibold',
+        'data-[focused]:bg-surface-container data-[selected]:font-semibold data-[focus-visible]:outline-solid data-[focus-visible]:outline-3 data-[focus-visible]:-outline-offset-3 data-[focus-visible]:outline-secondary',
       )}
     >
       {children}

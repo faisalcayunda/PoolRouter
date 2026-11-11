@@ -12,7 +12,7 @@ const VARIANT: Record<IconButtonVariant, string> = {
   'filled-tonal':
     'bg-secondary-container text-on-secondary-container group-data-[disabled]:bg-on-surface/12 group-data-[disabled]:text-on-surface/38',
   outlined:
-    'border border-outline-soft text-on-surface-variant group-data-[disabled]:border-on-surface/12 group-data-[disabled]:text-on-surface/38',
+    'border border-outline text-on-surface-variant group-data-[disabled]:border-on-surface/12 group-data-[disabled]:text-on-surface/38',
 };
 
 export interface IconButtonProps extends Omit<RacButtonProps, 'className' | 'children'> {

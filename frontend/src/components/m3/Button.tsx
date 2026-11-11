@@ -8,7 +8,7 @@ const VARIANT: Record<ButtonVariant, string> = {
   'filled-tonal':
     'bg-secondary-container text-on-secondary-container data-[disabled]:bg-on-surface/12',
   outlined:
-    'border border-outline-soft bg-surface-container-lowest text-on-surface data-[disabled]:border-on-surface/12',
+    'border border-outline bg-surface-container-lowest text-on-surface data-[disabled]:border-on-surface/12',
   text: 'text-on-surface px-3',
 };
 

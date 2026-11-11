@@ -21,11 +21,11 @@ import { IconButton } from './IconButton';
 import { Icon, icons } from '../../icons';
 
 const FIELD =
-  'typescale-body-medium flex h-10 w-full items-center gap-1 rounded-small border border-outline-soft bg-surface-container-lowest pr-1 pl-3 text-on-surface data-[focus-within]:border-secondary data-[focus-within]:ring-3 data-[focus-within]:ring-accent-container';
+  'typescale-body-medium flex h-10 w-full items-center gap-1 rounded-small border border-outline bg-surface-container-lowest pr-1 pl-3 text-on-surface data-[focus-within]:border-secondary data-[focus-within]:ring-3 data-[focus-within]:ring-accent-container';
 
 // Rentang memuat dua tanggal dan tombol kalender; pada 320 px isinya lebih lebar dari kolom, jadi
 // tombol turun ke baris berikutnya alih-alih melebarkan dokumen. Pada expanded kolom tetap satu baris
-// setinggi 56 px, sejajar dengan TextField dan Select di sebelahnya; tombol kalender memakai margin
+// setinggi 40 px, sejajar dengan TextField dan Select di sebelahnya; tombol kalender memakai margin
 // kanan negatif (ikon trailing M3) dan segmen tanpa padding agar isinya muat di kolom 280 px.
 const RANGE_FIELD = FIELD.replace(
   'h-10',

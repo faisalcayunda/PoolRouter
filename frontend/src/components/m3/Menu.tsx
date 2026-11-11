@@ -48,7 +48,7 @@ export function MenuItem({
       {...props}
       className={cx(
         'typescale-body-medium flex cursor-pointer items-center gap-3 rounded-small px-3 py-2 text-on-surface outline-none select-none',
-        'data-[focused]:bg-surface-container data-[disabled]:text-on-surface/38',
+        'data-[focused]:bg-surface-container data-[disabled]:text-on-surface/38 data-[focus-visible]:outline-solid data-[focus-visible]:outline-3 data-[focus-visible]:-outline-offset-3 data-[focus-visible]:outline-secondary',
         className,
       )}
     />

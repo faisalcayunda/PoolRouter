@@ -31,8 +31,8 @@
   --md-sys-color-inverse-surface: #0f172a;
   --md-sys-color-inverse-on-surface: #f8fafc;
   --md-sys-color-inverse-primary: #38bdf8;
-  /* Border kuat (slate-400), border tipis (sekitar 10 % slate-900 di atas putih), border kontrol (slate-300). */
-  --md-sys-color-outline: #94a3b8;
+  /* Border kontrol interaktif (#7d8da3: 3,38:1 di putih, 3,23:1 di slate-50, WCAG 1.4.11); outline-variant untuk kartu dan pemisah; outline-soft hanya untuk batas non-interaktif. */
+  --md-sys-color-outline: #7d8da3;
   --md-sys-color-outline-variant: #e2e8f0;
   --md-sys-color-outline-soft: #cbd5e1;
   --md-sys-color-scrim: #0f172a;

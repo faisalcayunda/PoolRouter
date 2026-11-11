@@ -31,7 +31,7 @@ export function Select<T extends object>({
   return (
     <RacSelect {...props} className={cx('flex flex-col gap-1', className)}>
       {label ? <Label className="typescale-label-large text-on-surface">{label}</Label> : null}
-      <RacButton className="typescale-body-medium flex h-10 w-64 cursor-pointer items-center justify-between rounded-small border border-outline-soft bg-surface-container-lowest pr-2 pl-3 text-on-surface outline-none data-[focused]:border-secondary data-[focused]:ring-3 data-[focused]:ring-accent-container data-[pressed]:border-secondary">
+      <RacButton className="typescale-body-medium flex h-10 w-64 cursor-pointer items-center justify-between rounded-small border border-outline bg-surface-container-lowest pr-2 pl-3 text-on-surface outline-none data-[focused]:border-secondary data-[focused]:ring-3 data-[focused]:ring-accent-container data-[pressed]:border-secondary">
         <SelectValue className="data-[placeholder]:text-on-surface-variant" />
         <Icon icon={icons.arrowDropDown} className="text-on-surface-variant" />
       </RacButton>
@@ -62,7 +62,7 @@ export function SelectItem({
       textValue={textValue}
       className={cx(
         'typescale-body-medium flex cursor-pointer items-center justify-between rounded-small px-3 py-2 text-on-surface outline-none',
-        'data-[focused]:bg-surface-container data-[selected]:font-semibold',
+        'data-[focused]:bg-surface-container data-[selected]:font-semibold data-[focus-visible]:outline-solid data-[focus-visible]:outline-3 data-[focus-visible]:-outline-offset-3 data-[focus-visible]:outline-secondary',
       )}
     >
       {children}
