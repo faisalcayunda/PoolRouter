@@ -63,7 +63,9 @@ impl Peran {
     ];
 
     /// Roles whose grant needs a named approver outside the requester
-    /// (ADR-0003 section 3.6c, C-07 / SPTJM): `auditor` and `operator`.
+    /// (ADR-0003 section 3.6c, C-07 / SPTJM): `auditor` and `operator`. The approver is another
+    /// active `platform_admin`; the SPTJM signer is an organisational role evidenced in `alasan`,
+    /// not a database status (Operator decision 2026-11-10, ARC-238).
     pub const fn butuh_persetujuan(self) -> bool {
         matches!(self, Self::Auditor | Self::Operator)
     }
