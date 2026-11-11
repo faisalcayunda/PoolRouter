@@ -25,8 +25,8 @@ export interface IconButtonProps extends Omit<RacButtonProps, 'className' | 'chi
    * tooltip text, so the two can never disagree (ADR-0003 7.5).
    */
   'aria-label': string;
-  /** Visual circle size; the touch target is always 48px (§7.5). */
-  size?: 40 | 48;
+  /** Ukuran visual; target sentuh 48 px, kecuali 32 (dipakai di dalam kolom 40 px) yang memakai target 32 px. */
+  size?: 32 | 40 | 48;
 }
 
 /**
@@ -50,14 +50,15 @@ export function IconButton({
         aria-label={ariaLabel}
         className={cx(
           // 48px touch target around a 40px (or 48px) visual circle, per §7.5.
-          'm3-state-host m3-focus m3-disabled group inline-flex h-12 w-12 shrink-0 cursor-pointer items-center justify-center rounded-full select-none',
+          'm3-state-host m3-focus m3-disabled group inline-flex shrink-0 cursor-pointer items-center justify-center rounded-small select-none',
+          size === 32 ? 'h-8 w-8' : 'h-12 w-12',
           className,
         )}
       >
         <span
           className={cx(
-            'm3-state typescale-label-large inline-flex items-center justify-center rounded-full',
-            size === 40 ? 'h-10 w-10' : 'h-12 w-12',
+            'm3-state typescale-label-large inline-flex items-center justify-center rounded-small',
+            size === 32 ? 'h-8 w-8' : size === 40 ? 'h-10 w-10' : 'h-12 w-12',
             VARIANT[variant],
           )}
         >

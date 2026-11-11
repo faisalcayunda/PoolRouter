@@ -10,17 +10,15 @@ import { Icon, icons } from '../../icons';
 export type StatusLabelTone = 'neutral' | 'info' | 'success' | 'warning' | 'error';
 
 /**
- * Warna mengikuti frame Penpot `StatusLabel / *`: `success-container` hijau (#b8f397) dan
- * `warning-container` kuning (#ffdea7) memakai peran ekstensi token, bukan `tertiary-container`
- * (oranye) yang dulu dipinjam. Teks selalu menyebut statusnya (§7.5), jadi warna bukan satu-satunya
- * penanda.
+ * Pill acuan ARC-261: latar tint, border tipis dari warna status, teks gelap supaya kontras AA.
+ * Teks selalu menyebut statusnya (§7.5), jadi warna bukan satu-satunya penanda.
  */
 const TONE: Record<StatusLabelTone, string> = {
-  neutral: 'bg-surface-container-high text-on-surface',
-  info: 'bg-secondary-container text-on-secondary-container',
-  success: 'bg-success-container text-on-success-container',
-  warning: 'bg-warning-container text-on-warning-container',
-  error: 'bg-error-container text-on-error-container',
+  neutral: 'border border-outline-variant bg-surface-container text-on-surface',
+  info: 'border border-info/30 bg-info-container text-on-info-container',
+  success: 'border border-success/40 bg-success-container text-on-success-container',
+  warning: 'border border-warning/40 bg-warning-container text-on-warning-container',
+  error: 'border border-error/30 bg-error-container text-on-error-container',
 };
 
 /** Tone → catalogued icon key; `Icon` resolves the component (icons stay in one place). */
@@ -48,12 +46,12 @@ export function StatusLabel({
   return (
     <span
       className={cx(
-        'typescale-label-small inline-flex h-6 items-center gap-1 whitespace-nowrap rounded-small px-2',
+        'typescale-label-medium inline-flex h-6 items-center gap-1 whitespace-nowrap rounded-full px-2.5',
         TONE[tone],
         className,
       )}
     >
-      {glyph ? <Icon icon={icons[glyph]} className="h-4 w-4" /> : null}
+      {glyph ? <Icon icon={icons[glyph]} className="h-3.5 w-3.5" /> : null}
       {children}
     </span>
   );

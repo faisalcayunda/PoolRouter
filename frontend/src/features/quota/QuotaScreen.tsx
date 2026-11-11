@@ -4,7 +4,8 @@ import { useTranslation } from 'react-i18next';
 import { api, type ApiClient, type KuotaTracker, type UpstreamPool } from '../../api/client';
 import { Button } from '../../components/m3/Button';
 import { Card } from '../../components/m3/Card';
-import { Icon, icons } from '../../icons';
+import { Icon, icons, type IconComponent } from '../../icons';
+import { MetricCard } from '../common/MetricCard';
 import { LinearProgress } from '../../components/m3/LinearProgress';
 import { Select, SelectItem } from '../../components/m3/Select';
 import { StatusLabel } from '../../components/m3/StatusLabel';
@@ -44,16 +45,18 @@ function toPercent(fraction: number): number {
   return Math.min(100, Math.max(0, fraction * 100));
 }
 
-/** Kartu pada frame Penpot: `Card / outlined`, padding 24, radius 16, isi putih (`surface-container-lowest`). */
-const CARD = 'flex flex-col gap-3 rounded-large! bg-surface-container-lowest! p-6!';
+/** Kartu isi (acuan ARC-261): putih, border tipis, radius 12, padding 24. */
+const CARD = 'flex flex-col gap-3 p-6!';
 
-/** `Metric` pada frame: label, angka besar + "dari N", bilah 8 px, lalu satu baris keterangan. */
-function MetricCard({
+/** Kartu metrik: ikon + judul, angka besar + "dari N", bilah 8 px, lalu satu baris keterangan. */
+function QuotaMetricCard({
+  icon,
   label,
   used,
   total,
   caption,
 }: {
+  icon: IconComponent;
   label: string;
   used: number;
   total: number;
@@ -62,19 +65,16 @@ function MetricCard({
   const { t } = useTranslation();
   const format = useFormatter();
   return (
-    <Card variant="outlined" className={CARD}>
-      <h3 className="typescale-title-small text-on-surface-variant">{label}</h3>
-      <p className="flex flex-wrap items-baseline gap-x-2">
-        <span className="text-[28px] leading-[41px] [font-weight:500] expanded:text-[32px] expanded:leading-[46px]">
-          {format.angka(used)}
-        </span>
-        <span className="typescale-body-medium text-on-surface-variant">
-          {t('quota.page.limit_of', { total })}
-        </span>
-      </p>
+    <MetricCard
+      icon={icon}
+      title={label}
+      titleAs="h3"
+      value={format.angka(used)}
+      valueNote={t('quota.page.limit_of', { total })}
+    >
       <LinearProgress size="large" value={toPercent(total ? used / total : 0)} aria-label={label} />
       <p className="typescale-body-medium text-on-surface-variant">{caption}</p>
-    </Card>
+    </MetricCard>
   );
 }
 
@@ -97,7 +97,8 @@ function PoolQuota({ row }: { row: KuotaTracker }) {
   return (
     <div className="flex flex-col gap-6">
       <div className="grid grid-cols-1 gap-4 expanded:grid-cols-2">
-        <MetricCard
+        <QuotaMetricCard
+          icon={icons.dataUsage}
           label={t('quota.page.today')}
           used={used}
           total={row.kuota_efektif}
@@ -106,7 +107,8 @@ function PoolQuota({ row }: { row: KuotaTracker }) {
             sisa: row.sisa_periode,
           })} · ${t('quota.page.reset_at', { waktu: format.jam(row.periode_selesai) })}`}
         />
-        <MetricCard
+        <QuotaMetricCard
+          icon={icons.refresh}
           label={t('quota.page.hour', { rentang: format.hourRange(startOfHour, endOfHour) })}
           used={row.terpakai_jam_berjalan}
           total={row.rate_limit_per_jam}

@@ -4,10 +4,10 @@ import { cx } from './cx';
 export type CardVariant = 'elevated' | 'filled' | 'outlined' | 'container';
 
 const VARIANT: Record<CardVariant, string> = {
-  elevated: 'bg-surface-container-low shadow-level1',
+  elevated: 'border border-outline-variant bg-surface shadow-level1',
   filled: 'bg-surface-container-highest',
-  outlined: 'border border-outline-variant bg-surface',
-  /** Kartu isi layar Penpot (F0 / S03*, S04*): latar `surface-container-lowest`, sudut 16 px, tanpa padding. */
+  outlined: 'border border-outline-variant bg-surface-container-lowest',
+  /** Kartu isi layar (acuan ARC-261): putih, border tipis, sudut 12 px, hampir tanpa shadow, tanpa padding. */
   container: 'rounded-large border border-outline-variant bg-surface-container-lowest',
 };
 

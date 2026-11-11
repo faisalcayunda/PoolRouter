@@ -38,8 +38,8 @@ export function Tab({ className, ...props }: Omit<TabProps, 'className'> & { cla
     <RacTab
       {...props}
       className={cx(
-        'm3-state m3-focus typescale-title-small relative cursor-pointer px-4 pt-1 pb-2 text-on-surface-variant outline-none select-none',
-        'data-[selected]:text-primary',
+        'm3-state m3-focus typescale-label-large relative cursor-pointer px-4 pt-1 pb-2.5 text-on-surface-variant outline-none select-none',
+        'data-[selected]:text-on-surface',
         'after:absolute after:inset-x-4 after:bottom-0 after:h-0.5 after:rounded-full after:bg-transparent',
         'data-[selected]:after:bg-primary',
         className,

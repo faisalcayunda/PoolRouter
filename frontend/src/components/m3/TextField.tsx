@@ -15,8 +15,8 @@ import type { ReactNode } from 'react';
 import { cx } from './cx';
 
 const FIELD =
-  'm3-focus typescale-body-large h-14 w-full rounded-extra-small border border-outline bg-surface px-4 py-4 text-on-surface ' +
-  'placeholder:text-on-surface-variant data-[focused]:border-2 data-[focused]:border-primary data-[focused]:px-[15px]';
+  'typescale-body-medium h-10 w-full rounded-small border border-outline bg-surface-container-lowest px-3 py-2 text-on-surface outline-none ' +
+  'placeholder:text-on-surface-variant data-[focused]:border-secondary data-[focused]:ring-3 data-[focused]:ring-accent-container';
 
 export interface TextFieldProps extends Omit<RacTextFieldProps, 'className'> {
   className?: string;
@@ -29,7 +29,7 @@ export interface TextFieldProps extends Omit<RacTextFieldProps, 'className'> {
   errorMessage?: ReactNode;
 }
 
-/** M3 outlined text field. The F0 catalog uses outlined, not filled. */
+/** Kolom teks (acuan ARC-261): tinggi 40, radius 8, border tipis, cincin sky saat fokus. */
 export function TextField({
   label,
   description,
@@ -40,7 +40,7 @@ export function TextField({
 }: TextFieldProps) {
   return (
     <RacTextField {...props} className={cx('flex flex-col gap-1', className)}>
-      {label ? <Label>{label}</Label> : null}
+      {label ? <Label className="typescale-label-large text-on-surface">{label}</Label> : null}
       <Input className={FIELD} placeholder={placeholder} />
       {description ? <Text slot="description">{description}</Text> : null}
       <FieldError>{errorMessage}</FieldError>
@@ -75,7 +75,7 @@ export function TextArea({
 }: TextAreaProps) {
   return (
     <RacTextField {...props} className={cx('flex flex-col gap-1', className)}>
-      {label ? <Label>{label}</Label> : null}
+      {label ? <Label className="typescale-label-large text-on-surface">{label}</Label> : null}
       <RacTextArea
         rows={rows}
         className={cx(FIELD, 'h-auto min-h-24 resize-y', textAreaClassName)}

@@ -1,48 +1,55 @@
-/* M3 light scheme generated for ARC-11 with SchemeFidelity from #2F55D4. */
+/* Skema terang ARC-261: palet slate/sky dari acuan "SaaS Admin Dashboard UI Kit" (Figma). Nama token M3 tetap; hanya nilainya yang berubah. */
 :root {
-  --md-sys-color-primary: #023abc;
+  /* Aksi utama gelap (tombol, tautan): slate-900. Aksen sky dipakai untuk isian, tint, dan indikator, bukan teks. */
+  --md-sys-color-primary: #0f172a;
   --md-sys-color-on-primary: #ffffff;
-  --md-sys-color-primary-container: #2f55d4;
-  --md-sys-color-on-primary-container: #d4daff;
-  --md-sys-color-secondary: #505c8e;
+  --md-sys-color-primary-container: #38bdf8;
+  --md-sys-color-on-primary-container: #0f172a;
+  --md-sys-color-secondary: #0284c7;
   --md-sys-color-on-secondary: #ffffff;
-  --md-sys-color-secondary-container: #b8c4fd;
-  --md-sys-color-on-secondary-container: #445081;
-  --md-sys-color-tertiary: #802f00;
+  --md-sys-color-secondary-container: #c1ebfd;
+  --md-sys-color-on-secondary-container: #075985;
+  --md-sys-color-tertiary: #b45309;
   --md-sys-color-on-tertiary: #ffffff;
-  --md-sys-color-tertiary-container: #a74000;
-  --md-sys-color-on-tertiary-container: #ffd3c1;
-  --md-sys-color-error: #ba1a1a;
+  --md-sys-color-tertiary-container: #fef3c7;
+  --md-sys-color-on-tertiary-container: #92400e;
+  --md-sys-color-error: #dc2626;
   --md-sys-color-on-error: #ffffff;
-  --md-sys-color-error-container: #ffdad6;
-  --md-sys-color-on-error-container: #93000a;
-  --md-sys-color-surface: #fbf8ff;
-  --md-sys-color-on-surface: #1a1b23;
-  --md-sys-color-on-surface-variant: #444654;
+  --md-sys-color-error-container: #fee2e2;
+  --md-sys-color-on-error-container: #b91c1c;
+  /* Permukaan: kartu dan kontrol putih, panel halaman slate-50 (surface-container-low). */
+  --md-sys-color-surface: #ffffff;
+  --md-sys-color-on-surface: #0f172a;
+  --md-sys-color-on-surface-variant: #64748b;
   --md-sys-color-surface-container-lowest: #ffffff;
-  --md-sys-color-surface-container-low: #f3f2fe;
-  --md-sys-color-surface-container: #eeedf8;
-  --md-sys-color-surface-container-high: #e8e7f2;
-  --md-sys-color-surface-container-highest: #e2e1ec;
-  --md-sys-color-surface-dim: #dad9e4;
-  --md-sys-color-surface-bright: #fbf8ff;
-  --md-sys-color-inverse-surface: #2f3038;
-  --md-sys-color-inverse-on-surface: #f1f0fb;
-  --md-sys-color-inverse-primary: #b7c4ff;
-  --md-sys-color-outline: #747686;
-  --md-sys-color-outline-variant: #c4c5d6;
-  --md-sys-color-scrim: #000000;
-  --md-sys-color-shadow: #000000;
-  --md-sys-color-success: #386a1f;
+  --md-sys-color-surface-container-low: #f8fafc;
+  --md-sys-color-surface-container: #f1f5f9;
+  --md-sys-color-surface-container-high: #e2e8f0;
+  --md-sys-color-surface-container-highest: #e2e8f0;
+  --md-sys-color-surface-dim: #cbd5e1;
+  --md-sys-color-surface-bright: #ffffff;
+  --md-sys-color-inverse-surface: #0f172a;
+  --md-sys-color-inverse-on-surface: #f8fafc;
+  --md-sys-color-inverse-primary: #38bdf8;
+  /* Border kontrol interaktif (#7d8da3: 3,38:1 di putih, 3,23:1 di slate-50, WCAG 1.4.11); outline-variant untuk kartu dan pemisah; outline-soft hanya untuk batas non-interaktif. */
+  --md-sys-color-outline: #7d8da3;
+  --md-sys-color-outline-variant: #e2e8f0;
+  --md-sys-color-outline-soft: #cbd5e1;
+  --md-sys-color-scrim: #0f172a;
+  --md-sys-color-shadow: #0f172a;
+  /* Aksen sky mentah untuk batang, indikator, dan titik; tidak untuk teks. */
+  --md-sys-color-accent: #38bdf8;
+  --md-sys-color-accent-container: #c1ebfd;
+  --md-sys-color-success: #22c55e;
   --md-sys-color-on-success: #ffffff;
-  --md-sys-color-success-container: #b8f397;
-  --md-sys-color-on-success-container: #072100;
-  --md-sys-color-warning: #7c5800;
+  --md-sys-color-success-container: #dcfce7;
+  --md-sys-color-on-success-container: #15803d;
+  --md-sys-color-warning: #f59e0b;
   --md-sys-color-on-warning: #ffffff;
-  --md-sys-color-warning-container: #ffdea7;
-  --md-sys-color-on-warning-container: #271900;
-  --md-sys-color-info: #00639b;
+  --md-sys-color-warning-container: #fef3c7;
+  --md-sys-color-on-warning-container: #b45309;
+  --md-sys-color-info: #0284c7;
   --md-sys-color-on-info: #ffffff;
-  --md-sys-color-info-container: #cee5ff;
-  --md-sys-color-on-info-container: #001d33;
+  --md-sys-color-info-container: #e0f2fe;
+  --md-sys-color-on-info-container: #075985;
 }

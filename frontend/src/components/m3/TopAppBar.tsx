@@ -21,9 +21,7 @@ export interface TopAppBarProps {
 
 export function TopAppBar({ title, leading, trailing, className }: TopAppBarProps) {
   return (
-    <header
-      className={cx('flex min-h-16 items-center gap-2 bg-surface px-4 text-on-surface', className)}
-    >
+    <header className={cx('flex min-h-16 items-center gap-2 px-4 text-on-surface', className)}>
       {leading}
       <div className="typescale-title-large min-w-0 flex-1">{title}</div>
       {trailing}

@@ -21,10 +21,11 @@ import { TextField } from '../../components/m3/TextField';
 import { Icon, icons } from '../../icons';
 import { useFormatter } from '../../i18n/useFormatter';
 import { enumLabel } from '../../i18n/enums';
-import { EmptyState, QueryError } from '../common/page';
+import { EmptyState, PageHeader, QueryError } from '../common/page';
 import { useQuery } from '../common/useQuery';
 import { useDocumentTitle, useFocusOnMount } from '../common/a11y';
 import { MaskedNik } from '../common/MaskedNik';
+import { MetricCard } from '../common/MetricCard';
 import { ScrollArea } from '../common/ScrollArea';
 import { useRole } from '../common/RoleContext';
 import { SnackbarRegion, useSnackbar } from '../common/useSnackbar';
@@ -89,6 +90,12 @@ const PAGE_SIZE = 25;
 
 /** Kartu ringkasan di frame; API belum punya agregatnya, jadi nilainya placeholder. */
 const KPI_KEYS = ['today', 'success', 'failed', 'latency'] as const;
+const KPI_ICON = {
+  today: icons.receiptLong,
+  success: icons.checkCircle,
+  failed: icons.error,
+  latency: icons.dataUsage,
+} as const;
 
 export interface LogPageScreenProps {
   client?: ApiClient;
@@ -214,37 +221,31 @@ export function LogPageScreen({
         });
 
   const hasFilters = term !== '' || clientId !== null;
-  const thClass = 'typescale-label-small border-b border-outline-variant px-5 py-3 font-medium';
+  const thClass =
+    'typescale-label-medium border-b border-outline-variant bg-surface-container-low px-5 py-3 text-on-surface-variant';
   const tdClass = 'typescale-body-medium px-5 py-3 align-middle';
 
   return (
     <section className="flex w-full flex-col gap-6">
       {/* Judul tanpa bingkai fokus: frame Penpot tidak menggambarnya. Fokus programatik tetap
           dipindah ke sini saat layar dibuka supaya pembaca layar mulai dari judul. */}
-      <div className="flex max-w-[620px] flex-col gap-2">
-        <h1
-          ref={titleRef}
-          tabIndex={-1}
-          className="typescale-headline-small text-on-surface outline-none"
-        >
-          {t('log.page.title')}
-        </h1>
-        <p className="typescale-body-medium text-on-surface-variant">{t('log.page.subtitle')}</p>
-      </div>
+      <PageHeader
+        title={t('log.page.title')}
+        titleRef={titleRef}
+        subtitle={t('log.page.subtitle')}
+      />
 
       {/* Kartu ringkasan: API belum punya agregat harian, jadi nilainya placeholder "Menunggu API". */}
       <ul className="grid grid-cols-2 gap-4 expanded:grid-cols-4">
         {KPI_KEYS.map((key) => (
           <li key={key} className="flex">
-            <Card variant="outlined" className="flex w-full flex-col gap-2 rounded-large! p-5!">
-              <p className="typescale-title-small text-on-surface-variant">{t(`log.kpi.${key}`)}</p>
-              <p className="typescale-headline-small text-on-surface" aria-hidden="true">
-                —
-              </p>
-              <p className="typescale-body-medium text-on-surface-variant">
-                {t('log.kpi.pending')}
-              </p>
-            </Card>
+            <MetricCard
+              icon={KPI_ICON[key]}
+              title={t(`log.kpi.${key}`)}
+              value="—"
+              valueHidden
+              pill={<StatusLabel icon={null}>{t('log.kpi.pending')}</StatusLabel>}
+            />
           </li>
         ))}
       </ul>
@@ -300,7 +301,7 @@ export function LogPageScreen({
           <Button
             variant="outlined"
             onPress={clearFilters}
-            className="shrink-0 self-start whitespace-nowrap expanded:mt-7 expanded:h-14!"
+            className="shrink-0 self-start whitespace-nowrap expanded:mt-[22px] expanded:h-10!"
           >
             {t('common.action.clear_filters')}
           </Button>
@@ -415,7 +416,7 @@ export function LogPageScreen({
                               <Link
                                 href={`/log/${encodeURIComponent(row.kode_transaksi)}`}
                                 aria-label={t('log.row.aria', { kode: row.kode_transaksi })}
-                                className="m3-state m3-focus typescale-label-large inline-flex h-10 items-center justify-center rounded-full px-3 text-primary"
+                                className="m3-state m3-focus typescale-label-large inline-flex h-10 items-center justify-center rounded-small px-3 text-primary"
                               >
                                 {t('log.action.detail')}
                               </Link>

@@ -3,17 +3,15 @@ import type { ReactNode } from 'react';
 import { cx } from './cx';
 
 /**
- * M3 navigation drawer (katalog 7.1) with the two variants the catalog asks for:
- * - `standard`: permanently visible beside the content (expanded window class).
- * - `modal`: overlaid with a scrim while open (compact/medium window class).
+ * Sidebar navigasi (acuan ARC-261) dengan dua varian:
+ * - `standard`: selalu tampil di samping konten (kelas jendela large, >= 1200 px); bisa diciutkan
+ *   menjadi rel ikon 72 px lewat `collapsed`.
+ * - `modal`: drawer di atas scrim saat terbuka (di bawah large).
  *
- * Both variants use the inverse surface roles (UI v2): the drawer stays dark in the light theme.
- * Lebar 280 px, tanpa radius dan tanpa bayangan di kedua varian (Penpot `NavigationDrawer /
- * standard|modal`); varian modal berdiri di atas lapisan `scrim` opasitas 32 %.
- * The shell owns the list of links (`AppShell` renders them as children); this
- * component owns the container and, for the modal variant, the overlay, the
- * focus trap, the Escape handling and `aria-modal` semantics via React Aria's
- * `Modal`. Nothing here closes itself: the caller owns `isOpen`.
+ * Putih dengan border tipis di sisi kanan, lebar 240 px, tanpa bayangan. The shell owns the list of
+ * links (`AppShell` renders them as children); this component owns the container and, for the modal
+ * variant, the overlay, the focus trap, the Escape handling and `aria-modal` semantics via React
+ * Aria's `Modal`. Nothing here closes itself: the caller owns `isOpen`.
  */
 export type NavigationDrawerVariant = 'standard' | 'modal';
 
@@ -25,17 +23,20 @@ export interface NavigationDrawerProps {
   isOpen?: boolean;
   /** Modal variant only: called on Escape, scrim click and focus-leave dismissal. */
   onOpenChange?: (isOpen: boolean) => void;
+  /** Varian standard saja: rel ikon 72 px alih-alih 240 px. */
+  collapsed?: boolean;
   /** Overrides the container class hooks on both variants. */
   className?: string;
   children?: ReactNode;
 }
 
-/** Lebar 280 px untuk kedua varian (Penpot `NavigationDrawer`), kolom flex. */
-const BASE = 'flex w-[280px] shrink-0 flex-col bg-inverse-surface text-inverse-on-surface';
+/** Kolom flex putih; lebar ditentukan per varian. */
+const BASE = 'flex shrink-0 flex-col bg-surface-container-lowest text-on-surface';
 
 export function NavigationDrawer({
   variant = 'standard',
   isOpen = false,
+  collapsed = false,
   onOpenChange,
   className,
   children,
@@ -43,7 +44,10 @@ export function NavigationDrawer({
 }: NavigationDrawerProps) {
   if (variant === 'standard') {
     return (
-      <aside aria-label={ariaLabel} className={cx(BASE, 'sticky top-0 h-dvh', className)}>
+      <aside
+        aria-label={ariaLabel}
+        className={cx(BASE, 'sticky top-0 h-dvh', collapsed ? 'w-[72px]' : 'w-60', className)}
+      >
         {children}
       </aside>
     );
@@ -54,11 +58,15 @@ export function NavigationDrawer({
       isOpen={isOpen}
       onOpenChange={onOpenChange}
       isDismissable
-      className="fixed inset-0 z-40 flex bg-scrim/32"
+      className="fixed inset-0 z-40 flex bg-scrim/40"
     >
       <RacDialog
         aria-label={ariaLabel}
-        className={cx('m3-focus relative z-10 h-full outline-none', BASE, className)}
+        className={cx(
+          'm3-focus relative z-10 h-full w-60 border-r border-outline-variant outline-none',
+          BASE,
+          className,
+        )}
       >
         {children}
       </RacDialog>

@@ -53,8 +53,8 @@ export function Chip({
       className={cx(
         BASE,
         variant === 'filter' && selected
-          ? 'border-0 bg-secondary-container text-on-secondary-container'
-          : 'border-outline text-on-surface data-[disabled]:border-on-surface/12 data-[disabled]:text-on-surface/38',
+          ? 'border-secondary/30 bg-accent-container text-on-secondary-container'
+          : 'border-outline bg-surface-container-lowest text-on-surface data-[disabled]:border-on-surface/12 data-[disabled]:text-on-surface/38',
       )}
     >
       {selected ? <Icon icon={icons.check} className="h-4.5 w-4.5" /> : null}
