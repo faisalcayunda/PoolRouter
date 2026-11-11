@@ -7,6 +7,7 @@
 
 pub mod balikan;
 pub mod dispatcher;
+pub mod dlq;
 pub mod jadwal;
 pub mod leader;
 pub mod penyapu;

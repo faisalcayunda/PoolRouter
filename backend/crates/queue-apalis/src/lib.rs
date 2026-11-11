@@ -12,6 +12,9 @@
 //!   tidak membedakan galat sementara dan permanen; request tetap
 //!   `dispatched` di PostgreSQL dan reconciler mengembalikannya ke `queued`
 //!   (ADR-0001 bagian 5 lapisan 2), jadi tidak ada requeue buta.
+//!   Pesan di DLQ hanya salinan diagnostik dan punya retensi
+//!   ([`topologi::DLQ_TTL_MS`], [`topologi::DLQ_PANJANG_MAKS`], ARC-228);
+//!   panjangnya dibaca [`ApalisQueue::jumlah_dlq`].
 //! - [`QueueError::Transport`] → nack dengan requeue (W4).
 //! - Proses mati sebelum ack → broker mengirim ulang pesan.
 
@@ -28,8 +31,9 @@ use apalis_amqp::{AmqpBackend, AmqpTask, Config as KonfigurasiAmqp};
 use apalis_core::backend::ext::with_codec::WithCodec;
 use futures::Sink;
 use lapin::{
-    BasicProperties, Channel, Confirmation, Connection, ConnectionProperties,
-    options::{BasicNackOptions, BasicPublishOptions, ConfirmSelectOptions},
+    BasicProperties, Channel, Confirmation, Connection, ConnectionProperties, ErrorKind,
+    options::{BasicNackOptions, BasicPublishOptions, ConfirmSelectOptions, QueueDeclareOptions},
+    protocol::{AMQPErrorKind, AMQPSoftError},
     types::{AMQPValue, FieldTable},
 };
 use poolrouter_core::queue::{
@@ -75,6 +79,15 @@ const BATAS_CONFIRM: Duration = Duration::from_secs(5);
 /// Nama header AMQP pembawa id korelasi (ADR-0001 bagian 6, S11).
 const HEADER_TRACE: &str = "x-trace-id";
 
+/// Broker menjawab 404 (NOT-FOUND) pada passive declare.
+fn antrean_tidak_ada(galat: &lapin::Error) -> bool {
+    matches!(
+        galat.kind(),
+        ErrorKind::ProtocolError(protokol)
+            if matches!(protokol.kind(), AMQPErrorKind::Soft(AMQPSoftError::NOTFOUND))
+    )
+}
+
 fn transport(galat: impl std::fmt::Display) -> QueueError {
     QueueError::Transport(galat.to_string())
 }
@@ -105,10 +118,10 @@ impl SaluranPublish {
 }
 
 /// Jalankan `kerja` paling lama `batas`; lewat batas menjadi galat transport.
-async fn dengan_batas(
+async fn dengan_batas<T>(
     batas: Duration,
-    kerja: impl Future<Output = Result<(), QueueError>>,
-) -> Result<(), QueueError> {
+    kerja: impl Future<Output = Result<T, QueueError>>,
+) -> Result<T, QueueError> {
     tokio::time::timeout(batas, kerja).await.map_err(|_| {
         QueueError::Transport(format!(
             "broker tidak menjawab dalam {} detik",
@@ -175,6 +188,47 @@ impl ApalisQueue {
                 .map_err(transport)
         })
         .await
+    }
+
+    /// Jumlah pesan siap kirim di DLQ `<queue>.dlq` (passive declare), untuk
+    /// metrik `poolrouter_dlq_pesan`. DLQ yang belum ada (antrean belum
+    /// pernah dideklarasikan) dihitung 0.
+    ///
+    /// Memakai channel sendiri: passive declare atas antrean yang tidak ada
+    /// membuat broker menutup channel (404), dan itu tidak boleh menjatuhkan
+    /// publish yang sedang berjalan di channel publish. Dibatasi
+    /// [`BATAS_CONFIRM`] seperti [`ApalisQueue::declare`].
+    pub async fn jumlah_dlq(&self, queue: &str) -> Result<u32, QueueError> {
+        dengan_batas(BATAS_CONFIRM, async {
+            let kanal = self.channel_baru().await?;
+            let hasil = kanal
+                .queue_declare(
+                    topologi::nama_dlq(queue).into(),
+                    QueueDeclareOptions {
+                        passive: true,
+                        ..QueueDeclareOptions::default()
+                    },
+                    FieldTable::default(),
+                )
+                .await;
+            match hasil {
+                Ok(antrean) => Ok(antrean.message_count()),
+                Err(galat) if antrean_tidak_ada(&galat) => Ok(0),
+                Err(galat) => Err(transport(galat)),
+            }
+        })
+        .await
+    }
+
+    /// Channel baru di koneksi publish; koneksi yang putus dibuka ulang
+    /// seperti di [`Self::channel_publish`].
+    async fn channel_baru(&self) -> Result<Channel, QueueError> {
+        let mut saluran = self.publish.lock().await;
+        if !saluran.tersambung() {
+            tracing::warn!("channel publish putus; membuka ulang");
+            *saluran = SaluranPublish::buka(&self.uri).await?;
+        }
+        saluran.koneksi.create_channel().await.map_err(transport)
     }
 
     /// Channel publish yang tersambung. Koneksi atau channel yang sudah putus
@@ -482,7 +536,11 @@ mod tests {
     /// menahan pemanggil.
     #[tokio::test]
     async fn publish_tanpa_confirm_habis_waktu_menjadi_galat_transport() {
-        let hasil = dengan_batas(Duration::from_millis(50), std::future::pending()).await;
+        let hasil = dengan_batas(
+            Duration::from_millis(50),
+            std::future::pending::<Result<(), QueueError>>(),
+        )
+        .await;
         assert!(
             matches!(hasil, Err(QueueError::Transport(ref pesan)) if pesan.contains("tidak menjawab")),
             "{hasil:?}"

@@ -570,6 +570,80 @@ async fn putuskan_dari_broker() {
     );
 }
 
+/// `GET <jalur>` ke management API; badan JSON sebagai teks.
+async fn get_management(jalur: &str) -> String {
+    let alamat = std::env::var("POOLROUTER_TEST_AMQP_MGMT")
+        .expect("POOLROUTER_TEST_AMQP_MGMT (make -C backend uji-amqp)");
+    let auth = std::env::var("POOLROUTER_TEST_AMQP_MGMT_AUTH")
+        .expect("POOLROUTER_TEST_AMQP_MGMT_AUTH (make -C backend uji-amqp)");
+    let mut tcp = tokio::net::TcpStream::connect(alamat.as_str())
+        .await
+        .expect("koneksi management API");
+    let permintaan = format!(
+        "GET {jalur} HTTP/1.1\r\nHost: {alamat}\r\nAuthorization: Basic {auth}\r\n\
+         Connection: close\r\n\r\n"
+    );
+    tcp.write_all(permintaan.as_bytes())
+        .await
+        .expect("kirim permintaan management");
+    let mut jawaban = Vec::new();
+    tokio::time::timeout(BATAS_TUNGGU, tcp.read_to_end(&mut jawaban))
+        .await
+        .expect("management API tidak menjawab")
+        .expect("baca jawaban management");
+    String::from_utf8_lossy(&jawaban).into_owned()
+}
+
+/// ARC-228: DLQ dideklarasikan dengan retensi (TTL 7 hari, 10.000 pesan,
+/// `drop-head`), antrean job tidak, dan deklarasi ulang idempoten (tanpa 406).
+#[tokio::test(flavor = "multi_thread")]
+#[ignore = "butuh RabbitMQ: make -C backend uji-amqp"]
+async fn dlq_dideklarasikan_dengan_retensi_dan_antrean_job_tidak() {
+    let antrean = antrean_baru();
+    let q = penerbit(&antrean).await;
+    q.declare(&antrean)
+        .await
+        .expect("deklarasi ulang idempoten");
+
+    let dlq = get_management(&format!("/api/queues/%2f/{}", nama_dlq(&antrean))).await;
+    assert!(dlq.contains("\"x-message-ttl\":604800000"), "{dlq}");
+    assert!(dlq.contains("\"x-max-length\":10000"), "{dlq}");
+    assert!(dlq.contains("\"x-overflow\":\"drop-head\""), "{dlq}");
+    let job = get_management(&format!("/api/queues/%2f/{antrean}")).await;
+    assert!(!job.contains("x-message-ttl"), "{job}");
+    assert!(!job.contains("x-max-length"), "{job}");
+}
+
+/// ARC-228: `jumlah_dlq` membaca panjang DLQ; antrean yang belum pernah
+/// dideklarasikan dihitung 0 dan 404-nya tidak menjatuhkan channel publish.
+#[tokio::test(flavor = "multi_thread")]
+#[ignore = "butuh RabbitMQ: make -C backend uji-amqp"]
+async fn jumlah_dlq_membaca_panjang_dan_antrean_tak_ada_nol() {
+    let antrean = antrean_baru();
+    let q = penerbit(&antrean).await;
+    assert_eq!(q.jumlah_dlq(&antrean_baru()).await.expect("tak ada"), 0);
+    assert_eq!(q.jumlah_dlq(&antrean).await.expect("kosong"), 0);
+
+    let id = Uuid::now_v7();
+    q.publish(&antrean, id)
+        .await
+        .expect("publish masih jalan setelah 404");
+    let (token, tugas) = consumer(&antrean, |_| async {
+        Err::<(), QueueError>(QueueError::Handler("uji: galat permanen".into()))
+    })
+    .await;
+    let batas = tokio::time::Instant::now() + BATAS_TUNGGU;
+    while q.jumlah_dlq(&antrean).await.expect("hitung") < 1 {
+        assert!(
+            tokio::time::Instant::now() < batas,
+            "pesan tidak sampai DLQ"
+        );
+        tokio::time::sleep(Duration::from_millis(200)).await;
+    }
+    hentikan(token, tugas).await;
+    assert_eq!(q.jumlah_dlq(&antrean).await.expect("hitung"), 1);
+}
+
 /// AC-2 (a), W3: koneksi consumer diputus broker saat pesan sedang diproses.
 /// Consumer menyambung ulang sendiri dengan backoff di proses yang sama (task
 /// `run` tidak pernah selesai), pesan yang belum di-ack dikirim ulang tepat

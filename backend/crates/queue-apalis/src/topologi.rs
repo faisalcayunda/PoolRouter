@@ -10,6 +10,9 @@
 //! - Dead-letter: pesan yang di-reject tanpa requeue masuk exchange
 //!   [`EXCHANGE_DLX`] lalu antrean `<antrean>.dlq` (routing key = nama
 //!   antrean asal).
+//! - DLQ punya retensi ([`DLQ_TTL_MS`], [`DLQ_PANJANG_MAKS`], ARC-228):
+//!   pesan di DLQ hanya salinan diagnostik, karena request-nya tetap
+//!   `dispatched` di PostgreSQL dan reconciler yang memulihkannya.
 //!
 //! Argumen antrean dibangun satu fungsi ([`argumen_antrean`]) dan dipakai
 //! deklarasi lapin dan deklarasi ulang apalis-amqp, karena argumen yang
@@ -27,6 +30,15 @@ pub const EXCHANGE_JOB: &str = "pr.jobs";
 /// Exchange dead-letter untuk pesan yang gagal permanen.
 pub const EXCHANGE_DLX: &str = "pr.jobs.dlx";
 
+/// Umur maksimum pesan di DLQ: 7 hari (`x-message-ttl`, milidetik). Cukup
+/// untuk investigasi lewat akhir pekan; lebih lama hanya menyimpan salinan
+/// `request_id` yang sudah dipulihkan reconciler.
+pub const DLQ_TTL_MS: i64 = 7 * 24 * 60 * 60 * 1000;
+
+/// Panjang maksimum satu DLQ (`x-max-length`). Body pesan hanya `request_id`,
+/// jadi 10.000 pesan kecil; penuh berarti pesan tertua dibuang (`drop-head`).
+pub const DLQ_PANJANG_MAKS: i64 = 10_000;
+
 /// Nama antrean dead-letter untuk satu antrean job.
 pub fn nama_dlq(antrean: &str) -> String {
     format!("{antrean}.dlq")
@@ -39,6 +51,25 @@ fn teks(nilai: &str) -> AMQPValue {
 fn argumen_quorum() -> FieldTable {
     let mut argumen = FieldTable::default();
     argumen.insert(ShortString::from("x-queue-type"), teks("quorum"));
+    argumen
+}
+
+/// Argumen deklarasi DLQ: quorum + retensi. Terpisah dari antrean job supaya
+/// TTL dan batas panjang tidak pernah ikut membuang job yang masih hidup.
+/// `drop-head` (bawaan quorum, ditulis eksplisit) membuang pesan tertua saat
+/// penuh; `reject-publish` tidak dipakai karena menolak pesan terbaru,
+/// padahal untuk diagnosis yang terbaru paling berguna.
+pub(crate) fn argumen_dlq() -> FieldTable {
+    let mut argumen = argumen_quorum();
+    argumen.insert(
+        ShortString::from("x-message-ttl"),
+        AMQPValue::LongLongInt(DLQ_TTL_MS),
+    );
+    argumen.insert(
+        ShortString::from("x-max-length"),
+        AMQPValue::LongLongInt(DLQ_PANJANG_MAKS),
+    );
+    argumen.insert(ShortString::from("x-overflow"), teks("drop-head"));
     argumen
 }
 
@@ -93,7 +124,7 @@ pub(crate) async fn deklarasi(kanal: &Channel, antrean: &str) -> Result<(), lapi
         .await?;
     let dlq = nama_dlq(antrean);
     kanal
-        .queue_declare(dlq.as_str().into(), opsi_antrean(), argumen_quorum())
+        .queue_declare(dlq.as_str().into(), opsi_antrean(), argumen_dlq())
         .await?;
     kanal
         .queue_bind(
@@ -151,10 +182,33 @@ mod tests {
     }
 
     #[test]
-    fn dlq_quorum_tanpa_dead_letter_lanjutan() {
+    fn argumen_quorum_hanya_tipe_antrean() {
         let argumen = argumen_quorum();
         assert_eq!(nilai(&argumen, "x-queue-type"), Some(&teks("quorum")));
         assert_eq!(argumen.inner().len(), 1);
+    }
+
+    #[test]
+    fn dlq_quorum_dengan_retensi_tanpa_dead_letter_lanjutan() {
+        let argumen = argumen_dlq();
+        assert_eq!(nilai(&argumen, "x-queue-type"), Some(&teks("quorum")));
+        assert_eq!(
+            nilai(&argumen, "x-message-ttl"),
+            Some(&AMQPValue::LongLongInt(7 * 24 * 60 * 60 * 1000))
+        );
+        assert_eq!(
+            nilai(&argumen, "x-max-length"),
+            Some(&AMQPValue::LongLongInt(10_000))
+        );
+        assert_eq!(nilai(&argumen, "x-overflow"), Some(&teks("drop-head")));
+        assert_eq!(argumen.inner().len(), 4);
+    }
+
+    #[test]
+    fn antrean_job_tanpa_retensi() {
+        let argumen = argumen_antrean("pr.jobs.upstream.x");
+        assert!(nilai(&argumen, "x-message-ttl").is_none());
+        assert!(nilai(&argumen, "x-max-length").is_none());
     }
 
     #[test]
