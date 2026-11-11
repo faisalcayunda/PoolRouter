@@ -41,3 +41,8 @@ secrecy = { workspace = true }
 wiremock = { workspace = true }
 # AC-16: uji tangkap `tracing` (secret dan NIK tidak muncul di log aplikasi).
 tracing-subscriber = { workspace = true }
+# ARC-240: server HTTPS uji dengan sertifikat sintetis (galat sertifikat menjadi `tls`).
+rcgen = "0.13"
+tokio = { workspace = true, features = ["io-util"] }
+rustls = { workspace = true }
+tokio-rustls = "0.26"
