@@ -93,8 +93,8 @@ const SCREENS = [
     path: '/',
     name: 'S11 log transaksi',
     heading: { id: 'Log transaksi', en: 'Transaction logs' },
-    // Tables that start idle need one search before a row exists for axe to inspect.
-    search: { id: 'Cari', en: 'Search' },
+    // Sejak ARC-247 layar log memuat data sendiri dan filter berlaku langsung: tidak ada tombol Cari.
+    table: true,
   },
   {
     path: '/nik',
@@ -142,7 +142,7 @@ for (const screen of SCREENS) {
 
       // Wait for the data surface before axe runs: the tables have a row, the quota tracker has a
       // card. An empty screen hides most violations, so this wait is what makes the run meaningful.
-      if ('search' in screen) {
+      if ('search' in screen || 'table' in screen) {
         await expect(page.getByRole('cell').first()).toBeVisible();
       } else {
         await expect(page.getByText(/Terpakai|used/).first()).toBeVisible();
