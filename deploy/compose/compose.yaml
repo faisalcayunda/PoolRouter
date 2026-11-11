@@ -122,7 +122,7 @@ services:
       PGPASSWORD_FILE: /run/secrets/db_password
     secrets: [db_password, poolrouter_owner, pr_api, pr_admin_api, pr_controller, pr_worker, pr_webhook, pr_job_balikan, pr_job_arsip, pr_restore, pr_blend]
     volumes:
-      - ./../db:/db:ro
+      - ../../backend/db:/db:ro
     depends_on:
       postgres:
         condition: service_healthy

@@ -38,7 +38,7 @@ pub enum GalatPenyusun {
     ItemTidakCocok { dipilih: u64, tertulis: u64 },
 }
 
-fn db(e: sqlx::Error) -> GalatPenyusun {
+pub(crate) fn db(e: sqlx::Error) -> GalatPenyusun {
     let msg = e
         .as_database_error()
         .and_then(|d| d.code())
@@ -340,7 +340,6 @@ async fn hitung_tertunda(
 }
 
 /// Untuk ARC-123 (`pengirim_handler.rs` mengimpornya). Q2 di luar transaksi; `None` = tidak ada atau tidak valid.
-#[allow(dead_code)]
 pub(crate) async fn baca_konfigurasi(
     pool: &PgPool,
     provider_id: Uuid,

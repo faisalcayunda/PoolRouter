@@ -29,6 +29,7 @@ import {
   firstInvalid,
   LOG_MODE,
   METODE,
+  parsePins,
   serverErrors,
   TLS_TRUST,
   toProviderConfig,
@@ -65,6 +66,8 @@ const FIELD_TAB: Record<DraftField, ProviderTab> = {
   base_url: 'umum',
   metode: 'umum',
   tls_trust: 'umum',
+  tls_ca_pem: 'umum',
+  tls_pin_spki: 'umum',
   log_mode: 'umum',
   config_schema_version: 'umum',
   alasan: 'umum',
@@ -271,6 +274,12 @@ function ProviderForm({ client, initial }: ProviderFormProps): ReactNode {
       errorMessage: issue ? issueMessage(i18n, issue) : undefined,
     };
   };
+  // Versi 2 disembunyikan untuk provider baru sampai layar S03 dengan editor rule terstruktur dan
+  // data balikan ada (ARC-242, sisa S03a/S03b/S04). Provider yang tersimpan berversi 2 tetap melihatnya,
+  // walau draf sempat dipindah ke versi 1, supaya penurunan tidak tak bisa dibatalkan dari form.
+  const versiTersedia = CONFIG_SCHEMA_VERSIONS.filter(
+    (v) => v === 1 || current?.config_schema_version === v,
+  );
   const showDataBalikan = draft.config_schema_version === 2 || draft.data_balikan.trim() !== '';
   const templateIssue = errors.body_template;
   const rules = parseParameters(draft.parameters);
@@ -307,6 +316,12 @@ function ProviderForm({ client, initial }: ProviderFormProps): ReactNode {
       {templateIssue ? (
         <InlineAlert tone="error" heading={t('provider.template.error.title')}>
           {issueMessage(i18n, templateIssue)}
+          {templateIssue.kode === 'template_secret_tidak_ada' && templateIssue.nama ? (
+            // Tab baru: template yang belum disimpan tetap ada di layar ini.
+            <LinkButton href="/secret" variant="text" newTab className="mt-2">
+              {t('provider.template.error.secret_create', { nama: templateIssue.nama })}
+            </LinkButton>
+          ) : null}
         </InlineAlert>
       ) : null}
       {invalidCount > 0 ? (
@@ -426,6 +441,37 @@ function ProviderForm({ client, initial }: ProviderFormProps): ReactNode {
                     ))}
                   </Select>
                 </div>
+                {draft.tls_trust === 'ca_kustom' ? (
+                  <div data-field="tls_ca_pem" className="w-full">
+                    <TextArea
+                      label={t('provider.form.tls_ca_pem.label')}
+                      description={t('provider.form.tls_ca_pem.help')}
+                      value={draft.tls_ca_pem}
+                      onChange={(v) => set('tls_ca_pem', v)}
+                      rows={8}
+                      textAreaClassName="font-code"
+                      {...err('tls_ca_pem')}
+                    />
+                  </div>
+                ) : null}
+                {draft.tls_trust === 'pin_spki' ? (
+                  <div data-field="tls_pin_spki" className="flex w-full flex-col gap-3">
+                    <TextArea
+                      label={t('provider.form.tls_pin_spki.label')}
+                      description={t('provider.form.tls_pin_spki.help')}
+                      value={draft.tls_pin_spki}
+                      onChange={(v) => set('tls_pin_spki', v)}
+                      rows={4}
+                      textAreaClassName="font-code"
+                      {...err('tls_pin_spki')}
+                    />
+                    {parsePins(draft.tls_pin_spki).length === 1 ? (
+                      <InlineAlert tone="warning">
+                        {t('provider.form.tls_pin_spki.single')}
+                      </InlineAlert>
+                    ) : null}
+                  </div>
+                ) : null}
                 <div data-field="log_mode">
                   <Select
                     label={t('provider.form.log_mode.label')}
@@ -447,11 +493,11 @@ function ProviderForm({ client, initial }: ProviderFormProps): ReactNode {
                     label={t('provider.form.version.label')}
                     selectedKey={draft.config_schema_version}
                     onSelectionChange={(key) => {
-                      const found = CONFIG_SCHEMA_VERSIONS.find((v) => v === key);
+                      const found = versiTersedia.find((v) => v === key);
                       if (found !== undefined) set('config_schema_version', found);
                     }}
                   >
-                    {CONFIG_SCHEMA_VERSIONS.map((v) => (
+                    {versiTersedia.map((v) => (
                       <SelectItem key={v} id={v}>
                         {tDynamic(i18n, `provider.form.version.v${v}`)}
                       </SelectItem>

@@ -8,6 +8,8 @@
 //! Password tidak pernah lewat argumen (AC-40): opsi `--password` tidak dikenal, dan nilai opsi yang
 //! tidak dikenal tidak pernah dicetak balik di pesan galat.
 
+pub mod migrasi;
+
 use std::io::{self, BufRead, IsTerminal, Write};
 use std::process::{Command, Stdio};
 
@@ -75,6 +77,7 @@ pub enum Perintah {
         oleh: String,
         alasan: Alasan,
     },
+    /// Operasi baca: tanpa `--oleh` dan `--alasan` (keputusan Operator 10 November 2026, ARC-238).
     Daftar,
     SeedPengguna,
     SeedDukcapil,
@@ -288,7 +291,8 @@ pub trait PembacaPassword {
 pub struct PasswordTerminal;
 
 /// Mematikan echo terminal lewat `stty` (tanpa `unsafe`), dan menyalakannya lagi saat di-drop,
-/// termasuk saat pembacaan gagal.
+/// termasuk saat pembacaan gagal. Bergantung pada `stty` di image (coreutils; ARC-236): bila tidak
+/// ada, `pasang` gagal tertutup dengan saran memakai stdin, jadi password tidak pernah tampil.
 struct GemaMati;
 
 impl GemaMati {
@@ -296,7 +300,10 @@ impl GemaMati {
         let status = Command::new("stty")
             .arg("-echo")
             .stdin(Stdio::inherit())
-            .status()?;
+            .status()
+            .map_err(|_| {
+                io::Error::other("stty tidak bisa dijalankan; kirim password lewat stdin")
+            })?;
         if !status.success() {
             return Err(io::Error::other(
                 "tidak bisa mematikan echo terminal; kirim password lewat stdin",
@@ -308,11 +315,22 @@ impl GemaMati {
 
 impl Drop for GemaMati {
     fn drop(&mut self) {
-        let _ = Command::new("stty")
-            .arg("echo")
-            .stdin(Stdio::inherit())
-            .status();
+        pulihkan_echo();
     }
+}
+
+/// Nyalakan lagi echo terminal. Dipanggil oleh `GemaMati::drop` dan oleh penangan SIGINT di
+/// `main.rs`: SIGINT mematikan proses tanpa menjalankan `Drop`, jadi tanpa penangan itu Ctrl-C saat
+/// prompt password meninggalkan terminal tanpa echo (ARC-238 butir 4). Aman dipanggil kapan pun:
+/// tanpa TTY di stdin atau tanpa `stty`, tidak melakukan apa-apa.
+pub fn pulihkan_echo() {
+    if !io::stdin().is_terminal() {
+        return;
+    }
+    let _ = Command::new("stty")
+        .arg("echo")
+        .stdin(Stdio::inherit())
+        .status();
 }
 
 fn baca_baris(stdin: &io::Stdin) -> io::Result<Zeroizing<String>> {
@@ -646,6 +664,19 @@ mod tests {
             GalatArg::OpsiTidakDikenal("--password".into())
         );
         assert_eq!(urai(&a(&[])).unwrap(), Perintah::Bantuan);
+    }
+
+    #[test]
+    fn daftar_tanpa_oleh_dan_alasan() {
+        // Operasi baca (keputusan Operator 10 November 2026, ARC-238): tidak memakai pelaku maupun
+        // alasan, jadi kedua opsi itu tidak dikenal alih-alih diterima lalu diabaikan.
+        assert_eq!(urai(&a(&["daftar"])).unwrap(), Perintah::Daftar);
+        for opsi in ["--oleh", "--alasan"] {
+            assert_eq!(
+                urai(&a(&["daftar", opsi, "admin"])).unwrap_err(),
+                GalatArg::OpsiTidakDikenal(opsi.into())
+            );
+        }
     }
 
     #[test]

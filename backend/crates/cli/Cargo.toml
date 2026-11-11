@@ -1,6 +1,6 @@
 [package]
 name = "poolrouter-cli"
-description = "PoolRouter backend-cli: pengguna, peran, dan seed admin (ADR-0003 section 3.6c)"
+description = "PoolRouter backend-cli (pengguna, peran, seed admin; ADR-0003 section 3.6c) dan migrate (penerap migrasi skema)"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -17,6 +17,11 @@ path = "src/main.rs"
 
 # Pustaka dibuka agar uji integrasi di `tests/` memanggil entrypoint yang sama dengan binary,
 # dengan pembaca password dan koneksi basis data sebagai parameter (seam T8 spec f0-admin-api).
+# Role owner hanya untuk biner ini (ADR-0001 section 7.2); backend-cli tidak pernah memegangnya.
+[[bin]]
+name = "migrate"
+path = "src/bin/migrate.rs"
+
 [lib]
 name = "poolrouter_cli"
 path = "src/lib.rs"
