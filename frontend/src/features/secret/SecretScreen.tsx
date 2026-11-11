@@ -136,7 +136,7 @@ function NilaiDialog({
           type="password"
           value={nilai}
           onChange={setNilai}
-          autoComplete="off"
+          autoComplete="new-password"
           isInvalid={attempted && nilaiError !== null}
           errorMessage={nilaiError}
         />
