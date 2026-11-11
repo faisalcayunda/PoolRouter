@@ -74,7 +74,7 @@ export function OnceSecretDialog({
           >
             {fieldLabel}
           </label>
-          <div className="flex h-10 items-center justify-between gap-2 rounded-medium border border-outline-variant bg-surface-container-lowest pl-3 pr-1">
+          <div className="flex h-10 items-center justify-between gap-2 rounded-medium border border-outline bg-surface-container-lowest pl-3 pr-1">
             <input
               id={secretId}
               readOnly

@@ -96,7 +96,7 @@ function AccountMenu({
             ? 'flex h-9 w-9 items-center justify-center rounded-full'
             : compact
               ? 'flex h-10 w-10 items-center justify-center self-center rounded-full'
-              : 'flex w-full items-center gap-3 rounded-medium border border-outline-variant p-3 text-left hover:bg-surface-container-low',
+              : 'flex w-full items-center gap-3 rounded-medium border border-outline p-3 text-left hover:bg-surface-container-low',
         )}
       >
         {initial}
@@ -203,7 +203,7 @@ function DrawerContent({
                     'typescale-body-medium flex h-10 items-center gap-3 rounded-small border px-3 text-on-surface no-underline outline-none',
                     collapsed && 'justify-center px-0',
                     isActive
-                      ? 'border-outline-variant bg-surface-container-low font-semibold'
+                      ? 'border-outline bg-surface-container-low font-semibold'
                       : 'border-transparent hover:bg-surface-container-low',
                     'focus-visible:outline-solid focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-secondary',
                   )}
