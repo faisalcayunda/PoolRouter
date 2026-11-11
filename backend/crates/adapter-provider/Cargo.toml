@@ -21,6 +21,8 @@ rustls = { workspace = true }
 rustls-native-certs = "0.8"
 x509-parser = "0.17"
 sha2 = "=0.10.9"
+# Pin SPKI base64 standar di dokumen provider (ARC-239).
+base64 = { workspace = true }
 # `kode_transaksi` di render template ganda (modul `dokumen`, ARC-66).
 uuid = { workspace = true }
 

@@ -116,7 +116,7 @@ endif
 
 help:
 	@echo "targets: setup test test-rust db-test uji-lua lua-rakit lua-rakit-check lint fmt clean openapi openapi-check build-lock-status build-lock-clean (RUNNER=podman|docker|native)"
-	@echo "gate resmi (dari akar): make setup test lint RUNNER=docker FRONTEND_RUNNER=docker CONTAINER_LABEL=arctiva.issue=ARC-<n>"
+	@echo "gate resmi (dari akar): make setup test lint RUNNER=<podman|docker> FRONTEND_RUNNER=<podman|docker> CONTAINER_LABEL=arctiva.issue=ARC-<n>"
 
 # Fetch the locked dependency set and install the pinned cargo-deny. Toolchain copy, fetch dan install cargo-deny
 # menulis ke cache bersama, jadi jalan di bawah kunci poolrouter-build-heavy (SHAA-394); checkout kedua hanya
@@ -184,7 +184,7 @@ uji-pg-cargo: check-label $(CHECK_DISK)
 	$(HEAVY) cargo test --locked -p poolrouter-cli --test cli_bootstrap_pg -- --ignored --test-threads=1 --nocapture
 	$(HEAVY) cargo test --locked -p poolrouter-cli --test cli_pg -- --ignored --test-threads=1 --nocapture
 	$(HEAVY) cargo test --locked -p poolrouter-cli --test cli_urai_pg -- --ignored --test-threads=1 --nocapture
-	$(HEAVY) cargo test --locked -p poolrouter-core --test sesi_store_pg --test mfa_store_pg --test rencana_alokasi --test penyusun_pg -p poolrouter-adapter-provider --test secret_pg -p poolrouter-webserver --test admin_sesi_pg --test admin_secret_pg --test admin_client_pg --test admin_provider_pg --test admin_log_pg --test admin_k20_pg --test admin_mfa_pg --test admin_k20_client_http_pg --test downstream_permintaan_pg --test admin_pool_pg --test admin_endpoint_pg -- --ignored --test-threads=1 --nocapture
+	$(HEAVY) cargo test --locked -p poolrouter-core --test sesi_store_pg --test mfa_store_pg --test rencana_alokasi --test penyusun_pg --test balikan_handler_pg -p poolrouter-adapter-provider --test secret_pg -p poolrouter-webserver --test admin_sesi_pg --test admin_secret_pg --test admin_client_pg --test admin_provider_pg --test admin_log_pg --test admin_k20_pg --test admin_mfa_pg --test admin_k20_client_http_pg --test downstream_permintaan_pg --test admin_pool_pg --test admin_endpoint_pg -- --ignored --test-threads=1 --nocapture
 	$(HEAVY) cargo test --locked -p poolrouter-webserver --test downstream_konfigurasi_pg -- --test-threads=1 --nocapture
 	$(HEAVY) cargo test --locked -p poolrouter-controller -- --ignored --test-threads=1 --nocapture
 	$(HEAVY) cargo test --locked -p poolrouter-worker -- --ignored --test-threads=1 --nocapture

@@ -310,15 +310,13 @@ where
             dokumen.ok_or_else(|| konfigurasi("provider tanpa versi konfigurasi aktif"))?;
         let dok =
             render::baca_dokumen_provider(&dokumen.0).map_err(|e| konfigurasi(e.to_string()))?;
-        if dok.tls_trust != "system" {
-            // `ca_kustom`/`pin_spki` menunggu klien ARC-221. Ditolak sebelum CAS
-            // supaya tidak ada baris log dan kuota untuk panggilan yang tidak
-            // pernah keluar (M-03).
-            return Err(konfigurasi(format!(
-                "tls_trust {} belum didukung worker",
-                dok.tls_trust
-            )));
-        }
+        // Mode wajib cocok dengan bahannya (ARC-239). Ditolak sebelum CAS supaya
+        // tidak ada baris log dan kuota untuk panggilan yang tidak pernah keluar
+        // (M-03), sama dengan `siapkan` di jalur sync.
+        let trust = dok.trust().map_err(|e| konfigurasi(e.to_string()))?;
+        self.pemanggil
+            .siapkan_trust(&trust)
+            .map_err(|e| konfigurasi(format!("klien TLS provider: {e}")))?;
         let dok_endpoint: Option<Json<Value>> = kol(&b, "dokumen_endpoint")?;
         let literal = render::parameter_literal(dok_endpoint.as_ref().map(|j| &j.0));
         let input_payload: Option<Json<Value>> = kol(&b, "input_payload")?;
@@ -476,7 +474,7 @@ where
             metode: dok.metode.clone(),
             url: rakitan.kabel_url.clone(),
             body: rakitan.kabel_body.clone(),
-            tls_trust: dok.tls_trust.clone(),
+            trust,
             batas_total: Duration::from_secs(u64::try_from(timeout_detik).unwrap_or(20)),
         };
         let mulai = Instant::now();

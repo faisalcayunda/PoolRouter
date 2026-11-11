@@ -60,11 +60,11 @@ endif
 
 PNPM = $(RUN) pnpm
 
-.PHONY: help check-label setup test lint fmt clean gen-api gen-api-check build build-e2e e2e i18n-check i18n-types build-lock-status build-lock-clean
+.PHONY: help check-label setup test lint fmt clean gen-api gen-api-check build build-e2e e2e e2e-api-asli i18n-check i18n-types build-lock-status build-lock-clean
 
 help:
-	@echo "targets: setup test lint fmt clean gen-api gen-api-check build build-e2e e2e i18n-check i18n-types"
-	@echo "gate resmi (dari akar): make setup test lint RUNNER=docker FRONTEND_RUNNER=docker CONTAINER_LABEL=arctiva.issue=ARC-<n>"
+	@echo "targets: setup test lint fmt clean gen-api gen-api-check build build-e2e e2e e2e-api-asli i18n-check i18n-types"
+	@echo "gate resmi (dari akar): make setup test lint RUNNER=<podman|docker> FRONTEND_RUNNER=<podman|docker> CONTAINER_LABEL=arctiva.issue=ARC-<n>"
 	@echo "lock:    build-lock-status build-lock-clean (K-41 heavy build lock, shared with backend)"
 
 # Every podman container must carry arctiva.issue=ARC-<n> (playbook section 6).
@@ -144,3 +144,18 @@ build-e2e: check-label $(CHECK_DISK)
 # the lock and releases it before this recipe runs, so the two never nest.
 e2e: check-label $(CHECK_DISK) build-e2e
 	$(HEAVY_PW) ./node_modules/.bin/playwright test
+
+# e2e-api-asli (ARC-251): suite `@api-asli` terhadap backend sungguhan. Dipanggil oleh
+# scripts/e2e-api-asli.sh di akar repo, yang menyalakan stack dan memberi E2E_NETNS (container frontend
+# compose, supaya origin 127.0.0.1:8080 sama dengan POOLROUTER_UI_ORIGIN dan cookie __Host- Secure
+# diterima) dan E2E_ENV_FILE (E2E_BASE_URL dan E2E_SESSION_TOKEN, di luar repo). Tidak menyentuh
+# suite mock di `e2e`. Hanya untuk runner kontainer.
+ifneq ($(filter podman docker,$(FRONTEND_RUNNER)),)
+e2e-api-asli: check-label
+	@test -n "$(E2E_NETNS)" && test -n "$(E2E_ENV_FILE)" || { echo "e2e-api-asli dipanggil lewat make e2e-api-asli di akar repo (butuh E2E_NETNS dan E2E_ENV_FILE)" >&2; exit 2; }
+	$(BUILD_LOCK_SH) run -- $(RUN_PW_OPTS) --network container:$(E2E_NETNS) --env-file $(E2E_ENV_FILE) \
+		$(BUILD_LOCK_OPTS) $(PLAYWRIGHT_IMAGE) ./node_modules/.bin/playwright test -c playwright.api-asli.config.ts
+else
+e2e-api-asli:
+	@echo "e2e-api-asli hanya untuk FRONTEND_RUNNER=podman atau docker" >&2; exit 2
+endif

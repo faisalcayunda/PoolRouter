@@ -23,5 +23,5 @@
       "node"
     ]
   },
-  "include": ["src", "tests", "e2e", "*.ts"]
+  "include": ["src", "tests", "e2e", "e2e-api-asli", "*.ts"]
 }

@@ -322,6 +322,8 @@ impl BarisProvider {
             parameters: doc.parameters,
             respons_skema: doc.respons_skema,
             tls_trust: doc.tls_trust,
+            tls_ca_pem: doc.tls_ca_pem,
+            tls_pin_spki: doc.tls_pin_spki,
             log_mode: doc.log_mode,
             data_balikan: doc.data_balikan,
             config_schema_version: i64::from(self.config_schema_version.unwrap_or(1)),
@@ -343,6 +345,11 @@ struct DokumenProvider {
     parameters: Vec<crate::api::admin::ParameterRule>,
     respons_skema: serde_json::Value,
     tls_trust: crate::api::enums::TlsTrust,
+    /// TLS material (ARC-239). Absent in documents written before it existed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    tls_ca_pem: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    tls_pin_spki: Option<Vec<String>>,
     log_mode: crate::api::enums::LogMode,
     #[serde(skip_serializing_if = "Option::is_none")]
     data_balikan: Option<serde_json::Value>,
@@ -356,6 +363,8 @@ fn dokumen_provider(body: &ProviderConfig) -> DokumenProvider {
         parameters: body.parameters.clone(),
         respons_skema: body.respons_skema.clone(),
         tls_trust: body.tls_trust,
+        tls_ca_pem: body.tls_ca_pem.clone(),
+        tls_pin_spki: body.tls_pin_spki.clone(),
         log_mode: body.log_mode,
         data_balikan: body.data_balikan.clone(),
     }
@@ -399,6 +408,11 @@ fn periksa_body(
     }
     galat.extend(validasi_rule(&body.parameters));
     galat.extend(validasi_base_url(&body.base_url));
+    galat.extend(validasi_tls(
+        body.tls_trust,
+        body.tls_ca_pem.as_deref(),
+        body.tls_pin_spki.as_deref(),
+    ));
 
     // v2: data_balikan required and validated; v1: ignored
     if body.config_schema_version == CONFIG_SCHEMA_VERSION_F1 {
@@ -464,6 +478,88 @@ fn validasi_base_url(base_url: &str) -> Vec<TemplateError> {
             nama: None,
         }]
     }
+}
+
+/// TLS material must match `tls_trust` (ARC-239): `ca_kustom` needs a PEM and
+/// no pins, `pin_spki` needs pins and no PEM, `system` takes neither. Material
+/// for the wrong mode is a 422 rather than ignored, so a PUT (a full
+/// replacement) that forgets or misplaces it never creates a version the sync
+/// path and the worker would reject. Once the fields are sound, the client is
+/// assembled as a dry run, so what passes here can be built at runtime.
+fn validasi_tls(
+    mode: crate::api::enums::TlsTrust,
+    pem: Option<&str>,
+    pins: Option<&[String]>,
+) -> Vec<TemplateError> {
+    use crate::api::enums::TlsTrust as Mode;
+    use poolrouter_adapter_provider::client::{TlsTrust, build_provider_client};
+    use poolrouter_adapter_provider::dokumen::{PIN_MAKS, pin_dari_base64, validasi_ca_pem};
+
+    let mut galat: Vec<TemplateError> = Vec::new();
+    let te = |field: String, kode: &'static str| TemplateError {
+        field,
+        kode,
+        posisi: None,
+        nama: None,
+    };
+    let pem_field = || "/tls_ca_pem".to_owned();
+    let pin_field = || "/tls_pin_spki".to_owned();
+
+    if mode != Mode::CaKustom && pem.is_some() {
+        galat.push(te(pem_field(), "tidak_untuk_mode"));
+    }
+    if mode != Mode::PinSpki && pins.is_some() {
+        galat.push(te(pin_field(), "tidak_untuk_mode"));
+    }
+    let mut trust = None;
+    match mode {
+        Mode::System => {}
+        Mode::CaKustom => match pem {
+            None => galat.push(te(pem_field(), "wajib")),
+            Some(p) => match validasi_ca_pem(p) {
+                Ok(()) => {
+                    trust = Some(TlsTrust::CaKustom {
+                        ca_pem: p.as_bytes().to_vec(),
+                    });
+                }
+                Err(kode) => galat.push(te(pem_field(), kode)),
+            },
+        },
+        Mode::PinSpki => match pins {
+            None | Some([]) => galat.push(te(pin_field(), "wajib")),
+            Some(daftar) => {
+                if daftar.len() > PIN_MAKS {
+                    galat.push(te(pin_field(), "jumlah"));
+                }
+                let mut sah: Vec<[u8; 32]> = Vec::new();
+                for (i, p) in daftar.iter().enumerate() {
+                    match pin_dari_base64(p) {
+                        Err(_) => galat.push(te(format!("/tls_pin_spki/{i}"), "pin_tidak_sah")),
+                        Ok(h) if sah.contains(&h) => {
+                            galat.push(te(format!("/tls_pin_spki/{i}"), "ganda"))
+                        }
+                        Ok(h) => sah.push(h),
+                    }
+                }
+                if sah.len() == daftar.len() {
+                    trust = Some(TlsTrust::PinSpki { pins: sah });
+                }
+            }
+        },
+    }
+    if galat.is_empty()
+        && let Some(trust) = trust
+        && let Err(e) = build_provider_client(trust)
+    {
+        tracing::debug!(error = %e, "admin: bahan TLS provider tidak bisa dirakit");
+        let field = if mode == Mode::CaKustom {
+            pem_field()
+        } else {
+            pin_field()
+        };
+        galat.push(te(field, "tidak_sah"));
+    }
+    galat
 }
 
 /// Parameter rules (AC-15): a `regex` that does not compile, an `enum` with no
@@ -669,4 +765,130 @@ fn galat_unik_atau_db(e: &sqlx::Error, nama: &str) -> Galat {
 fn galat_db(e: &sqlx::Error) -> Galat {
     tracing::error!(error = %e, "admin: kueri provider gagal");
     Galat::layanan()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::api::enums::TlsTrust as Mode;
+    use base64::Engine as _;
+
+    fn pem_ca() -> String {
+        let key = rcgen::KeyPair::generate().unwrap();
+        let mut p = rcgen::CertificateParams::new(Vec::new()).unwrap();
+        p.is_ca = rcgen::IsCa::Ca(rcgen::BasicConstraints::Unconstrained);
+        p.self_signed(&key).unwrap().pem()
+    }
+
+    fn pin(n: u8) -> String {
+        base64::engine::general_purpose::STANDARD.encode([n; 32])
+    }
+
+    /// `(field, kode)` dari semua galat.
+    fn galat(
+        mode: Mode,
+        pem: Option<&str>,
+        pins: Option<&[String]>,
+    ) -> Vec<(String, &'static str)> {
+        validasi_tls(mode, pem, pins)
+            .into_iter()
+            .map(|e| (e.field, e.kode))
+            .collect()
+    }
+
+    #[test]
+    fn bahan_yang_cocok_dengan_mode_lolos() {
+        assert!(galat(Mode::System, None, None).is_empty());
+        assert!(galat(Mode::CaKustom, Some(&pem_ca()), None).is_empty());
+        // Satu pin cukup: peringatan dua pin adalah urusan UI.
+        assert!(galat(Mode::PinSpki, None, Some(&[pin(1)])).is_empty());
+        let sepuluh: Vec<String> = (1..=10).map(pin).collect();
+        assert!(galat(Mode::PinSpki, None, Some(&sepuluh)).is_empty());
+    }
+
+    #[test]
+    fn bahan_tidak_cocok_dengan_mode_adalah_422() {
+        let pem = pem_ca();
+        let pins = [pin(1)];
+        assert_eq!(
+            galat(Mode::System, Some(&pem), Some(&pins)),
+            vec![
+                ("/tls_ca_pem".to_owned(), "tidak_untuk_mode"),
+                ("/tls_pin_spki".to_owned(), "tidak_untuk_mode")
+            ]
+        );
+        // String kosong tetap "diisi": tidak diabaikan diam-diam.
+        assert_eq!(
+            galat(Mode::System, Some(""), None),
+            vec![("/tls_ca_pem".to_owned(), "tidak_untuk_mode")]
+        );
+        assert_eq!(
+            galat(Mode::CaKustom, None, None),
+            vec![("/tls_ca_pem".to_owned(), "wajib")]
+        );
+        assert_eq!(
+            galat(Mode::CaKustom, Some(&pem), Some(&pins)),
+            vec![("/tls_pin_spki".to_owned(), "tidak_untuk_mode")]
+        );
+        assert_eq!(
+            galat(Mode::PinSpki, None, None),
+            vec![("/tls_pin_spki".to_owned(), "wajib")]
+        );
+        assert_eq!(
+            galat(Mode::PinSpki, None, Some(&[])),
+            vec![("/tls_pin_spki".to_owned(), "wajib")]
+        );
+        assert_eq!(
+            galat(Mode::PinSpki, Some(&pem), Some(&pins)),
+            vec![("/tls_ca_pem".to_owned(), "tidak_untuk_mode")]
+        );
+    }
+
+    #[test]
+    fn pem_yang_salah_ditolak_dengan_kode_yang_membedakan() {
+        let pem = pem_ca();
+        let kunci = "-----BEGIN PRIVATE KEY-----\nAAAA\n-----END PRIVATE KEY-----\n";
+        assert_eq!(
+            galat(Mode::CaKustom, Some(&format!("{pem}{kunci}")), None),
+            vec![("/tls_ca_pem".to_owned(), "pem_tidak_sah")]
+        );
+        assert_eq!(
+            galat(Mode::CaKustom, Some("bukan pem"), None),
+            vec![("/tls_ca_pem".to_owned(), "pem_tidak_sah")]
+        );
+        let besar = format!("{pem}{}", " ".repeat(64 * 1024));
+        assert_eq!(
+            galat(Mode::CaKustom, Some(&besar), None),
+            vec![("/tls_ca_pem".to_owned(), "terlalu_besar")]
+        );
+    }
+
+    #[test]
+    fn pin_salah_ditunjuk_per_indeks() {
+        let tiga_puluh_satu = base64::engine::general_purpose::STANDARD.encode([1u8; 31]);
+        let pins = [
+            pin(1),
+            "bukan base64!".to_owned(),
+            tiga_puluh_satu,
+            pin(1),
+            pin(2),
+        ];
+        assert_eq!(
+            galat(Mode::PinSpki, None, Some(&pins)),
+            vec![
+                ("/tls_pin_spki/1".to_owned(), "pin_tidak_sah"),
+                ("/tls_pin_spki/2".to_owned(), "pin_tidak_sah"),
+                ("/tls_pin_spki/3".to_owned(), "ganda"),
+            ]
+        );
+    }
+
+    #[test]
+    fn lebih_dari_sepuluh_pin_ditolak() {
+        let banyak: Vec<String> = (1..=11).map(pin).collect();
+        assert_eq!(
+            galat(Mode::PinSpki, None, Some(&banyak)),
+            vec![("/tls_pin_spki".to_owned(), "jumlah")]
+        );
+    }
 }
