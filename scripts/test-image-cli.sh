@@ -139,8 +139,8 @@ else
 fi
 
 # migrate tanpa env: konfigurasi ditolak (exit 2) sebelum menyentuh basis data. Pada image lama, "executable not found" (127/126).
-# shellcheck disable=SC2086
 rc=0
+# shellcheck disable=SC2086
 $engine run --rm $label_arg --network none --entrypoint migrate "$IMAGE" >"$tmp/mig.out" 2>"$tmp/mig.err" || rc=$?
 if [ "$rc" -eq 2 ]; then
 	ok "image: migrate mulai dan menolak konfigurasi kosong (exit 2)"
