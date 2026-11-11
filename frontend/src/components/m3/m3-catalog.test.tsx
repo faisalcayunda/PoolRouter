@@ -226,6 +226,14 @@ describe('DateRangePicker (DV-7)', () => {
     expect(screen.getAllByRole('group')[0]).toHaveAccessibleName(/Rentang waktu/);
   });
 
+  it('wraps only below the expanded breakpoint (ARC-244)', () => {
+    wrap(<DateRangePicker label="Rentang waktu" calendarLabel="Kalender" separator="s/d" />);
+    const cls = screen.getAllByRole('group')[0]!.className;
+    expect(cls).toContain('flex-wrap');
+    expect(cls).toContain('expanded:h-14');
+    expect(cls).toContain('expanded:flex-nowrap');
+  });
+
   it('opens the range calendar by keyboard', async () => {
     const user = userEvent.setup();
     wrap(<DateRangePicker label="Rentang waktu" calendarLabel="Kalender" separator="s/d" />);

@@ -42,12 +42,12 @@ export function Pagination({
     return (
       <nav
         aria-label={label ?? `${prevLabel} / ${nextLabel}`}
-        className={cx('flex items-center justify-between gap-4', className)}
+        className={cx('flex flex-wrap items-center justify-between gap-4', className)}
       >
         <p role="status" className="typescale-body-medium text-on-surface-variant">
           {rangeText}
         </p>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <Button variant="outlined" onPress={() => onPageChange(page - 1)} isDisabled={page <= 1}>
             {prevLabel}
           </Button>
