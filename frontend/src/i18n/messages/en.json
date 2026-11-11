@@ -144,6 +144,9 @@
     "load_title": "Couldn't load the data",
     "load_hint": "Check your network connection and try again.",
     "http": {
+      "401": {
+        "body": "Your session has ended. Sign in again to continue."
+      },
       "403": {
         "title": "Access not allowed",
         "body": "This attempt is recorded. Contact a platform admin if you need access.",
@@ -203,6 +206,7 @@
         "alert": "The template can't be saved yet. Line {{nomor_baris}}: {{rincian}}",
         "brace_missing": "a closing curly brace is missing.",
         "goto": "Go to line {{nomor_baris}}",
+        "secret_create": "Create secret {{nama}}",
         "secret_missing": "Secret {{nama}} hasn't been created yet. Create it under Secrets, then save the template again.",
         "title": "The template can't be saved yet",
         "line": "Line {{baris}}: syntax error"

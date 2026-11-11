@@ -4,9 +4,10 @@
 use std::process::ExitCode;
 use std::time::Duration;
 
-use poolrouter_cli::{BANTUAN, Konteks, PasswordTerminal, Perintah, jalankan, urai};
+use poolrouter_cli::{BANTUAN, Konteks, PasswordTerminal, Perintah, jalankan, pulihkan_echo, urai};
 use poolrouter_core::config::{Component, Config, DbRole};
 use sqlx::postgres::{PgConnectOptions, PgPoolOptions, PgSslMode};
+use tokio::signal::unix::{SignalKind, signal};
 
 #[tokio::main]
 async fn main() -> ExitCode {
@@ -51,6 +52,18 @@ async fn main() -> ExitCode {
         .max_connections(2)
         .acquire_timeout(Duration::from_secs(10))
         .connect_lazy_with(opsi);
+
+    // Ctrl-C saat prompt password mematikan proses tanpa menjalankan `Drop`, dan terminal tertinggal
+    // tanpa echo. Penangan ini memulihkannya lalu keluar dengan kode konvensional SIGINT (130). Jalan
+    // di worker runtime, jadi tetap hidup saat thread utama memblokir di pembacaan password.
+    if let Ok(mut sigint) = signal(SignalKind::interrupt()) {
+        tokio::spawn(async move {
+            sigint.recv().await;
+            pulihkan_echo();
+            eprintln!();
+            std::process::exit(130);
+        });
+    }
 
     let konteks = Konteks {
         pool,

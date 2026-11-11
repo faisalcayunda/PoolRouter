@@ -109,7 +109,7 @@ test.describe('auditor flow', () => {
     await page.getByRole('button', { name: 'Lihat payload — TRX-2026-0042' }).click();
     const payloadDialog = page.getByRole('dialog', { name: 'Alasan membuka payload' });
     await expect(payloadDialog).toBeVisible();
-    await payloadDialog.getByRole('button', { name: 'Lihat payload' }).click();
+    await payloadDialog.getByRole('button', { name: 'Buka payload' }).click();
     // Section 13.2: once the payload is on screen the dialog is titled "Payload transaksi"; the
     // reason-step title belongs to the step it names.
     const opened = page.getByRole('dialog', { name: 'Payload transaksi' });

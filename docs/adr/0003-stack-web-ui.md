@@ -221,7 +221,7 @@ Konteks: US-16 AC1 menampilkan NIK utuh saat auditor mencari; §7.6 meminta dial
 
 ### 3.6c Pengelolaan pengguna dan peran F0 lewat CLI (rev 3, keputusan D-4 SHAA-167)
 
-Konteks: Fitcher mengeluarkan UI pengguna dan peran dari F0 (tanpa US; kandidat F1). US-16 tetap harus bisa diuji, dan contract §8.1 A-02 tetap berlaku: platform admin tidak bisa memberi dirinya peran auditor, peran auditor dan operator diberikan admin lain atas persetujuan penanggung jawab (SPTJM), dan setiap perubahan tercatat (`aksi = ubah_peran`).
+Konteks: Fitcher mengeluarkan UI pengguna dan peran dari F0 (tanpa US; kandidat F1). US-16 tetap harus bisa diuji, dan contract §8.1 A-02 tetap berlaku: platform admin tidak bisa memberi dirinya peran auditor, peran auditor dan operator diberikan admin lain atas persetujuan platform admin aktif lain, dengan penanggung jawab (penandatangan SPTJM, peran organisasi BGN) dibuktikan lewat rujukan SPTJM di `--alasan`, dan setiap perubahan tercatat (`aksi = ubah_peran`).
 
 | Opsi | Kelebihan | Kekurangan | Risiko |
 |---|---|---|---|
@@ -231,7 +231,7 @@ Konteks: Fitcher mengeluarkan UI pengguna dan peran dari F0 (tanpa US; kandidat 
 
 **Keputusan: A.** Aturan teknis (nama perintah final ditetapkan pelaksana dan didokumentasikan di `backend/README.md`):
 - **Perintah:** buat pengguna, nonaktifkan pengguna, beri peran, cabut peran, daftar pengguna dan peran. Dijalankan lewat `podman exec` di container backend lingkungan target, memakai role database aplikasi admin, bukan `poolrouter_owner`.
-- **Pelaku dan alasan wajib:** `--oleh <username platform admin aktif>` dan `--alasan` (untuk peran auditor dan operator: rujukan SPTJM atau NDA, C-07). Ditolak bila pelaku tidak aktif atau bukan platform admin, atau bila pelaku memberi dirinya peran auditor (A-02). Pengecualian satu-satunya: pembuatan platform admin pertama saat tabel pengguna kosong (bootstrap).
+- **Pelaku dan alasan wajib untuk perintah tulis:** `--oleh <username platform admin aktif>` dan `--alasan` (untuk peran auditor dan operator: rujukan SPTJM atau NDA, C-07). Perintah baca `daftar` tidak memakai keduanya (penjelasan Operator 10 November 2026, ARC-238). Ditolak bila pelaku tidak aktif atau bukan platform admin, atau bila pelaku memberi dirinya peran auditor (A-02). Pengecualian satu-satunya: pembuatan platform admin pertama saat tabel pengguna kosong (bootstrap).
 - **Password:** tidak pernah lewat argumen (terlihat di riwayat shell dan daftar proses); dibaca dari TTY tanpa echo atau dari stdin.
 - **Transaksi:** setiap perubahan peran atau penonaktifan menulis satu baris `audit_akses` (`aksi = ubah_peran`, pelaku, alasan, target) dan mencabut semua sesi target dalam transaksi yang sama (§3.6).
 - **Seed:** hanya untuk `POOLROUTER_ENV` `dev` dan `ci`, berisi pengguna sintetis satu per peran (termasuk platform admin yang juga auditor) untuk uji e2e US-16; password dari `${POOLROUTER_SEED_PASSWORD}`. Di lingkungan lain perintah seed menolak berjalan.

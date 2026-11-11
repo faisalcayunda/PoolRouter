@@ -25,8 +25,9 @@ use rustls::pki_types::pem::PemObject;
 use rustls::pki_types::{CertificateDer, ServerName, UnixTime};
 use rustls_native_certs::load_native_certs;
 
-/// Mode trust TLS per provider (ADR-0002 D5).
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// Mode trust TLS per provider (ADR-0002 D5). `Hash` supaya worker bisa
+/// men-cache satu klien per bahan trust (ARC-239).
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum TlsTrust {
     /// Root store sistem.
     System,

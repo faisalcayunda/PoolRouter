@@ -382,7 +382,7 @@ export function LogPageScreen({
                         return (
                           <tr
                             key={row.kode_transaksi}
-                            className="h-14 border-b border-surface-container text-on-surface"
+                            className="min-h-14 border-b border-surface-container text-on-surface"
                           >
                             <td
                               data-label={t('log.col.time')}
