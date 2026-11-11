@@ -297,7 +297,11 @@ export function LogPageScreen({
               </p>
             ) : null}
           </div>
-          <Button variant="outlined" onPress={clearFilters} className="expanded:mt-2 self-start">
+          <Button
+            variant="outlined"
+            onPress={clearFilters}
+            className="shrink-0 self-start whitespace-nowrap expanded:mt-7 expanded:h-14!"
+          >
             {t('common.action.clear_filters')}
           </Button>
         </form>

@@ -45,6 +45,7 @@ function SignedIn({ pathname, search }: { pathname: string; search: string }) {
         pathname={pathname}
         user={{ username: sesi.me.username, peran: sesi.me.peran?.[0] ?? '' }}
         role={peranShell(sesi.me.peran)}
+        onKeluar={() => void sesi.keluar()}
       >
         <RecoveryBanner sesi={sesi} />
         <RoutedScreens pathname={pathname} search={search} role={peranShell(sesi.me.peran)} />

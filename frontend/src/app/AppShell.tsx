@@ -1,9 +1,10 @@
 import { Suspense, useCallback, useEffect, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Link } from 'react-aria-components';
+import { Button as RacButton, Link } from 'react-aria-components';
 import { Breadcrumbs } from '../components/m3/Breadcrumbs';
 import { cx } from '../components/m3/cx';
 import { IconButton } from '../components/m3/IconButton';
+import { Menu, MenuItem, MenuTrigger } from '../components/m3/Menu';
 import { NavigationDrawer } from '../components/m3/NavigationDrawer';
 import { TopAppBar } from '../components/m3/TopAppBar';
 import { enumLabel } from '../i18n/enums';
@@ -37,12 +38,14 @@ function DrawerContent({
   pathname,
   role,
   user,
+  onKeluar,
   onNavigate,
   onClose,
 }: {
   pathname: string;
   role: AdminRole | null;
   user?: AppShellProps['user'];
+  onKeluar?: () => void;
   onNavigate?: () => void;
   /** Hanya varian modal: tombol "Tutup menu" di sudut kanan atas drawer. */
   onClose?: () => void;
@@ -97,9 +100,20 @@ function DrawerContent({
         ))}
       </nav>
       {user ? (
-        <div className="mx-3 flex shrink-0 flex-col gap-1 border-t border-inverse-on-surface/12 px-4 pt-[15px] pb-6">
-          <p className="typescale-body-medium">{user.username}</p>
-          <p className="typescale-label-medium">{enumLabel(i18n, 'peran', user.peran)}</p>
+        <div className="mx-3 flex shrink-0 flex-col border-t border-inverse-on-surface/12 pt-3 pb-4">
+          {/* Identitas jadi tombol menu akun: satu-satunya jalan ke "Keluar". */}
+          <MenuTrigger>
+            <RacButton
+              aria-label={t('account.menu.menu', { nama_pengguna: user.username })}
+              className="flex w-full cursor-pointer flex-col gap-1 rounded-medium px-4 py-3 text-left outline-none hover:bg-inverse-on-surface/8 focus-visible:outline-solid focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-inverse-primary"
+            >
+              <span className="typescale-body-medium truncate">{user.username}</span>
+              <span className="typescale-label-medium">{enumLabel(i18n, 'peran', user.peran)}</span>
+            </RacButton>
+            <Menu onAction={() => onKeluar?.()}>
+              <MenuItem id="keluar">{t('account.menu.sign_out')}</MenuItem>
+            </Menu>
+          </MenuTrigger>
         </div>
       ) : null}
     </>
@@ -113,6 +127,8 @@ export interface AppShellProps {
   user?: { username: string; peran: string } | null;
   /** Admin role that filters the drawer; `null` = unknown, full menu (API is the last guard). */
   role?: AdminRole | null;
+  /** Dipanggil dari item "Keluar" di menu akun (dasar drawer). */
+  onKeluar?: () => void;
   /** Screen rendered inside `<main>`. */
   children?: ReactNode;
 }
@@ -125,7 +141,7 @@ export interface AppShellProps {
  *   dan konten ada di kanannya.
  * - di bawahnya (1024, 768, 375): `variant="modal"` dengan scrim, dibuka dari tombol menu di bar atas.
  */
-export function AppShell({ pathname = '/', user, role = null, children }: AppShellProps) {
+export function AppShell({ pathname = '/', user, role = null, onKeluar, children }: AppShellProps) {
   const { t } = useTranslation();
   const isLarge = useIsLarge();
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -155,6 +171,7 @@ export function AppShell({ pathname = '/', user, role = null, children }: AppShe
           pathname={pathname}
           role={role}
           user={user}
+          onKeluar={onKeluar}
           onNavigate={isLarge ? undefined : closeDrawer}
           onClose={isLarge ? undefined : closeDrawer}
         />

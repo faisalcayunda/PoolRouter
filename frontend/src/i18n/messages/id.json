@@ -1075,7 +1075,7 @@
       "trend_heading": "Pemakaian 7 hari",
       "trend_unit": "% dari kuota harian",
       "trend_pending_title": "Menunggu API riwayat kuota",
-      "trend_pending_body": "Chart pemakaian 7 hari ditunda sampai getQuotaTracker menyediakan riwayat harian.",
+      "trend_pending_body": "Riwayat pemakaian 7 hari belum tersedia.",
       "reload": "Muat ulang",
       "pool_filter": "Pool",
       "pool_unknown": "Pool upstream",
