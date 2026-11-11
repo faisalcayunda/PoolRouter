@@ -5,7 +5,9 @@
 //!
 //! - tidak mengikuti redirect (redirect mengirim ulang body berkredensial ke
 //!   host lain) dan tidak me-retry sendiri; retry dikendalikan PoolRouter;
-//! - body dikirim dengan `Content-Length` (body `String` utuh, bukan stream);
+//! - request dan pemetaan galat lewat `adapter_provider::client::kirim`
+//!   (ARC-240): body `String` utuh ber-`Content-Length`, galat sertifikat
+//!   menjadi `Tls` (tidak di-retry);
 //! - timeout connect 5 s, total dari konfigurasi pool (bawaan 20 s);
 //! - body respons dibaca paling banyak `BATAS_BODY_RESPONS` (ARC-241);
 //! - hanya `tls_trust = system`. Mode `ca_kustom` dan `pin_spki` dibangun di
@@ -18,7 +20,7 @@ use std::future::Future;
 use std::time::Duration;
 
 use poolrouter_adapter_provider::GagalPanggilProvider;
-use poolrouter_adapter_provider::client::{BATAS_BODY_RESPONS, baca_body};
+use poolrouter_adapter_provider::client::kirim;
 
 /// Batas connect ke provider (ADR-0001 bagian 5a.4).
 pub const BATAS_CONNECT: Duration = Duration::from_secs(5);
@@ -71,15 +73,6 @@ impl PemanggilReqwest {
     }
 }
 
-/// Galat `reqwest` tanpa URL: URL hasil render bisa memuat NIK atau secret.
-fn petakan(e: reqwest::Error) -> GagalPanggilProvider {
-    if e.is_timeout() {
-        GagalPanggilProvider::Timeout
-    } else {
-        GagalPanggilProvider::Koneksi(e.without_url().to_string())
-    }
-}
-
 impl PemanggilProvider for PemanggilReqwest {
     async fn panggil(
         &self,
@@ -91,23 +84,15 @@ impl PemanggilProvider for PemanggilReqwest {
                 permintaan.tls_trust
             )));
         }
-        // Metode dari dokumen yang sudah divalidasi admin API (GET/POST). Metode
-        // lain adalah konfigurasi rusak: `HttpKlien` dipetakan ke `lainnya`,
-        // yang tidak di-retry.
-        let metode = reqwest::Method::from_bytes(permintaan.metode.as_bytes())
-            .map_err(|_| GagalPanggilProvider::HttpKlien { status: 0 })?;
-        let mut rb = self
-            .klien
-            .request(metode, permintaan.url.as_str())
-            .timeout(permintaan.batas_total);
-        if let Some(body) = &permintaan.body {
-            rb = rb
-                .header("content-type", "application/json")
-                .body(body.clone());
-        }
-        let jawab = rb.send().await.map_err(petakan)?;
-        let status = jawab.status().as_u16();
-        let body = baca_body(jawab, BATAS_BODY_RESPONS).await?;
-        Ok(ResponsMentah { status, body })
+        // Kirim dan pemetaan galat (termasuk galat sertifikat menjadi `Tls`,
+        // ADR-0002 D5) dipakai bersama jalur sync (ARC-66, ARC-240).
+        kirim(
+            &self.klien,
+            &permintaan.metode,
+            &permintaan.url,
+            permintaan.body.clone(),
+            permintaan.batas_total,
+        )
+        .await
     }
 }

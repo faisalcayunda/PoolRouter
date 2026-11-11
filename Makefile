@@ -32,7 +32,7 @@ COMPOSE := $(COMPOSE_ENV) $(CONTAINER_ENGINE) compose -p $(PROJECT) $(COMPOSE_FI
 LINT_ENV_FILES := $(COMPOSE_DIR)/env/dev.env.example
 IMAGE_TAG ?= dev
 
-.PHONY: check-env compose-up compose-down compose-ps compose-logs compose-config compose-migrate compose-seed compose-lint compose-test-dind image image-frontend image-postgres
+.PHONY: check-env compose-up compose-down compose-ps compose-logs compose-config compose-migrate compose-seed compose-lint compose-test-dind image image-frontend image-postgres e2e-api-asli
 
 check-env:
 	@case "$(ENV)" in dev|staging|prod) ;; *) echo "ENV harus dev, staging, atau prod" >&2; exit 2 ;; esac
@@ -44,8 +44,10 @@ check-env:
 compose-config: check-env
 	$(COMPOSE) --profile '*' config -q
 
+# COMPOSE_UP_SERVICES: bila diisi, hanya service itu (dan dependensinya) yang dinaikkan; kosong = semua.
+COMPOSE_UP_SERVICES ?=
 compose-up: check-env
-	$(COMPOSE) $(PROFILE_ARGS) up -d --wait
+	$(COMPOSE) $(PROFILE_ARGS) up -d --wait $(COMPOSE_UP_SERVICES)
 
 # compose-migrate: jalankan setelah compose-up (bundled-infra sudah healthy). Tidak menaikkan app.
 compose-migrate: check-env
@@ -58,8 +60,10 @@ compose-seed: check-env
 	$(COMPOSE) $(PROFILE_ARGS) --profile cli run --rm backend-cli seed pengguna
 	$(COMPOSE) $(PROFILE_ARGS) --profile cli run --rm backend-cli seed dukcapil
 
+# COMPOSE_DOWN_FLAGS: mis. `-v` untuk ikut menghapus volume proyek (harness e2e-api-asli).
+COMPOSE_DOWN_FLAGS ?=
 compose-down: check-env
-	$(COMPOSE) $(PROFILE_ARGS) down
+	$(COMPOSE) $(PROFILE_ARGS) down $(COMPOSE_DOWN_FLAGS)
 
 compose-ps: check-env
 	$(COMPOSE) $(PROFILE_ARGS) ps
@@ -77,6 +81,15 @@ compose-lint:
 compose-test-dind:
 	ARC_ISSUE="$(ARC_ISSUE)" ENV_FILE="$(ENV_FILE)" PROFILES="$(EFF_PROFILES)" \
 	sh $(COMPOSE_DIR)/test/dind.sh
+
+# e2e-api-asli: suite Playwright `@api-asli` terhadap stack dev sungguhan (ARC-251). Menyalakan stack
+# berlabel, migrasi + seed sintetis, menjalankan suite, lalu membersihkan resource berlabel itu.
+# Image backend dan frontend harus sudah ada (`make image image-frontend`) atau beri E2E_BUILD_IMAGES=1.
+# Wajib: CONTAINER_LABEL=arctiva.issue=ARC-<n>. Lihat scripts/e2e-api-asli.sh untuk batas dan urutan.
+E2E_BUILD_IMAGES ?=
+e2e-api-asli:
+	@CONTAINER_LABEL="$(CONTAINER_LABEL)" E2E_BUILD_IMAGES="$(E2E_BUILD_IMAGES)" IMAGE_TAG="$(IMAGE_TAG)" JOBS="$(JOBS)" \
+		MAKE="$(SUBMAKE)" sh scripts/e2e-api-asli.sh
 
 # image: membangun image dari Containerfile dengan engine terpilih (Addendum §3.2).
 # Compose tidak dipakai untuk build di staging dan produksi.
@@ -104,18 +117,19 @@ STACKS := backend $(if $(wildcard frontend/Makefile),frontend)
 .PHONY: help setup test lint fmt clean push-main test-dry-run test-label test-atribut test-image-cli
 
 help:
-	@echo "gate resmi: make setup test lint RUNNER=docker FRONTEND_RUNNER=docker CONTAINER_LABEL=arctiva.issue=ARC-<n>"
+	@echo "gate resmi: make setup test lint RUNNER=<podman|docker> FRONTEND_RUNNER=<podman|docker> CONTAINER_LABEL=arctiva.issue=ARC-<n>"
+	@echo "runner: podman (Mac Operator) atau docker bila ada; pakai runner kontainer yang tersedia."
 	@echo "targets: setup test lint fmt clean (gate repo, delegasi ke stack); test-dry-run (uji regresi make -n, tanpa Docker); test-image-cli (biner di image backend); compose-up compose-down compose-ps compose-logs compose-config compose-migrate compose-seed compose-lint compose-test-dind image image-frontend"
 	@echo "Push: tidak ada push langsung ke main. Branch agent/<ID>-<slug> -> PR ke main -> merge Operator (CLAUDE.md)."
 
-# push-main: sengaja menolak. Arctiva tidak mengizinkan push langsung ke main, dan jalur push
+# push-main: sengaja menolak. Aturan repo tidak mengizinkan push langsung ke main, dan jalur push
 # otomatis ke main tidak boleh dikembalikan. Pesan ini menjelaskan alur yang benar, bukan
 # "No rule to make target" (AC-3, ARC-2).
 push-main:
-	@echo "make push-main tidak dipakai lagi: Arctiva melarang push langsung ke main (CLAUDE.md)." >&2
+	@echo "make push-main tidak dipakai lagi: push langsung ke main dilarang aturan repo (CLAUDE.md)." >&2
 	@echo "Alur yang benar:" >&2
 	@echo "  1. git checkout -b agent/<ID>-<slug> main" >&2
-	@echo "  2. make setup test lint RUNNER=docker FRONTEND_RUNNER=docker CONTAINER_LABEL=arctiva.issue=ARC-<n>" >&2
+	@echo "  2. make setup test lint RUNNER=<podman|docker> FRONTEND_RUNNER=<podman|docker> CONTAINER_LABEL=arctiva.issue=ARC-<n>" >&2
 	@echo "  3. git push -u origin agent/<ID>-<slug> lalu buka PR ke main (gh pr create --base main)" >&2
 	@echo "  4. merge hanya oleh Operator setelah gate hijau; agen tidak merge dan tidak push ke main." >&2
 	@exit 2
@@ -128,7 +142,7 @@ test-dry-run:
 test-label:
 	@sh scripts/test-label.sh
 
-# test-atribut: uji regresi aturan repo Arctiva (push-main hanya penjaga, CLAUDE.md, tanpa label Shaal).
+# test-atribut: uji regresi aturan repo (push-main hanya penjaga, CLAUDE.md, tanpa label Shaal).
 test-atribut:
 	@sh scripts/test-atribut.sh
 

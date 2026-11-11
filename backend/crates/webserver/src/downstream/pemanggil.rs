@@ -25,7 +25,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use poolrouter_adapter_provider::client::{
-    Allowlist, ProviderClientConfig, TlsTrust, build_provider_client_with_config, kirim,
+    Allowlist, ProviderClientConfig, build_provider_client_with_config, kirim,
 };
 use poolrouter_adapter_provider::dokumen::{self, DokumenProvider};
 use poolrouter_adapter_provider::hasil::{Akhir, nilai_hasil};
@@ -115,21 +115,11 @@ impl KlienProvider {
     /// Produksi: trust TLS dari dokumen provider, `https_only`, tanpa redirect,
     /// dan allowlist host:port dari `base_url`.
     ///
-    /// Hanya `system` yang punya bahan lengkap. Admin API (dan kontraknya) belum
-    /// menyimpan PEM CA atau pin SPKI di dokumen provider, jadi `ca_kustom` dan
-    /// `pin_spki` ditolak di sini (fail-closed, tanpa koneksi keluar), sama
-    /// dengan worker. Lihat catatan keputusan Operator ARC-66.
+    /// Trust dirakit dari mode dan bahannya (`tls_ca_pem`, `tls_pin_spki`) oleh
+    /// [`DokumenProvider::trust`]. Mode tanpa bahan, atau bahan yang tidak cocok
+    /// dengan mode, ditolak di sini (fail-closed, tanpa koneksi keluar).
     pub fn tls(dok: &DokumenProvider) -> Result<Self, String> {
-        let trust = match TlsTrust::dari_str(&dok.tls_trust) {
-            Some(TlsTrust::System) => TlsTrust::System,
-            Some(_) => {
-                return Err(format!(
-                    "tls_trust {} belum punya bahan CA/pin di dokumen provider",
-                    dok.tls_trust
-                ));
-            }
-            None => return Err(format!("tls_trust {} tidak dikenal", dok.tls_trust)),
-        };
+        let trust = dok.trust().map_err(|e| e.to_string())?;
         let allowlist = Allowlist::dari_base_url(&dok.base_url).map_err(|e| e.to_string())?;
         let http = build_provider_client_with_config(trust, ProviderClientConfig::default())
             .map_err(|e| e.to_string())?;
