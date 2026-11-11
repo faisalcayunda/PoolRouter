@@ -304,6 +304,7 @@ async function cekGrid(page: Page, kolom: number, label: string, wajib: boolean)
               /span/.test(getComputedStyle(c).gridColumnEnd);
             return {
               span,
+              adaKontrol: kontrol != null,
               labelX: l ? Math.round(l.left) : null,
               labelBawah: l ? Math.round(l.bottom) : null,
               kontrolAtas: k ? Math.round(k.top) : null,
@@ -315,20 +316,26 @@ async function cekGrid(page: Page, kolom: number, label: string, wajib: boolean)
   if (wajib) expect(grids.length, `tidak ada grid field pada ${label}`).toBeGreaterThan(0);
   for (const g of grids) {
     expect(g.kolomGrid, `jumlah kolom grid field pada ${label}`).toBe(kolom);
-    const tunggal = g.field.filter((f) => !f.span);
+    // Anak tanpa kontrol (teks bantuan "–" dsb.) bukan field berlabel; hanya field sungguhan yang
+    // wajib diperiksa label/sejajar/di-atas.
+    const kolomField = g.field.filter((f) => f.adaKontrol);
+    const tunggal = kolomField.filter((f) => !f.span);
+    // Setiap field di grid wajib punya label terdeteksi (L4): tanpanya, cek sejajar/di-atas tidak
+    // berarti apa-apa, jadi field tanpa label harus gagal di sini, bukan dilewati diam-diam.
+    for (const f of kolomField) {
+      expect(f.labelX, `field tanpa label terdeteksi pada ${label}`).not.toBeNull();
+    }
     for (let i = kolom; i < tunggal.length; i += 1) {
       const atas = tunggal[i - kolom];
       const ini = tunggal[i];
-      if (atas?.labelX == null || ini?.labelX == null) continue;
       expect(
-        Math.abs(ini.labelX - atas.labelX),
+        Math.abs(ini!.labelX! - atas!.labelX!),
         `x label kolom tidak sejajar pada ${label}`,
       ).toBeLessThanOrEqual(1);
     }
-    for (const f of g.field) {
-      if (f.labelBawah == null || f.kontrolAtas == null) continue;
+    for (const f of kolomField) {
       expect(f.labelBawah, `label tidak di atas field pada ${label}`).toBeLessThanOrEqual(
-        f.kontrolAtas,
+        f.kontrolAtas!,
       );
     }
   }

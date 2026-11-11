@@ -1,4 +1,4 @@
-import { useState, type FormEvent, type ReactNode } from 'react';
+import { useId, useState, type FormEvent, type ReactNode } from 'react';
 import { flushSync } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import type { i18n as I18n } from 'i18next';
@@ -99,6 +99,7 @@ interface UpstreamFormProps {
 
 function UpstreamForm({ client, providers, initial }: UpstreamFormProps): ReactNode {
   const { t, i18n } = useTranslation();
+  const statusLabelId = useId();
   const snackbar = useSnackbar();
   const titleRef = useFocusOnMount<HTMLHeadingElement>();
   const [current, setCurrent] = useState<UpstreamPool | null>(initial);
@@ -272,10 +273,17 @@ function UpstreamForm({ client, providers, initial }: UpstreamFormProps): ReactN
                 </div>
                 {current ? (
                   <div className="flex flex-col gap-1">
-                    <span className="typescale-body-small text-on-surface-variant">
+                    <span
+                      id={statusLabelId}
+                      className="typescale-body-small text-on-surface-variant"
+                    >
                       {t('upstream.page.status')}
                     </span>
-                    <div className="flex h-14 items-center">
+                    <div
+                      role="group"
+                      aria-labelledby={statusLabelId}
+                      className="flex h-14 items-center"
+                    >
                       <StatusLabel tone={current.aktif ? 'success' : 'neutral'}>
                         {current.aktif ? t('common.state.active') : t('upstream.status.inactive')}
                       </StatusLabel>

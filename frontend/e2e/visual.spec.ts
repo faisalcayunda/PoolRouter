@@ -491,8 +491,10 @@ const RUTE_V3 = [
   { berkas: 'v3-client-webhook', path: `/client/${CLIENT_ID}/webhook`, peran: 'platform_admin' },
   { berkas: 'v3-upstream', path: '/upstream', peran: 'platform_admin' },
   { berkas: 'v3-upstream-form', path: `/upstream/${UP_ID}`, peran: 'platform_admin' },
+  { berkas: 'v3-upstream-baru', path: '/upstream/baru', peran: 'platform_admin' },
   { berkas: 'v3-downstream', path: '/downstream', peran: 'platform_admin' },
   { berkas: 'v3-downstream-form', path: `/downstream/${DOWN_ID}`, peran: 'platform_admin' },
+  { berkas: 'v3-downstream-baru', path: '/downstream/baru', peran: 'platform_admin' },
   { berkas: 'v3-notfound', path: '/halaman-tidak-ada', peran: 'platform_admin' },
 ] as const;
 

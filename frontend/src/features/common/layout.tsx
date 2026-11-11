@@ -33,7 +33,7 @@ export function FieldGrid({ children, className }: { children: ReactNode; classN
 export const SELECT_FILL = '[&>button]:w-full [&>button>span]:min-w-0 [&>button>span]:truncate';
 
 /**
- * L3: kartu bagian (frame `2:22105`). Radius 16, padding 32 di ≥1200 dan 24 di bawahnya; judul
+ * L3: kartu bagian (frame `2:22105`). Radius 16, padding 24 (spec §2, `2:22107`); judul
  * `title-large` warna `primary-text` dengan aksi di kanan.
  */
 export function SectionCard({
@@ -48,7 +48,7 @@ export function SectionCard({
   className?: string;
 }) {
   return (
-    <Card variant="container" className={cx('flex flex-col gap-6 p-6 large:p-8', className)}>
+    <Card variant="container" className={cx('flex flex-col gap-6 p-6', className)}>
       {title || actions ? (
         <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
           {title ? <h2 className="typescale-title-large text-primary-text">{title}</h2> : null}
