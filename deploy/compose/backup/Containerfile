@@ -4,11 +4,15 @@
 # Build (dari akar repo): docker build -f deploy/compose/backup/Containerfile deploy/compose/backup
 # Tanpa fitur khusus BuildKit: tanpa `# syntax=`, tanpa HEALTHCHECK (healthcheck di Compose), tanpa SHELL/ONBUILD.
 
-# Prosedur naik digest (ARC-255): `podman pull docker.io/library/postgres:17-bookworm`, ambil digest indeks
-# manifest dari `podman image inspect --format '{{.Digest}}'`, lalu ganti digest di bawah. Jalankan Trivy
-# (opsi CI: --severity HIGH,CRITICAL --ignore-unfixed) pada image hasil build; digest 9da3effe (5 Nov 2026,
-# PostgreSQL 17.11) membawa apt 2.6.2 yang sudah memperbaiki CVE-2026-109518.
-FROM docker.io/library/postgres:17-bookworm@sha256:9da3effe923ca751b92343f54bb9a90674895c52975e0bd10efd568d6be49b21
+# Prosedur naik digest (ARC-255, ARC-256): pin HARUS digest indeks multi-arch, bukan digest per-platform.
+# `podman image inspect --format '{{.Digest}}'` di host arm64 memberi digest manifest arm64 dan membuat
+# build amd64 di CI gagal ("exec format error"). Ambil digest indeks dari registry:
+#   curl -sI -H "Authorization: Bearer $TOKEN" -H 'Accept: application/vnd.oci.image.index.v1+json' \
+#     https://registry-1.docker.io/v2/library/postgres/manifests/17-bookworm   (header docker-content-digest)
+# Lalu ganti digest di bawah dan jalankan Trivy (opsi CI: --severity HIGH,CRITICAL --ignore-unfixed) pada
+# image hasil build. Indeks 665dc7b3 (rilis 5 Nov 2026, PostgreSQL 17.11) membawa apt 2.6.2 yang sudah
+# memperbaiki CVE-2026-109518.
+FROM docker.io/library/postgres:17-bookworm@sha256:665dc7b37ac52a17e298511414c21d23ffa4e6a6ef6225b3e5d59c7afb35e994
 
 ARG VERSION=0.1.0
 ARG REVISION=unknown
