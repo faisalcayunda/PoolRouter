@@ -25,7 +25,7 @@ use chrono::{DateTime, Utc};
 use poolrouter_core::kuota::store::{
     HasilIntake, HasilPenolakan, HasilToken, KonteksKuota, ModeJendela, PermintaanToken, detik_naik,
 };
-use poolrouter_core::kuota::sumber_pg::jendela_rate;
+use poolrouter_core::kuota::sumber_pg::{TIMEOUT_UPSTREAM_BAWAAN_DETIK, jendela_rate};
 use poolrouter_core::status_api::{StatusApi, StatusInternal, StatusTerpetakan, status_api};
 use serde_json::Value;
 use uuid::Uuid;
@@ -905,10 +905,7 @@ fn sukses_sync(request_id: Uuid, hasil: BTreeMap<String, HasilElemen>) -> Respon
 /// tidak sah: fail-closed, sama dengan rebuild.
 fn permintaan_token(rute: &PoolRute, request_id: Uuid) -> Option<PermintaanToken> {
     let p = &rute.parameter_dispatch;
-    let timeout = p
-        .get("timeout_total_upstream_detik")
-        .and_then(Value::as_i64)
-        .unwrap_or(TIMEOUT_UPSTREAM_BAWAAN_DETIK);
+    let timeout = timeout_upstream_detik(rute);
     Some(PermintaanToken {
         request_id: request_id.to_string(),
         nomor_percobaan: 1,
@@ -1034,28 +1031,11 @@ pub(crate) async fn submit_sync(
         )
         .await;
     }
-    // Langkah yang bisa gagal karena konfigurasi (dokumen versi aktif, secret,
-    // render, klien TLS, allowlist) sebelum kuota disentuh dan sebelum baris
-    // apa pun ditulis: gagal = 503 tanpa baris, seperti worker (M-03).
-    // `kode_transaksi` UUIDv7 satu per panggilan (K-25) dirender ke template.
+    // Urutan ADR-0001 bagian 4: kuota intake, token, baru render. Request yang
+    // akan ditolak 429 tidak membaca dokumen dan secret, dan kuota habis dijawab
+    // 429 (K-12) walau konfigurasinya rusak.
     let request_id = Uuid::now_v7();
     let kode_transaksi = Uuid::now_v7();
-    let siap = match pemanggil
-        .siapkan(PanggilanProvider {
-            request_id,
-            kode_transaksi,
-            provider_id: rantai.provider_id,
-            endpoint_id: rantai.endpoint_id,
-            provider_config_version: rantai.provider_config_version,
-            endpoint_config_version: rantai.endpoint_config_version,
-            full_payload: rantai.log_mode == "full_payload",
-            input: input.clone(),
-        })
-        .await
-    {
-        Ok(s) => s,
-        Err(_) => return layanan_503(),
-    };
     let rute = match ambil_kuota_intake(op, klien, &rantai, true, received_at).await {
         Ok(r) => r.clone(),
         Err(None) => return layanan_503(),
@@ -1094,6 +1074,31 @@ pub(crate) async fn submit_sync(
         }
     }
     let pool_id = rute.upstream_pool_id.to_string();
+
+    // Langkah yang bisa gagal karena konfigurasi (dokumen versi aktif, secret,
+    // render, klien TLS, allowlist): gagal = 503 tanpa baris dan tanpa INCR,
+    // seperti worker (M-03). Slot dari token dikembalikan, seperti pada gagal
+    // `mulai_sync`. `kode_transaksi` UUIDv7 satu per panggilan (K-25) dirender
+    // ke template.
+    let siap = match pemanggil
+        .siapkan(PanggilanProvider {
+            request_id,
+            kode_transaksi,
+            provider_id: rantai.provider_id,
+            endpoint_id: rantai.endpoint_id,
+            provider_config_version: rantai.provider_config_version,
+            endpoint_config_version: rantai.endpoint_config_version,
+            full_payload: rantai.log_mode == "full_payload",
+            input: input.clone(),
+        })
+        .await
+    {
+        Ok(s) => s,
+        Err(_) => {
+            let _ = op.kuota.lepas(pool_id, request_id.to_string(), 1).await;
+            return layanan_503();
+        }
+    };
 
     // Transaksi pertama: request `in_flight`, history, log `status_akses` NULL.
     // Periode dan ember dihitung dari `requested_at` yang sama dengan baris log
@@ -1176,21 +1181,21 @@ pub(crate) async fn submit_sync(
     }
 }
 
-/// `timeout_total_upstream_detik` bila `parameter_dispatch` tidak menyebutnya,
-/// sama dengan `sumber_pg`.
-const TIMEOUT_UPSTREAM_BAWAAN_DETIK: i64 = 30;
-
-/// Timeout total panggilan sync: nilai yang sama dengan TTL slot dan penyapu
-/// (`parameter_dispatch.timeout_total_upstream_detik`, bawaan `sumber_pg`),
-/// supaya reconciler tidak menutup percobaan yang masih berjalan.
-fn batas_upstream(rute: &PoolRute) -> Duration {
-    let detik = rute
-        .parameter_dispatch
+/// `parameter_dispatch.timeout_total_upstream_detik` pool; absen atau tidak
+/// positif memakai bawaan `core` (20 s, ADR-0001 bagian 5a.4), sama dengan
+/// worker. TTL slot token dan batas panggilan sync membaca satu fungsi ini.
+fn timeout_upstream_detik(rute: &PoolRute) -> i64 {
+    rute.parameter_dispatch
         .get("timeout_total_upstream_detik")
         .and_then(Value::as_i64)
         .filter(|d| *d > 0)
-        .unwrap_or(TIMEOUT_UPSTREAM_BAWAAN_DETIK);
-    Duration::from_secs(u64::try_from(detik).unwrap_or(30))
+        .unwrap_or(TIMEOUT_UPSTREAM_BAWAAN_DETIK)
+}
+
+/// Timeout total panggilan sync: nilai yang sama dengan TTL slot dan penyapu,
+/// supaya reconciler tidak menutup percobaan yang masih berjalan.
+fn batas_upstream(rute: &PoolRute) -> Duration {
+    Duration::from_secs(timeout_upstream_detik(rute).cast_unsigned())
 }
 /// `maks_konkurensi` bila `parameter_dispatch` tidak menyebutnya.
 const MAKS_KONKURENSI_BAWAAN: i64 = 10;

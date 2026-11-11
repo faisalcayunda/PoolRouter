@@ -58,8 +58,9 @@ use crate::upstream::{PemanggilProvider, PermintaanKabel};
 pub const BATAS_REDIS: Duration = Duration::from_millis(250);
 
 /// Timeout total upstream bila `parameter_dispatch.timeout_total_upstream_detik`
-/// tidak diisi (ADR-0001 bagian 5a.4: 20 s).
-pub const TIMEOUT_UPSTREAM_BAWAAN_DETIK: i64 = 20;
+/// tidak diisi (ADR-0001 bagian 5a.4: 20 s). Satu nilai dengan jalur sync dan
+/// rebuild, dari `core` (ARC-241).
+pub use poolrouter_core::kuota::sumber_pg::TIMEOUT_UPSTREAM_BAWAAN_DETIK;
 
 /// TTL slot = timeout total upstream + 60 s (§5a.1 butir 5).
 const TTL_SLOT_TAMBAHAN_DETIK: i64 = 60;

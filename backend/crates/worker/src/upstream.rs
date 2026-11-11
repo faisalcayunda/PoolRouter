@@ -9,6 +9,7 @@
 //!   (ARC-240): body `String` utuh ber-`Content-Length`, galat sertifikat
 //!   menjadi `Tls` (tidak di-retry);
 //! - timeout connect 5 s, total dari konfigurasi pool (bawaan 20 s);
+//! - body respons dibaca paling banyak `BATAS_BODY_RESPONS` (ARC-241);
 //! - trust TLS dari dokumen versi provider (ARC-239): `system` memakai klien
 //!   bersama, `ca_kustom` dan `pin_spki` memakai klien adapter provider
 //!   (`build_provider_client_with_config`) yang sama dengan jalur sync, satu

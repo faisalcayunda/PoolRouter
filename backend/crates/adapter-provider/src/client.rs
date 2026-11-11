@@ -17,6 +17,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use poolrouter_core::kuota::sumber_pg::TIMEOUT_UPSTREAM_BAWAAN_DETIK;
 use reqwest::{Client, Url};
 use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};
 
@@ -68,7 +69,15 @@ pub enum GalatKlien {
 
 /// Batas waktu default (ADR-0001 §5a.4, R-04).
 pub const BATAS_CONNECT: Duration = Duration::from_secs(5);
-pub const BATAS_TOTAL: Duration = Duration::from_secs(20);
+/// Total = bawaan `core` (`TIMEOUT_UPSTREAM_BAWAAN_DETIK`, 20 s) supaya klien dan
+/// TTL slot tidak bisa berbeda (ARC-241).
+pub const BATAS_TOTAL: Duration =
+    Duration::from_secs(TIMEOUT_UPSTREAM_BAWAAN_DETIK.cast_unsigned());
+
+/// Batas ukuran body respons provider, dalam byte (ARC-241). Respons Dukcapil
+/// berupa JSON beberapa KB; 1 MiB memberi ruang lebar tetapi menutup respons
+/// tak terbatas dari provider yang rusak atau disusupi.
+pub const BATAS_BODY_RESPONS: usize = 1 << 20;
 
 /// Konfigurasi optional untuk klien adapter provider.
 pub struct ProviderClientConfig {
@@ -304,8 +313,36 @@ pub async fn kirim(
     }
     let jawab = rb.send().await.map_err(petakan_reqwest)?;
     let status = jawab.status().as_u16();
-    let body = jawab.bytes().await.map_err(petakan_reqwest)?.to_vec();
+    let body = baca_body(jawab, BATAS_BODY_RESPONS).await?;
     Ok(crate::hasil::ResponsMentah { status, body })
+}
+
+/// Baca body respons paling banyak `batas` byte (ARC-241). Dipakai `kirim` dan
+/// worker supaya kedua jalur memakai satu batas. Ukuran yang diumumkan
+/// `Content-Length` ditolak sebelum satu byte pun dibaca; tanpa itu (atau bila
+/// header berbohong) pembacaan berhenti begitu jumlahnya melewati batas.
+/// Melebihi batas menjadi `ResponsTidakValid` (final, tidak di-retry); status
+/// HTTP-nya tidak dibawa karena tidak ada body yang bisa dinilai.
+pub async fn baca_body(
+    mut jawab: reqwest::Response,
+    batas: usize,
+) -> Result<Vec<u8>, crate::GagalPanggilProvider> {
+    let melebihi =
+        || crate::GagalPanggilProvider::ResponsTidakValid("body respons melebihi batas".to_owned());
+    if jawab
+        .content_length()
+        .is_some_and(|n| n > u64::try_from(batas).unwrap_or(u64::MAX))
+    {
+        return Err(melebihi());
+    }
+    let mut body = Vec::new();
+    while let Some(bagian) = jawab.chunk().await.map_err(petakan_reqwest)? {
+        if bagian.len() > batas - body.len() {
+            return Err(melebihi());
+        }
+        body.extend_from_slice(&bagian);
+    }
+    Ok(body)
 }
 
 /// Galat `reqwest` → [`crate::GagalPanggilProvider`], tanpa URL (URL hasil render
@@ -315,6 +352,16 @@ pub async fn kirim(
 /// menjadi `Tls`, bukan `Koneksi`: ADR-0002 D5 dan uji 6 menuntut `tls` yang
 /// tidak di-retry. Galat saat merakit request (URL rusak, skema bukan https
 /// pada klien `https_only`) adalah konfigurasi, jadi `HttpKlien` → `lainnya`.
+///
+/// PERINGATAN VERSI: deteksi ini rapuh terhadap versi. Galat `rustls` tidak
+/// selalu terlihat lewat `source()`, jadi selain downcast ia memeriksa teks
+/// `Debug` (`InvalidCertificate`) dan `Display` (`invalid peer certificate`).
+/// Dikunci uji `kirim_pin_salah_dipetakan_tls_tanpa_data_aplikasi` dan
+/// `kirim_ca_salah_dipetakan_tls_tanpa_data_aplikasi` pada reqwest 0.13.5,
+/// rustls 0.23.46, hyper-rustls 0.27.10, hyper-util 0.1.21 (`Cargo.lock`). Naik
+/// versi salah satunya dan uji itu merah: periksa rantai galatnya dan perbarui
+/// detektor, jangan melonggarkan uji, karena `Tls` yang meleset menjadi
+/// `Koneksi` yang di-retry (ADR-0002 D5 menuntut `tls` tidak di-retry).
 pub fn petakan_reqwest(e: reqwest::Error) -> crate::GagalPanggilProvider {
     if e.is_timeout() {
         return crate::GagalPanggilProvider::Timeout;
