@@ -31,7 +31,8 @@ export interface NavigationDrawerProps {
 }
 
 /** Kolom flex putih; lebar ditentukan per varian. */
-const BASE = 'flex shrink-0 flex-col bg-surface-container-lowest text-on-surface';
+const BASE =
+  'flex shrink-0 flex-col border-r border-outline-variant bg-surface-container-lowest text-on-surface';
 
 export function NavigationDrawer({
   variant = 'standard',
@@ -46,7 +47,7 @@ export function NavigationDrawer({
     return (
       <aside
         aria-label={ariaLabel}
-        className={cx(BASE, 'sticky top-0 h-dvh', collapsed ? 'w-[72px]' : 'w-60', className)}
+        className={cx(BASE, 'sticky top-0 h-dvh', collapsed ? 'w-[72px]' : 'w-[272px]', className)}
       >
         {children}
       </aside>
@@ -62,11 +63,7 @@ export function NavigationDrawer({
     >
       <RacDialog
         aria-label={ariaLabel}
-        className={cx(
-          'm3-focus relative z-10 h-full w-60 border-r border-outline-variant outline-none',
-          BASE,
-          className,
-        )}
+        className={cx('m3-focus relative z-10 h-full w-[272px] outline-none', BASE, className)}
       >
         {children}
       </RacDialog>

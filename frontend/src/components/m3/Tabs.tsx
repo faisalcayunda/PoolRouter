@@ -41,7 +41,7 @@ export function Tab({ className, ...props }: Omit<TabProps, 'className'> & { cla
         'm3-state m3-focus typescale-label-large relative cursor-pointer px-4 pt-1 pb-2.5 text-on-surface-variant outline-none select-none',
         'data-[selected]:text-on-surface',
         'after:absolute after:inset-x-4 after:bottom-0 after:h-0.5 after:rounded-full after:bg-transparent',
-        'data-[selected]:after:bg-primary',
+        'data-[selected]:after:bg-primary-text',
         className,
       )}
     />

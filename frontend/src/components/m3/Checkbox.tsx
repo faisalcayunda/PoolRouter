@@ -30,8 +30,8 @@ export function Checkbox({ className, children, ...props }: CheckboxProps) {
         className={cx(
           'flex h-4.5 w-4.5 shrink-0 items-center justify-center rounded-[2px] border-2 transition-colors',
           'border-on-surface-variant bg-transparent',
-          'group-data-[selected]:border-primary group-data-[selected]:bg-primary',
-          'group-data-[indeterminate]:border-primary group-data-[indeterminate]:bg-primary',
+          'group-data-[selected]:border-primary-text group-data-[selected]:bg-primary',
+          'group-data-[indeterminate]:border-primary-text group-data-[indeterminate]:bg-primary',
           'group-data-[disabled]:border-on-surface/38 group-data-[disabled]:bg-transparent',
         )}
       >

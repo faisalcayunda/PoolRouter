@@ -144,7 +144,7 @@ function DrawerContent({
     <>
       <div
         className={cx(
-          'flex h-16 shrink-0 items-center border-b border-outline-variant',
+          'flex h-[65px] shrink-0 items-center border-b border-outline-variant',
           collapsed ? 'justify-center px-2' : 'justify-between gap-2 pr-3 pl-5',
         )}
       >
@@ -200,18 +200,15 @@ function DrawerContent({
                   aria-current={isActive ? 'page' : undefined}
                   {...(collapsed ? { title: t(item.labelKey) } : {})}
                   className={cx(
-                    'typescale-body-medium flex h-10 items-center gap-3 rounded-small border px-3 text-on-surface no-underline outline-none',
+                    'typescale-label-large flex h-11 items-center gap-3 rounded-small px-3 no-underline outline-none',
                     collapsed && 'justify-center px-0',
                     isActive
-                      ? 'border-outline bg-surface-container-low font-semibold'
-                      : 'border-transparent hover:bg-surface-container-low',
+                      ? 'bg-primary-container text-on-primary-container'
+                      : 'text-on-surface-variant hover:bg-surface-container hover:text-on-surface',
                     'focus-visible:outline-solid focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-secondary',
                   )}
                 >
-                  <Icon
-                    icon={icons[item.icon]}
-                    className={cx('h-5 w-5 shrink-0', isActive ? 'text-on-surface' : undefined)}
-                  />
+                  <Icon icon={icons[item.icon]} className="h-5 w-5 shrink-0" />
                   <span className={collapsed ? 'sr-only' : undefined}>{t(item.labelKey)}</span>
                 </Link>
               );
@@ -292,15 +289,10 @@ export function AppShell({ pathname = '/', user, role = null, onKeluar, children
         />
       </NavigationDrawer>
 
-      {/* Panel konten: latar slate-50, sudut kiri atas membulat besar di sebelah sidebar. */}
-      <div
-        className={cx(
-          'flex min-w-0 flex-1 flex-col bg-surface-container-low',
-          isLarge && 'rounded-tl-extra-large border-t border-l border-outline-variant',
-        )}
-      >
+      {/* Panel konten (Figma Main 2:22106): putih, dipisah dari sidebar oleh border kanan drawer. */}
+      <div className="flex min-w-0 flex-1 flex-col bg-surface-container-lowest">
         <TopAppBar
-          className="px-6"
+          className="border-b border-outline-variant px-4 medium:px-6 large:px-9"
           leading={
             isLarge ? undefined : (
               <IconButton
@@ -323,19 +315,6 @@ export function AppShell({ pathname = '/', user, role = null, onKeluar, children
           }
           trailing={
             <>
-              {/* Kolom pencarian hanya gaya acuan: belum ada fitur pencarian global, jadi dekoratif dan tidak fokus. */}
-              <div
-                aria-hidden="true"
-                className="hidden h-9 w-64 items-center gap-2 rounded-small border border-outline-variant bg-surface-container-lowest px-3 text-on-surface-variant expanded:flex"
-              >
-                <Icon icon={icons.search} className="h-5 w-5 shrink-0" />
-                <input
-                  disabled
-                  tabIndex={-1}
-                  placeholder={t('common.action.search')}
-                  className="typescale-body-medium min-w-0 flex-1 bg-transparent outline-none placeholder:text-on-surface-variant"
-                />
-              </div>
               <span className="typescale-label-medium rounded-full border border-outline-variant bg-surface-container-lowest px-3 py-1 text-on-surface">
                 {t('nav.env_label')}
               </span>
@@ -344,9 +323,13 @@ export function AppShell({ pathname = '/', user, role = null, onKeluar, children
           }
         />
 
-        <main id="main-content" tabIndex={-1} className="min-w-0 flex-1 px-6 pt-4 pb-8">
-          {/* Konten dibatasi 1200 px (spec bagian 4) supaya tabel panjang tetap terbaca di layar lebar. */}
-          <div className="mx-auto flex w-full max-w-[1200px] flex-col gap-4">
+        <main
+          id="main-content"
+          tabIndex={-1}
+          className="min-w-0 flex-1 px-4 pt-6 pb-8 medium:px-6 large:px-9"
+        >
+          {/* L1 (spec ui-v3-figma §6): padding 16/24/36, konten dibatasi 1280 px. */}
+          <div className="mx-auto flex w-full max-w-[1280px] flex-col gap-6">
             <Suspense
               fallback={<p className="typescale-body-medium">{t('common.state.loading')}</p>}
             >

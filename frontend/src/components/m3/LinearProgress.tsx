@@ -27,16 +27,12 @@ export function LinearProgress({
           <div
             className={cx(
               'w-full overflow-hidden rounded-full',
-              large ? 'h-2 bg-surface-container' : 'h-1 bg-secondary-container',
+              large ? 'h-2 bg-surface-container' : 'h-1 bg-surface-container',
             )}
             data-indeterminate={indeterminate || undefined}
           >
             <div
-              className={cx(
-                'h-full',
-                large ? 'bg-accent' : 'bg-primary',
-                indeterminate && 'm3-indeterminate-bar',
-              )}
+              className={cx('h-full', 'bg-accent', indeterminate && 'm3-indeterminate-bar')}
               style={{ width: `${percentage ?? 0}%` }}
             />
           </div>

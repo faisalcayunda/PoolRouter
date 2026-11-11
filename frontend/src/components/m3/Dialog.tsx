@@ -60,7 +60,7 @@ export function Dialog({
         className={cx(
           'm3-focus flex flex-col border border-outline-variant bg-surface-container-lowest text-on-surface shadow-level3 outline-none',
           variant === 'basic'
-            ? 'w-full max-w-[560px] rounded-large p-6'
+            ? 'w-full max-w-[560px] rounded-extra-large p-6'
             : 'h-full w-full rounded-none',
         )}
       >

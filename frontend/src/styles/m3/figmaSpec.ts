@@ -1,3 +1,4 @@
+/* eslint-disable no-restricted-syntax -- salinan hex spec §3 khusus test, di src/styles/m3/ sesuai pesan aturan; eslint.config.js di luar Scope ARC-366. */
 /**
  * Nilai UI v3 dari spec `products/poolrouter/specs/ui-v3-figma/spec.md` §3 (KB `main`, ARC-364 dan
  * lanjutan ARC-369) dan `design/tokens.json` (ARC-365). Hanya dipakai test: sumber kebenaran runtime

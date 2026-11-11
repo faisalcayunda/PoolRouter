@@ -1,20 +1,13 @@
 /* Tailwind 4 theme: maps utilities onto the M3 tokens only (ADR-0003 3.5). Default colour, radius and breakpoint scales are removed. */
 @import 'tailwindcss';
+/* Hanken Grotesk (brand) dan Inter (plain), SIL OFL 1.1, dari npm lewat Vite: dilayani dari origin sendiri (font-src 'self'). */
+@import '@fontsource-variable/hanken-grotesk/wght.css';
+@import '@fontsource-variable/inter/wght.css';
 @import '@fontsource/jetbrains-mono/400.css';
 @import './color.css';
 @import './tokens.css';
 @import './components.css';
 @import './tables.css';
-
-/* Open Sans (SIL OFL 1.1, lisensi di src/assets/fonts/OFL.txt): satu berkas variabel, subset Latin, dilayani dari origin sendiri (font-src 'self'). */
-@font-face {
-  font-family: 'Open Sans';
-  font-style: normal;
-  font-weight: 300 800;
-  font-stretch: 75% 100%;
-  font-display: swap;
-  src: url('../../assets/fonts/OpenSans-latin.woff2') format('woff2');
-}
 
 @theme inline {
   --color-*: initial;
@@ -31,6 +24,7 @@
   --color-on-primary: var(--md-sys-color-on-primary);
   --color-primary-container: var(--md-sys-color-primary-container);
   --color-on-primary-container: var(--md-sys-color-on-primary-container);
+  --color-primary-text: var(--md-sys-color-primary-text);
   --color-secondary: var(--md-sys-color-secondary);
   --color-on-secondary: var(--md-sys-color-on-secondary);
   --color-secondary-container: var(--md-sys-color-secondary-container);
@@ -87,7 +81,7 @@
   --radius-extra-large: var(--md-sys-shape-corner-extra-large);
   --radius-full: var(--md-sys-shape-corner-full);
   --shadow-level0: none;
-  --shadow-level1: 0 1px 2px 0 color-mix(in srgb, var(--md-sys-color-shadow) 5%, transparent);
+  --shadow-level1: var(--md-sys-elevation-level1);
   --shadow-level2: 0 4px 16px -4px color-mix(in srgb, var(--md-sys-color-shadow) 14%, transparent);
   --shadow-level3: 0 8px 24px -6px color-mix(in srgb, var(--md-sys-color-shadow) 16%, transparent);
   --shadow-level4: 0 12px 32px -8px color-mix(in srgb, var(--md-sys-color-shadow) 18%, transparent);
