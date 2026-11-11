@@ -282,7 +282,9 @@ describe('AppShell — menu per role', () => {
     const onKeluar = vi.fn();
     renderShell('/', 'operator', { username: 'adm.contoh', peran: 'operator' }, onKeluar);
     const drawer = screen.getByRole('complementary', { name: 'Navigasi utama' });
-    const trigger = within(drawer).getByRole('button', { name: 'Menu akun adm.contoh' });
+    // Nama memuat peran: blok menampilkan nama dan peran, dan WCAG 2.5.3 (axe
+    // label-content-name-mismatch, AC4d) meminta teks yang terlihat ada di nama aksesibel.
+    const trigger = within(drawer).getByRole('button', { name: 'Menu akun adm.contoh Operator' });
     expect(within(trigger).getByText('Operator')).toBeInTheDocument();
     // Kartu profil tanpa border: pemicu dikenali dari isinya dan cincin fokusnya, bukan dari batas abu.
     expect(trigger.className).not.toMatch(/(^|\s)border/);
@@ -296,7 +298,7 @@ describe('AppShell — menu per role', () => {
     const onKeluar = vi.fn();
     renderShell('/', 'operator', { username: 'adm.contoh', peran: 'operator' }, onKeluar);
     within(screen.getByRole('complementary', { name: 'Navigasi utama' }))
-      .getByRole('button', { name: 'Menu akun adm.contoh' })
+      .getByRole('button', { name: 'Menu akun adm.contoh Operator' })
       .focus();
     await userEvent.keyboard('{Enter}');
     await screen.findByRole('menuitem', { name: 'Keluar' });
