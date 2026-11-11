@@ -1,55 +1,59 @@
-/* Skema terang ARC-261: palet slate/sky dari acuan "SaaS Admin Dashboard UI Kit" (Figma). Nama token M3 tetap; hanya nilainya yang berubah. */
+/* Skema terang UI v3 (ARC-366): nilai dari spec ui-v3-figma §3 dan design/tokens.json (Figma "Admin Dashboard"). Nama token M3 tetap; `primary-text` role baru. */
 :root {
-  /* Aksi utama gelap (tombol, tautan): slate-900. Aksen sky dipakai untuk isian, tint, dan indikator, bukan teks. */
-  --md-sys-color-primary: #0f172a;
-  --md-sys-color-on-primary: #ffffff;
-  --md-sys-color-primary-container: #38bdf8;
-  --md-sys-color-on-primary-container: #0f172a;
-  --md-sys-color-secondary: #0284c7;
+  /* Aksi utama: lime Figma `#a7c513`, hanya fill di balik `on-primary` (1,97:1 di surface). Teks dan penanda seleksi memakai `primary-text`. */
+  --md-sys-color-primary: #a7c513;
+  --md-sys-color-on-primary: #101928;
+  --md-sys-color-primary-container: #eff9be;
+  --md-sys-color-on-primary-container: #101928;
+  --md-sys-color-primary-text: #5a6b0a;
+  /* Secondary biru: tautan, fokus, dan seleksi teks. */
+  --md-sys-color-secondary: #0d5eba;
   --md-sys-color-on-secondary: #ffffff;
-  --md-sys-color-secondary-container: #c1ebfd;
-  --md-sys-color-on-secondary-container: #075985;
-  --md-sys-color-tertiary: #b45309;
+  --md-sys-color-secondary-container: #ebf8ab;
+  --md-sys-color-on-secondary-container: #101928;
+  /* Tertiary. */
+  --md-sys-color-tertiary: #802f00;
   --md-sys-color-on-tertiary: #ffffff;
-  --md-sys-color-tertiary-container: #fef3c7;
-  --md-sys-color-on-tertiary-container: #92400e;
-  --md-sys-color-error: #dc2626;
+  --md-sys-color-tertiary-container: #a74000;
+  --md-sys-color-on-tertiary-container: #ffd3c1;
+  /* Status. */
+  --md-sys-color-error: #cb1a14;
   --md-sys-color-on-error: #ffffff;
-  --md-sys-color-error-container: #fee2e2;
-  --md-sys-color-on-error-container: #b91c1c;
-  /* Permukaan: kartu dan kontrol putih, panel halaman slate-50 (surface-container-low). */
-  --md-sys-color-surface: #ffffff;
-  --md-sys-color-on-surface: #0f172a;
-  --md-sys-color-on-surface-variant: #64748b;
-  --md-sys-color-surface-container-lowest: #ffffff;
-  --md-sys-color-surface-container-low: #f8fafc;
-  --md-sys-color-surface-container: #f1f5f9;
-  --md-sys-color-surface-container-high: #e2e8f0;
-  --md-sys-color-surface-container-highest: #e2e8f0;
-  --md-sys-color-surface-dim: #cbd5e1;
-  --md-sys-color-surface-bright: #ffffff;
-  --md-sys-color-inverse-surface: #0f172a;
-  --md-sys-color-inverse-on-surface: #f8fafc;
-  --md-sys-color-inverse-primary: #38bdf8;
-  /* Border kontrol interaktif (#7d8da3: 3,38:1 di putih, 3,23:1 di slate-50, WCAG 1.4.11); outline-variant untuk kartu dan pemisah; outline-soft hanya untuk batas non-interaktif. */
-  --md-sys-color-outline: #7d8da3;
-  --md-sys-color-outline-variant: #e2e8f0;
-  --md-sys-color-outline-soft: #cbd5e1;
-  --md-sys-color-scrim: #0f172a;
-  --md-sys-color-shadow: #0f172a;
-  /* Aksen sky mentah untuk batang, indikator, dan titik; tidak untuk teks. */
-  --md-sys-color-accent: #38bdf8;
-  --md-sys-color-accent-container: #c1ebfd;
-  --md-sys-color-success: #22c55e;
+  --md-sys-color-error-container: #fbeae9;
+  --md-sys-color-on-error-container: #9e0a05;
+  --md-sys-color-success: #04802e;
   --md-sys-color-on-success: #ffffff;
-  --md-sys-color-success-container: #dcfce7;
-  --md-sys-color-on-success-container: #15803d;
-  --md-sys-color-warning: #f59e0b;
+  --md-sys-color-success-container: #e7f6ec;
+  --md-sys-color-on-success-container: #036b26;
+  --md-sys-color-warning: #8a5a00;
   --md-sys-color-on-warning: #ffffff;
-  --md-sys-color-warning-container: #fef3c7;
-  --md-sys-color-on-warning-container: #b45309;
-  --md-sys-color-info: #0284c7;
+  --md-sys-color-warning-container: #f5b546;
+  --md-sys-color-on-warning-container: #101928;
+  --md-sys-color-info: #0d5eba;
   --md-sys-color-on-info: #ffffff;
-  --md-sys-color-info-container: #e0f2fe;
-  --md-sys-color-on-info-container: #075985;
+  --md-sys-color-info-container: #ebeef5;
+  --md-sys-color-on-info-container: #052243;
+  /* Surface Grey Figma. */
+  --md-sys-color-surface: #ffffff;
+  --md-sys-color-surface-bright: #ffffff;
+  --md-sys-color-surface-container-lowest: #ffffff;
+  --md-sys-color-surface-container-low: #f9fafb;
+  --md-sys-color-surface-container: #f0f2f5;
+  --md-sys-color-surface-container-high: #e4e7ec;
+  --md-sys-color-surface-container-highest: #d0d5dd;
+  --md-sys-color-surface-dim: #d0d5dd;
+  --md-sys-color-on-surface: #101928;
+  --md-sys-color-on-surface-variant: #475367;
+  --md-sys-color-inverse-surface: #101928;
+  --md-sys-color-inverse-on-surface: #f9fafb;
+  --md-sys-color-inverse-primary: #d0ee3c;
+  /* Outline: `outline` lebih gelap dari Figma `#bbd2ec` supaya batas kontrol >= 3:1 (spec §3). */
+  --md-sys-color-outline: #7e8899;
+  --md-sys-color-outline-variant: #e4e7ec;
+  --md-sys-color-outline-soft: #d0d5dd;
+  --md-sys-color-scrim: #101928;
+  --md-sys-color-shadow: #101928;
+  /* Ekstensi: `accent` untuk bar progress, `accent-container` hanya latar chip terpilih dan avatar. */
+  --md-sys-color-accent: #5a6b0a;
+  --md-sys-color-accent-container: #eff9be;
 }

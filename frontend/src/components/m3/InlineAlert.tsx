@@ -35,7 +35,7 @@ const TONE: Record<
     icon: 'checkCircle',
   },
   warning: {
-    box: 'border border-warning/35 bg-warning-container text-on-warning-container',
+    box: 'border border-warning bg-warning-container text-on-warning-container',
     icon: 'warning',
   },
   error: {

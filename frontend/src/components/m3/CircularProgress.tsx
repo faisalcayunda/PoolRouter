@@ -26,7 +26,7 @@ export function CircularProgress({
       {...props}
       isIndeterminate={indeterminate}
       aria-label={ariaLabel}
-      className={cx('inline-flex items-center justify-center text-primary', className)}
+      className={cx('inline-flex items-center justify-center text-primary-text', className)}
     >
       {({ percentage }) => (
         <svg

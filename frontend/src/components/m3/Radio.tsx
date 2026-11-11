@@ -29,13 +29,13 @@ export function Radio({ className, children, ...props }: RadioProps) {
         className={cx(
           'flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 transition-colors',
           'border-on-surface-variant',
-          'group-data-[selected]:border-primary',
+          'group-data-[selected]:border-primary-text',
           'group-data-[disabled]:border-on-surface/38',
         )}
       >
         <span
           className={cx(
-            'h-2.5 w-2.5 rounded-full bg-primary opacity-0 transition-opacity',
+            'h-2.5 w-2.5 rounded-full bg-primary-text opacity-0 transition-opacity',
             'group-data-[selected]:opacity-100',
           )}
         />

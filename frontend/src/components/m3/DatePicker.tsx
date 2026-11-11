@@ -21,7 +21,7 @@ import { IconButton } from './IconButton';
 import { Icon, icons } from '../../icons';
 
 const FIELD =
-  'typescale-body-medium flex h-10 w-full items-center gap-1 rounded-small border border-outline bg-surface-container-lowest pr-1 pl-3 text-on-surface data-[focus-within]:border-secondary data-[focus-within]:ring-3 data-[focus-within]:ring-accent-container';
+  'typescale-body-medium flex h-10 w-full items-center gap-1 rounded-extra-small border border-outline bg-surface-container-lowest pr-1 pl-3 text-on-surface data-[focus-within]:border-secondary data-[focus-within]:ring-3 data-[focus-within]:ring-secondary';
 
 // Rentang memuat dua tanggal dan tombol kalender; pada 320 px isinya lebih lebar dari kolom, jadi
 // tombol turun ke baris berikutnya alih-alih melebarkan dokumen. Pada expanded kolom tetap satu baris
@@ -65,7 +65,7 @@ function DateSegment({ segment }: { segment: Parameters<typeof RacDateSegment>[0
   return (
     <RacDateSegment
       segment={segment}
-      className="typescale-body-medium rounded-sm px-0.5 expanded:px-0 text-on-surface caret-primary outline-none data-[placeholder]:text-on-surface-variant data-[focused]:bg-secondary-container"
+      className="typescale-body-medium rounded-sm px-0.5 expanded:px-0 text-on-surface caret-primary-text outline-none data-[placeholder]:text-on-surface-variant data-[focused]:bg-secondary-container"
     />
   );
 }

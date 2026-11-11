@@ -17,7 +17,7 @@ const TONE: Record<StatusLabelTone, string> = {
   neutral: 'border border-outline-variant bg-surface-container text-on-surface',
   info: 'border border-info/30 bg-info-container text-on-info-container',
   success: 'border border-success/40 bg-success-container text-on-success-container',
-  warning: 'border border-warning/40 bg-warning-container text-on-warning-container',
+  warning: 'border border-warning bg-warning-container text-on-warning-container',
   error: 'border border-error/30 bg-error-container text-on-error-container',
 };
 

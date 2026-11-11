@@ -15,8 +15,8 @@ import type { ReactNode } from 'react';
 import { cx } from './cx';
 
 const FIELD =
-  'typescale-body-medium h-10 w-full rounded-small border border-outline bg-surface-container-lowest px-3 py-2 text-on-surface outline-none ' +
-  'placeholder:text-on-surface-variant data-[focused]:border-secondary data-[focused]:ring-3 data-[focused]:ring-accent-container';
+  'typescale-body-medium h-10 w-full rounded-extra-small border border-outline bg-surface-container-lowest px-3 py-2 text-on-surface outline-none ' +
+  'placeholder:text-on-surface-variant data-[focused]:border-secondary data-[focused]:ring-3 data-[focused]:ring-secondary';
 
 export interface TextFieldProps extends Omit<RacTextFieldProps, 'className'> {
   className?: string;

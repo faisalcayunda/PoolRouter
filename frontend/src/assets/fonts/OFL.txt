@@ -1,4 +1,8 @@
-Copyright 2020 The Open Sans Project Authors (https://github.com/googlefonts/opensans)
+Copyright 2021 The Hanken Grotesk Project Authors (https://github.com/marcologous/hanken-grotesk)
+Copyright 2016 The Inter Project Authors (https://github.com/rsms/inter)
+
+Both fonts are bundled from npm (@fontsource-variable/hanken-grotesk, @fontsource-variable/inter)
+and served from the app origin. Each package ships its own copy of this licence.
 
 This Font Software is licensed under the SIL Open Font License, Version 1.1.
 This license is copied below, and is also available with a FAQ at:

@@ -23,14 +23,14 @@ export function Switch({ className, children, ...props }: SwitchProps) {
         className={cx(
           'relative inline-flex h-8 w-13 shrink-0 items-center rounded-full border-2 px-0.5 transition-colors',
           'border-on-surface-variant bg-surface-container-highest',
-          'group-data-[selected]:border-primary group-data-[selected]:bg-primary',
+          'group-data-[selected]:border-primary-text group-data-[selected]:bg-primary',
           'group-data-[disabled]:border-on-surface/12 group-data-[disabled]:bg-on-surface/12',
           'group-data-[focus-visible]:outline-2 group-data-[focus-visible]:outline-secondary group-data-[focus-visible]:outline-offset-2',
         )}
       >
         <span
           className={cx(
-            'h-6 w-6 rounded-full bg-outline transition-transform',
+            'h-6 w-6 rounded-full bg-on-surface-variant transition-transform',
             'group-data-[selected]:translate-x-5 group-data-[selected]:bg-on-primary',
             'group-data-[disabled]:bg-on-surface/38',
           )}

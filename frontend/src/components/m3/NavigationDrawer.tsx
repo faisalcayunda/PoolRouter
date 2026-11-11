@@ -46,7 +46,12 @@ export function NavigationDrawer({
     return (
       <aside
         aria-label={ariaLabel}
-        className={cx(BASE, 'sticky top-0 h-dvh', collapsed ? 'w-[72px]' : 'w-60', className)}
+        className={cx(
+          BASE,
+          'sticky top-0 h-dvh border-r border-outline-variant',
+          collapsed ? 'w-[72px]' : 'w-[272px]',
+          className,
+        )}
       >
         {children}
       </aside>
@@ -63,7 +68,7 @@ export function NavigationDrawer({
       <RacDialog
         aria-label={ariaLabel}
         className={cx(
-          'm3-focus relative z-10 h-full w-60 border-r border-outline-variant outline-none',
+          'm3-focus relative z-10 h-full w-[272px] border-r border-outline-variant outline-none',
           BASE,
           className,
         )}
