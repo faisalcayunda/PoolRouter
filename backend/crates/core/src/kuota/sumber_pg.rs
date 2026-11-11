@@ -71,6 +71,7 @@ pub fn sql_pool_antre() -> String {
 /// { "rate": { "tps": { "t_mikro": 100000, "burst": 1 } },
 ///   "timeout_total_upstream_detik": 20,
 ///   "maks_konkurensi": 10,
+///   "jeda_acak_min_mikro": 20000,
 ///   "jeda_acak_maks_mikro": 100000 }
 /// ```
 ///
@@ -84,6 +85,9 @@ pub struct ParameterDispatch {
     /// Batas atas jeda acak antar-publish K-05 yang diminta admin, sebelum
     /// dipotong ke satu slot token. `None` = satu slot token penuh.
     pub jeda_acak_maks_mikro: Option<i64>,
+    /// Batas bawah jeda acak K-05 yang diminta admin (`jeda_min`), sebelum
+    /// dipotong ke batas atas. `None` = 0.
+    pub jeda_acak_min_mikro: Option<i64>,
 }
 
 impl ParameterDispatch {
@@ -110,6 +114,7 @@ impl ParameterDispatch {
                 .unwrap_or(TIMEOUT_UPSTREAM_BAWAAN_DETIK),
             maks_konkurensi,
             jeda_acak_maks_mikro: angka_opsional("jeda_acak_maks_mikro")?,
+            jeda_acak_min_mikro: angka_opsional("jeda_acak_min_mikro")?,
         })
     }
 
@@ -123,10 +128,11 @@ impl ParameterDispatch {
         self.timeout_total_upstream_detik + TTL_SLOT_TAMBAHAN_DETIK
     }
 
-    /// Batas jeda acak K-05: di dalam satu slot token, yaitu `1/rate` jendela
-    /// terketat (t_mikro terkecil), dan tidak lebih dari permintaan admin.
-    /// Dipotong 1 s supaya jendela TPM/TPH tidak membuat dispatcher tidur lama.
-    pub fn batas_jeda_mikro(&self) -> i64 {
+    /// Rentang jeda acak K-05 `(min, maks)` dalam µs: di dalam satu slot token,
+    /// yaitu `1/rate` jendela terketat (t_mikro terkecil), dan tidak lebih dari
+    /// permintaan admin. Dipotong 1 s supaya jendela TPM/TPH tidak membuat
+    /// dispatcher tidur lama. `min` dipotong ke `0..=maks`.
+    pub fn rentang_jeda_mikro(&self) -> (i64, i64) {
         let slot = self
             .jendela_rate
             .iter()
@@ -135,10 +141,12 @@ impl ParameterDispatch {
             .min()
             .unwrap_or(0)
             .min(1_000_000);
-        match self.jeda_acak_maks_mikro {
+        let maks = match self.jeda_acak_maks_mikro {
             Some(maks) => maks.clamp(0, slot),
             None => slot,
-        }
+        };
+        let min = self.jeda_acak_min_mikro.unwrap_or(0).clamp(0, maks);
+        (min, maks)
     }
 }
 
@@ -528,7 +536,7 @@ mod uji_parameter {
             TIMEOUT_UPSTREAM_BAWAAN_DETIK
         );
         assert_eq!(p.ttl_slot_mikro(), (30 + 60) * 1_000_000);
-        assert_eq!(p.batas_jeda_mikro(), 0, "tanpa rate tidak ada jeda");
+        assert_eq!(p.rentang_jeda_mikro(), (0, 0), "tanpa rate tidak ada jeda");
     }
 
     #[test]
@@ -540,20 +548,54 @@ mod uji_parameter {
         }))
         .expect("parameter sah");
         // 10 TPS: satu slot = 100 ms; permintaan 500 ms dipotong ke slot.
-        assert_eq!(p.batas_jeda_mikro(), 100_000);
+        assert_eq!(p.rentang_jeda_mikro(), (0, 100_000));
 
         let kecil = ParameterDispatch::dari_json(&serde_json::json!({
             "rate": { "tps": { "t_mikro": 100_000, "burst": 1 } },
             "jeda_acak_maks_mikro": 20_000
         }))
         .expect("parameter sah");
-        assert_eq!(kecil.batas_jeda_mikro(), 20_000);
+        assert_eq!(kecil.rentang_jeda_mikro(), (0, 20_000));
 
         let lambat = ParameterDispatch::dari_json(&serde_json::json!({
             "rate": { "tpm": { "t_mikro": 6_000_000, "burst": 1 } }
         }))
         .expect("parameter sah");
-        assert_eq!(lambat.batas_jeda_mikro(), 1_000_000, "dipotong 1 s");
+        assert_eq!(lambat.rentang_jeda_mikro(), (0, 1_000_000), "dipotong 1 s");
+    }
+
+    /// ARC-233: batas bawah jeda ikut terbaca dan dipotong ke `0..=maks`.
+    #[test]
+    fn jeda_min_k05_dipotong_ke_rentang_maks() {
+        let rentang = |min: i64, maks: i64| {
+            ParameterDispatch::dari_json(&serde_json::json!({
+                "rate": { "tps": { "t_mikro": 100_000, "burst": 1 } },
+                "jeda_acak_min_mikro": min,
+                "jeda_acak_maks_mikro": maks
+            }))
+            .expect("parameter sah")
+            .rentang_jeda_mikro()
+        };
+        assert_eq!(rentang(20_000, 60_000), (20_000, 60_000));
+        assert_eq!(rentang(80_000, 60_000), (60_000, 60_000), "min <= maks");
+        assert_eq!(rentang(0, 500_000), (0, 100_000), "maks dipotong slot");
+        assert_eq!(
+            rentang(500_000, 500_000),
+            (100_000, 100_000),
+            "min ikut slot"
+        );
+
+        let tanpa_maks = ParameterDispatch::dari_json(&serde_json::json!({
+            "rate": { "tps": { "t_mikro": 100_000, "burst": 1 } },
+            "jeda_acak_min_mikro": 30_000
+        }))
+        .expect("parameter sah");
+        assert_eq!(tanpa_maks.rentang_jeda_mikro(), (30_000, 100_000));
+
+        let negatif = ParameterDispatch::dari_json(&serde_json::json!({
+            "jeda_acak_min_mikro": -1
+        }));
+        assert!(negatif.is_err(), "min negatif ditolak seperti maks");
     }
 
     #[test]

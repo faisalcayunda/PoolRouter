@@ -39,8 +39,8 @@ use crate::transisi::catat_history;
 /// Sumber jeda acak K-05. Produksi memakai [`JedaAwsLc`]; uji memakai
 /// [`JedaTetap`] supaya waktu putaran bisa diperkirakan.
 pub trait SumberJeda: Send + Sync {
-    /// Nilai di `0..=batas_mikro`.
-    fn jeda_mikro(&self, batas_mikro: i64) -> i64;
+    /// Nilai di `min_mikro..=maks_mikro` (`min_mikro` sudah di `0..=maks_mikro`).
+    fn jeda_mikro(&self, min_mikro: i64, maks_mikro: i64) -> i64;
 }
 
 /// Jeda acak seragam dari `aws-lc-rs` (ADR-0004 §4.4).
@@ -54,10 +54,11 @@ impl JedaAwsLc {
 }
 
 impl SumberJeda for JedaAwsLc {
-    fn jeda_mikro(&self, batas_mikro: i64) -> i64 {
-        if batas_mikro <= 0 {
+    fn jeda_mikro(&self, min_mikro: i64, maks_mikro: i64) -> i64 {
+        if maks_mikro <= 0 {
             return 0;
         }
+        let min_mikro = min_mikro.clamp(0, maks_mikro);
         let mut buf = [0u8; 8];
         // RNG sistem gagal: tanpa jeda. Jeda hanya pengacak waktu; rate tetap
         // dijaga skrip token, jadi ini tidak pernah menambah panggilan.
@@ -66,16 +67,17 @@ impl SumberJeda for JedaAwsLc {
         }
         let v = u64::from_le_bytes(buf);
         // Bias modulo diabaikan: rentang <= 1e6 jauh di bawah 2^64.
-        (v % (batas_mikro as u64 + 1)) as i64
+        min_mikro + (v % ((maks_mikro - min_mikro) as u64 + 1)) as i64
     }
 }
 
-/// Jeda tetap untuk uji, dipotong ke batas slot.
+/// Jeda tetap untuk uji, dipotong ke rentang `min..=maks`.
 pub struct JedaTetap(pub i64);
 
 impl SumberJeda for JedaTetap {
-    fn jeda_mikro(&self, batas_mikro: i64) -> i64 {
-        self.0.clamp(0, batas_mikro.max(0))
+    fn jeda_mikro(&self, min_mikro: i64, maks_mikro: i64) -> i64 {
+        let maks = maks_mikro.max(0);
+        self.0.clamp(min_mikro.clamp(0, maks), maks)
     }
 }
 
@@ -397,7 +399,8 @@ where
             ringkasan.dikirim.push(request_id);
             dikirim_pool += 1;
 
-            let jeda_mikro = jeda.jeda_mikro(pool.parameter.batas_jeda_mikro());
+            let (jeda_min, jeda_maks) = pool.parameter.rentang_jeda_mikro();
+            let jeda_mikro = jeda.jeda_mikro(jeda_min, jeda_maks);
             if jeda_mikro > 0 {
                 tokio::time::sleep(Duration::from_micros(jeda_mikro as u64)).await;
             }
@@ -538,11 +541,25 @@ mod uji {
     fn jeda_selalu_di_dalam_slot() {
         let acak = JedaAwsLc::baru();
         for _ in 0..1_000 {
-            let j = acak.jeda_mikro(100_000);
+            let j = acak.jeda_mikro(0, 100_000);
             assert!((0..=100_000).contains(&j));
         }
-        assert_eq!(acak.jeda_mikro(0), 0);
-        assert_eq!(JedaTetap(500).jeda_mikro(100), 100);
-        assert_eq!(JedaTetap(50).jeda_mikro(100), 50);
+        assert_eq!(acak.jeda_mikro(0, 0), 0);
+        assert_eq!(JedaTetap(500).jeda_mikro(0, 100), 100);
+        assert_eq!(JedaTetap(50).jeda_mikro(0, 100), 50);
+    }
+
+    /// ARC-233: jeda tidak pernah di bawah batas bawah (`jeda_min`).
+    #[test]
+    fn jeda_tidak_di_bawah_min() {
+        let acak = JedaAwsLc::baru();
+        for _ in 0..1_000 {
+            let j = acak.jeda_mikro(80_000, 100_000);
+            assert!((80_000..=100_000).contains(&j), "jeda {j} di luar rentang");
+        }
+        assert_eq!(acak.jeda_mikro(100_000, 100_000), 100_000, "min = maks");
+        assert_eq!(JedaTetap(0).jeda_mikro(80_000, 100_000), 80_000);
+        assert_eq!(JedaTetap(90_000).jeda_mikro(80_000, 100_000), 90_000);
+        assert_eq!(JedaTetap(500_000).jeda_mikro(80_000, 100_000), 100_000);
     }
 }
