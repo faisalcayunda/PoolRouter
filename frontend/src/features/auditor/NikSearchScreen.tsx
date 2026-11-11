@@ -21,6 +21,7 @@ import { TextField } from '../../components/m3/TextField';
 import { useFormatter } from '../../i18n/useFormatter';
 import { dayRangeBounds, todayRange, type DayRange } from '../common/dayRange';
 import { ReasonDialog } from '../common/ReasonDialog';
+import { FilterBar } from '../common/layout';
 import { PageHeader, EmptyState, LoadingState, QueryError } from '../common/page';
 import { useQuery } from '../common/useQuery';
 import { useDocumentTitle, useFocusOnMount } from '../common/a11y';
@@ -177,7 +178,7 @@ export function NikSearchScreen({ client = api }: NikSearchScreenProps): ReactNo
   const lastPage = searched && !query.data.kursor;
 
   return (
-    <section className="flex flex-col gap-4">
+    <section className="flex flex-col gap-6">
       <PageHeader
         title={t('nik.page.title')}
         subtitle={t('nik.page.subtitle')}
@@ -202,67 +203,69 @@ export function NikSearchScreen({ client = api }: NikSearchScreenProps): ReactNo
         }
       />
 
-      <form
-        className="flex flex-col gap-4"
-        onSubmit={(event) => {
-          event.preventDefault();
-          requestReason();
-        }}
-        aria-describedby={nikError ? 'nik-range-note' : undefined}
-      >
-        <div className="grid grid-cols-1 gap-4 expanded:grid-cols-2">
-          <TextField
-            label={t('nik.page.field')}
-            description={t('nik.page.field_help')}
-            value={nik}
-            // `inputmode` keeps numeric keyboards on mobile; the value is still validated server-side.
-            inputMode="numeric"
-            autoComplete="off"
-            isRequired
-            isInvalid={Boolean(nikError)}
-            errorMessage={nikError ?? undefined}
-            onChange={(value) => {
-              // Strip formatting *after* paste: `maxLength` would cut "3175 0000 0000 0001" at 16
-              // characters before the spaces were removed, silently losing the last digits.
-              setNik(value.replace(/\D/g, '').slice(0, NIK_LENGTH));
-              setNikTouched(true);
-            }}
-          />
-          <div className="flex flex-col gap-1">
-            <DateRangePicker
-              label={t('nik.page.range')}
-              calendarLabel={t('log.filter.range_picker')}
-              separator="–"
-              value={range}
-              onChange={(next) => {
-                if (next && next.end.compare(next.start) < 0) {
-                  setRangeError(t('common.date.order_error'));
-                  return;
-                }
-                setRange(next);
-                setRangeError(null);
+      <Card variant="container" className="p-4 large:p-6">
+        <form
+          className="flex flex-col gap-4"
+          onSubmit={(event) => {
+            event.preventDefault();
+            requestReason();
+          }}
+          aria-describedby={nikError ? 'nik-range-note' : undefined}
+        >
+          <FilterBar className="expanded:items-start">
+            <TextField
+              className="expanded:w-72"
+              label={t('nik.page.field')}
+              description={t('nik.page.field_help')}
+              value={nik}
+              // `inputmode` keeps numeric keyboards on mobile; the value is still validated server-side.
+              inputMode="numeric"
+              autoComplete="off"
+              isRequired
+              isInvalid={Boolean(nikError)}
+              errorMessage={nikError ?? undefined}
+              onChange={(value) => {
+                // Strip formatting *after* paste: `maxLength` would cut "3175 0000 0000 0001" at 16
+                // characters before the spaces were removed, silently losing the last digits.
+                setNik(value.replace(/\D/g, '').slice(0, NIK_LENGTH));
+                setNikTouched(true);
               }}
-              isInvalid={rangeError !== null}
             />
-            {rangeError ? (
-              <p role="alert" className="typescale-body-small text-error">
-                {rangeError}
-              </p>
-            ) : null}
-          </div>
-        </div>
-        <div>
-          <Button variant="filled" type="submit">
-            {t('common.action.search')}
-          </Button>
-        </div>
-        {/* Frame S12c: the rule that a range alone is not enough shows with the NIK error. */}
-        {nikError ? (
-          <p id="nik-range-note" className="typescale-body-small text-on-surface-variant">
-            {t('nik.page.range_only_note')}
-          </p>
-        ) : null}
-      </form>
+            <div className="flex flex-col gap-1 expanded:w-[280px]">
+              <DateRangePicker
+                label={t('nik.page.range')}
+                calendarLabel={t('log.filter.range_picker')}
+                separator="–"
+                value={range}
+                onChange={(next) => {
+                  if (next && next.end.compare(next.start) < 0) {
+                    setRangeError(t('common.date.order_error'));
+                    return;
+                  }
+                  setRange(next);
+                  setRangeError(null);
+                }}
+                isInvalid={rangeError !== null}
+              />
+              {rangeError ? (
+                <p role="alert" className="typescale-body-small text-error">
+                  {rangeError}
+                </p>
+              ) : null}
+            </div>
+            {/* Sejajar dengan kotak isian 40 px: label 20 + jarak 4 di atasnya. */}
+            <Button variant="filled" type="submit" className="expanded:mt-6">
+              {t('common.action.search')}
+            </Button>
+          </FilterBar>
+          {/* Frame S12c: the rule that a range alone is not enough shows with the NIK error. */}
+          {nikError ? (
+            <p id="nik-range-note" className="typescale-body-small text-on-surface-variant">
+              {t('nik.page.range_only_note')}
+            </p>
+          ) : null}
+        </form>
+      </Card>
 
       {exportNotice === 'too_large' ? (
         <InlineAlert tone="warning" live="polite" heading={t('export.error.title')}>
@@ -284,7 +287,7 @@ export function NikSearchScreen({ client = api }: NikSearchScreenProps): ReactNo
         rows.length === 0 ? (
           <EmptyState title={t('nik.empty.title')} body={t('common.empty.logs.body')} />
         ) : (
-          <Card variant="outlined" className="p-0">
+          <Card variant="container" className="overflow-hidden">
             <ScrollArea label={t('nik.page.title')}>
               <div className="table-card">
                 <table className="w-full border-collapse text-left">
@@ -331,7 +334,7 @@ export function NikSearchScreen({ client = api }: NikSearchScreenProps): ReactNo
                         <td data-label={t('log.col.code')} className={`hide-md ${TD}`}>
                           <Link
                             href={`/log/${encodeURIComponent(row.kode_transaksi)}`}
-                            className="m3-focus rounded-small text-primary underline-offset-2 hover:underline"
+                            className="m3-focus rounded-small text-primary-text underline-offset-2 hover:underline"
                             aria-label={t('log.row.aria', { kode: row.kode_transaksi })}
                           >
                             {row.kode_transaksi}

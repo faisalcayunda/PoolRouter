@@ -1,14 +1,14 @@
 import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
-import { LinkButton } from '../provider/LinkButton';
+import { cx } from '../../components/m3/cx';
 import { clientPath } from './access';
 
 export type ClientBagian = 'detail' | 'kredensial' | 'webhook';
 
 /**
- * Tautan ke dua bagian lain satu client (S08, S08b, S09/S09a). Frame Penpot tidak menggambar tab:
- * jejak breadcrumb sudah membawa kembali ke daftar, jadi bagian lain cukup tautan teks di sisi
- * aksi judul. Tautan biasa supaya bisa dibuka di tab baru.
+ * Subnav satu client (S08, S08b, S09/S09a) sebagai Line tab di bawah judul (spec ARC-363 §5, frame
+ * `2:22105`): ketiga bagian tampil dengan jarak tetap dan bagian aktif ditandai `aria-current`.
+ * Tautan biasa supaya bisa dibuka di tab baru.
  */
 export function ClientSubnav({
   clientId,
@@ -28,14 +28,28 @@ export function ClientSubnav({
     { id: 'webhook', href: clientPath(clientId, 'webhook'), label: t('clients.tab.webhook') },
   ];
   return (
-    <nav aria-label={t('clients.tab.aria')} className="flex flex-wrap items-center">
-      {items
-        .filter((item) => item.id !== active)
-        .map((item) => (
-          <LinkButton key={item.id} href={item.href} variant="text">
+    <nav
+      aria-label={t('clients.tab.aria')}
+      className="mt-2 flex gap-4 overflow-x-auto border-b border-outline-variant"
+    >
+      {items.map((item) => {
+        const current = item.id === active;
+        return (
+          <a
+            key={item.id}
+            href={item.href}
+            aria-current={current ? 'page' : undefined}
+            className={cx(
+              'm3-state m3-focus typescale-title-small -mb-px inline-flex min-h-12 shrink-0 items-center border-b-2 px-4 whitespace-nowrap',
+              current
+                ? 'border-secondary text-primary-text'
+                : 'border-transparent text-on-surface-variant',
+            )}
+          >
             {item.label}
-          </LinkButton>
-        ))}
+          </a>
+        );
+      })}
     </nav>
   );
 }

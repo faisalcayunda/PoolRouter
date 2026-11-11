@@ -10,13 +10,13 @@ import {
   type WebhookSecret,
 } from '../../api/client';
 import { Button } from '../../components/m3/Button';
-import { Card } from '../../components/m3/Card';
 import { Dialog } from '../../components/m3/Dialog';
 import { InlineAlert } from '../../components/m3/InlineAlert';
 import { TextField } from '../../components/m3/TextField';
 import { useFormatter } from '../../i18n/useFormatter';
 import { useDocumentTitle, useFocusOnMount } from '../common/a11y';
 import { useCrumbName } from '../common/CrumbName';
+import { FieldGrid, SectionCard } from '../common/layout';
 import { errorMessage, LoadingState, PageHeader, QueryError } from '../common/page';
 import { useRole } from '../common/RoleContext';
 import { ScrollArea } from '../common/ScrollArea';
@@ -79,23 +79,27 @@ function ConfigForm({
   const rejected = failure instanceof ApiError && failure.status === 422;
 
   return (
-    <form noValidate onSubmit={(e) => void submit(e)} className="flex max-w-3xl flex-col gap-4">
+    <form noValidate onSubmit={(e) => void submit(e)} className="flex flex-col gap-6">
       {failure !== null && !rejected ? (
         <InlineAlert tone="error">{errorMessage(t, i18n, failure).message}</InlineAlert>
       ) : null}
-      <TextField
-        label={t('webhook.page.address')}
-        description={t('webhook.address.help')}
-        value={url}
-        onChange={(v) => {
-          setUrl(v);
-          setFailure(null);
-        }}
-        inputMode="url"
-        autoComplete="off"
-        isInvalid={(attempted && urlError !== null) || rejected}
-        errorMessage={rejected ? t('clients.webhook.rejected') : urlError}
-      />
+      <FieldGrid>
+        <div className="col-span-full large:col-span-2">
+          <TextField
+            label={t('webhook.page.address')}
+            description={t('webhook.address.help')}
+            value={url}
+            onChange={(v) => {
+              setUrl(v);
+              setFailure(null);
+            }}
+            inputMode="url"
+            autoComplete="off"
+            isInvalid={(attempted && urlError !== null) || rejected}
+            errorMessage={rejected ? t('clients.webhook.rejected') : urlError}
+          />
+        </div>
+      </FieldGrid>
       {children}
       <div className="flex flex-wrap items-center gap-2">
         <Button isDisabled={saving} onPress={() => void submit()}>
@@ -242,12 +246,10 @@ export function WebhookScreen({ clientId, client = api }: WebhookScreenProps): R
   const ada = data?.config?.secret_versi != null;
 
   return (
-    <section className="flex flex-col gap-4">
-      <PageHeader
-        title={t('webhook.page.title', { nama_client: nama })}
-        titleRef={titleRef}
-        actions={<ClientSubnav clientId={clientId} active="webhook" />}
-      />
+    <section className="flex flex-col gap-6">
+      <PageHeader title={t('webhook.page.title', { nama_client: nama })} titleRef={titleRef}>
+        <ClientSubnav clientId={clientId} active="webhook" />
+      </PageHeader>
 
       {query.status === 'loading' ? <LoadingState label={t('common.state.loading')} /> : null}
       {query.status === 'error' ? <QueryError error={query.error} onRetry={query.reload} /> : null}
@@ -257,123 +259,132 @@ export function WebhookScreen({ clientId, client = api }: WebhookScreenProps): R
           {data.config === null ? (
             <InlineAlert tone="info">{t('clients.webhook.not_configured')}</InlineAlert>
           ) : null}
-          <ConfigForm
-            key={`${data.config?.webhook_url ?? ''}|${data.config?.aktif ?? ''}`}
-            client={client}
-            clientId={clientId}
-            config={data.config}
-            onSaved={() => {
-              snackbar.notify(t('webhook.snackbar.saved'));
-              query.reload();
-            }}
-          >
-            <Card variant="outlined" className="flex flex-col gap-2 p-4">
-              <h2 className="typescale-title-medium">{t('webhook.secret.heading')}</h2>
-              <p className="typescale-body-medium text-on-surface-variant">
-                {ada
-                  ? t('webhook.secret.active_desc', { versi: data.config?.secret_versi })
-                  : t('webhook.secret.desc')}
-              </p>
-              {secretError !== null ? (
-                <InlineAlert tone="error">{errorMessage(t, i18n, secretError).message}</InlineAlert>
-              ) : null}
-              <div>
-                {ada ? (
-                  <Button variant="filled-tonal" onPress={() => setRotating(true)}>
-                    {t('webhook.secret.rotate')}
-                  </Button>
-                ) : (
-                  <Button
-                    variant="filled-tonal"
-                    isDisabled={rotateBusy}
-                    onPress={() => void rotate(false)}
-                  >
-                    {t('webhook.secret.create')}
-                  </Button>
-                )}
+          <SectionCard>
+            <ConfigForm
+              key={`${data.config?.webhook_url ?? ''}|${data.config?.aktif ?? ''}`}
+              client={client}
+              clientId={clientId}
+              config={data.config}
+              onSaved={() => {
+                snackbar.notify(t('webhook.snackbar.saved'));
+                query.reload();
+              }}
+            >
+              <div className="flex flex-col gap-2 rounded-medium bg-surface-container-low p-4">
+                <h3 className="typescale-title-medium text-on-surface">
+                  {t('webhook.secret.heading')}
+                </h3>
+                <p className="typescale-body-medium text-on-surface-variant">
+                  {ada
+                    ? t('webhook.secret.active_desc', { versi: data.config?.secret_versi })
+                    : t('webhook.secret.desc')}
+                </p>
+                {secretError !== null ? (
+                  <InlineAlert tone="error">
+                    {errorMessage(t, i18n, secretError).message}
+                  </InlineAlert>
+                ) : null}
+                <div>
+                  {ada ? (
+                    <Button variant="filled-tonal" onPress={() => setRotating(true)}>
+                      {t('webhook.secret.rotate')}
+                    </Button>
+                  ) : (
+                    <Button
+                      variant="filled-tonal"
+                      isDisabled={rotateBusy}
+                      onPress={() => void rotate(false)}
+                    >
+                      {t('webhook.secret.create')}
+                    </Button>
+                  )}
+                </div>
               </div>
-            </Card>
-          </ConfigForm>
+            </ConfigForm>
+          </SectionCard>
         </>
       ) : null}
 
-      <h2 className="typescale-title-medium mt-4">{t('webhook.failures.heading')}</h2>
-      {gagal24 > 0 ? (
-        <InlineAlert tone="warning">{t('webhook.failures.alert', { count: gagal24 })}</InlineAlert>
-      ) : null}
-      {log.status === 'loading' ? <LoadingState label={t('common.state.loading')} /> : null}
-      {log.status === 'error' ? <QueryError error={log.error} onRetry={log.reload} /> : null}
-      {log.status === 'success' && rows.length === 0 ? (
-        <p className="typescale-body-medium text-on-surface-variant">
-          {t('webhook.empty.no_failures')}
-        </p>
-      ) : null}
-      {rows.length > 0 ? (
-        <ScrollArea label={t('webhook.failures.heading')}>
-          <div className="table-card">
-            <table className="w-full border-collapse text-left">
-              <caption className="sr-only">{t('webhook.failures.heading')}</caption>
-              <thead>
-                <tr className="typescale-title-small text-on-surface-variant">
-                  <th scope="col" className={TH}>
-                    {t('webhook.col.time')}
-                  </th>
-                  <th scope="col" className={TH}>
-                    {t('webhook.col.queue_id')}
-                  </th>
-                  <th scope="col" className={TH}>
-                    {t('webhook.col.request_status')}
-                  </th>
-                  <th scope="col" className={TH}>
-                    {t('webhook.col.reason')}
-                  </th>
-                  <th scope="col" className={TH}>
-                    {t('webhook.col.note')}
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((row) => (
-                  <tr
-                    key={`${row.request_id}|${row.sent_at}`}
-                    className="border-b border-outline-variant"
-                  >
-                    <td data-label={t('webhook.col.time')} className={TD}>
-                      {fmt.tanggalWaktu(row.sent_at)}
-                    </td>
-                    <td data-label={t('webhook.col.queue_id')} className={TD}>
-                      <span className="sr-only">{row.request_id}</span>
-                      <span aria-hidden="true" title={row.request_id} className="font-code">
-                        {ringkasId(row.request_id)}
-                      </span>
-                    </td>
-                    <td data-label={t('webhook.col.request_status')} className={TD}>
-                      {/* Status antrean request belum ada di API log webhook; tampil sebagai tanda hubung. */}
-                      —
-                    </td>
-                    <td data-label={t('webhook.col.reason')} className={TD}>
-                      {row.http_status != null
-                        ? t('webhook.reason.http', { kode: row.http_status })
-                        : null}
-                      {row.error_class ? (
-                        <span className="block">
-                          {t(`clients.webhook.kelas.${row.error_class}`)}
-                        </span>
-                      ) : null}
-                      {row.http_status == null && !row.error_class
-                        ? t(`clients.webhook.hasil.${row.hasil}`)
-                        : null}
-                    </td>
-                    <td data-label={t('webhook.col.note')} className={TD}>
-                      {t('webhook.note.not_resent')}
-                    </td>
+      <SectionCard title={t('webhook.failures.heading')}>
+        {gagal24 > 0 ? (
+          <InlineAlert tone="warning">
+            {t('webhook.failures.alert', { count: gagal24 })}
+          </InlineAlert>
+        ) : null}
+        {log.status === 'loading' ? <LoadingState label={t('common.state.loading')} /> : null}
+        {log.status === 'error' ? <QueryError error={log.error} onRetry={log.reload} /> : null}
+        {log.status === 'success' && rows.length === 0 ? (
+          <p className="typescale-body-medium text-on-surface-variant">
+            {t('webhook.empty.no_failures')}
+          </p>
+        ) : null}
+        {rows.length > 0 ? (
+          <ScrollArea label={t('webhook.failures.heading')}>
+            <div className="table-card">
+              <table className="w-full border-collapse text-left">
+                <caption className="sr-only">{t('webhook.failures.heading')}</caption>
+                <thead>
+                  <tr className="typescale-title-small text-on-surface-variant">
+                    <th scope="col" className={TH}>
+                      {t('webhook.col.time')}
+                    </th>
+                    <th scope="col" className={TH}>
+                      {t('webhook.col.queue_id')}
+                    </th>
+                    <th scope="col" className={TH}>
+                      {t('webhook.col.request_status')}
+                    </th>
+                    <th scope="col" className={TH}>
+                      {t('webhook.col.reason')}
+                    </th>
+                    <th scope="col" className={TH}>
+                      {t('webhook.col.note')}
+                    </th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </ScrollArea>
-      ) : null}
+                </thead>
+                <tbody>
+                  {rows.map((row) => (
+                    <tr
+                      key={`${row.request_id}|${row.sent_at}`}
+                      className="border-b border-outline-variant"
+                    >
+                      <td data-label={t('webhook.col.time')} className={TD}>
+                        {fmt.tanggalWaktu(row.sent_at)}
+                      </td>
+                      <td data-label={t('webhook.col.queue_id')} className={TD}>
+                        <span className="sr-only">{row.request_id}</span>
+                        <span aria-hidden="true" title={row.request_id} className="font-code">
+                          {ringkasId(row.request_id)}
+                        </span>
+                      </td>
+                      <td data-label={t('webhook.col.request_status')} className={TD}>
+                        {/* Status antrean request belum ada di API log webhook; tampil sebagai tanda hubung. */}
+                        —
+                      </td>
+                      <td data-label={t('webhook.col.reason')} className={TD}>
+                        {row.http_status != null
+                          ? t('webhook.reason.http', { kode: row.http_status })
+                          : null}
+                        {row.error_class ? (
+                          <span className="block">
+                            {t(`clients.webhook.kelas.${row.error_class}`)}
+                          </span>
+                        ) : null}
+                        {row.http_status == null && !row.error_class
+                          ? t(`clients.webhook.hasil.${row.hasil}`)
+                          : null}
+                      </td>
+                      <td data-label={t('webhook.col.note')} className={TD}>
+                        {t('webhook.note.not_resent')}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </ScrollArea>
+        ) : null}
+      </SectionCard>
 
       {rotating ? (
         <RotateDialog

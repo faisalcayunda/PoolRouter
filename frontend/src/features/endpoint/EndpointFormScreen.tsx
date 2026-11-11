@@ -9,13 +9,13 @@ import {
   type Provider,
 } from '../../api/client';
 import { Button } from '../../components/m3/Button';
-import { Card } from '../../components/m3/Card';
 import { InlineAlert } from '../../components/m3/InlineAlert';
 import { Select, SelectItem } from '../../components/m3/Select';
 import { TextArea } from '../../components/m3/TextField';
 import { useDocumentTitle, useFocusOnMount } from '../common/a11y';
 import { useCrumbName } from '../common/CrumbName';
 import { errorMessage, LoadingState, PageHeader, QueryError } from '../common/page';
+import { FieldGrid, SectionCard, SELECT_FILL } from '../common/layout';
 import { useRole } from '../common/RoleContext';
 import { useQuery } from '../common/useQuery';
 import { SnackbarRegion, useSnackbar } from '../common/useSnackbar';
@@ -167,7 +167,7 @@ function EndpointForm({ client, lookups, initial }: EndpointFormProps): ReactNod
   const metadataIssue = errors.fields.metadata_fields;
 
   return (
-    <form noValidate onSubmit={(e) => void submit(e)} className="flex flex-col gap-4">
+    <form noValidate onSubmit={(e) => void submit(e)} className="flex flex-col gap-6">
       <PageHeader
         title={
           current && provider
@@ -216,12 +216,12 @@ function EndpointForm({ client, lookups, initial }: EndpointFormProps): ReactNod
         <InlineAlert tone="error">{errorMessage(t, i18n, failure).message}</InlineAlert>
       ) : null}
 
-      <div className="flex flex-col gap-4">
-        <Card variant="container" className="flex flex-col gap-4 p-6">
-          <h2 className="typescale-title-medium">{t('endpoint.form.section.target')}</h2>
-          <div className="flex flex-wrap gap-4">
+      <div className="flex flex-col gap-6">
+        <SectionCard title={t('endpoint.form.section.target')}>
+          <FieldGrid>
             <div data-field="provider_id">
               <Select
+                className={SELECT_FILL}
                 label={t('endpoint.form.provider')}
                 placeholder={t('endpoint.form.choose')}
                 selectedKey={draft.provider_id || null}
@@ -242,6 +242,7 @@ function EndpointForm({ client, lookups, initial }: EndpointFormProps): ReactNod
             </div>
             <div data-field="downstream_pool_id">
               <Select
+                className={SELECT_FILL}
                 label={t('endpoint.form.pool')}
                 placeholder={t('endpoint.form.choose')}
                 selectedKey={draft.downstream_pool_id || null}
@@ -268,6 +269,7 @@ function EndpointForm({ client, lookups, initial }: EndpointFormProps): ReactNod
             </div>
             <div data-field="log_mode">
               <Select
+                className={SELECT_FILL}
                 label={t('endpoint.form.log_mode.label')}
                 selectedKey={draft.log_mode}
                 onSelectionChange={(key) => {
@@ -292,15 +294,16 @@ function EndpointForm({ client, lookups, initial }: EndpointFormProps): ReactNod
                 </p>
               )}
             </div>
-          </div>
-        </Card>
+          </FieldGrid>
+        </SectionCard>
 
-        <Card variant="container" className="flex flex-col gap-4 p-6">
-          <h2 className="typescale-title-medium text-on-surface">
-            {provider
+        <SectionCard
+          title={
+            provider
               ? `${t('endpoint.form.constants.title')} ${provider.nama}`
-              : t('endpoint.form.section.parameters')}
-          </h2>
+              : t('endpoint.form.section.parameters')
+          }
+        >
           <div data-field="parameter_literal">
             <TextArea
               label={t('endpoint.form.parameters.label')}
@@ -313,10 +316,9 @@ function EndpointForm({ client, lookups, initial }: EndpointFormProps): ReactNod
               {...err('parameter_literal')}
             />
           </div>
-        </Card>
+        </SectionCard>
 
-        <Card variant="container" className="flex flex-col gap-4 p-6">
-          <h2 className="typescale-title-medium">{t('endpoint.form.section.metadata')}</h2>
+        <SectionCard title={t('endpoint.form.section.metadata')}>
           <InlineAlert tone="info">{t('metadata.page.info')}</InlineAlert>
           <MetadataContractTable rows={draft.metadata_fields} />
           <p className="typescale-body-small text-on-surface-variant">{t('metadata.page.note')}</p>
@@ -331,11 +333,10 @@ function EndpointForm({ client, lookups, initial }: EndpointFormProps): ReactNod
               onTouch={touchRow}
             />
           </div>
-        </Card>
+        </SectionCard>
 
         {mode === 'update' ? (
-          <Card variant="container" className="flex flex-col gap-4 p-6">
-            <h2 className="typescale-title-medium">{t('endpoint.form.reason.heading')}</h2>
+          <SectionCard title={t('endpoint.form.reason.heading')}>
             <div data-field="alasan">
               <TextArea
                 label={t('endpoint.form.reason.label')}
@@ -350,7 +351,7 @@ function EndpointForm({ client, lookups, initial }: EndpointFormProps): ReactNod
                 {...err('alasan')}
               />
             </div>
-          </Card>
+          </SectionCard>
         ) : null}
       </div>
       <SnackbarRegion queue={snackbar.queue} />
@@ -387,7 +388,7 @@ export function EndpointFormScreen({ client = api, endpointId }: EndpointFormScr
   if (data.status === 'loading') return <LoadingState label={t('common.state.loading')} />;
   if (data.status === 'error') {
     return (
-      <section className="flex flex-col gap-4">
+      <section className="flex flex-col gap-6">
         <PageHeader title={t('endpoint.page.title')} />
         <QueryError error={data.error} onRetry={data.reload} />
       </section>

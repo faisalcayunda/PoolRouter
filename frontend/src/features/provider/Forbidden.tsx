@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
+import { Card } from '../../components/m3/Card';
 import { useFocusOnMount } from '../common/a11y';
 import { EmptyState } from '../common/page';
 import { LinkButton } from './LinkButton';
@@ -7,13 +8,13 @@ import { LinkButton } from './LinkButton';
 /**
  * State 403 untuk layar konfigurasi (S16): peran aktif tidak mencakup layar ini. Teks memakai
  * kalimat katalog yang sama dengan shell, jadi tidak ada salinan teks 403 kedua. Bentuknya mengikuti
- * frame Penpot S16 kartu 5: ikon kunci, judul, sebab, dan aksi "Ke halaman awal".
+ * frame Penpot S16 kartu 5 di dalam kartu (spec ARC-363 §5): ikon kunci, judul, sebab, dan aksi "Ke halaman awal".
  */
 export function Forbidden(): ReactNode {
   const { t } = useTranslation();
   const titleRef = useFocusOnMount<HTMLHeadingElement>();
   return (
-    <section className="flex flex-col gap-2">
+    <Card variant="container" className="mx-auto w-full max-w-[640px] p-6 large:p-8">
       <EmptyState
         icon="lock"
         tone="error"
@@ -27,6 +28,6 @@ export function Forbidden(): ReactNode {
           </LinkButton>
         }
       />
-    </section>
+    </Card>
   );
 }

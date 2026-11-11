@@ -11,7 +11,6 @@ import {
   type UpstreamPool,
 } from '../../api/client';
 import { Button } from '../../components/m3/Button';
-import { Card } from '../../components/m3/Card';
 import { InlineAlert } from '../../components/m3/InlineAlert';
 import { Select, SelectItem } from '../../components/m3/Select';
 import { StatusLabel } from '../../components/m3/StatusLabel';
@@ -19,6 +18,7 @@ import { Tab, TabList, TabPanel, Tabs } from '../../components/m3/Tabs';
 import { TextArea, TextField } from '../../components/m3/TextField';
 import { useDocumentTitle, useFocusOnMount } from '../common/a11y';
 import { useCrumbName } from '../common/CrumbName';
+import { FieldGrid, SectionCard, SELECT_FILL } from '../common/layout';
 import { errorMessage, LoadingState, PageHeader, QueryError } from '../common/page';
 import { useRole } from '../common/RoleContext';
 import { useQuery } from '../common/useQuery';
@@ -205,7 +205,7 @@ function UpstreamForm({ client, providers, initial }: UpstreamFormProps): ReactN
   const rateLimit = Number(draft.rate_limit_per_jam);
 
   return (
-    <section className="flex flex-col gap-4">
+    <section className="flex flex-col gap-6">
       <PageHeader
         title={
           current
@@ -229,7 +229,7 @@ function UpstreamForm({ client, providers, initial }: UpstreamFormProps): ReactN
         <InlineAlert tone="error">{errorMessage(t, i18n, failure).message}</InlineAlert>
       ) : null}
 
-      <form noValidate onSubmit={(e) => void submit(e)} className="flex flex-col gap-4">
+      <form noValidate onSubmit={(e) => void submit(e)} className="flex flex-col gap-6">
         <Tabs
           selectedKey={tab}
           onSelectionChange={(key) => setTab(key === 'antipattern' ? 'antipattern' : 'quota')}
@@ -239,88 +239,91 @@ function UpstreamForm({ client, providers, initial }: UpstreamFormProps): ReactN
             <Tab id="antipattern">{t('upstream.tab.antipattern')}</Tab>
           </TabList>
 
-          <TabPanel id="quota" className="flex flex-col gap-4">
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div data-field="provider_id">
-                <Select
-                  label={t('upstream.page.provider')}
-                  selectedKey={draft.provider_id === '' ? null : draft.provider_id}
-                  onSelectionChange={(key) => {
-                    const found = providers.find((p) => p.provider_id === key);
-                    if (found) set('provider_id', found.provider_id);
-                  }}
-                  placeholder={t('upstream.form.provider_placeholder')}
-                  isInvalid={errors.provider_id !== undefined}
-                >
-                  {providers.map((p) => (
-                    <SelectItem key={p.provider_id} id={p.provider_id} textValue={p.nama}>
-                      {p.nama}
-                    </SelectItem>
-                  ))}
-                </Select>
-                {errors.provider_id ? (
-                  <p className="typescale-body-small text-error">
-                    {err('provider_id').errorMessage}
-                  </p>
-                ) : (
-                  <p className="typescale-body-small text-on-surface-variant">
-                    {t('upstream.provider.help')}
-                  </p>
-                )}
-              </div>
-              {current ? (
-                <div className="flex flex-col gap-1">
-                  <span className="typescale-body-small text-on-surface-variant">
-                    {t('upstream.page.status')}
-                  </span>
-                  <div className="flex h-14 items-center">
-                    <StatusLabel tone={current.aktif ? 'success' : 'neutral'}>
-                      {current.aktif ? t('common.state.active') : t('upstream.status.inactive')}
-                    </StatusLabel>
+          <TabPanel id="quota" className="flex flex-col gap-6">
+            <SectionCard>
+              <FieldGrid>
+                <div data-field="provider_id">
+                  <Select
+                    className={SELECT_FILL}
+                    label={t('upstream.page.provider')}
+                    selectedKey={draft.provider_id === '' ? null : draft.provider_id}
+                    onSelectionChange={(key) => {
+                      const found = providers.find((p) => p.provider_id === key);
+                      if (found) set('provider_id', found.provider_id);
+                    }}
+                    placeholder={t('upstream.form.provider_placeholder')}
+                    isInvalid={errors.provider_id !== undefined}
+                  >
+                    {providers.map((p) => (
+                      <SelectItem key={p.provider_id} id={p.provider_id} textValue={p.nama}>
+                        {p.nama}
+                      </SelectItem>
+                    ))}
+                  </Select>
+                  {errors.provider_id ? (
+                    <p className="typescale-body-small text-error">
+                      {err('provider_id').errorMessage}
+                    </p>
+                  ) : (
+                    <p className="typescale-body-small text-on-surface-variant">
+                      {t('upstream.provider.help')}
+                    </p>
+                  )}
+                </div>
+                {current ? (
+                  <div className="flex flex-col gap-1">
+                    <span className="typescale-body-small text-on-surface-variant">
+                      {t('upstream.page.status')}
+                    </span>
+                    <div className="flex h-14 items-center">
+                      <StatusLabel tone={current.aktif ? 'success' : 'neutral'}>
+                        {current.aktif ? t('common.state.active') : t('upstream.status.inactive')}
+                      </StatusLabel>
+                    </div>
                   </div>
+                ) : null}
+                {QUOTA_FIELDS.map((field) => (
+                  <div key={field} data-field={field}>
+                    <TextField
+                      label={tDynamic(i18n, `upstream.form.field.${field}`)}
+                      description={
+                        field === 'kuota_harian'
+                          ? t('upstream.daily_quota.help')
+                          : field === 'porsi_sync_persen'
+                            ? t('upstream.sync_share.help')
+                            : undefined
+                      }
+                      value={draft[field]}
+                      onChange={(v) => set(field, v)}
+                      inputMode="decimal"
+                      autoComplete="off"
+                      {...err(field)}
+                    />
+                  </div>
+                ))}
+                <div data-field="jendela_kuota">
+                  <Select
+                    className={SELECT_FILL}
+                    label={t('upstream.form.field.jendela_kuota')}
+                    selectedKey={draft.jendela_kuota}
+                    onSelectionChange={(key) => {
+                      const found = JENDELA_KUOTA.find((v) => v === key);
+                      if (found) set('jendela_kuota', found);
+                    }}
+                  >
+                    {JENDELA_KUOTA.map((v) => (
+                      <SelectItem key={v} id={v}>
+                        {tDynamic(i18n, `upstream.form.jendela.${v}`)}
+                      </SelectItem>
+                    ))}
+                  </Select>
                 </div>
-              ) : null}
-              {QUOTA_FIELDS.map((field) => (
-                <div key={field} data-field={field}>
-                  <TextField
-                    label={tDynamic(i18n, `upstream.form.field.${field}`)}
-                    description={
-                      field === 'kuota_harian'
-                        ? t('upstream.daily_quota.help')
-                        : field === 'porsi_sync_persen'
-                          ? t('upstream.sync_share.help')
-                          : undefined
-                    }
-                    value={draft[field]}
-                    onChange={(v) => set(field, v)}
-                    inputMode="decimal"
-                    autoComplete="off"
-                    {...err(field)}
-                  />
-                </div>
-              ))}
-              <div data-field="jendela_kuota">
-                <Select
-                  label={t('upstream.form.field.jendela_kuota')}
-                  selectedKey={draft.jendela_kuota}
-                  onSelectionChange={(key) => {
-                    const found = JENDELA_KUOTA.find((v) => v === key);
-                    if (found) set('jendela_kuota', found);
-                  }}
-                >
-                  {JENDELA_KUOTA.map((v) => (
-                    <SelectItem key={v} id={v}>
-                      {tDynamic(i18n, `upstream.form.jendela.${v}`)}
-                    </SelectItem>
-                  ))}
-                </Select>
-              </div>
-            </div>
+              </FieldGrid>
+            </SectionCard>
 
             {GROUPS.map((group) => (
-              <Card key={group.heading} variant="outlined" className="flex flex-col gap-4">
-                <h2 className="typescale-title-medium">{tDynamic(i18n, group.heading)}</h2>
-                <div className="grid gap-4 sm:grid-cols-2">
+              <SectionCard key={group.heading} title={tDynamic(i18n, group.heading)}>
+                <FieldGrid>
                   {group.fields.map((field) => (
                     <div key={field} data-field={field}>
                       <TextField
@@ -344,46 +347,47 @@ function UpstreamForm({ client, providers, initial }: UpstreamFormProps): ReactN
                       />
                     </div>
                   ) : null}
-                </div>
-              </Card>
+                </FieldGrid>
+              </SectionCard>
             ))}
           </TabPanel>
 
-          <TabPanel id="antipattern" className="flex flex-col gap-4">
-            <p className="typescale-body-medium text-on-surface-variant">
-              {t('antipattern.page.subtitle')}
-            </p>
-            <div className="grid gap-4 sm:grid-cols-2">
-              {ANTIPATTERN_FIELDS.map((field) => (
-                <div key={field} data-field={field}>
-                  <TextField
-                    label={tDynamic(i18n, `upstream.form.field.${field}`)}
-                    description={
-                      field === 'jeda_min'
-                        ? t('antipattern.page.delay_help')
-                        : field === 'ambang_berdampingan'
-                          ? t('antipattern.page.adjacent_help')
-                          : undefined
-                    }
-                    value={draft[field]}
-                    onChange={(v) => set(field, v)}
-                    inputMode="decimal"
-                    autoComplete="off"
-                    {...err(field)}
-                  />
-                </div>
-              ))}
-            </div>
-            {rateLimit > 0 ? (
-              <InlineAlert tone="warning">
-                {t('antipattern.page.warn', { batas: rateLimit })}
-              </InlineAlert>
-            ) : null}
+          <TabPanel id="antipattern" className="flex flex-col gap-6">
+            <SectionCard>
+              <p className="typescale-body-medium text-on-surface-variant">
+                {t('antipattern.page.subtitle')}
+              </p>
+              <FieldGrid>
+                {ANTIPATTERN_FIELDS.map((field) => (
+                  <div key={field} data-field={field}>
+                    <TextField
+                      label={tDynamic(i18n, `upstream.form.field.${field}`)}
+                      description={
+                        field === 'jeda_min'
+                          ? t('antipattern.page.delay_help')
+                          : field === 'ambang_berdampingan'
+                            ? t('antipattern.page.adjacent_help')
+                            : undefined
+                      }
+                      value={draft[field]}
+                      onChange={(v) => set(field, v)}
+                      inputMode="decimal"
+                      autoComplete="off"
+                      {...err(field)}
+                    />
+                  </div>
+                ))}
+              </FieldGrid>
+              {rateLimit > 0 ? (
+                <InlineAlert tone="warning">
+                  {t('antipattern.page.warn', { batas: rateLimit })}
+                </InlineAlert>
+              ) : null}
+            </SectionCard>
           </TabPanel>
         </Tabs>
 
-        <Card variant="outlined" className="flex flex-col gap-4">
-          <h2 className="typescale-title-medium">{t('upstream.form.reason.heading')}</h2>
+        <SectionCard title={t('upstream.form.reason.heading')}>
           <div data-field="alasan">
             <TextArea
               label={
@@ -400,7 +404,7 @@ function UpstreamForm({ client, providers, initial }: UpstreamFormProps): ReactN
               {...err('alasan')}
             />
           </div>
-        </Card>
+        </SectionCard>
 
         <div className="flex flex-wrap items-center gap-2">
           <Button type="submit" isDisabled={saving}>
@@ -410,7 +414,11 @@ function UpstreamForm({ client, providers, initial }: UpstreamFormProps): ReactN
             {t('common.action.cancel')}
           </LinkButton>
           {current?.aktif ? (
-            <Button variant="outlined" className="sm:ml-auto" onPress={() => setDeactivating(true)}>
+            <Button
+              variant="outlined"
+              className="medium:ml-auto"
+              onPress={() => setDeactivating(true)}
+            >
               {t('upstream.page.deactivate')}
             </Button>
           ) : null}
@@ -463,7 +471,7 @@ export function UpstreamFormScreen({ client = api, poolId }: UpstreamFormScreenP
   const failed = providers.status === 'error' ? providers : pool.status === 'error' ? pool : null;
   if (failed) {
     return (
-      <section className="flex flex-col gap-4">
+      <section className="flex flex-col gap-6">
         <PageHeader title={t('upstream.page.title')} />
         <QueryError error={failed.error} onRetry={failed.reload} />
       </section>

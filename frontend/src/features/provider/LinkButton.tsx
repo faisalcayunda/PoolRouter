@@ -8,8 +8,8 @@ import { cx } from '../../components/m3/cx';
  */
 const VARIANT = {
   filled: 'bg-primary px-6 text-on-primary',
-  outlined: 'border border-outline px-6 text-primary',
-  text: 'px-3 text-primary',
+  outlined: 'border border-outline px-6 text-primary-text',
+  text: 'px-3 text-primary-text',
 } as const;
 
 export function LinkButton({

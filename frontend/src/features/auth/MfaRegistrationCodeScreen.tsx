@@ -25,7 +25,7 @@ export function MfaRegistrationCodeScreen({
 
   return (
     <section className="flex min-h-screen items-center justify-center bg-[var(--md-sys-color-surface)] p-4">
-      <Card className="w-full max-w-[428px] p-8">
+      <Card variant="container" className="w-full max-w-[428px] p-6 min-[480px]:p-9">
         <p className="typescale-label-medium text-[var(--md-sys-color-on-surface-variant)]">
           {t('auth.mfa.registration.step')}
         </p>

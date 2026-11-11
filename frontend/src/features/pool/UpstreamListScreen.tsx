@@ -93,7 +93,7 @@ export function UpstreamListScreen({ client = api }: UpstreamListScreenProps): R
   const tambah = <LinkButton href="/upstream/baru">{t('upstream.page.add')}</LinkButton>;
 
   return (
-    <section className="flex flex-col gap-4">
+    <section className="flex flex-col gap-6">
       <PageHeader
         title={t('upstream.page.title')}
         subtitle={t('upstream.page.subtitle')}
@@ -108,7 +108,7 @@ export function UpstreamListScreen({ client = api }: UpstreamListScreenProps): R
       ) : null}
 
       {pools.status === 'success' && rows.length === 0 ? (
-        <Card variant="outlined" className="flex flex-col items-center gap-3 p-8 text-center">
+        <Card variant="container" className="flex flex-col items-center gap-3 p-8 text-center">
           <h2 className="typescale-title-large text-on-surface">{t('upstream.empty.title')}</h2>
           <p className="typescale-body-medium max-w-xl text-on-surface-variant">
             {t('upstream.empty.body')}
@@ -118,7 +118,7 @@ export function UpstreamListScreen({ client = api }: UpstreamListScreenProps): R
       ) : null}
 
       {rows.length > 0 ? (
-        <Card variant="outlined" className="p-0">
+        <Card variant="container" className="overflow-hidden">
           <ScrollArea label={t('upstream.page.title')}>
             <div className="table-card">
               <table className="w-full border-collapse text-left">

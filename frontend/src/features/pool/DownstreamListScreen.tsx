@@ -110,7 +110,7 @@ export function DownstreamListScreen({ client = api }: DownstreamListScreenProps
   const tambah = <LinkButton href="/downstream/baru">{t('downstream.page.add')}</LinkButton>;
 
   return (
-    <section className="flex flex-col gap-4">
+    <section className="flex flex-col gap-6">
       <PageHeader
         title={t('downstream.page.title')}
         subtitle={t('downstream.page.subtitle')}
@@ -125,7 +125,7 @@ export function DownstreamListScreen({ client = api }: DownstreamListScreenProps
       ) : null}
 
       {pools.status === 'success' && rows.length === 0 ? (
-        <Card variant="outlined" className="flex flex-col items-center gap-3 p-8 text-center">
+        <Card variant="container" className="flex flex-col items-center gap-3 p-8 text-center">
           <h2 className="typescale-title-large text-on-surface">{t('downstream.empty.title')}</h2>
           <p className="typescale-body-medium max-w-xl text-on-surface-variant">
             {t('downstream.empty.body')}
@@ -135,7 +135,7 @@ export function DownstreamListScreen({ client = api }: DownstreamListScreenProps
       ) : null}
 
       {rows.length > 0 ? (
-        <Card variant="outlined" className="p-0">
+        <Card variant="container" className="overflow-hidden">
           <ScrollArea label={t('downstream.page.title')}>
             <div className="table-card">
               <table className="w-full border-collapse text-left">

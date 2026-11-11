@@ -36,7 +36,7 @@ export function MetricCard({
   className,
 }: MetricCardProps) {
   return (
-    <Card variant="outlined" className={cx('flex w-full flex-col gap-3 p-5!', className)}>
+    <Card variant="container" className={cx('flex w-full flex-col gap-3 p-6', className)}>
       {/* Ikon di dalam judul: judul tetap anak langsung kartu, dan nama aksesnya hanya teks judul. */}
       <Title className="typescale-title-medium flex items-center gap-2 text-on-surface">
         <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-small border border-outline-variant">

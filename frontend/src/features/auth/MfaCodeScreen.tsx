@@ -38,7 +38,7 @@ export function MfaCodeScreen({
 
   return (
     <section className="flex min-h-screen items-center justify-center bg-[var(--md-sys-color-surface)] p-4">
-      <Card className="w-full max-w-[428px] p-8">
+      <Card variant="container" className="w-full max-w-[428px] p-6 min-[480px]:p-9">
         <h1 className="typescale-title-large">
           {t(mode === 'totp' ? 'auth.mfa.code.title' : 'auth.mfa.code.recovery_title')}
         </h1>
