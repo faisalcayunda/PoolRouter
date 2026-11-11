@@ -10,13 +10,13 @@ import {
   type UpstreamPool,
 } from '../../api/client';
 import { Button } from '../../components/m3/Button';
-import { Card } from '../../components/m3/Card';
 import { InlineAlert } from '../../components/m3/InlineAlert';
 import { Select, SelectItem } from '../../components/m3/Select';
 import { Switch } from '../../components/m3/Switch';
 import { TextArea, TextField } from '../../components/m3/TextField';
 import { useDocumentTitle, useFocusOnMount } from '../common/a11y';
 import { useCrumbName } from '../common/CrumbName';
+import { FieldGrid, SectionCard, SELECT_FILL } from '../common/layout';
 import { errorMessage, LoadingState, PageHeader, QueryError } from '../common/page';
 import { useRole } from '../common/RoleContext';
 import { useQuery } from '../common/useQuery';
@@ -157,7 +157,7 @@ function DownstreamForm({
   const beralokasi = draft.jenis !== 'none';
 
   return (
-    <section className="flex flex-col gap-4">
+    <section className="flex flex-col gap-6">
       <PageHeader
         title={
           current
@@ -187,14 +187,15 @@ function DownstreamForm({
         <InlineAlert tone="error">{errorMessage(t, i18n, failure).message}</InlineAlert>
       ) : null}
 
-      <form noValidate onSubmit={(e) => void submit(e)} className="flex flex-col gap-4">
-        <Card variant="outlined" className="flex flex-col gap-4">
-          <h2 className="typescale-title-medium">
-            {mode === 'create'
+      <form noValidate onSubmit={(e) => void submit(e)} className="flex flex-col gap-6">
+        <SectionCard
+          title={
+            mode === 'create'
               ? t('downstream.page.form_heading')
-              : t('downstream.form.group.general')}
-          </h2>
-          <div className="grid gap-4 sm:grid-cols-2">
+              : t('downstream.form.group.general')
+          }
+        >
+          <FieldGrid>
             <div data-field="nama">
               <TextField
                 label={t('downstream.col.name')}
@@ -216,6 +217,7 @@ function DownstreamForm({
             </div>
             <div data-field="upstream_pool_id">
               <Select
+                className={SELECT_FILL}
                 label={t('downstream.col.upstream')}
                 selectedKey={draft.upstream_pool_id === '' ? null : draft.upstream_pool_id}
                 onSelectionChange={(key) => {
@@ -252,87 +254,92 @@ function DownstreamForm({
                 {...err('ttl_jam')}
               />
             </div>
-          </div>
-        </Card>
+          </FieldGrid>
+        </SectionCard>
 
-        <Card variant="outlined" className="flex flex-col gap-4">
-          <h2 className="typescale-title-medium">{t('downstream.form.group.alokasi')}</h2>
-          <div data-field="jenis">
-            <Select
-              label={t('downstream.form.alokasi.jenis')}
-              selectedKey={draft.jenis}
-              onSelectionChange={(key) => {
-                const found = JENIS_ALOKASI.find((v) => v === key);
-                if (!found) return;
-                set('jenis', found);
-                // Tanpa alokasi, kontrak mewajibkan boleh_pinjam true dan tanpa sifat.
-                if (found === 'none') {
-                  set('sifat', null);
-                  set('nilai', '');
-                  set('boleh_pinjam', true);
-                }
-              }}
-            >
-              {JENIS_ALOKASI.map((v) => (
-                <SelectItem key={v} id={v}>
-                  {tDynamic(i18n, `downstream.form.alokasi.jenis_${v}`)}
-                </SelectItem>
-              ))}
-            </Select>
-          </div>
-          {beralokasi ? (
-            <>
-              <div data-field="nilai">
-                <TextField
-                  label={
-                    draft.jenis === 'tetap'
-                      ? t('downstream.form.alokasi.nilai_tetap')
-                      : t('downstream.form.alokasi.nilai_persen')
+        <SectionCard title={t('downstream.form.group.alokasi')}>
+          <FieldGrid>
+            <div data-field="jenis">
+              <Select
+                className={SELECT_FILL}
+                label={t('downstream.form.alokasi.jenis')}
+                selectedKey={draft.jenis}
+                onSelectionChange={(key) => {
+                  const found = JENIS_ALOKASI.find((v) => v === key);
+                  if (!found) return;
+                  set('jenis', found);
+                  // Tanpa alokasi, kontrak mewajibkan boleh_pinjam true dan tanpa sifat.
+                  if (found === 'none') {
+                    set('sifat', null);
+                    set('nilai', '');
+                    set('boleh_pinjam', true);
                   }
-                  value={draft.nilai}
-                  onChange={(v) => set('nilai', v)}
-                  inputMode="decimal"
-                  autoComplete="off"
-                  {...err('nilai')}
-                />
-              </div>
-              <div data-field="sifat">
-                <Select
-                  label={t('downstream.form.alokasi.sifat')}
-                  selectedKey={draft.sifat}
-                  placeholder={t('downstream.form.alokasi.sifat_placeholder')}
-                  onSelectionChange={(key) => {
-                    const found = SIFAT_ALOKASI.find((v) => v === key);
-                    if (found) set('sifat', found);
-                  }}
-                  isInvalid={errors.sifat !== undefined}
-                >
-                  {SIFAT_ALOKASI.map((v) => (
-                    <SelectItem key={v} id={v}>
-                      {tDynamic(i18n, `downstream.form.alokasi.sifat_${v}`)}
-                    </SelectItem>
-                  ))}
-                </Select>
-                {errors.sifat ? (
-                  <p className="typescale-body-small text-error">{err('sifat').errorMessage}</p>
-                ) : null}
-              </div>
-              <div data-field="boleh_pinjam">
-                <Switch isSelected={draft.boleh_pinjam} onChange={(v) => set('boleh_pinjam', v)}>
-                  {t('downstream.form.alokasi.boleh_pinjam')}
-                </Switch>
-              </div>
-            </>
-          ) : (
-            <p className="typescale-body-medium text-on-surface-variant">
-              {t('downstream.form.alokasi.none_help')}
-            </p>
-          )}
-        </Card>
+                }}
+              >
+                {JENIS_ALOKASI.map((v) => (
+                  <SelectItem key={v} id={v}>
+                    {tDynamic(i18n, `downstream.form.alokasi.jenis_${v}`)}
+                  </SelectItem>
+                ))}
+              </Select>
+            </div>
+            {beralokasi ? (
+              <>
+                <div data-field="nilai">
+                  <TextField
+                    label={
+                      draft.jenis === 'tetap'
+                        ? t('downstream.form.alokasi.nilai_tetap')
+                        : t('downstream.form.alokasi.nilai_persen')
+                    }
+                    value={draft.nilai}
+                    onChange={(v) => set('nilai', v)}
+                    inputMode="decimal"
+                    autoComplete="off"
+                    {...err('nilai')}
+                  />
+                </div>
+                <div data-field="sifat">
+                  <Select
+                    className={SELECT_FILL}
+                    label={t('downstream.form.alokasi.sifat')}
+                    selectedKey={draft.sifat}
+                    placeholder={t('downstream.form.alokasi.sifat_placeholder')}
+                    onSelectionChange={(key) => {
+                      const found = SIFAT_ALOKASI.find((v) => v === key);
+                      if (found) set('sifat', found);
+                    }}
+                    isInvalid={errors.sifat !== undefined}
+                  >
+                    {SIFAT_ALOKASI.map((v) => (
+                      <SelectItem key={v} id={v}>
+                        {tDynamic(i18n, `downstream.form.alokasi.sifat_${v}`)}
+                      </SelectItem>
+                    ))}
+                  </Select>
+                  {errors.sifat ? (
+                    <p className="typescale-body-small text-error">{err('sifat').errorMessage}</p>
+                  ) : null}
+                </div>
+              </>
+            ) : (
+              <p className="typescale-body-medium col-span-full text-on-surface-variant">
+                {t('downstream.form.alokasi.none_help')}
+              </p>
+            )}
+          </FieldGrid>
+          {/* Saklar berlabel di sampingnya, jadi di luar grid field (L4: label di atas field). */}
+          {beralokasi ? (
+            <div data-field="boleh_pinjam">
+              <Switch isSelected={draft.boleh_pinjam} onChange={(v) => set('boleh_pinjam', v)}>
+                {t('downstream.form.alokasi.boleh_pinjam')}
+              </Switch>
+            </div>
+          ) : null}
+        </SectionCard>
 
         {mode === 'update' ? (
-          <Card variant="outlined" className="flex flex-col gap-4">
-            <h2 className="typescale-title-medium">{t('downstream.form.reason.heading')}</h2>
+          <SectionCard title={t('downstream.form.reason.heading')}>
             <div data-field="alasan">
               <TextArea
                 label={t('downstream.form.reason.label')}
@@ -347,7 +354,7 @@ function DownstreamForm({
                 {...err('alasan')}
               />
             </div>
-          </Card>
+          </SectionCard>
         ) : null}
 
         <div className="flex flex-wrap justify-end gap-2">
@@ -402,7 +409,7 @@ export function DownstreamFormScreen({ client = api, poolId }: DownstreamFormScr
   const failed = upstreams.status === 'error' ? upstreams : pool.status === 'error' ? pool : null;
   if (failed) {
     return (
-      <section className="flex flex-col gap-4">
+      <section className="flex flex-col gap-6">
         <PageHeader title={t('downstream.page.title')} />
         <QueryError error={failed.error} onRetry={failed.reload} />
       </section>

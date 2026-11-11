@@ -186,25 +186,22 @@ export function CredentialsScreen({ clientId, client = api }: CredentialsScreenP
   );
 
   return (
-    <section className="flex flex-col gap-4">
+    <section className="flex flex-col gap-6">
       <PageHeader
         title={t('credentials.page.title', { nama_client: nama })}
         subtitle={t('credentials.page.subtitle')}
         titleRef={titleRef}
-        actions={
-          <>
-            <ClientSubnav clientId={clientId} active="kredensial" />
-            {data ? buat : null}
-          </>
-        }
-      />
+        actions={data ? buat : null}
+      >
+        <ClientSubnav clientId={clientId} active="kredensial" />
+      </PageHeader>
 
       {query.status === 'loading' ? <LoadingState label={t('common.state.loading')} /> : null}
       {query.status === 'error' ? <QueryError error={query.error} onRetry={query.reload} /> : null}
       {penuh ? <InlineAlert tone="info">{t('credentials.create.max')}</InlineAlert> : null}
 
       {data && data.items.length === 0 ? (
-        <Card variant="outlined" className="flex flex-col items-center gap-3 p-8 text-center">
+        <Card variant="container" className="flex flex-col items-center gap-3 p-8 text-center">
           <h2 className="typescale-title-large">{t('credentials.empty.title')}</h2>
           <p className="typescale-body-medium max-w-xl text-on-surface-variant">
             {t('credentials.empty.body')}
@@ -213,7 +210,7 @@ export function CredentialsScreen({ clientId, client = api }: CredentialsScreenP
       ) : null}
 
       {data && data.items.length > 0 ? (
-        <Card variant="outlined" className="p-0">
+        <Card variant="container" className="overflow-hidden">
           <ScrollArea label={t('credentials.table')}>
             <div className="table-card">
               <table className="w-full border-collapse text-left">

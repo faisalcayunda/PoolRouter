@@ -17,6 +17,7 @@ import { useRole } from '../common/RoleContext';
 import { useQuery } from '../common/useQuery';
 import { SnackbarRegion, useSnackbar } from '../common/useSnackbar';
 import { Forbidden } from './Forbidden';
+import { FieldGrid, SectionCard, SELECT_FILL } from '../common/layout';
 import { FormSection } from './FormSection';
 import { LinkButton } from './LinkButton';
 import { RuleDialog } from './RuleDialog';
@@ -363,35 +364,38 @@ function ProviderForm({ client, initial }: ProviderFormProps): ReactNode {
               title={t('provider.general.identity.title')}
               help={t('provider.general.identity.help')}
             >
-              <div data-field="nama">
-                <TextField
-                  label={t('provider.general.name')}
-                  value={draft.nama}
-                  onChange={(v) => set('nama', v)}
-                  autoComplete="off"
-                  {...err('nama')}
-                />
-              </div>
-              <div data-field="base_url">
-                <TextField
-                  label={t('provider.general.url')}
-                  description={t('provider.form.url_help')}
-                  type="url"
-                  value={draft.base_url}
-                  onChange={(v) => set('base_url', v)}
-                  autoComplete="off"
-                  {...err('base_url')}
-                />
-              </div>
+              <FieldGrid>
+                <div data-field="nama">
+                  <TextField
+                    label={t('provider.general.name')}
+                    value={draft.nama}
+                    onChange={(v) => set('nama', v)}
+                    autoComplete="off"
+                    {...err('nama')}
+                  />
+                </div>
+                <div data-field="base_url" className="medium:col-span-2">
+                  <TextField
+                    label={t('provider.general.url')}
+                    description={t('provider.form.url_help')}
+                    type="url"
+                    value={draft.base_url}
+                    onChange={(v) => set('base_url', v)}
+                    autoComplete="off"
+                    {...err('base_url')}
+                  />
+                </div>
+              </FieldGrid>
             </FormSection>
 
             <FormSection
               title={t('provider.general.method_auth.title')}
               help={t('provider.general.auth.help')}
             >
-              <div className="flex flex-wrap gap-4">
+              <FieldGrid>
                 <div data-field="metode">
                   <Select
+                    className={SELECT_FILL}
                     label={t('provider.general.method')}
                     selectedKey={draft.metode}
                     onSelectionChange={(key) => {
@@ -408,7 +412,12 @@ function ProviderForm({ client, initial }: ProviderFormProps): ReactNode {
                 </div>
                 {/* Pilihan autentikasi belum ada di kontrak API: tampil seperti di Penpot, tidak bisa diubah. */}
                 <div className="flex flex-col gap-1">
-                  <Select label={t('provider.general.auth.label')} selectedKey="body" isDisabled>
+                  <Select
+                    className={SELECT_FILL}
+                    label={t('provider.general.auth.label')}
+                    selectedKey="body"
+                    isDisabled
+                  >
                     <SelectItem id="body" textValue={t('provider.general.auth.body')}>
                       {t('provider.general.auth.body')}
                     </SelectItem>
@@ -417,16 +426,17 @@ function ProviderForm({ client, initial }: ProviderFormProps): ReactNode {
                     {t('provider.api_pending')}
                   </p>
                 </div>
-              </div>
+              </FieldGrid>
             </FormSection>
 
             <FormSection
               title={t('provider.general.security.title')}
               help={t('provider.general.security.help')}
             >
-              <div className="flex flex-wrap gap-4">
+              <FieldGrid>
                 <div data-field="tls_trust">
                   <Select
+                    className={SELECT_FILL}
                     label={t('provider.form.tls.label')}
                     selectedKey={draft.tls_trust}
                     onSelectionChange={(key) => {
@@ -442,7 +452,7 @@ function ProviderForm({ client, initial }: ProviderFormProps): ReactNode {
                   </Select>
                 </div>
                 {draft.tls_trust === 'ca_kustom' ? (
-                  <div data-field="tls_ca_pem" className="w-full">
+                  <div data-field="tls_ca_pem" className="col-span-full">
                     <TextArea
                       label={t('provider.form.tls_ca_pem.label')}
                       description={t('provider.form.tls_ca_pem.help')}
@@ -455,7 +465,7 @@ function ProviderForm({ client, initial }: ProviderFormProps): ReactNode {
                   </div>
                 ) : null}
                 {draft.tls_trust === 'pin_spki' ? (
-                  <div data-field="tls_pin_spki" className="flex w-full flex-col gap-3">
+                  <div data-field="tls_pin_spki" className="col-span-full flex flex-col gap-3">
                     <TextArea
                       label={t('provider.form.tls_pin_spki.label')}
                       description={t('provider.form.tls_pin_spki.help')}
@@ -474,6 +484,7 @@ function ProviderForm({ client, initial }: ProviderFormProps): ReactNode {
                 ) : null}
                 <div data-field="log_mode">
                   <Select
+                    className={SELECT_FILL}
                     label={t('provider.form.log_mode.label')}
                     selectedKey={draft.log_mode}
                     onSelectionChange={(key) => {
@@ -490,6 +501,7 @@ function ProviderForm({ client, initial }: ProviderFormProps): ReactNode {
                 </div>
                 <div data-field="config_schema_version">
                   <Select
+                    className={SELECT_FILL}
                     label={t('provider.form.version.label')}
                     selectedKey={draft.config_schema_version}
                     onSelectionChange={(key) => {
@@ -504,7 +516,7 @@ function ProviderForm({ client, initial }: ProviderFormProps): ReactNode {
                     ))}
                   </Select>
                 </div>
-              </div>
+              </FieldGrid>
             </FormSection>
 
             <FormSection
@@ -559,10 +571,7 @@ function ProviderForm({ client, initial }: ProviderFormProps): ReactNode {
         </TabPanel>
 
         <TabPanel id="template" shouldForceMount className="pt-4">
-          <Card variant="container" className="flex flex-col gap-4 p-6">
-            <h2 className="typescale-title-medium text-on-surface">
-              {t('provider.template.title')}
-            </h2>
+          <SectionCard title={t('provider.template.title')}>
             <div data-field="body_template">
               <TemplateEditor
                 label={t('provider.template.label')}
@@ -577,7 +586,7 @@ function ProviderForm({ client, initial }: ProviderFormProps): ReactNode {
                 isInvalid={templateIssue !== undefined}
               />
             </div>
-          </Card>
+          </SectionCard>
         </TabPanel>
 
         <TabPanel id="parameter" shouldForceMount className="pt-4">
@@ -671,7 +680,7 @@ function ProviderForm({ client, initial }: ProviderFormProps): ReactNode {
             </Card>
             <Card variant="container" className="flex flex-col gap-4 p-6">
               <div className="flex flex-col gap-1">
-                <h2 className="typescale-title-medium text-on-surface">
+                <h2 className="typescale-title-large text-primary-text">
                   {t('provider.rules.panel_title')}
                 </h2>
                 <p className="typescale-body-medium text-on-surface-variant">
@@ -722,7 +731,7 @@ function ProviderForm({ client, initial }: ProviderFormProps): ReactNode {
 
             {showDataBalikan ? (
               <Card variant="container" className="flex flex-col gap-4 p-6">
-                <h2 className="typescale-title-medium text-on-surface">
+                <h2 className="typescale-title-large text-primary-text">
                   {t('provider.form.data_balikan.heading')}
                 </h2>
                 <div data-field="data_balikan">
@@ -740,7 +749,7 @@ function ProviderForm({ client, initial }: ProviderFormProps): ReactNode {
             ) : null}
 
             <div className="flex flex-wrap items-center justify-between gap-3">
-              <h2 className="typescale-title-medium text-on-surface">
+              <h2 className="typescale-title-large text-primary-text">
                 {t('provider.schema.table_title')}
               </h2>
               {/* Kode respons belum ada di kontrak API: tombol tampil nonaktif. */}
@@ -847,7 +856,7 @@ function EndpointTab({
             variant="container"
             className="flex flex-col items-start gap-4 p-6"
           >
-            <h2 className="typescale-title-medium text-on-surface">
+            <h2 className="typescale-title-large text-primary-text">
               {`${t('endpoint.form.constants.title')} ${provider?.nama ?? ''}`}
             </h2>
             <TextField
@@ -893,7 +902,7 @@ export function ProviderFormScreen({ client = api, providerId }: ProviderFormScr
   if (provider.status === 'loading') return <LoadingState label={t('common.state.loading')} />;
   if (provider.status === 'error') {
     return (
-      <section className="flex flex-col gap-4">
+      <section className="flex flex-col gap-6">
         <PageHeader title={t('provider.page.title')} />
         <QueryError error={provider.error} onRetry={provider.reload} />
       </section>

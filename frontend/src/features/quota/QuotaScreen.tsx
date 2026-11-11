@@ -11,6 +11,7 @@ import { Select, SelectItem } from '../../components/m3/Select';
 import { StatusLabel } from '../../components/m3/StatusLabel';
 import { useFormatter } from '../../i18n/useFormatter';
 import type { MessageId } from '../../i18n/types';
+import { FilterBar, SELECT_FILL } from '../common/layout';
 import { PageHeader, EmptyState, LoadingState, QueryError } from '../common/page';
 import { useQuery } from '../common/useQuery';
 import { useDocumentTitle, useFocusOnMount } from '../common/a11y';
@@ -45,8 +46,8 @@ function toPercent(fraction: number): number {
   return Math.min(100, Math.max(0, fraction * 100));
 }
 
-/** Kartu isi (acuan ARC-261): putih, border tipis, radius 12, padding 24. */
-const CARD = 'flex flex-col gap-3 p-6!';
+/** Kartu isi (spec ARC-363 §3): container, radius 16, padding 24. */
+const CARD = 'flex flex-col gap-3 p-6';
 
 /** Kartu metrik: ikon + judul, angka besar + "dari N", bilah 8 px, lalu satu baris keterangan. */
 function QuotaMetricCard({
@@ -96,7 +97,7 @@ function PoolQuota({ row }: { row: KuotaTracker }) {
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="grid grid-cols-1 gap-4 expanded:grid-cols-2">
+      <div className="grid grid-cols-1 gap-6 expanded:grid-cols-2">
         <QuotaMetricCard
           icon={icons.dataUsage}
           label={t('quota.page.today')}
@@ -119,8 +120,8 @@ function PoolQuota({ row }: { row: KuotaTracker }) {
         />
       </div>
 
-      <div className="grid grid-cols-1 items-start gap-4 expanded:grid-cols-2">
-        <Card variant="outlined" className={CARD}>
+      <div className="grid grid-cols-1 items-stretch gap-6 expanded:grid-cols-2">
+        <Card variant="container" className={CARD}>
           <div className="flex items-center justify-between gap-2">
             <h3 className="typescale-title-medium text-on-surface">
               {t('quota.page.sync_heading')}
@@ -144,7 +145,7 @@ function PoolQuota({ row }: { row: KuotaTracker }) {
         </Card>
 
         {/* Riwayat 7 hari belum ada di API (ADR-0008 2.6): placeholder seperti frame Penpot. */}
-        <Card variant="outlined" className={CARD}>
+        <Card variant="container" className={CARD}>
           <div className="flex items-center justify-between gap-2">
             <h3 className="typescale-title-medium text-on-surface">
               {t('quota.page.trend_heading')}
@@ -206,7 +207,7 @@ export function QuotaScreen({ client = api }: QuotaScreenProps): ReactNode {
   const poolOptions = pools.status === 'success' ? pools.data : [];
 
   return (
-    <section className="flex flex-col gap-4">
+    <section className="flex flex-col gap-6">
       <PageHeader
         title={t('quota.page.title')}
         subtitle={
@@ -230,9 +231,13 @@ export function QuotaScreen({ client = api }: QuotaScreenProps): ReactNode {
             {t('quota.page.reload')}
           </Button>
         }
-      >
-        <div className="flex flex-wrap items-end gap-3">
+      />
+
+      {/* Spec §6: pemilih pool di baris filter dalam kartu, bukan melayang di bawah judul. */}
+      <Card variant="container" className="p-4 large:p-6">
+        <FilterBar>
           <Select
+            className={`expanded:w-60 ${SELECT_FILL}`}
             label={t('quota.page.pool_filter')}
             selectedKey={poolId}
             onSelectionChange={(key) => {
@@ -248,8 +253,8 @@ export function QuotaScreen({ client = api }: QuotaScreenProps): ReactNode {
               </SelectItem>
             ))}
           </Select>
-        </div>
-      </PageHeader>
+        </FilterBar>
+      </Card>
 
       {quota.status === 'loading' ? <LoadingState label={t('common.state.loading')} /> : null}
       {quota.status === 'error' ? <QueryError error={quota.error} onRetry={quota.reload} /> : null}
@@ -269,7 +274,7 @@ export function QuotaScreen({ client = api }: QuotaScreenProps): ReactNode {
               className="flex flex-col gap-4"
             >
               {rows.length > 1 ? (
-                <h2 className="typescale-title-medium">
+                <h2 className="typescale-title-large text-primary-text">
                   {t('quota.page.meta', {
                     nama_pool: t('quota.page.pool_unknown'),
                     waktu: format.tanggalWaktu(row.dihitung_pada),
@@ -287,7 +292,7 @@ export function QuotaScreen({ client = api }: QuotaScreenProps): ReactNode {
           <div>
             <Link
               href="/upstream"
-              className="m3-focus typescale-label-large rounded-small text-primary underline-offset-2 hover:underline"
+              className="m3-focus typescale-label-large rounded-small text-primary-text underline-offset-2 hover:underline"
             >
               {t('quota.page.empty_action')}
             </Link>

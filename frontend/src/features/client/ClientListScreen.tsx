@@ -52,7 +52,7 @@ export function ClientListScreen({ client = api }: ClientListScreenProps): React
   ) : null;
 
   return (
-    <section className="flex flex-col gap-4">
+    <section className="flex flex-col gap-6">
       <PageHeader
         title={t('client.page.title')}
         subtitle={t('clients.page.subtitle')}
@@ -66,7 +66,7 @@ export function ClientListScreen({ client = api }: ClientListScreenProps): React
       ) : null}
 
       {clients.status === 'success' && rows.length === 0 ? (
-        <Card variant="outlined" className="flex flex-col items-center gap-3 p-8 text-center">
+        <Card variant="container" className="flex flex-col items-center gap-3 p-8 text-center">
           <h2 className="typescale-title-large text-on-surface">{t('client.empty.title')}</h2>
           <p className="typescale-body-medium max-w-xl text-on-surface-variant">
             {manage ? t('client.empty.body') : t('clients.empty.owner')}

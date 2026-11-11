@@ -19,7 +19,7 @@ export function FormSection({
   return (
     <section
       className={cx(
-        'grid gap-4 border-t border-outline-variant p-6 first:border-t-0 medium:grid-cols-[264px_1fr] medium:gap-8',
+        'grid gap-4 border-t border-outline-variant p-6 first:border-t-0 large:grid-cols-[264px_1fr] large:gap-8',
         className,
       )}
     >

@@ -535,7 +535,7 @@ describe('S07 daftar downstream pool', () => {
     expect(within(row).getByText('provider-contoh-a')).toBeVisible();
     expect(within(row).getByText('24 jam')).toBeVisible();
     expect(within(row).queryByText(/kuota efektif/)).toBeNull();
-    const open = within(row).getByRole('link', { name: 'Ubah downstream pool pool-hilir-contoh' });
+    const open = within(row).getByRole('link', { name: 'Buka downstream pool pool-hilir-contoh' });
     expect(open).toHaveTextContent('Buka');
     expect(open).toHaveAttribute('href', `/downstream/${DOWN_ID}`);
   });

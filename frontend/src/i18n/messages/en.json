@@ -646,7 +646,7 @@
       "done": "Downstream pool {{nama}} activated."
     },
     "list": {
-      "edit_aria": "Edit downstream pool {{nama}}",
+      "edit_aria": "Open downstream pool {{nama}}",
       "activate_aria": "Activate downstream pool {{nama}}",
       "deactivate_aria": "Deactivate downstream pool {{nama}}",
       "ttl_hours": "{{jam}} h"
@@ -964,7 +964,7 @@
     "row": {
       "manage": "Manage",
       "manage_aria": "Manage client {{nama}}",
-      "credential_aria": "Create a credential for client {{nama}}"
+      "credential_aria": "Create credential for client {{nama}}"
     },
     "tab": {
       "aria": "Client sections",

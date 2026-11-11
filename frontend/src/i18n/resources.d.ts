@@ -381,7 +381,7 @@ export default interface Resources {
       "list": {
         "activate_aria": "Aktifkan downstream pool {{nama}}",
         "deactivate_aria": "Nonaktifkan downstream pool {{nama}}",
-        "edit_aria": "Ubah downstream pool {{nama}}",
+        "edit_aria": "Buka downstream pool {{nama}}",
         "ttl_hours": "{{jam}} jam"
       },
       "mode": {

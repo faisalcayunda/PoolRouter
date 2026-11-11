@@ -8,6 +8,7 @@ import { StatusLabel } from '../../components/m3/StatusLabel';
 import { TextField } from '../../components/m3/TextField';
 import { useDocumentTitle, useFocusOnMount } from '../common/a11y';
 import { useCrumbName } from '../common/CrumbName';
+import { FieldGrid } from '../common/layout';
 import { errorMessage, LoadingState, PageHeader, QueryError } from '../common/page';
 import { REASON_MAX, REASON_MIN } from '../common/ReasonDialog';
 import { useRole } from '../common/RoleContext';
@@ -79,23 +80,32 @@ function EditForm({
   }
 
   return (
-    <form noValidate onSubmit={(e) => void submit(e)} className="flex max-w-xl flex-col gap-4">
+    <form noValidate onSubmit={(e) => void submit(e)} className="flex flex-col gap-6">
       {failure !== null ? (
         <InlineAlert tone="error">{errorMessage(t, i18n, failure).message}</InlineAlert>
       ) : null}
-      <LimiterFields values={values} onChange={setValues} errors={errors} showErrors={attempted} />
-      {limiterChanged ? (
-        <TextField
-          label={t('clients.form.reason')}
-          description={t('clients.form.reason_help')}
-          value={alasan}
-          onChange={setAlasan}
-          autoComplete="off"
-          isRequired
-          isInvalid={attempted && alasanError !== null}
-          errorMessage={alasanError}
+      <FieldGrid>
+        <LimiterFields
+          values={values}
+          onChange={setValues}
+          errors={errors}
+          showErrors={attempted}
         />
-      ) : null}
+        {limiterChanged ? (
+          <div className="col-span-full">
+            <TextField
+              label={t('clients.form.reason')}
+              description={t('clients.form.reason_help')}
+              value={alasan}
+              onChange={setAlasan}
+              autoComplete="off"
+              isRequired
+              isInvalid={attempted && alasanError !== null}
+              errorMessage={alasanError}
+            />
+          </div>
+        ) : null}
+      </FieldGrid>
       <div>
         <Button isDisabled={saving} onPress={() => void submit()}>
           {saving ? t('provider.form.saving') : t('common.action.save')}
@@ -151,21 +161,24 @@ export function ClientDetailScreen({ clientId, client = api }: ClientDetailScree
   }
 
   return (
-    <section className="flex flex-col gap-4">
+    <section className="flex flex-col gap-6">
       <PageHeader
         title={data?.nama ?? t('client.page.title')}
         subtitle={t('clients.detail.subtitle')}
         titleRef={titleRef}
-        actions={<ClientSubnav clientId={clientId} active="detail" />}
-      />
+      >
+        <ClientSubnav clientId={clientId} active="detail" />
+      </PageHeader>
 
       {query.status === 'loading' ? <LoadingState label={t('common.state.loading')} /> : null}
       {query.status === 'error' ? <QueryError error={query.error} onRetry={query.reload} /> : null}
 
       {data ? (
-        <Card variant="outlined" className="flex flex-col gap-4 p-6">
+        <Card variant="container" className="flex flex-col gap-6 p-6">
           <div className="flex flex-wrap items-center gap-3">
-            <h2 className="typescale-title-large">{t('clients.detail.settings')}</h2>
+            <h2 className="typescale-title-large text-primary-text">
+              {t('clients.detail.settings')}
+            </h2>
             <StatusLabel tone={data.aktif ? 'success' : 'neutral'}>
               {data.aktif ? t('common.state.active') : t('clients.inactive')}
             </StatusLabel>

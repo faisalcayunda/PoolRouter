@@ -21,6 +21,7 @@ import { TextField } from '../../components/m3/TextField';
 import { Icon, icons } from '../../icons';
 import { useFormatter } from '../../i18n/useFormatter';
 import { enumLabel } from '../../i18n/enums';
+import { FilterBar } from '../common/layout';
 import { EmptyState, PageHeader, QueryError } from '../common/page';
 import { useQuery } from '../common/useQuery';
 import { useDocumentTitle, useFocusOnMount } from '../common/a11y';
@@ -236,7 +237,7 @@ export function LogPageScreen({
       />
 
       {/* Kartu ringkasan: API belum punya agregat harian, jadi nilainya placeholder "Menunggu API". */}
-      <ul className="grid grid-cols-2 gap-4 expanded:grid-cols-4">
+      <ul className="grid grid-cols-1 gap-4 medium:grid-cols-2 large:grid-cols-4 large:gap-6">
         {KPI_KEYS.map((key) => (
           <li key={key} className="flex">
             <MetricCard
@@ -250,65 +251,64 @@ export function LogPageScreen({
         ))}
       </ul>
 
-      <Card variant="outlined" className="flex flex-col rounded-large! p-0!">
-        <form
-          className="flex flex-col gap-3 p-5 expanded:flex-row expanded:items-start"
-          onSubmit={submit}
-        >
-          {/* Frame Penpot tidak punya tombol "Cari": Enter di kolom cari mengirim form. Tombol
+      <Card variant="container" className="flex flex-col overflow-hidden">
+        <form className="p-4 large:p-6" onSubmit={submit}>
+          <FilterBar className="expanded:items-start">
+            {/* Frame Penpot tidak punya tombol "Cari": Enter di kolom cari mengirim form. Tombol
               tersembunyi ini menjadikan pengiriman dengan Enter pasti, apa pun isi form-nya. */}
-          <button type="submit" hidden />
-          <TextField
-            label={t('common.action.search')}
-            placeholder={t('log.filter.search_placeholder')}
-            value={term}
-            onChange={setTerm}
-            className="expanded:w-80"
-          />
-          <Select
-            label={t('log.filter.client')}
-            selectedKey={clientId ?? 'semua'}
-            onSelectionChange={(key) => {
-              if (key === null) return;
-              changeClient(String(key) === 'semua' ? null : String(key));
-            }}
-            className="expanded:w-60 [&>button]:w-full"
-          >
-            {/* A select whose empty state has no option of its own shows the framework's English
-                "Select an item"; the catalog names the "all" option. */}
-            <SelectItem id="semua">{t('log.filter.client_all')}</SelectItem>
-            {known.map((c) => (
-              <SelectItem key={c.id} id={c.id}>
-                {c.nama}
-              </SelectItem>
-            ))}
-          </Select>
-          <div className="flex flex-col gap-1 expanded:w-[280px]">
-            <DateRangePicker
-              label={t('log.filter.range')}
-              calendarLabel={t('log.filter.range_picker')}
-              separator="–"
-              value={range}
-              onChange={changeRange}
-              isInvalid={rangeError !== null}
+            <button type="submit" hidden />
+            <TextField
+              label={t('common.action.search')}
+              placeholder={t('log.filter.search_placeholder')}
+              value={term}
+              onChange={setTerm}
+              className="expanded:w-80"
             />
-            {rangeError ? (
-              <p role="alert" className="typescale-body-small text-error">
-                {rangeError}
-              </p>
-            ) : null}
-          </div>
-          <Button
-            variant="outlined"
-            onPress={clearFilters}
-            className="shrink-0 self-start whitespace-nowrap expanded:mt-[22px] expanded:h-10!"
-          >
-            {t('common.action.clear_filters')}
-          </Button>
+            <Select
+              label={t('log.filter.client')}
+              selectedKey={clientId ?? 'semua'}
+              onSelectionChange={(key) => {
+                if (key === null) return;
+                changeClient(String(key) === 'semua' ? null : String(key));
+              }}
+              className="expanded:w-60 [&>button]:w-full"
+            >
+              {/* A select whose empty state has no option of its own shows the framework's English
+                "Select an item"; the catalog names the "all" option. */}
+              <SelectItem id="semua">{t('log.filter.client_all')}</SelectItem>
+              {known.map((c) => (
+                <SelectItem key={c.id} id={c.id}>
+                  {c.nama}
+                </SelectItem>
+              ))}
+            </Select>
+            <div className="flex flex-col gap-1 expanded:w-[280px]">
+              <DateRangePicker
+                label={t('log.filter.range')}
+                calendarLabel={t('log.filter.range_picker')}
+                separator="–"
+                value={range}
+                onChange={changeRange}
+                isInvalid={rangeError !== null}
+              />
+              {rangeError ? (
+                <p role="alert" className="typescale-body-small text-error">
+                  {rangeError}
+                </p>
+              ) : null}
+            </div>
+            <Button
+              variant="outlined"
+              onPress={clearFilters}
+              className="shrink-0 self-start whitespace-nowrap expanded:mt-6"
+            >
+              {t('common.action.clear_filters')}
+            </Button>
+          </FilterBar>
         </form>
 
         {selectedClient ? (
-          <div className="flex flex-wrap items-center gap-2 px-5 pb-4">
+          <div className="flex flex-wrap items-center gap-2 px-4 pb-4 large:px-6">
             <Chip
               variant="input"
               onRemove={() => changeClient(null)}
@@ -416,7 +416,7 @@ export function LogPageScreen({
                               <Link
                                 href={`/log/${encodeURIComponent(row.kode_transaksi)}`}
                                 aria-label={t('log.row.aria', { kode: row.kode_transaksi })}
-                                className="m3-state m3-focus typescale-label-large inline-flex h-10 items-center justify-center rounded-small px-3 text-primary"
+                                className="m3-state m3-focus typescale-label-large inline-flex h-10 items-center justify-center rounded-small px-3 text-primary-text"
                               >
                                 {t('log.action.detail')}
                               </Link>
