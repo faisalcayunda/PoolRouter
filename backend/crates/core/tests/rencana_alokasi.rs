@@ -12,7 +12,7 @@
 //! pool's *reservation*. That is checked over random plans, because the failure
 //! mode is a list that happens to look right for the pools someone typed in.
 
-use poolrouter_core::kuota::alokasi::{GalatAlokasi, NilaiAlokasi};
+use poolrouter_core::kuota::alokasi::{GalatAlokasi, NilaiAlokasi, kuota_efektif};
 use poolrouter_core::kuota::rencana::{
     PoolPeminjam, RencanaAnggaran, Rute, Sumber, ruang_intake, urutan_sumber,
 };
@@ -230,17 +230,25 @@ proptest! {
     #[test]
     fn urutan_tidak_pernah_memakai_reserved_pool_lain(
         kuota in 1i64..5_000,
-        // The column is `numeric(5,4)` with 0.001..=0.200, plus the model's own
-        // zero; anything between is not a configuration the system can hold.
+        // Rentang dan urutan parameter dipertahankan: berkas
+        // `rencana_alokasi.proptest-regressions` menyimpan seed RNG, bukan
+        // nilai, jadi mengubah strategi membuat seed membangkitkan kasus lain.
         margin_raw in 0i64..200_001,
         own_alloc in 0i64..2_000,
         donors in prop::collection::vec((1i64..50, 0i64..1_000), 0..8),
         boleh_pinjam in any::<bool>(),
     ) {
+        // Kolomnya `numeric(4,3)` dengan 0.001..=0.200, ditambah nol milik
+        // model; margin dibulatkan ke tiga desimal supaya pembangkit hanya
+        // memberi konfigurasi yang bisa disimpan sistem.
         let margin = if margin_raw % 10 == 0 { 0.0 } else { (margin_raw as f64) / 1_000_000.0 };
-        let margin = (margin * 10_000.0).round() / 10_000.0;
+        let margin = (margin * 1_000.0).round() / 1_000.0;
         prop_assume!(margin == 0.0 || (0.001..=0.200).contains(&margin));
-        let q = (kuota as f64 * (1.0 - margin)).floor() as i64;
+        // Q dari fungsi produksi, bukan rumus f64 sendiri: rumus sendiri pernah
+        // memberi Q 1192 untuk kuota 1314 margin 0.0925 sementara model memakai
+        // permil 93 dan Q 1191, sehingga `own_alloc` 1192 lolos ke `unwrap()`
+        // (ARC-253).
+        let q = kuota_efektif(kuota, margin).unwrap();
         let alokasi = if own_alloc > 0 && own_alloc <= q {
             NilaiAlokasi::exact(own_alloc).ok()
         } else {
