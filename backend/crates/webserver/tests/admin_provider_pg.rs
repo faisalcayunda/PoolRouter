@@ -243,6 +243,14 @@ fn nama_unik(dasar: &str) -> String {
     )
 }
 
+/// Sertifikat CA sintetis (dibuat saat tes, bukan berkas) untuk `ca_kustom`.
+fn pem_ca() -> String {
+    let key = rcgen::KeyPair::generate().unwrap();
+    let mut p = rcgen::CertificateParams::new(Vec::new()).unwrap();
+    p.is_ca = rcgen::IsCa::Ca(rcgen::BasicConstraints::Unconstrained);
+    p.self_signed(&key).unwrap().pem()
+}
+
 /// A valid provider body. `secret` names one stored secret and `parameter`
 /// lists the names the template may reference.
 fn body(nama: &str, secret: &str, parameter: &[&str]) -> Value {
@@ -260,6 +268,7 @@ fn body(nama: &str, secret: &str, parameter: &[&str]) -> Value {
         "parameters": params,
         "respons_skema": { "status_skema": "status_skor" },
         "tls_trust": "ca_kustom",
+        "tls_ca_pem": pem_ca(),
         "log_mode": "metadata_only",
         "config_schema_version": 1
     })
@@ -928,6 +937,7 @@ async fn update_provider_v1_to_v2_with_data_balikan() {
                 "parameters": b_v2["parameters"],
                 "respons_skema": b_v2["respons_skema"],
                 "tls_trust": b_v2["tls_trust"],
+                "tls_ca_pem": b_v2["tls_ca_pem"],
                 "log_mode": b_v2["log_mode"],
                 "config_schema_version": 2,
                 "data_balikan": b_v2["data_balikan"]
@@ -953,5 +963,117 @@ async fn update_provider_v1_to_v2_with_data_balikan() {
         "v1 immutable: {v1_doc}"
     );
 
+    u.bersihkan_secret().await;
+}
+
+#[tokio::test]
+#[ignore]
+async fn bahan_tls_tersimpan_per_versi_dan_dikembalikan_get() {
+    // ARC-239: PEM CA dan pin SPKI masuk dokumen versi, ikut dikembalikan GET,
+    // dan versi lama tetap utuh (V-03). Bahan yang tidak cocok dengan mode 422.
+    let u = siapkan().await;
+    let (uid, pa) = u.pengguna(&["platform_admin"]).await;
+    let s = nama_unik("SECRET");
+    u.secret(&s, uid).await;
+    let nama = nama_unik("dukcapil");
+
+    let awal = body(&nama, &s, &["NAMA_LGKP"]);
+    let pem = awal["tls_ca_pem"].as_str().unwrap().to_owned();
+    let (st, _, b) = u
+        .kirim(Method::POST, PROVIDERS, Some(&pa), Some(awal.clone()))
+        .await;
+    assert_eq!(st, StatusCode::CREATED, "{b}");
+    assert_eq!(b["tls_ca_pem"], pem.as_str());
+    assert!(b["tls_pin_spki"].is_null(), "{b}");
+    let id = b["provider_id"].as_str().unwrap().to_owned();
+    let (_, _, g) = u
+        .kirim(Method::GET, &format!("{PROVIDERS}/{id}"), Some(&pa), None)
+        .await;
+    assert_eq!(
+        g["tls_ca_pem"],
+        pem.as_str(),
+        "GET mengembalikan PEM untuk form edit"
+    );
+
+    // Ganti ke pin_spki: PEM harus dilepas, pin wajib ada.
+    let pin = "BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc=";
+    let mut ganti = awal.clone();
+    ganti["alasan"] = Value::String("ganti ke pin spki".into());
+    ganti["tls_trust"] = Value::String("pin_spki".into());
+    let (st, _, prob) = u
+        .kirim(
+            Method::PUT,
+            &format!("{PROVIDERS}/{id}"),
+            Some(&pa),
+            Some(ganti.clone()),
+        )
+        .await;
+    assert_eq!(st, StatusCode::UNPROCESSABLE_ENTITY, "{prob}");
+    fn kode(prob: &Value, f: &str) -> Option<Value> {
+        prob["errors"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|e| e["field"] == f)
+            .map(|e| e["kode"].clone())
+    }
+    assert_eq!(
+        kode(&prob, "/tls_ca_pem"),
+        Some("tidak_untuk_mode".into()),
+        "{prob}"
+    );
+    assert_eq!(kode(&prob, "/tls_pin_spki"), Some("wajib".into()), "{prob}");
+
+    ganti.as_object_mut().unwrap().remove("tls_ca_pem");
+    ganti["tls_pin_spki"] = serde_json::json!([pin, "bukan base64"]);
+    let (st, _, prob) = u
+        .kirim(
+            Method::PUT,
+            &format!("{PROVIDERS}/{id}"),
+            Some(&pa),
+            Some(ganti.clone()),
+        )
+        .await;
+    assert_eq!(st, StatusCode::UNPROCESSABLE_ENTITY, "{prob}");
+    assert_eq!(
+        kode(&prob, "/tls_pin_spki/1"),
+        Some("pin_tidak_sah".into()),
+        "{prob}"
+    );
+
+    ganti["tls_pin_spki"] = serde_json::json!([pin]);
+    let (st, _, b2) = u
+        .kirim(
+            Method::PUT,
+            &format!("{PROVIDERS}/{id}"),
+            Some(&pa),
+            Some(ganti),
+        )
+        .await;
+    assert_eq!(st, StatusCode::OK, "{b2}");
+    assert_eq!(b2["tls_trust"], "pin_spki");
+    assert_eq!(b2["tls_pin_spki"], serde_json::json!([pin]));
+    assert!(b2["tls_ca_pem"].is_null(), "{b2}");
+
+    let dokumen = |versi: i32| {
+        let u = &u;
+        let id = Uuid::parse_str(&id).unwrap();
+        async move {
+            sqlx::query_scalar::<_, Value>(
+                "SELECT dokumen FROM provider_config_versi WHERE provider_id = $1 AND versi = $2",
+            )
+            .bind(id)
+            .bind(versi)
+            .fetch_one(&u.su)
+            .await
+            .unwrap()
+        }
+    };
+    let v1 = dokumen(1).await;
+    assert_eq!(v1["tls_ca_pem"], pem.as_str(), "versi 1 utuh: {v1}");
+    assert!(v1.get("tls_pin_spki").is_none(), "{v1}");
+    let v2 = dokumen(2).await;
+    assert_eq!(v2["tls_pin_spki"], serde_json::json!([pin]));
+    assert!(v2.get("tls_ca_pem").is_none(), "{v2}");
     u.bersihkan_secret().await;
 }

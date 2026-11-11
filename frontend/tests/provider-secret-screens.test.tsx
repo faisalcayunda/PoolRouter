@@ -714,6 +714,127 @@ describe('S05 secret', () => {
   });
 });
 
+describe('S03 bahan TLS provider (ARC-239)', () => {
+  const PIN_A = 'AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=';
+  const PIN_B = 'ICEiIyQlJicoKSorLC0uLzAxMjM0NTY3ODk6Ozw9Pj8=';
+  const PEM = '-----BEGIN CERTIFICATE-----\nMIIBsynthetic\n-----END CERTIFICATE-----';
+
+  async function pilihMode(nama: string) {
+    await user.click(screen.getByRole('button', { name: /Kepercayaan TLS/ }));
+    await user.click(await screen.findByRole('option', { name: nama }));
+  }
+
+  async function isiDasar() {
+    await paste('Nama provider', 'provider-contoh-a');
+    await paste('Alamat endpoint (URL)', 'https://provider.example.test/api');
+    await openTab('Template');
+    await paste('Template body (JSON)', '{"NIK":"{{input.NIK}}"}');
+    await openTab('Umum');
+  }
+
+  it('shows the PEM field only for ca_kustom and the pin field only for pin_spki', async () => {
+    asRole('platform_admin', <ProviderFormScreen client={stubClient()} />);
+    expect(screen.queryByLabelText('Sertifikat CA kustom (PEM)')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Pin SPKI (base64 SHA-256)')).not.toBeInTheDocument();
+
+    await pilihMode('CA kustom');
+    expect(screen.getByLabelText('Sertifikat CA kustom (PEM)')).toBeInTheDocument();
+    expect(screen.queryByLabelText('Pin SPKI (base64 SHA-256)')).not.toBeInTheDocument();
+
+    await pilihMode('Pin SPKI');
+    expect(screen.queryByLabelText('Sertifikat CA kustom (PEM)')).not.toBeInTheDocument();
+    expect(screen.getByLabelText('Pin SPKI (base64 SHA-256)')).toBeInTheDocument();
+
+    await pilihMode('Sertifikat sistem');
+    expect(screen.queryByLabelText('Pin SPKI (base64 SHA-256)')).not.toBeInTheDocument();
+  });
+
+  it('shows the openssl command that computes the SPKI pin of the leaf certificate', async () => {
+    asRole('platform_admin', <ProviderFormScreen client={stubClient()} />);
+    await pilihMode('Pin SPKI');
+    expect(
+      screen.getByText(
+        /openssl x509 -in leaf\.pem -pubkey -noout \| openssl pkey -pubin -outform der \| openssl dgst -sha256 -binary \| base64/,
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it('sends tls_ca_pem for ca_kustom and nothing for the hidden pin field', async () => {
+    const createProvider = vi
+      .fn()
+      .mockResolvedValue({ ...PROVIDER, tls_trust: 'ca_kustom', tls_ca_pem: PEM });
+    asRole('platform_admin', <ProviderFormScreen client={stubClient({ createProvider })} />);
+    await isiDasar();
+    await pilihMode('CA kustom');
+    await paste('Sertifikat CA kustom (PEM)', PEM);
+    await user.click(screen.getByRole('button', { name: 'Simpan provider' }));
+
+    await waitFor(() => expect(createProvider).toHaveBeenCalledTimes(1));
+    const body = createProvider.mock.calls[0]![0] as ProviderConfig;
+    expect(body.tls_trust).toBe('ca_kustom');
+    expect(body.tls_ca_pem).toBe(PEM);
+    expect(body).not.toHaveProperty('tls_pin_spki');
+  });
+
+  it('sends the pins for pin_spki and warns while only one pin is set', async () => {
+    const createProvider = vi
+      .fn()
+      .mockResolvedValue({ ...PROVIDER, tls_trust: 'pin_spki', tls_pin_spki: [PIN_A, PIN_B] });
+    asRole('platform_admin', <ProviderFormScreen client={stubClient({ createProvider })} />);
+    await isiDasar();
+    await pilihMode('Pin SPKI');
+    const peringatan = /Hanya ada satu pin/;
+    expect(screen.queryByText(peringatan)).not.toBeInTheDocument();
+
+    await paste('Pin SPKI (base64 SHA-256)', PIN_A);
+    expect(screen.getByText(peringatan)).toBeInTheDocument();
+
+    await paste('Pin SPKI (base64 SHA-256)', `\n${PIN_B}`);
+    expect(screen.queryByText(peringatan)).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Simpan provider' }));
+    await waitFor(() => expect(createProvider).toHaveBeenCalledTimes(1));
+    const body = createProvider.mock.calls[0]![0] as ProviderConfig;
+    expect(body.tls_pin_spki).toEqual([PIN_A, PIN_B]);
+    expect(body).not.toHaveProperty('tls_ca_pem');
+  }, 15_000);
+
+  it('maps a 422 on /tls_pin_spki/1 to the pin field and focuses it', async () => {
+    const createProvider = vi.fn().mockRejectedValue(
+      new ApiError(422, {
+        kode: 'validasi_gagal',
+        errors: [{ field: '/tls_pin_spki/1', kode: 'pin_tidak_sah' }],
+      }),
+    );
+    asRole('platform_admin', <ProviderFormScreen client={stubClient({ createProvider })} />);
+    await isiDasar();
+    await pilihMode('Pin SPKI');
+    await paste('Pin SPKI (base64 SHA-256)', `${PIN_A}\nbukan-pin`);
+    await user.click(screen.getByRole('button', { name: 'Simpan provider' }));
+
+    const pin = screen.getByLabelText('Pin SPKI (base64 SHA-256)');
+    expect(
+      await screen.findByText('Pin belum sah: harus base64 dari 32 byte.'),
+    ).toBeInTheDocument();
+    expect(pin).toHaveAttribute('aria-invalid', 'true');
+    await waitFor(() => expect(pin).toHaveFocus());
+  });
+
+  it('fills the fields from a stored ca_kustom provider', async () => {
+    const getProvider = vi.fn().mockResolvedValue({
+      ...PROVIDER,
+      tls_trust: 'ca_kustom',
+      tls_ca_pem: PEM,
+      tls_pin_spki: null,
+    });
+    asRole(
+      'platform_admin',
+      <ProviderFormScreen client={stubClient({ getProvider })} providerId={PROVIDER.provider_id} />,
+    );
+    expect(await screen.findByLabelText('Sertifikat CA kustom (PEM)')).toHaveValue(PEM);
+  });
+});
+
 describe('S04 editor rule terstruktur (ARC-252)', () => {
   const RULES = {
     ...PROVIDER,

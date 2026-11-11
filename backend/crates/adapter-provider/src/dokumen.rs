@@ -18,6 +18,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
+use crate::client::TlsTrust;
 use crate::template::{KUNCI_SISTEM_F0, Nilai, RenderError, render_teks};
 use poolrouter_core::respons::{KonfigurasiStatusSkor, LiteralStatus, StatusKesesuaian};
 use serde_json::{Value, json};
@@ -58,7 +59,96 @@ pub struct DokumenProvider {
     pub base_url: String,
     pub body_template: String,
     pub tls_trust: String,
+    /// Bahan `ca_kustom` (ARC-239): satu atau lebih sertifikat CA dalam PEM.
+    pub tls_ca_pem: Option<String>,
+    /// Bahan `pin_spki` (ARC-239): SHA-256 SPKI dalam base64 standar.
+    pub tls_pin_spki: Option<Vec<String>>,
     pub respons: KonfigurasiRespons,
+}
+
+/// Batas bahan CA kustom (ARC-239): ukuran PEM dan jumlah sertifikat.
+pub const PEM_MAKS_BYTE: usize = 64 * 1024;
+pub const PEM_MAKS_SERTIFIKAT: usize = 10;
+/// Batas jumlah pin SPKI per provider (ARC-239).
+pub const PIN_MAKS: usize = 10;
+
+impl DokumenProvider {
+    /// Trust TLS yang dirakit dari mode dan bahannya. Mode wajib cocok dengan
+    /// bahan: `system` tanpa bahan, `ca_kustom` dengan PEM tanpa pin, `pin_spki`
+    /// dengan pin tanpa PEM. Selain itu galat (fail-closed). Pesan hanya
+    /// menyebut kunci, tidak pernah nilai.
+    pub fn trust(&self) -> Result<TlsTrust, GalatKonfigurasi> {
+        let mode = TlsTrust::dari_str(&self.tls_trust)
+            .ok_or_else(|| galat(format!("tls_trust {} tidak dikenal", self.tls_trust)))?;
+        match (mode, &self.tls_ca_pem, &self.tls_pin_spki) {
+            (TlsTrust::System, None, None) => Ok(TlsTrust::System),
+            (TlsTrust::CaKustom { .. }, Some(pem), None) => Ok(TlsTrust::CaKustom {
+                ca_pem: pem.clone().into_bytes(),
+            }),
+            (TlsTrust::PinSpki { .. }, None, Some(pin)) if !pin.is_empty() => {
+                let pins = pin
+                    .iter()
+                    .map(|p| pin_dari_base64(p))
+                    .collect::<Result<Vec<_>, _>>()
+                    .map_err(|_| galat("dokumen provider: `tls_pin_spki` berisi pin tidak sah"))?;
+                Ok(TlsTrust::PinSpki { pins })
+            }
+            _ => Err(galat(format!(
+                "tls_trust {} tidak cocok dengan bahan `tls_ca_pem`/`tls_pin_spki`",
+                self.tls_trust
+            ))),
+        }
+    }
+}
+
+/// Satu pin SPKI: base64 standar (dengan padding) yang terdekode tepat 32 byte.
+pub fn pin_dari_base64(pin: &str) -> Result<[u8; 32], GalatKonfigurasi> {
+    use base64::Engine as _;
+    base64::engine::general_purpose::STANDARD
+        .decode(pin)
+        .ok()
+        .and_then(|b| <[u8; 32]>::try_from(b).ok())
+        .ok_or_else(|| galat("pin SPKI harus base64 standar dari 32 byte"))
+}
+
+/// Periksa bahan CA kustom: hanya blok `CERTIFICATE` yang bisa diparse sebagai
+/// X.509, 1 sampai [`PEM_MAKS_SERTIFIKAT`] blok, paling besar [`PEM_MAKS_BYTE`].
+/// Blok jenis lain (termasuk `PRIVATE KEY`) ditolak eksplisit karena bahan ini
+/// disimpan sebagai konfigurasi biasa dan ikut dikembalikan GET. Hasilnya kode
+/// galat: `terlalu_besar` atau `pem_tidak_sah`.
+pub fn validasi_ca_pem(pem: &str) -> Result<(), &'static str> {
+    use rustls::pki_types::CertificateDer;
+    use rustls::pki_types::pem::PemObject;
+
+    if pem.len() > PEM_MAKS_BYTE {
+        return Err("terlalu_besar");
+    }
+    // `pem_slice_iter` diam-diam melewati blok non-sertifikat, jadi penanda
+    // dihitung sendiri dan harus sama dengan jumlah sertifikat yang terparse.
+    let penanda: Vec<&str> = pem
+        .lines()
+        .filter(|l| l.contains("-----BEGIN "))
+        .map(str::trim)
+        .collect();
+    if penanda.is_empty()
+        || penanda.len() > PEM_MAKS_SERTIFIKAT
+        || penanda.iter().any(|l| *l != "-----BEGIN CERTIFICATE-----")
+    {
+        return Err("pem_tidak_sah");
+    }
+    let certs = CertificateDer::pem_slice_iter(pem.as_bytes())
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|_| "pem_tidak_sah")?;
+    if certs.len() != penanda.len() {
+        return Err("pem_tidak_sah");
+    }
+    for c in &certs {
+        match x509_parser::parse_x509_certificate(c.as_ref()) {
+            Ok(([], _)) => {}
+            _ => return Err("pem_tidak_sah"),
+        }
+    }
+    Ok(())
 }
 
 fn galat(pesan: impl Into<String>) -> GalatKonfigurasi {
@@ -80,11 +170,29 @@ pub fn baca_dokumen_provider(dok: &Value) -> Result<DokumenProvider, GalatKonfig
     let skema = dok
         .get("respons_skema")
         .ok_or_else(|| galat("dokumen provider: `respons_skema` tidak ada"))?;
+    // Bahan TLS (ARC-239): kunci tidak ada atau `null` = tidak diisi.
+    let tls_ca_pem = match dok.get("tls_ca_pem") {
+        None | Some(Value::Null) => None,
+        Some(Value::String(s)) => Some(s.clone()),
+        Some(_) => return Err(galat("dokumen provider: `tls_ca_pem` bukan teks")),
+    };
+    let tls_pin_spki = match dok.get("tls_pin_spki") {
+        None | Some(Value::Null) => None,
+        Some(Value::Array(a)) => Some(
+            a.iter()
+                .map(|v| v.as_str().map(str::to_owned))
+                .collect::<Option<Vec<_>>>()
+                .ok_or_else(|| galat("dokumen provider: `tls_pin_spki` harus array teks"))?,
+        ),
+        Some(_) => return Err(galat("dokumen provider: `tls_pin_spki` bukan array")),
+    };
     Ok(DokumenProvider {
         metode: teks("metode")?,
         base_url: teks("base_url")?,
         body_template: teks("body_template")?,
         tls_trust: teks("tls_trust")?,
+        tls_ca_pem,
+        tls_pin_spki,
         respons: baca_respons_skema(skema)?,
     })
 }
@@ -407,5 +515,142 @@ mod tests {
         assert_eq!(v["UID"], "{{secret.USER_ID}}");
         assert_eq!(v["ok"], 1);
         assert_eq!(payload_respons(b"bukan json", &secret), json!("bukan json"));
+    }
+
+    // ------------------------------------------------------------ ARC-239
+
+    fn pem_ca() -> String {
+        let key = rcgen::KeyPair::generate().unwrap();
+        let mut p = rcgen::CertificateParams::new(Vec::new()).unwrap();
+        p.is_ca = rcgen::IsCa::Ca(rcgen::BasicConstraints::Unconstrained);
+        p.self_signed(&key).unwrap().pem()
+    }
+
+    fn pin_b64() -> String {
+        use base64::Engine as _;
+        base64::engine::general_purpose::STANDARD.encode([7u8; 32])
+    }
+
+    fn dok_tls(tls: Value) -> Result<DokumenProvider, GalatKonfigurasi> {
+        let mut d = json!({
+            "metode": "POST",
+            "base_url": "https://dukcapil.contoh.test/api",
+            "body_template": "{}",
+            "respons_skema": skema(),
+        });
+        for (k, v) in tls.as_object().unwrap() {
+            d[k] = v.clone();
+        }
+        baca_dokumen_provider(&d)
+    }
+
+    #[test]
+    fn pin_harus_base64_standar_32_byte() {
+        assert_eq!(pin_dari_base64(&pin_b64()).unwrap(), [7u8; 32]);
+        use base64::Engine as _;
+        let e = base64::engine::general_purpose::STANDARD;
+        let url_safe = base64::engine::general_purpose::URL_SAFE.encode([0xfbu8; 32]);
+        for salah in [
+            "",
+            "bukan base64!",
+            // 31 dan 33 byte.
+            &e.encode([1u8; 31]),
+            &e.encode([1u8; 33]),
+            // tanpa padding dan alfabet url-safe bukan base64 standar.
+            pin_b64().trim_end_matches('='),
+            &url_safe,
+        ] {
+            assert!(pin_dari_base64(salah).is_err(), "{salah:?}");
+        }
+    }
+
+    #[test]
+    fn ca_pem_hanya_blok_certificate_yang_sah() {
+        let satu = pem_ca();
+        assert_eq!(validasi_ca_pem(&satu), Ok(()));
+        // Bundle dua sertifikat (CA lama + baru saat rotasi).
+        assert_eq!(validasi_ca_pem(&format!("{satu}{}", pem_ca())), Ok(()));
+
+        let kunci = "-----BEGIN PRIVATE KEY-----\nAAAA\n-----END PRIVATE KEY-----\n";
+        let sampah = "-----BEGIN CERTIFICATE-----\nAAAA\n-----END CERTIFICATE-----\n";
+        for (nama, pem) in [
+            ("kosong", String::new()),
+            ("tanpa blok", "bukan pem".to_owned()),
+            ("kunci privat saja", kunci.to_owned()),
+            // `pem_slice_iter` melewati blok lain, jadi ini harus tetap ditolak.
+            ("sertifikat plus kunci privat", format!("{satu}{kunci}")),
+            (
+                "TRUSTED CERTIFICATE",
+                satu.replace("BEGIN CERTIFICATE", "BEGIN TRUSTED CERTIFICATE")
+                    .replace("END CERTIFICATE", "END TRUSTED CERTIFICATE"),
+            ),
+            (
+                "X509 CRL",
+                "-----BEGIN X509 CRL-----\nAAAA\n-----END X509 CRL-----\n".to_owned(),
+            ),
+            ("DER bukan X.509", sampah.to_owned()),
+            (
+                "tanpa penutup",
+                satu.replace("-----END CERTIFICATE-----", ""),
+            ),
+        ] {
+            assert_eq!(validasi_ca_pem(&pem), Err("pem_tidak_sah"), "{nama}");
+        }
+        let sebelas = satu.repeat(PEM_MAKS_SERTIFIKAT + 1);
+        assert_eq!(validasi_ca_pem(&sebelas), Err("pem_tidak_sah"));
+        assert_eq!(
+            validasi_ca_pem(&satu.repeat(PEM_MAKS_SERTIFIKAT)),
+            Ok(()),
+            "tepat di batas jumlah"
+        );
+        let besar = format!("{satu}{}", " ".repeat(PEM_MAKS_BYTE));
+        assert_eq!(validasi_ca_pem(&besar), Err("terlalu_besar"));
+    }
+
+    #[test]
+    fn dokumen_membaca_bahan_tls_dan_trust_cocok_dengan_mode() {
+        let pem = pem_ca();
+        // Dokumen lama tanpa kedua kunci, dan `null`, sama dengan tidak diisi.
+        let lama = dok_tls(json!({"tls_trust": "system"})).unwrap();
+        assert_eq!((&lama.tls_ca_pem, &lama.tls_pin_spki), (&None, &None));
+        assert_eq!(lama.trust(), Ok(TlsTrust::System));
+        let nol = dok_tls(json!({"tls_trust": "system", "tls_ca_pem": null, "tls_pin_spki": null}))
+            .unwrap();
+        assert_eq!(nol.trust(), Ok(TlsTrust::System));
+
+        let ca = dok_tls(json!({"tls_trust": "ca_kustom", "tls_ca_pem": pem})).unwrap();
+        assert_eq!(
+            ca.trust(),
+            Ok(TlsTrust::CaKustom {
+                ca_pem: pem.clone().into_bytes()
+            })
+        );
+        let pin = dok_tls(json!({"tls_trust": "pin_spki", "tls_pin_spki": [pin_b64()]})).unwrap();
+        assert_eq!(
+            pin.trust(),
+            Ok(TlsTrust::PinSpki {
+                pins: vec![[7u8; 32]]
+            })
+        );
+
+        // Mode dan bahan harus cocok; selain itu fail-closed.
+        for tls in [
+            json!({"tls_trust": "ca_kustom"}),
+            json!({"tls_trust": "pin_spki"}),
+            json!({"tls_trust": "pin_spki", "tls_pin_spki": []}),
+            json!({"tls_trust": "pin_spki", "tls_pin_spki": ["xx"]}),
+            json!({"tls_trust": "system", "tls_ca_pem": pem}),
+            json!({"tls_trust": "system", "tls_pin_spki": [pin_b64()]}),
+            json!({"tls_trust": "ca_kustom", "tls_ca_pem": pem, "tls_pin_spki": [pin_b64()]}),
+            json!({"tls_trust": "pin_spki", "tls_ca_pem": pem, "tls_pin_spki": [pin_b64()]}),
+            json!({"tls_trust": "matikan"}),
+        ] {
+            let d = dok_tls(tls.clone()).unwrap();
+            assert!(d.trust().is_err(), "{tls}");
+        }
+        // Bentuk kunci yang salah ditolak saat baca.
+        assert!(dok_tls(json!({"tls_trust": "ca_kustom", "tls_ca_pem": 1})).is_err());
+        assert!(dok_tls(json!({"tls_trust": "pin_spki", "tls_pin_spki": "x"})).is_err());
+        assert!(dok_tls(json!({"tls_trust": "pin_spki", "tls_pin_spki": [1]})).is_err());
     }
 }
