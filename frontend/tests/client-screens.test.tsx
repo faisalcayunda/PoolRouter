@@ -1000,7 +1000,7 @@ describe('English catalog', () => {
       'Actions',
     ]);
     expect(
-      screen.getByRole('link', { name: 'Create a credential for client Aplikasi Contoh A' }),
+      screen.getByRole('link', { name: 'Create credential for client Aplikasi Contoh A' }),
     ).toBeVisible();
     await user.click(screen.getByRole('button', { name: 'Add client' }));
     const tambah = within(await screen.findByRole('dialog', { name: 'Add client' }));
