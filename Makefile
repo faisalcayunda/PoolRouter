@@ -104,18 +104,19 @@ STACKS := backend $(if $(wildcard frontend/Makefile),frontend)
 .PHONY: help setup test lint fmt clean push-main test-dry-run test-label test-atribut test-image-cli
 
 help:
-	@echo "gate resmi: make setup test lint RUNNER=docker FRONTEND_RUNNER=docker CONTAINER_LABEL=arctiva.issue=ARC-<n>"
+	@echo "gate resmi: make setup test lint RUNNER=<podman|docker> FRONTEND_RUNNER=<podman|docker> CONTAINER_LABEL=arctiva.issue=ARC-<n>"
+	@echo "runner: podman (Mac Operator) atau docker bila ada; pakai runner kontainer yang tersedia."
 	@echo "targets: setup test lint fmt clean (gate repo, delegasi ke stack); test-dry-run (uji regresi make -n, tanpa Docker); test-image-cli (biner di image backend); compose-up compose-down compose-ps compose-logs compose-config compose-migrate compose-seed compose-lint compose-test-dind image image-frontend"
 	@echo "Push: tidak ada push langsung ke main. Branch agent/<ID>-<slug> -> PR ke main -> merge Operator (CLAUDE.md)."
 
-# push-main: sengaja menolak. Arctiva tidak mengizinkan push langsung ke main, dan jalur push
+# push-main: sengaja menolak. Aturan repo tidak mengizinkan push langsung ke main, dan jalur push
 # otomatis ke main tidak boleh dikembalikan. Pesan ini menjelaskan alur yang benar, bukan
 # "No rule to make target" (AC-3, ARC-2).
 push-main:
-	@echo "make push-main tidak dipakai lagi: Arctiva melarang push langsung ke main (CLAUDE.md)." >&2
+	@echo "make push-main tidak dipakai lagi: push langsung ke main dilarang aturan repo (CLAUDE.md)." >&2
 	@echo "Alur yang benar:" >&2
 	@echo "  1. git checkout -b agent/<ID>-<slug> main" >&2
-	@echo "  2. make setup test lint RUNNER=docker FRONTEND_RUNNER=docker CONTAINER_LABEL=arctiva.issue=ARC-<n>" >&2
+	@echo "  2. make setup test lint RUNNER=<podman|docker> FRONTEND_RUNNER=<podman|docker> CONTAINER_LABEL=arctiva.issue=ARC-<n>" >&2
 	@echo "  3. git push -u origin agent/<ID>-<slug> lalu buka PR ke main (gh pr create --base main)" >&2
 	@echo "  4. merge hanya oleh Operator setelah gate hijau; agen tidak merge dan tidak push ke main." >&2
 	@exit 2
@@ -128,7 +129,7 @@ test-dry-run:
 test-label:
 	@sh scripts/test-label.sh
 
-# test-atribut: uji regresi aturan repo Arctiva (push-main hanya penjaga, CLAUDE.md, tanpa label Shaal).
+# test-atribut: uji regresi aturan repo (push-main hanya penjaga, CLAUDE.md, tanpa label Shaal).
 test-atribut:
 	@sh scripts/test-atribut.sh
 
