@@ -810,10 +810,14 @@ export default interface Resources {
           "data_balikan_skema_terlalu_baru": "Versi skema data balikan belum didukung.",
           "data_balikan_skema_terlalu_tua": "Versi skema data balikan terlalu lama.",
           "data_balikan_tidak_sah": "Data balikan belum sah: {{nama}}",
+          "ganda": "Pin ini muncul lebih dari sekali.",
           "https_wajib": "Alamat harus diawali https://.",
           "json_bukan_daftar": "Isi harus berupa daftar JSON (diawali kurung siku).",
           "json_bukan_objek": "Isi harus berupa objek JSON (diawali kurung kurawal).",
           "json_tidak_sah": "JSON belum sah. Periksa tanda kutip, koma, dan kurung.",
+          "jumlah": "Jumlah pin melebihi 10.",
+          "pem_tidak_sah": "PEM belum sah: hanya blok CERTIFICATE yang diterima, 1 sampai 10 blok.",
+          "pin_tidak_sah": "Pin belum sah: harus base64 dari 32 byte.",
           "required_untuk_versi_2": "Data balikan wajib diisi untuk skema versi 2.",
           "sudah_dipakai": "Nama ini sudah dipakai provider lain.",
           "summary": "Periksa {{jumlah}} isian yang ditandai.",
@@ -821,6 +825,8 @@ export default interface Resources {
           "template_placeholder_tidak_dikenal": "Placeholder tidak dikenal. Awalan yang dikenal: input, endpoint, dan secret.",
           "template_tidak_seimbang": "Kurung kurawal placeholder di template tidak seimbang.",
           "template_tidak_seimbang_posisi": "Kurung kurawal placeholder tidak seimbang di baris {{baris}}, kolom {{kolom}}.",
+          "terlalu_besar": "Isian melebihi 64 KiB.",
+          "tidak_untuk_mode": "Isian ini tidak dipakai oleh mode kepercayaan TLS yang dipilih.",
           "umum": "Isian ini belum sah (kode {{kode}}, lokasi {{lokasi}}).",
           "wajib": "Wajib diisi."
         },
@@ -845,6 +851,15 @@ export default interface Resources {
           "label": "Kepercayaan TLS",
           "pin_spki": "Pin SPKI",
           "system": "Sertifikat sistem"
+        },
+        "tls_ca_pem": {
+          "help": "Tempel satu sampai sepuluh blok CERTIFICATE, maksimal 64 KiB. Bukan secret: tersimpan di versi konfigurasi dan terlihat saat dibaca.",
+          "label": "Sertifikat CA kustom (PEM)"
+        },
+        "tls_pin_spki": {
+          "help": "Satu pin per baris, tepat 32 byte dalam base64. Dicocokkan dengan sertifikat leaf. Hitung dari sertifikat leaf, bukan intermediate: openssl x509 -in leaf.pem -pubkey -noout | openssl pkey -pubin -outform der | openssl dgst -sha256 -binary | base64",
+          "label": "Pin SPKI (base64 SHA-256)",
+          "single": "Hanya ada satu pin. Disarankan dua pin (lama dan baru) supaya rotasi sertifikat tidak memutus provider."
         },
         "url_help": "Wajib diawali https://.",
         "version": {

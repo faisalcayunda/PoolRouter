@@ -8,6 +8,8 @@
 //! Password tidak pernah lewat argumen (AC-40): opsi `--password` tidak dikenal, dan nilai opsi yang
 //! tidak dikenal tidak pernah dicetak balik di pesan galat.
 
+pub mod migrasi;
+
 use std::io::{self, BufRead, IsTerminal, Write};
 use std::process::{Command, Stdio};
 
