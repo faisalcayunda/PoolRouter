@@ -1,5 +1,5 @@
 import type { PlaywrightWorkerArgs } from '@playwright/test';
-import { test, expect, inventaris, tokenUntuk, ORIGIN, COOKIE_SESI } from '../fixtures';
+import { test, expect, inventaris, ORIGIN, COOKIE_SESI } from '../fixtures';
 import { totp } from '../totp';
 
 /**
@@ -97,57 +97,51 @@ test.describe('@smoke auth', () => {
     await ctx.dispose();
   });
 
-  test('@smoke getMe: 200 untuk tiap peran seed, peran dan client_id sesuai', async ({
-    sesiApi,
-  }) => {
-    inventaris('getMe', 'operator');
-    const res = await sesiApi.get('/admin/v1/auth/me');
-    expect(res.status()).toBe(200);
-    const me = (await res.json()) as { peran: string[]; mfa: { wajib: boolean; aktif: boolean } };
-    expect(me.peran).toContain('operator');
-    expect(me.mfa.wajib).toBe(false);
-  });
+  test.describe('sesi (peran operator)', () => {
+    test.use({ peran: 'operator' });
 
-  test('@smoke getSesi: 200, field wajib ada', async ({ sesiApi }) => {
-    inventaris('getSesi', 'operator');
-    const res = await sesiApi.get('/admin/v1/auth/sesi');
-    expect(res.status()).toBe(200);
-    const sesi = (await res.json()) as Record<string, unknown>;
-    expect(sesi).toHaveProperty('absolut_berakhir_pada');
-    expect(sesi).toHaveProperty('idle_berakhir_pada');
-    expect(sesi).toHaveProperty('waktu_server');
-  });
-
-  test('@smoke perpanjangSesi: 200, idle direset, tanpa Set-Cookie', async ({ sesiApi }) => {
-    inventaris('perpanjangSesi', 'operator');
-    const res = await sesiApi.post('/admin/v1/auth/sesi/perpanjang');
-    expect(res.status()).toBe(200);
-    expect(res.headers()['set-cookie']).toBeUndefined();
-  });
-
-  test('@smoke updatePreferensi: 200, bahasa_ui tersimpan', async ({ sesiApi }) => {
-    inventaris('updatePreferensi', 'operator');
-    const res = await sesiApi.patch('/admin/v1/auth/me/preferensi', {
-      data: { bahasa_ui: 'id' },
+    test('@smoke getMe: 200 untuk tiap peran seed, peran dan client_id sesuai', async ({
+      sesiApi,
+    }) => {
+      inventaris('getMe', 'operator');
+      const res = await sesiApi.get('/admin/v1/auth/me');
+      expect(res.status()).toBe(200);
+      const me = (await res.json()) as {
+        peran: string[];
+        mfa: { wajib: boolean; aktif: boolean };
+      };
+      expect(me.peran).toContain('operator');
+      expect(me.mfa.wajib).toBe(false);
     });
-    expect(res.status()).toBe(200);
-    expect((await res.json()) as { bahasa_ui: string }).toMatchObject({ bahasa_ui: 'id' });
-  });
 
-  test('@smoke logout: 204 lalu getMe 401 (G6)', async ({ playwright }) => {
-    inventaris('logout', 'operator');
-    const token = tokenUntuk('operator');
-    const ctx = await playwright.request.newContext({
-      baseURL: ORIGIN,
-      extraHTTPHeaders: {
-        Origin: ORIGIN,
-        ...(token ? { Cookie: `${COOKIE_SESI}=${token}` } : {}),
-      },
+    test('@smoke getSesi: 200, field wajib ada', async ({ sesiApi }) => {
+      inventaris('getSesi', 'operator');
+      const res = await sesiApi.get('/admin/v1/auth/sesi');
+      expect(res.status()).toBe(200);
+      const sesi = (await res.json()) as Record<string, unknown>;
+      expect(sesi).toHaveProperty('absolut_berakhir_pada');
+      expect(sesi).toHaveProperty('idle_berakhir_pada');
+      expect(sesi).toHaveProperty('waktu_server');
     });
-    const resLogout = await ctx.post('/admin/v1/auth/logout');
-    expect(resLogout.status()).toBe(204);
-    const resMe = await ctx.get('/admin/v1/auth/me');
-    expect(resMe.status()).toBe(401);
-    await ctx.dispose();
+
+    test('@smoke perpanjangSesi: 200, idle direset, tanpa Set-Cookie', async ({ sesiApi }) => {
+      inventaris('perpanjangSesi', 'operator');
+      const res = await sesiApi.post('/admin/v1/auth/sesi/perpanjang');
+      expect(res.status()).toBe(200);
+      expect(res.headers()['set-cookie']).toBeUndefined();
+    });
+
+    test('@smoke updatePreferensi: 200, bahasa_ui tersimpan', async ({ sesiApi }) => {
+      inventaris('updatePreferensi', 'operator');
+      const res = await sesiApi.patch('/admin/v1/auth/me/preferensi', {
+        data: { bahasa_ui: 'id' },
+      });
+      expect(res.status()).toBe(200);
+      expect((await res.json()) as { bahasa_ui: string }).toMatchObject({ bahasa_ui: 'id' });
+    });
   });
 });
+
+// `logout` (G6) dites di frontend/smoke/api/99-logout.spec.ts, bukan di sini: harus jalan
+// paling akhir (sesudah G5) karena menghabiskan token sesi operator yang dipakai ulang dari
+// fixture SQL oleh grup lain (Log, getQuotaTracker, G4) di seluruh gelombang.
