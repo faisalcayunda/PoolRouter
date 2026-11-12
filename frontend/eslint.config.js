@@ -37,7 +37,7 @@ export default tseslint.config(
   { files: ['*.config.{js,ts}', 'scripts/**'], languageOptions: { globals: { ...globals.node } } },
   // Playwright specs: `test`/`expect` come from @playwright/test, not Vitest.
   {
-    files: ['e2e/**/*.ts', 'e2e-api-asli/**/*.ts'],
+    files: ['e2e/**/*.ts', 'e2e-api-asli/**/*.ts', 'smoke/**/*.ts'],
     languageOptions: { globals: { ...globals.node } },
     rules: {
       // Playwright fixtures take a callback parameter literally named `use`;

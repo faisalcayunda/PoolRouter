@@ -22,7 +22,8 @@ JOIN (VALUES
   ('seed-auditor',        '__HASH_AUDITOR__'),
   ('seed-client-owner',   '__HASH_CLIENT_OWNER__'),
   ('seed-admin-auditor',  '__HASH_ADMIN_AUDITOR__')
-) AS v (username, hash_hex) ON v.username = u.username;
+) AS v (username, hash_hex) ON v.username = u.username
+RETURNING 1;
 
 -- Q4: kode_daftar_mfa untuk seed-penyetuju, diterbitkan seed-platform-admin, umur 24 jam persis
 -- (constraint chk_kode_daftar_umur), supaya G1 bisa membuktikan mfaDaftar + mfaKonfirmasi
@@ -30,4 +31,5 @@ JOIN (VALUES
 INSERT INTO kode_daftar_mfa (kode_id, pengguna_id, kode_hash, diterbitkan_oleh, diterbitkan_at, kedaluwarsa_at)
 SELECT gen_random_uuid(), u.pengguna_id, '__HASH_KODE_DAFTAR_MFA__', p.pengguna_id, now(), now() + interval '24 hours'
 FROM admin_user u, admin_user p
-WHERE u.username = 'seed-penyetuju' AND p.username = 'seed-platform-admin';
+WHERE u.username = 'seed-penyetuju' AND p.username = 'seed-platform-admin'
+RETURNING 1;
