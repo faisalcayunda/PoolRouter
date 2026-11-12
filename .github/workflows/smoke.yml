@@ -3,10 +3,6 @@
 # migrasi + seed sintetis, dan suite Playwright `@smoke` terhadap setiap operasi OpenAPI, rute, dan
 # proses (inventaris.md). Secret dibangkitkan harness per run (tidak ada secret repo).
 #
-# TEMP (ARC-378, dihapus sebelum code_review): push dibatasi ke agent/ARC-378-* supaya tiap layar
-# harness bisa divalidasi di CI selama development (tidak ada engine kontainer di sandbox agen).
-# Trigger akhir sesuai spec: push hanya ke main.
-#
 # `make smoke` di `main` diharapkan MERAH dari S2 (ARC-378) merge sampai S3 (ARC-379) merge:
 # cakupan.mjs sengaja gagal selama scripts/smoke/cakupan-rute.mjs (milik S3) belum ada, supaya
 # rute tidak pernah lolos cakupan secara diam-diam (spec bagian 4, AC5 dibuktikan sesudah S3 merge).
@@ -14,7 +10,7 @@ name: smoke
 
 on:
   push:
-    branches: [main, "agent/ARC-378-*"] # TEMP: hapus "agent/ARC-378-*" sebelum code_review
+    branches: [main]
   workflow_dispatch:
 
 permissions:
