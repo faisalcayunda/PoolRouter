@@ -60,10 +60,10 @@ endif
 
 PNPM = $(RUN) pnpm
 
-.PHONY: help check-label setup test lint fmt clean gen-api gen-api-check build build-e2e e2e e2e-api-asli i18n-check i18n-types build-lock-status build-lock-clean
+.PHONY: help check-label setup test lint fmt clean gen-api gen-api-check build build-e2e e2e e2e-api-asli e2e-smoke i18n-check i18n-types build-lock-status build-lock-clean
 
 help:
-	@echo "targets: setup test lint fmt clean gen-api gen-api-check build build-e2e e2e e2e-api-asli i18n-check i18n-types"
+	@echo "targets: setup test lint fmt clean gen-api gen-api-check build build-e2e e2e e2e-api-asli e2e-smoke i18n-check i18n-types"
 	@echo "gate resmi (dari akar): make setup test lint RUNNER=<podman|docker> FRONTEND_RUNNER=<podman|docker> CONTAINER_LABEL=arctiva.issue=ARC-<n>"
 	@echo "lock:    build-lock-status build-lock-clean (K-41 heavy build lock, shared with backend)"
 
@@ -158,4 +158,21 @@ e2e-api-asli: check-label
 else
 e2e-api-asli:
 	@echo "e2e-api-asli hanya untuk FRONTEND_RUNNER=podman atau docker" >&2; exit 2
+endif
+
+# e2e-smoke (ARC-378): suite `@smoke` di netns container frontend compose, sama alasan dengan
+# e2e-api-asli: origin 127.0.0.1:8080 harus sama dengan POOLROUTER_UI_ORIGIN (cookie __Host-
+# Secure), dan backend-webserver:8081 (downstream API, grup klien G3) hanya lewat network compose
+# internal, tidak dipublikasikan ke host. Dipanggil oleh scripts/smoke.sh di akar repo, yang
+# menyalakan stack dan memberi E2E_NETNS (container frontend) dan E2E_ENV_FILE (token sesi per
+# peran, di luar repo). PLAYWRIGHT_JSON_OUTPUT_NAME opsional (reporter JSON untuk laporan.mjs).
+ifneq ($(filter podman docker,$(FRONTEND_RUNNER)),)
+e2e-smoke: check-label
+	@test -n "$(E2E_NETNS)" && test -n "$(E2E_ENV_FILE)" || { echo "e2e-smoke dipanggil lewat make smoke di akar repo (butuh E2E_NETNS dan E2E_ENV_FILE)" >&2; exit 2; }
+	$(BUILD_LOCK_SH) run -- $(RUN_PW_OPTS) --network container:$(E2E_NETNS) --env-file $(E2E_ENV_FILE) \
+		-e PLAYWRIGHT_JSON_OUTPUT_NAME=$(PLAYWRIGHT_JSON_OUTPUT_NAME) \
+		$(BUILD_LOCK_OPTS) $(PLAYWRIGHT_IMAGE) ./node_modules/.bin/playwright test -c playwright.smoke.config.ts --reporter=json,list
+else
+e2e-smoke:
+	@echo "e2e-smoke hanya untuk FRONTEND_RUNNER=podman atau docker" >&2; exit 2
 endif

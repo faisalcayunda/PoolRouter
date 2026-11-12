@@ -121,7 +121,9 @@ kode_daftar=$(openssl rand -hex 16)
 hash_kode=$(printf %s "$kode_daftar" | openssl dgst -sha256 -hex | sed 's/^.*= //')
 sed -i "s/__HASH_KODE_DAFTAR_MFA__/$hash_kode/" "$fixture_sql"
 echo "E2E_KODE_DAFTAR_MFA=$kode_daftar" >> "$pwenv"
-echo "E2E_BASE_URL=http://127.0.0.1:$port" >> "$pwenv"
+# Playwright jalan di netns container frontend (lihat blok "Playwright @smoke" di bawah): origin
+# nginx internal 8080, bukan $port (port host yang dipublikasikan, beda nomor).
+echo "E2E_BASE_URL=http://127.0.0.1:8080" >> "$pwenv"
 # Password seed sama untuk keenam pengguna seed (backend-cli seed pengguna, backend/README.md);
 # dipakai G1 untuk login + MFA sungguhan sekali lewat HTTP (spec Testing Decisions).
 printf 'E2E_SEED_PASSWORD=%s\n' "$(cat "$secrets/poolrouter_seed_password")" >> "$pwenv"
@@ -146,6 +148,8 @@ catat_proc() {
 }
 cid() { $ENGINE ps -q --filter "label=$label" --filter "label=com.docker.compose.service=$1"; }
 webserver_c=$(cid backend-webserver); controller_c=$(cid backend-controller); worker_c=$(cid backend-worker)
+frontend_c=$(cid frontend)
+[ -n "$frontend_c" ] || { echo "container frontend tidak ditemukan" >&2; exit 4; }
 
 catat_proc proc:webserver sh -c "$ENGINE exec '$webserver_c' webserver healthcheck && $ENGINE exec '$webserver_c' sh -c 'exec 3<>/dev/tcp/127.0.0.1/9090; printf \"GET /metrics HTTP/1.0\r\n\r\n\" >&3; read -r l <&3; case \"\$l\" in *\" 200 \"*) ;; *) exit 1;; esac'"
 catat_proc proc:controller "$ENGINE" exec "$controller_c" controller healthcheck
@@ -158,20 +162,26 @@ catat_proc proc:backend-cli sh -c "
 "
 
 # --- Playwright @smoke (project api, lalu ui) -----------------------------------------------------
+# Jalan di netns container frontend (seperti scripts/e2e-api-asli.sh/ARC-251): origin
+# 127.0.0.1:8080 sama dengan POOLROUTER_UI_ORIGIN (cookie __Host- Secure diterima), dan
+# backend-webserver:8081 (downstream API, grup klien G3) hanya lewat network compose internal,
+# tidak dipublikasikan ke host (spec Testing Decisions).
 echo "== playwright @smoke"
-json_out="$tmp/playwright-report.json"
+# $tmp (di luar repo) tidak ter-mount di container Playwright (RUN_PW_OPTS hanya mount repo);
+# laporan JSON harus ditulis di bawah frontend/.cache (di repo, git- dan lint-ignored), dibaca
+# host sesudahnya lewat path absolut yang sama.
+mkdir -p "$repo/frontend/.cache"
+json_out_rel=".cache/smoke-playwright-report.json"
+json_out="$repo/frontend/$json_out_rel"
+rm -f "$json_out"
 pw_rc=0
-(
-  cd frontend
-  set -a
-  . "$pwenv"
-  set +a
-  PLAYWRIGHT_JSON_OUTPUT_NAME="$json_out" npx playwright test -c playwright.smoke.config.ts --reporter=json,list
-) || pw_rc=$?
+$MAKE -C frontend e2e-smoke FRONTEND_RUNNER="$ENGINE" CONTAINER_LABEL="$label" \
+  E2E_NETNS="$frontend_c" E2E_ENV_FILE="$pwenv" PLAYWRIGHT_JSON_OUTPUT_NAME="$json_out_rel" || pw_rc=$?
 
 # --- Laporan -------------------------------------------------------------------------------------
 sha=$(git -C "$repo" rev-parse HEAD 2>/dev/null || echo unknown)
 laporan_rc=0
 node "$repo/scripts/smoke/laporan.mjs" "$json_out" "$proc_log" "$sha" "$repo/smoke-report.json" || laporan_rc=$?
+rm -f "$json_out" 2>/dev/null || true
 
 [ "$pw_rc" = 0 ] && [ "$laporan_rc" = 0 ]
