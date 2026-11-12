@@ -21,124 +21,137 @@ function ctxBaru(playwright: PlaywrightWorkerArgs['playwright']) {
 }
 
 test.describe('@smoke auth', () => {
-  test('@smoke login: 204 untuk peran tanpa MFA wajib (operator)', async ({ playwright }) => {
-    inventaris('login', 'operator');
-    const ctx = await ctxBaru(playwright);
-    const res = await ctx.post('/admin/v1/auth/login', {
-      data: { username: 'seed-operator', password: SEED_PASSWORD },
-    });
-    expect(res.status()).toBe(204);
-    const cookie = (res.headers()['set-cookie'] ?? '').toString();
-    expect(cookie).toContain(COOKIE_SESI);
-    await ctx.dispose();
-  });
+  test(
+    '@smoke login: 204 untuk peran tanpa MFA wajib (operator)',
+    { annotation: inventaris('login', 'operator') },
+    async ({ playwright }) => {
+      const ctx = await ctxBaru(playwright);
+      const res = await ctx.post('/admin/v1/auth/login', {
+        data: { username: 'seed-operator', password: SEED_PASSWORD },
+      });
+      expect(res.status()).toBe(204);
+      const cookie = (res.headers()['set-cookie'] ?? '').toString();
+      expect(cookie).toContain(COOKIE_SESI);
+      await ctx.dispose();
+    },
+  );
 
-  test('@smoke login: 200 langkah mfa untuk peran MFA wajib yang sudah terdaftar (platform admin)', async ({
-    playwright,
-  }) => {
-    inventaris('login', 'platform-admin');
-    const ctx = await ctxBaru(playwright);
-    const res = await ctx.post('/admin/v1/auth/login', {
-      data: { username: 'seed-platform-admin', password: SEED_PASSWORD },
-    });
-    expect(res.status()).toBe(200);
-    const body = (await res.json()) as { langkah: string };
-    expect(body.langkah).toBe('mfa');
-    await ctx.dispose();
-  });
+  test(
+    '@smoke login: 200 langkah mfa untuk peran MFA wajib yang sudah terdaftar (platform admin)',
+    { annotation: inventaris('login', 'platform-admin') },
+    async ({ playwright }) => {
+      const ctx = await ctxBaru(playwright);
+      const res = await ctx.post('/admin/v1/auth/login', {
+        data: { username: 'seed-platform-admin', password: SEED_PASSWORD },
+      });
+      expect(res.status()).toBe(200);
+      const body = (await res.json()) as { langkah: string };
+      expect(body.langkah).toBe('mfa');
+      await ctx.dispose();
+    },
+  );
 
-  test('@smoke mfaDaftar, mfaKonfirmasi, logout, lalu mfaVerifikasi (penyetuju, satu ctx)', async ({
-    playwright,
-  }) => {
-    // Satu context request (satu cookie jar) dipakai seluruh rantai: cookie pra-sesi
-    // __Host-pr_mfa dari login pertama dipakai mfaDaftar/mfaKonfirmasi; sesudah logout, login
-    // kedua balik ke langkah=mfa dan dibuktikan lewat mfaVerifikasi dengan TOTP dari rahasia
-    // yang sama (spec bagian 3: TOTP dihitung di test dengan node:crypto).
-    const ctx = await ctxBaru(playwright);
+  test(
+    '@smoke mfaDaftar, mfaKonfirmasi, logout, lalu mfaVerifikasi (penyetuju, satu ctx)',
+    { annotation: inventaris(['mfaDaftar', 'mfaKonfirmasi', 'mfaVerifikasi'], 'platform-admin') },
+    async ({ playwright }) => {
+      // Satu context request (satu cookie jar) dipakai seluruh rantai: cookie pra-sesi
+      // __Host-pr_mfa dari login pertama dipakai mfaDaftar/mfaKonfirmasi; sesudah logout, login
+      // kedua balik ke langkah=mfa dan dibuktikan lewat mfaVerifikasi dengan TOTP dari rahasia
+      // yang sama (spec bagian 3: TOTP dihitung di test dengan node:crypto).
+      const ctx = await ctxBaru(playwright);
 
-    const loginRes = await ctx.post('/admin/v1/auth/login', {
-      data: { username: 'seed-penyetuju', password: SEED_PASSWORD },
-    });
-    expect(loginRes.status()).toBe(200);
-    expect(((await loginRes.json()) as { langkah: string }).langkah).toBe('daftar_mfa');
+      const loginRes = await ctx.post('/admin/v1/auth/login', {
+        data: { username: 'seed-penyetuju', password: SEED_PASSWORD },
+      });
+      expect(loginRes.status()).toBe(200);
+      expect(((await loginRes.json()) as { langkah: string }).langkah).toBe('daftar_mfa');
 
-    inventaris('mfaDaftar', 'platform-admin');
-    const daftarRes = await ctx.post('/admin/v1/auth/mfa/daftar', {
-      data: { kode_pendaftaran: KODE_DAFTAR_MFA },
-    });
-    expect(daftarRes.status()).toBe(200);
-    const daftar = (await daftarRes.json()) as { otpauth_uri: string; rahasia_base32: string };
-    expect(daftar.rahasia_base32).toBeTruthy();
+      const daftarRes = await ctx.post('/admin/v1/auth/mfa/daftar', {
+        data: { kode_pendaftaran: KODE_DAFTAR_MFA },
+      });
+      expect(daftarRes.status()).toBe(200);
+      const daftar = (await daftarRes.json()) as { otpauth_uri: string; rahasia_base32: string };
+      expect(daftar.rahasia_base32).toBeTruthy();
 
-    inventaris('mfaKonfirmasi', 'platform-admin');
-    const konfirmasiRes = await ctx.post('/admin/v1/auth/mfa/daftar/konfirmasi', {
-      data: { kode_totp: totp(daftar.rahasia_base32) },
-    });
-    expect(konfirmasiRes.status()).toBe(200);
-    const konfirmasi = (await konfirmasiRes.json()) as { kode_pemulihan: string[] };
-    expect(konfirmasi.kode_pemulihan).toHaveLength(10);
-    expect((konfirmasiRes.headers()['set-cookie'] ?? '').toString()).toContain(COOKIE_SESI);
+      const konfirmasiRes = await ctx.post('/admin/v1/auth/mfa/daftar/konfirmasi', {
+        data: { kode_totp: totp(daftar.rahasia_base32) },
+      });
+      expect(konfirmasiRes.status()).toBe(200);
+      const konfirmasi = (await konfirmasiRes.json()) as { kode_pemulihan: string[] };
+      expect(konfirmasi.kode_pemulihan).toHaveLength(10);
+      expect((konfirmasiRes.headers()['set-cookie'] ?? '').toString()).toContain(COOKIE_SESI);
 
-    const logoutRes = await ctx.post('/admin/v1/auth/logout');
-    expect(logoutRes.status()).toBe(204);
+      const logoutRes = await ctx.post('/admin/v1/auth/logout');
+      expect(logoutRes.status()).toBe(204);
 
-    const loginKeduaRes = await ctx.post('/admin/v1/auth/login', {
-      data: { username: 'seed-penyetuju', password: SEED_PASSWORD },
-    });
-    expect(loginKeduaRes.status()).toBe(200);
-    expect(((await loginKeduaRes.json()) as { langkah: string }).langkah).toBe('mfa');
+      const loginKeduaRes = await ctx.post('/admin/v1/auth/login', {
+        data: { username: 'seed-penyetuju', password: SEED_PASSWORD },
+      });
+      expect(loginKeduaRes.status()).toBe(200);
+      expect(((await loginKeduaRes.json()) as { langkah: string }).langkah).toBe('mfa');
 
-    inventaris('mfaVerifikasi', 'platform-admin');
-    const verifikasiRes = await ctx.post('/admin/v1/auth/mfa', {
-      data: { kode: totp(daftar.rahasia_base32), kode_pemulihan: null },
-    });
-    expect(verifikasiRes.status()).toBe(204);
-    expect((verifikasiRes.headers()['set-cookie'] ?? '').toString()).toContain(COOKIE_SESI);
-    await ctx.dispose();
-  });
+      const verifikasiRes = await ctx.post('/admin/v1/auth/mfa', {
+        data: { kode: totp(daftar.rahasia_base32), kode_pemulihan: null },
+      });
+      expect(verifikasiRes.status()).toBe(204);
+      expect((verifikasiRes.headers()['set-cookie'] ?? '').toString()).toContain(COOKIE_SESI);
+      await ctx.dispose();
+    },
+  );
 
   test.describe('sesi (peran operator)', () => {
     test.use({ peran: 'operator' });
 
-    test('@smoke getMe: 200 untuk tiap peran seed, peran dan client_id sesuai', async ({
-      sesiApi,
-    }) => {
-      inventaris('getMe', 'operator');
-      const res = await sesiApi.get('/admin/v1/auth/me');
-      expect(res.status()).toBe(200);
-      const me = (await res.json()) as {
-        peran: string[];
-        mfa: { wajib: boolean; aktif: boolean };
-      };
-      expect(me.peran).toContain('operator');
-      expect(me.mfa.wajib).toBe(false);
-    });
+    test(
+      '@smoke getMe: 200 untuk tiap peran seed, peran dan client_id sesuai',
+      { annotation: inventaris('getMe', 'operator') },
+      async ({ sesiApi }) => {
+        const res = await sesiApi.get('/admin/v1/auth/me');
+        expect(res.status()).toBe(200);
+        const me = (await res.json()) as {
+          peran: string[];
+          mfa: { wajib: boolean; aktif: boolean };
+        };
+        expect(me.peran).toContain('operator');
+        expect(me.mfa.wajib).toBe(false);
+      },
+    );
 
-    test('@smoke getSesi: 200, field wajib ada', async ({ sesiApi }) => {
-      inventaris('getSesi', 'operator');
-      const res = await sesiApi.get('/admin/v1/auth/sesi');
-      expect(res.status()).toBe(200);
-      const sesi = (await res.json()) as Record<string, unknown>;
-      expect(sesi).toHaveProperty('absolut_berakhir_pada');
-      expect(sesi).toHaveProperty('idle_berakhir_pada');
-      expect(sesi).toHaveProperty('waktu_server');
-    });
+    test(
+      '@smoke getSesi: 200, field wajib ada',
+      { annotation: inventaris('getSesi', 'operator') },
+      async ({ sesiApi }) => {
+        const res = await sesiApi.get('/admin/v1/auth/sesi');
+        expect(res.status()).toBe(200);
+        const sesi = (await res.json()) as Record<string, unknown>;
+        expect(sesi).toHaveProperty('absolut_berakhir_pada');
+        expect(sesi).toHaveProperty('idle_berakhir_pada');
+        expect(sesi).toHaveProperty('waktu_server');
+      },
+    );
 
-    test('@smoke perpanjangSesi: 200, idle direset, tanpa Set-Cookie', async ({ sesiApi }) => {
-      inventaris('perpanjangSesi', 'operator');
-      const res = await sesiApi.post('/admin/v1/auth/sesi/perpanjang');
-      expect(res.status()).toBe(200);
-      expect(res.headers()['set-cookie']).toBeUndefined();
-    });
+    test(
+      '@smoke perpanjangSesi: 200, idle direset, tanpa Set-Cookie',
+      { annotation: inventaris('perpanjangSesi', 'operator') },
+      async ({ sesiApi }) => {
+        const res = await sesiApi.post('/admin/v1/auth/sesi/perpanjang');
+        expect(res.status()).toBe(200);
+        expect(res.headers()['set-cookie']).toBeUndefined();
+      },
+    );
 
-    test('@smoke updatePreferensi: 200, bahasa_ui tersimpan', async ({ sesiApi }) => {
-      inventaris('updatePreferensi', 'operator');
-      const res = await sesiApi.patch('/admin/v1/auth/me/preferensi', {
-        data: { bahasa_ui: 'id' },
-      });
-      expect(res.status()).toBe(200);
-      expect((await res.json()) as { bahasa_ui: string }).toMatchObject({ bahasa_ui: 'id' });
-    });
+    test(
+      '@smoke updatePreferensi: 200, bahasa_ui tersimpan',
+      { annotation: inventaris('updatePreferensi', 'operator') },
+      async ({ sesiApi }) => {
+        const res = await sesiApi.patch('/admin/v1/auth/me/preferensi', {
+          data: { bahasa_ui: 'id' },
+        });
+        expect(res.status()).toBe(200);
+        expect((await res.json()) as { bahasa_ui: string }).toMatchObject({ bahasa_ui: 'id' });
+      },
+    );
   });
 });
 

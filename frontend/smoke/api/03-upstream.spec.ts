@@ -31,60 +31,82 @@ function konfigDasar(alasan?: string) {
 test.describe('@smoke upstream', () => {
   test.use({ peran: 'platform-admin' });
 
-  test('@smoke createUpstreamPool: 201, simpan upstream_pool_id', async ({ sesiApi }) => {
-    inventaris('createUpstreamPool', 'platform-admin');
-    const res = await sesiApi.post('/admin/v1/upstream-pools', { data: konfigDasar() });
-    expect(res.status()).toBe(201);
-    const body = (await res.json()) as { upstream_pool_id: string };
-    expect(body.upstream_pool_id).toBeTruthy();
-    state.upstreamPoolId = body.upstream_pool_id;
-  });
+  test(
+    '@smoke createUpstreamPool: 201, simpan upstream_pool_id',
+    { annotation: inventaris('createUpstreamPool', 'platform-admin') },
+    async ({ sesiApi }) => {
+      const res = await sesiApi.post('/admin/v1/upstream-pools', { data: konfigDasar() });
+      expect(res.status()).toBe(201);
+      const body = (await res.json()) as { upstream_pool_id: string };
+      expect(body.upstream_pool_id).toBeTruthy();
+      state.upstreamPoolId = body.upstream_pool_id;
+    },
+  );
 
-  test('@smoke getUpstreamPool: 200, kuota_harian sesuai', async ({ sesiApi }) => {
-    inventaris('getUpstreamPool', 'platform-admin');
-    const res = await sesiApi.get(`/admin/v1/upstream-pools/${state.upstreamPoolId}`);
-    expect(res.status()).toBe(200);
-    expect((await res.json()) as { kuota_harian: number }).toMatchObject({ kuota_harian: 500 });
-  });
+  test(
+    '@smoke getUpstreamPool: 200, kuota_harian sesuai',
+    { annotation: inventaris('getUpstreamPool', 'platform-admin') },
+    async ({ sesiApi }) => {
+      const res = await sesiApi.get(`/admin/v1/upstream-pools/${state.upstreamPoolId}`);
+      expect(res.status()).toBe(200);
+      expect((await res.json()) as { kuota_harian: number }).toMatchObject({ kuota_harian: 500 });
+    },
+  );
 
-  test('@smoke updateUpstreamPool: 200', async ({ sesiApi }) => {
-    inventaris('updateUpstreamPool', 'platform-admin');
-    const res = await sesiApi.put(`/admin/v1/upstream-pools/${state.upstreamPoolId}`, {
-      data: konfigDasar('Smoke ARC-378: update upstream pool sintetis.'),
-    });
-    expect(res.status()).toBe(200);
-  });
+  test(
+    '@smoke updateUpstreamPool: 200',
+    { annotation: inventaris('updateUpstreamPool', 'platform-admin') },
+    async ({ sesiApi }) => {
+      const res = await sesiApi.put(`/admin/v1/upstream-pools/${state.upstreamPoolId}`, {
+        data: konfigDasar('Smoke ARC-378: update upstream pool sintetis.'),
+      });
+      expect(res.status()).toBe(200);
+    },
+  );
 
-  test('@smoke listUpstreamPools: 200, memuat upstream_pool_id G2', async ({ sesiApi }) => {
-    inventaris('listUpstreamPools', 'platform-admin');
-    const res = await sesiApi.get('/admin/v1/upstream-pools');
-    expect(res.status()).toBe(200);
-    const list = (await res.json()) as Array<{ upstream_pool_id: string }>;
-    expect(list.some((u) => u.upstream_pool_id === state.upstreamPoolId)).toBe(true);
-  });
+  test(
+    '@smoke listUpstreamPools: 200, memuat upstream_pool_id G2',
+    { annotation: inventaris('listUpstreamPools', 'platform-admin') },
+    async ({ sesiApi }) => {
+      const res = await sesiApi.get('/admin/v1/upstream-pools');
+      expect(res.status()).toBe(200);
+      const list = (await res.json()) as Array<{ upstream_pool_id: string }>;
+      expect(list.some((u) => u.upstream_pool_id === state.upstreamPoolId)).toBe(true);
+    },
+  );
 
-  test('@smoke pratinjauNonaktifkanUpstreamPool: 200', async ({ sesiApi }) => {
-    inventaris('pratinjauNonaktifkanUpstreamPool', 'platform-admin');
-    const res = await sesiApi.get(
-      `/admin/v1/upstream-pools/${state.upstreamPoolId}/pratinjau-nonaktif`,
-    );
-    expect(res.status()).toBe(200);
-    const pratinjau = (await res.json()) as Record<string, unknown>;
-    expect(pratinjau).toHaveProperty('akan_cancelled');
-    expect(pratinjau).toHaveProperty('akan_failed');
-  });
+  test(
+    '@smoke pratinjauNonaktifkanUpstreamPool: 200',
+    { annotation: inventaris('pratinjauNonaktifkanUpstreamPool', 'platform-admin') },
+    async ({ sesiApi }) => {
+      const res = await sesiApi.get(
+        `/admin/v1/upstream-pools/${state.upstreamPoolId}/pratinjau-nonaktif`,
+      );
+      expect(res.status()).toBe(200);
+      const pratinjau = (await res.json()) as Record<string, unknown>;
+      expect(pratinjau).toHaveProperty('akan_cancelled');
+      expect(pratinjau).toHaveProperty('akan_failed');
+    },
+  );
 
-  test('@smoke nonaktifkanUpstreamPool: 200', async ({ sesiApi }) => {
-    inventaris('nonaktifkanUpstreamPool', 'platform-admin');
-    const res = await sesiApi.post(`/admin/v1/upstream-pools/${state.upstreamPoolId}/nonaktifkan`, {
-      data: { alasan: 'Smoke ARC-378: nonaktifkan upstream pool sintetis sementara.' },
-    });
-    expect(res.status()).toBe(200);
-  });
+  test(
+    '@smoke nonaktifkanUpstreamPool: 200',
+    { annotation: inventaris('nonaktifkanUpstreamPool', 'platform-admin') },
+    async ({ sesiApi }) => {
+      const res = await sesiApi.post(
+        `/admin/v1/upstream-pools/${state.upstreamPoolId}/nonaktifkan`,
+        { data: { alasan: 'Smoke ARC-378: nonaktifkan upstream pool sintetis sementara.' } },
+      );
+      expect(res.status()).toBe(200);
+    },
+  );
 
-  test('@smoke aktifkanUpstreamPool: 200', async ({ sesiApi }) => {
-    inventaris('aktifkanUpstreamPool', 'platform-admin');
-    const res = await sesiApi.post(`/admin/v1/upstream-pools/${state.upstreamPoolId}/aktifkan`);
-    expect(res.status()).toBe(200);
-  });
+  test(
+    '@smoke aktifkanUpstreamPool: 200',
+    { annotation: inventaris('aktifkanUpstreamPool', 'platform-admin') },
+    async ({ sesiApi }) => {
+      const res = await sesiApi.post(`/admin/v1/upstream-pools/${state.upstreamPoolId}/aktifkan`);
+      expect(res.status()).toBe(200);
+    },
+  );
 });

@@ -15,42 +15,54 @@ test.describe('@smoke auditor', () => {
   const sampai = new Date(Date.now() + 60 * 60 * 1000).toISOString();
   const alasan = 'Smoke ARC-378: audit transaksi sintetis.';
 
-  test('@smoke searchLogByNik: 200, ada baris NIK sintetis', async ({ sesiApi }) => {
-    inventaris('searchLogByNik', 'auditor');
-    const res = await sesiApi.post('/admin/v1/auditor/log/cari-nik', {
-      data: { nik: NIK_SINTETIS, dari, sampai, alasan },
-    });
-    expect(res.status()).toBe(200);
-    const body = (await res.json()) as { baris: Array<{ kode_transaksi: string }> };
-    expect(body.baris.length).toBeGreaterThan(0);
-  });
+  test(
+    '@smoke searchLogByNik: 200, ada baris NIK sintetis',
+    { annotation: inventaris('searchLogByNik', 'auditor') },
+    async ({ sesiApi }) => {
+      const res = await sesiApi.post('/admin/v1/auditor/log/cari-nik', {
+        data: { nik: NIK_SINTETIS, dari, sampai, alasan },
+      });
+      expect(res.status()).toBe(200);
+      const body = (await res.json()) as { baris: Array<{ kode_transaksi: string }> };
+      expect(body.baris.length).toBeGreaterThan(0);
+    },
+  );
 
-  test('@smoke openPayload: 200, kode_transaksi sesuai', async ({ sesiApi }) => {
-    inventaris('openPayload', 'auditor');
-    const res = await sesiApi.post('/admin/v1/auditor/payload', {
-      data: { kode_transaksi: state.kodeTransaksiSync, alasan },
-    });
-    expect(res.status()).toBe(200);
-    const body = (await res.json()) as { kode_transaksi: string };
-    expect(body.kode_transaksi).toBe(state.kodeTransaksiSync);
-  });
+  test(
+    '@smoke openPayload: 200, kode_transaksi sesuai',
+    { annotation: inventaris('openPayload', 'auditor') },
+    async ({ sesiApi }) => {
+      const res = await sesiApi.post('/admin/v1/auditor/payload', {
+        data: { kode_transaksi: state.kodeTransaksiSync, alasan },
+      });
+      expect(res.status()).toBe(200);
+      const body = (await res.json()) as { kode_transaksi: string };
+      expect(body.kode_transaksi).toBe(state.kodeTransaksiSync);
+    },
+  );
 
-  test('@smoke exportLogAuditor: 200, CSV', async ({ sesiApi }) => {
-    inventaris('exportLogAuditor', 'auditor');
-    const res = await sesiApi.post('/admin/v1/auditor/log/ekspor', {
-      data: { nik: NIK_SINTETIS, dari, sampai, alasan },
-    });
-    expect(res.status()).toBe(200);
-    expect(res.headers()['content-type']).toContain('text/csv');
-  });
+  test(
+    '@smoke exportLogAuditor: 200, CSV',
+    { annotation: inventaris('exportLogAuditor', 'auditor') },
+    async ({ sesiApi }) => {
+      const res = await sesiApi.post('/admin/v1/auditor/log/ekspor', {
+        data: { nik: NIK_SINTETIS, dari, sampai, alasan },
+      });
+      expect(res.status()).toBe(200);
+      expect(res.headers()['content-type']).toContain('text/csv');
+    },
+  );
 
-  test('@smoke searchAuditAkses: 200, ada baris aksi auditor', async ({ sesiApi }) => {
-    inventaris('searchAuditAkses', 'auditor');
-    const res = await sesiApi.post('/admin/v1/auditor/audit-akses/cari', {
-      data: { dari, sampai },
-    });
-    expect(res.status()).toBe(200);
-    const body = (await res.json()) as { baris: unknown[] };
-    expect(body.baris.length).toBeGreaterThan(0);
-  });
+  test(
+    '@smoke searchAuditAkses: 200, ada baris aksi auditor',
+    { annotation: inventaris('searchAuditAkses', 'auditor') },
+    async ({ sesiApi }) => {
+      const res = await sesiApi.post('/admin/v1/auditor/audit-akses/cari', {
+        data: { dari, sampai },
+      });
+      expect(res.status()).toBe(200);
+      const body = (await res.json()) as { baris: unknown[] };
+      expect(body.baris.length).toBeGreaterThan(0);
+    },
+  );
 });

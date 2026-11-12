@@ -3,6 +3,7 @@ import {
   expect,
   type APIRequestContext,
   type BrowserContext,
+  type TestDetails,
 } from '@playwright/test';
 
 /**
@@ -12,10 +13,14 @@ import {
  * `scripts/smoke.sh`), tidak pernah dari repo. Header `Origin` disetel di semua request tulis
  * admin (Testing Decisions).
  *
- * Anotasi wajib tiap test: `test.info().annotations.push({type: 'inventaris', description: id})`
- * dengan `id` = operationId/`route:...`/`proc:...` dari inventaris.md — dipakai
- * `scripts/smoke/cakupan.mjs` (cakupan) dan `scripts/smoke/laporan.mjs` (laporan). Helper
- * `inventaris(id, peran?)` di bawah menulis anotasi itu dan anotasi `peran` opsional.
+ * Anotasi wajib tiap test: id = operationId/`route:...`/`proc:...` dari inventaris.md — dipakai
+ * `scripts/smoke/cakupan.mjs` (cakupan) dan `scripts/smoke/laporan.mjs` (laporan). HARUS lewat
+ * detail statis `test(title, details, body)` (`TestDetails.annotation`), BUKAN
+ * `test.info().annotations.push(...)` di badan test: `playwright test --list` (dipakai
+ * `cakupan.mjs`) tidak pernah menjalankan badan test, jadi anotasi yang ditulis saat runtime tidak
+ * pernah muncul di keluaran `--list` (diverifikasi langsung lewat probe `--list` + reporter json).
+ * Helper `inventaris(id, peran?)` di bawah mengembalikan `TestDetails` itu untuk argumen kedua
+ * `test(...)`; `id` boleh array untuk satu test yang membuktikan beberapa id sekaligus.
  */
 export const COOKIE_SESI = '__Host-pr_session';
 export const ORIGIN = 'http://127.0.0.1:8080';
@@ -44,11 +49,19 @@ export function tokenUntuk(peran: Peran): string | undefined {
   return process.env[ENV_PER_PERAN[peran]];
 }
 
-/** Menulis anotasi inventaris (wajib) dan peran (opsional) sebelum asersi test. */
-export function inventaris(id: string, peran?: Peran): void {
-  const anotasi = test.info().annotations;
-  anotasi.push({ type: 'inventaris', description: id });
+/**
+ * Bangun anotasi statis `{type: 'inventaris', description: id}` (satu per id; `id` boleh array
+ * untuk satu test yang membuktikan beberapa id sekaligus) dan `{type: 'peran', description: peran}`
+ * opsional, untuk argumen `details` test: `test('judul', { annotation: inventaris('opId', 'peran') },
+ * async (...) => {...})`.
+ */
+export function inventaris(id: string | string[], peran?: Peran): TestDetails['annotation'] {
+  const anotasi = (Array.isArray(id) ? id : [id]).map((i) => ({
+    type: 'inventaris',
+    description: i,
+  }));
   if (peran) anotasi.push({ type: 'peran', description: peran });
+  return anotasi;
 }
 
 async function pasangSesi(context: BrowserContext, token: string) {

@@ -8,11 +8,14 @@ import { test, expect, inventaris } from '../fixtures';
 test.describe('@smoke logout (G6)', () => {
   test.use({ peran: 'operator' });
 
-  test('@smoke logout: 204 lalu getMe 401', async ({ sesiApi }) => {
-    inventaris('logout', 'operator');
-    const resLogout = await sesiApi.post('/admin/v1/auth/logout');
-    expect(resLogout.status()).toBe(204);
-    const resMe = await sesiApi.get('/admin/v1/auth/me');
-    expect(resMe.status()).toBe(401);
-  });
+  test(
+    '@smoke logout: 204 lalu getMe 401',
+    { annotation: inventaris('logout', 'operator') },
+    async ({ sesiApi }) => {
+      const resLogout = await sesiApi.post('/admin/v1/auth/logout');
+      expect(resLogout.status()).toBe(204);
+      const resMe = await sesiApi.get('/admin/v1/auth/me');
+      expect(resMe.status()).toBe(401);
+    },
+  );
 });
