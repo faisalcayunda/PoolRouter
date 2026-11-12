@@ -168,4 +168,35 @@ test.describe('app shell', () => {
     await expectNoAxeViolations(page);
     expect(cspViolations).toEqual([]);
   });
+
+  test('ARC-370 AC3: target sentuh menu profil (avatar bar atas dan ciutkan) >= 44 px', async ({
+    page,
+    cspViolations,
+  }) => {
+    // Lingkaran tetap 36/40 px (ukuran visual tidak berubah); hit area diperluas lewat
+    // pseudo-element `::before` tak terlihat (`-inset-1`), dicek lewat computed style karena
+    // `::before` tidak punya `getBoundingClientRect()` sendiri.
+    const hitArea = (selector: string) =>
+      page.evaluate((sel) => {
+        const el = document.querySelector(sel) as HTMLElement;
+        const box = el.getBoundingClientRect();
+        const before = getComputedStyle(el, '::before');
+        const inset = parseFloat(before.top || '0');
+        return { width: box.width - inset * 2, height: box.height - inset * 2 };
+      }, selector);
+
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto('/');
+    const avatar = await hitArea('header button[aria-label*="Menu akun"]');
+    expect(avatar.width, 'avatar bar atas lebar').toBeGreaterThanOrEqual(44);
+    expect(avatar.height, 'avatar bar atas tinggi').toBeGreaterThanOrEqual(44);
+
+    await page.getByRole('button', { name: 'Ciutkan sidebar' }).click();
+    const compact = await hitArea('aside button[aria-label*="Menu akun"]');
+    expect(compact.width, 'avatar ciutkan lebar').toBeGreaterThanOrEqual(44);
+    expect(compact.height, 'avatar ciutkan tinggi').toBeGreaterThanOrEqual(44);
+
+    await expectNoAxeViolations(page);
+    expect(cspViolations).toEqual([]);
+  });
 });

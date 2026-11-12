@@ -101,9 +101,11 @@ function AccountMenu({
         className={cx(
           'cursor-pointer outline-none focus-visible:outline-solid focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-secondary',
           variant === 'avatar'
-            ? 'flex h-9 w-9 items-center justify-center rounded-full'
+            ? // Target sentuh ≥44 px (ARC-370 AC3) tanpa mengubah lingkaran 36 px: pseudo-element
+              // tak terlihat melebar di tiap sisi, ikut klik lewat tombol induknya.
+              "relative flex h-9 w-9 items-center justify-center rounded-full before:absolute before:-inset-1 before:content-['']"
             : compact
-              ? 'flex h-10 w-10 items-center justify-center self-center rounded-full'
+              ? "relative flex h-10 w-10 items-center justify-center self-center rounded-full before:absolute before:-inset-1 before:content-['']"
               : 'flex w-full items-center gap-3 rounded-medium bg-surface-container-low p-3 text-left hover:bg-surface-container data-[pressed]:bg-surface-container',
         )}
       >

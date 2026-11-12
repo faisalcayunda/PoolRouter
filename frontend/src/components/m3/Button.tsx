@@ -43,8 +43,11 @@ export function Button({
       {...props}
       type={type}
       className={cx(
-        'm3-state m3-focus m3-disabled typescale-label-large inline-flex h-9 min-w-9 items-center justify-center gap-2 rounded-small px-4',
+        'm3-state m3-focus m3-disabled typescale-label-large relative inline-flex h-9 min-w-9 items-center justify-center gap-2 rounded-small px-4',
         'cursor-pointer select-none',
+        // Target sentuh ≥44 px (ARC-370 AC3) tanpa mengubah ukuran visual 36 px: pseudo-element
+        // tak terlihat melebar 4 px tiap sisi, ikut klik lewat tombol induknya.
+        "before:absolute before:-inset-1 before:content-['']",
         variant === 'filled' && 'data-[disabled]:text-on-surface/38',
         variant === 'filled-tonal' && 'data-[disabled]:text-on-surface/38',
         variant === 'text' ? 'px-3' : null,
