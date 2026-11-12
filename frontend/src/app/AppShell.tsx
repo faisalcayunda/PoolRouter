@@ -128,7 +128,7 @@ function AccountMenu({
   );
 }
 
-/** Isi sidebar: logo + tombol ciut/tutup, grup menu per peran (grup akun di dasar), blok akun. */
+/** Isi sidebar: logo + tombol ciut/tutup, grup menu per peran, blok profil (menu Pengaturan+Keluar, ARC-370). */
 function DrawerContent({
   pathname,
   role,

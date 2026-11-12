@@ -126,6 +126,39 @@ test.describe('app shell', () => {
     expect(cspViolations).toEqual([]);
   });
 
+  test('ARC-370: Pengaturan hanya di menu profil, tanpa grup akun di sidebar', async ({
+    page,
+    cspViolations,
+  }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto('/');
+
+    const drawer = page.getByRole('complementary', { name: 'Navigasi utama' });
+    await expect(drawer.getByText('Akun')).toHaveCount(0);
+    await expect(drawer.getByRole('link', { name: 'Pengaturan' })).toHaveCount(0);
+
+    await drawer.getByRole('button', { name: /Menu akun/ }).click();
+    const drawerMenu = page.getByRole('menu');
+    const pengaturan = drawerMenu.getByRole('menuitem', { name: 'Pengaturan' });
+    await expect(pengaturan).toHaveAttribute('href', '/settings');
+    await expect(drawerMenu.getByRole('menuitem', { name: 'Keluar' })).toBeVisible();
+    await page.keyboard.press('Escape');
+
+    await page
+      .getByRole('banner')
+      .getByRole('button', { name: /Menu akun/ })
+      .click();
+    const barMenu = page.getByRole('menu');
+    await expect(barMenu.getByRole('menuitem', { name: 'Pengaturan' })).toHaveAttribute(
+      'href',
+      '/settings',
+    );
+    await page.keyboard.press('Escape');
+
+    await expectNoAxeViolations(page);
+    expect(cspViolations).toEqual([]);
+  });
+
   test('ui-v3: compact shell at 390 px', async ({ page, cspViolations }, testInfo) => {
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto('/');

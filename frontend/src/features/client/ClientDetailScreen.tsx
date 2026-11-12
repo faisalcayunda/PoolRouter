@@ -212,9 +212,7 @@ export function ClientDetailScreen({ clientId, client = api }: ClientDetailScree
                       {t('risk.client.confirm')}
                     </Button>
                   ) : (
-                    <Button onPress={() => void aktifkan()}>
-                      {t('clients.activate.action')}
-                    </Button>
+                    <Button onPress={() => void aktifkan()}>{t('clients.activate.action')}</Button>
                   )
                 }
               />

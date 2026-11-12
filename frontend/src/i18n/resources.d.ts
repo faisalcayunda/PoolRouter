@@ -738,6 +738,7 @@ export default interface Resources {
       },
       "env_label": "PoC",
       "group": {
+        "account": "Akun",
         "client": "Client",
         "compliance": "Kepatuhan",
         "config": "Konfigurasi",
