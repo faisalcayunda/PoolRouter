@@ -4,14 +4,14 @@ import { Button as RacButton, Link } from 'react-aria-components';
 import { Breadcrumbs } from '../components/m3/Breadcrumbs';
 import { cx } from '../components/m3/cx';
 import { IconButton } from '../components/m3/IconButton';
-import { Menu, MenuItem, MenuTrigger } from '../components/m3/Menu';
+import { Menu, MenuItem, MenuSeparator, MenuTrigger } from '../components/m3/Menu';
 import { NavigationDrawer } from '../components/m3/NavigationDrawer';
 import { TopAppBar } from '../components/m3/TopAppBar';
 import { enumLabel } from '../i18n/enums';
 import { Icon, icons } from '../icons';
 import { CrumbNameProvider, type CrumbRecord } from '../features/common/CrumbName';
 import type { AdminRole } from '../features/common/RoleContext';
-import { activeHref, crumbsFor, navGroupsFor } from './nav';
+import { activeHref, crumbsFor, navGroupsFor, SETTINGS_HREF } from './nav';
 
 /**
  * Drawer standar hanya dari kelas jendela M3 `large` (>= 1200 px, `--breakpoint-large` di
@@ -63,8 +63,9 @@ function initialOf(username: string): string {
 }
 
 /**
- * Menu akun: satu-satunya jalan ke "Keluar". Dua pemicu berbagi menu yang sama: blok identitas di
- * dasar sidebar (`block`, atau hanya lingkaran inisial saat sidebar diciutkan) dan avatar di bar atas.
+ * Menu akun: satu-satunya jalan ke "Pengaturan" dan "Keluar" (ARC-370, dipindah dari sidebar). Dua
+ * pemicu berbagi menu yang sama: blok identitas di dasar sidebar (`block`, atau hanya lingkaran
+ * inisial saat sidebar diciutkan) dan avatar di bar atas.
  */
 function AccountMenu({
   user,
@@ -100,9 +101,11 @@ function AccountMenu({
         className={cx(
           'cursor-pointer outline-none focus-visible:outline-solid focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-secondary',
           variant === 'avatar'
-            ? 'flex h-9 w-9 items-center justify-center rounded-full'
+            ? // Target sentuh ≥44 px (ARC-370 AC3) tanpa mengubah lingkaran 36 px: pseudo-element
+              // tak terlihat melebar di tiap sisi, ikut klik lewat tombol induknya.
+              "relative flex h-9 w-9 items-center justify-center rounded-full before:absolute before:-inset-1 before:content-['']"
             : compact
-              ? 'flex h-10 w-10 items-center justify-center self-center rounded-full'
+              ? "relative flex h-10 w-10 items-center justify-center self-center rounded-full before:absolute before:-inset-1 before:content-['']"
               : 'flex w-full items-center gap-3 rounded-medium bg-surface-container-low p-3 text-left hover:bg-surface-container data-[pressed]:bg-surface-container',
         )}
       >
@@ -116,14 +119,18 @@ function AccountMenu({
           </span>
         ) : null}
       </RacButton>
-      <Menu onAction={() => onKeluar?.()}>
+      <Menu onAction={(key) => key === 'keluar' && onKeluar?.()}>
+        <MenuItem id="pengaturan" href={SETTINGS_HREF}>
+          {t('nav.drawer.settings')}
+        </MenuItem>
+        <MenuSeparator />
         <MenuItem id="keluar">{t('account.menu.sign_out')}</MenuItem>
       </Menu>
     </MenuTrigger>
   );
 }
 
-/** Isi sidebar: logo + tombol ciut/tutup, grup menu per peran (grup akun di dasar), blok akun. */
+/** Isi sidebar: logo + tombol ciut/tutup, grup menu per peran, blok profil (menu Pengaturan+Keluar, ARC-370). */
 function DrawerContent({
   pathname,
   role,
@@ -186,10 +193,7 @@ function DrawerContent({
         )}
       >
         {navGroupsFor(role).map((group) => (
-          <div
-            key={group.id}
-            className={cx('flex flex-col gap-1', group.id === 'account' && 'mt-auto')}
-          >
+          <div key={group.id} className="flex flex-col gap-1">
             {collapsed ? (
               <hr aria-hidden="true" className="mx-2 mb-1 border-t border-outline-variant" />
             ) : (

@@ -126,6 +126,39 @@ test.describe('app shell', () => {
     expect(cspViolations).toEqual([]);
   });
 
+  test('ARC-370: Pengaturan hanya di menu profil, tanpa grup akun di sidebar', async ({
+    page,
+    cspViolations,
+  }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto('/');
+
+    const drawer = page.getByRole('complementary', { name: 'Navigasi utama' });
+    await expect(drawer.getByText('Akun')).toHaveCount(0);
+    await expect(drawer.getByRole('link', { name: 'Pengaturan' })).toHaveCount(0);
+
+    await drawer.getByRole('button', { name: /Menu akun/ }).click();
+    const drawerMenu = page.getByRole('menu');
+    const pengaturan = drawerMenu.getByRole('menuitem', { name: 'Pengaturan' });
+    await expect(pengaturan).toHaveAttribute('href', '/settings');
+    await expect(drawerMenu.getByRole('menuitem', { name: 'Keluar' })).toBeVisible();
+    await page.keyboard.press('Escape');
+
+    await page
+      .getByRole('banner')
+      .getByRole('button', { name: /Menu akun/ })
+      .click();
+    const barMenu = page.getByRole('menu');
+    await expect(barMenu.getByRole('menuitem', { name: 'Pengaturan' })).toHaveAttribute(
+      'href',
+      '/settings',
+    );
+    await page.keyboard.press('Escape');
+
+    await expectNoAxeViolations(page);
+    expect(cspViolations).toEqual([]);
+  });
+
   test('ui-v3: compact shell at 390 px', async ({ page, cspViolations }, testInfo) => {
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto('/');
@@ -134,5 +167,61 @@ test.describe('app shell', () => {
     await page.screenshot({ path: testInfo.outputPath('shell@390.png'), fullPage: true });
     await expectNoAxeViolations(page);
     expect(cspViolations).toEqual([]);
+  });
+
+  test('ARC-370 AC3: target sentuh menu profil (avatar bar atas dan ciutkan) >= 44 px', async ({
+    page,
+    cspViolations,
+  }) => {
+    // Lingkaran tetap 36/40 px (ukuran visual tidak berubah); hit area diperluas lewat
+    // pseudo-element `::before` tak terlihat (`-inset-1`), dicek lewat computed style karena
+    // `::before` tidak punya `getBoundingClientRect()` sendiri.
+    const hitArea = (selector: string) =>
+      page.locator(selector).evaluate((el) => {
+        const box = el.getBoundingClientRect();
+        const before = getComputedStyle(el, '::before');
+        const inset = parseFloat(before.top || '0');
+        return { width: box.width - inset * 2, height: box.height - inset * 2 };
+      });
+
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto('/');
+    const avatar = await hitArea('header button[aria-label*="Menu akun"]');
+    expect(avatar.width, 'avatar bar atas lebar').toBeGreaterThanOrEqual(44);
+    expect(avatar.height, 'avatar bar atas tinggi').toBeGreaterThanOrEqual(44);
+
+    await page.getByRole('button', { name: 'Ciutkan sidebar' }).click();
+    const compact = await hitArea('aside button[aria-label*="Menu akun"]');
+    expect(compact.width, 'avatar ciutkan lebar').toBeGreaterThanOrEqual(44);
+    expect(compact.height, 'avatar ciutkan tinggi').toBeGreaterThanOrEqual(44);
+
+    await expectNoAxeViolations(page);
+    expect(cspViolations).toEqual([]);
+  });
+
+  test('ARC-370 AC3: target sentuh komponen Button >= 44 px', async ({ page }) => {
+    // Button.tsx tetap 36 px secara visual; `.m3-state` memakai `::before` untuk state layer
+    // (deklarasi di luar @layer), jadi hit area diperluas lewat `::after` (`-inset-1`).
+    // Selain ukuran, titik 3 px di luar sisi atas/bawah harus mengenai tombol itu sendiri.
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto('/login');
+    const hasil = await page.locator('form button[type="submit"]').evaluate((el) => {
+      const box = el.getBoundingClientRect();
+      const after = getComputedStyle(el, '::after');
+      const inset = -parseFloat(after.top || '0');
+      const x = box.left + box.width / 2;
+      return {
+        visual: box.height,
+        width: box.width + inset * 2,
+        height: box.height + inset * 2,
+        atas: document.elementFromPoint(x, box.top - 3) === el,
+        bawah: document.elementFromPoint(x, box.bottom + 3) === el,
+      };
+    });
+    expect(hasil.visual, 'tinggi visual tombol tetap 36').toBe(36);
+    expect(hasil.height, 'tombol masuk tinggi target').toBeGreaterThanOrEqual(44);
+    expect(hasil.width, 'tombol masuk lebar target').toBeGreaterThanOrEqual(44);
+    expect(hasil.atas, 'klik 3 px di atas tombol mengenai tombol').toBe(true);
+    expect(hasil.bawah, 'klik 3 px di bawah tombol mengenai tombol').toBe(true);
   });
 });

@@ -748,14 +748,13 @@ function ProviderForm({ client, initial }: ProviderFormProps): ReactNode {
               </Card>
             ) : null}
 
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <h2 className="typescale-title-large text-primary-text">
-                {t('provider.schema.table_title')}
-              </h2>
-              {/* Kode respons belum ada di kontrak API: tombol tampil nonaktif. */}
-              <Button isDisabled>{t('provider.schema.add_code')}</Button>
-            </div>
-            <Card variant="container">
+            <SectionCard
+              title={t('provider.schema.table_title')}
+              actions={
+                // Kode respons belum ada di kontrak API: tombol tampil nonaktif.
+                <Button isDisabled>{t('provider.schema.add_code')}</Button>
+              }
+            >
               <div className="table-card">
                 <table className="w-full border-collapse text-left">
                   <caption className="sr-only">{t('provider.schema.table_title')}</caption>
@@ -787,7 +786,7 @@ function ProviderForm({ client, initial }: ProviderFormProps): ReactNode {
                   </tbody>
                 </table>
               </div>
-            </Card>
+            </SectionCard>
           </div>
         </TabPanel>
 

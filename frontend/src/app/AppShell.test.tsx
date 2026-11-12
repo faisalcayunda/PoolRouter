@@ -182,29 +182,21 @@ describe('AppShell — menu per role', () => {
     expect(screen.queryByRole('link', { name: 'Pencarian log per NIK' })).not.toBeInTheDocument();
   });
 
-  it('matches the Penpot frames exactly: groups and items per role, in order', () => {
+  it('matches the Penpot frames exactly: groups and items per role, in order (ARC-370: no account group)', () => {
     const shape = (role: AdminRole) =>
       navGroupsFor(role).map((g) => [g.id, g.items.map((i) => i.href)]);
     expect(shape('platform_admin')).toEqual([
       ['monitoring', ['/kuota']],
       ['config', ['/provider', '/endpoint', '/secret', '/upstream', '/downstream']],
       ['client', ['/client']],
-      ['account', ['/settings']],
     ]);
-    expect(shape('operator')).toEqual([
-      ['monitoring', ['/', '/kuota']],
-      ['account', ['/settings']],
-    ]);
+    expect(shape('operator')).toEqual([['monitoring', ['/', '/kuota']]]);
     expect(shape('auditor')).toEqual([
       ['monitoring', ['/']],
       ['compliance', ['/audit', '/nik']],
-      ['account', ['/settings']],
     ]);
     // client_owner has no frame: only what its screens allow.
-    expect(shape('client_owner')).toEqual([
-      ['client', ['/client']],
-      ['account', ['/settings']],
-    ]);
+    expect(shape('client_owner')).toEqual([['client', ['/client']]]);
   });
 
   it('shows group titles and items in the order of the frame for platform admin', () => {
@@ -221,13 +213,14 @@ describe('AppShell — menu per role', () => {
       'Downstream pool',
       'Client',
       'Client dan kredensial',
-      'Akun',
-      'Pengaturan',
     ];
     const at = order.map((label) => text.indexOf(label));
     expect(at.every((i) => i >= 0)).toBe(true);
     expect([...at].sort((x, y) => x - y)).toEqual(at);
     expect(within(drawer).queryByRole('link', { name: 'Log transaksi' })).not.toBeInTheDocument();
+    // ARC-370: Pengaturan dan grup Akun tidak lagi di sidebar.
+    expect(within(drawer).queryByText('Akun')).not.toBeInTheDocument();
+    expect(within(drawer).queryByRole('link', { name: 'Pengaturan' })).not.toBeInTheDocument();
   });
 
   it('uses a white surface for the drawer', () => {
@@ -302,8 +295,64 @@ describe('AppShell — menu per role', () => {
       .focus();
     await userEvent.keyboard('{Enter}');
     await screen.findByRole('menuitem', { name: 'Keluar' });
+    // ARC-370: Pengaturan sekarang item pertama, jadi Keluar butuh satu ArrowDown lagi.
+    await userEvent.keyboard('{ArrowDown}');
     await userEvent.keyboard('{Enter}');
     expect(onKeluar).toHaveBeenCalledTimes(1);
+  });
+
+  it('puts Pengaturan at the top of the account menu, with a separator before Keluar (ARC-370)', async () => {
+    renderShell('/', 'operator', { username: 'adm.contoh', peran: 'operator' });
+    const drawer = screen.getByRole('complementary', { name: 'Navigasi utama' });
+    await userEvent.click(
+      within(drawer).getByRole('button', { name: 'Menu akun adm.contoh Operator' }),
+    );
+    const menu = await screen.findByRole('menu');
+    const items = within(menu).getAllByRole('menuitem');
+    expect(items.map((i) => i.textContent)).toEqual(['Pengaturan', 'Keluar']);
+    expect(within(menu).getByRole('menuitem', { name: 'Pengaturan' })).toHaveAttribute(
+      'href',
+      '/settings',
+    );
+  });
+
+  it('exposes the same account menu (with Pengaturan) from the avatar trigger in the top bar', async () => {
+    renderShell('/', 'operator', { username: 'adm.contoh', peran: 'operator' });
+    const banner = screen.getByRole('banner');
+    await userEvent.click(within(banner).getByRole('button', { name: /Menu akun/ }));
+    const menu = await screen.findByRole('menu');
+    expect(within(menu).getByRole('menuitem', { name: 'Pengaturan' })).toHaveAttribute(
+      'href',
+      '/settings',
+    );
+    expect(within(menu).getByRole('menuitem', { name: 'Keluar' })).toBeInTheDocument();
+  });
+
+  it('still offers Pengaturan from the profile circle when the sidebar is collapsed', async () => {
+    renderShell('/', 'operator', { username: 'adm.contoh', peran: 'operator' });
+    const drawer = screen.getByRole('complementary', { name: 'Navigasi utama' });
+    await userEvent.click(within(drawer).getByRole('button', { name: 'Ciutkan sidebar' }));
+    const trigger = within(drawer).getByRole('button', { name: 'Menu akun adm.contoh' });
+    await userEvent.click(trigger);
+    const menu = await screen.findByRole('menu');
+    expect(within(menu).getByRole('menuitem', { name: 'Pengaturan' })).toHaveAttribute(
+      'href',
+      '/settings',
+    );
+  });
+
+  it('still offers Pengaturan from the profile block in the modal drawer', async () => {
+    setLarge(false);
+    renderShell('/', 'operator', { username: 'adm.contoh', peran: 'operator' });
+    await userEvent.click(screen.getByRole('button', { name: 'Buka menu navigasi' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Navigasi utama' });
+    await userEvent.click(within(dialog).getByRole('button', { name: /Menu akun/ }));
+    const menu = await screen.findByRole('menu');
+    expect(within(menu).getByRole('menuitem', { name: 'Pengaturan' })).toHaveAttribute(
+      'href',
+      '/settings',
+    );
+    setLarge(true);
   });
 
   it('puts the product name in the drawer and the environment label in the top bar', () => {
