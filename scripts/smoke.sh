@@ -122,6 +122,9 @@ hash_kode=$(printf %s "$kode_daftar" | openssl dgst -sha256 -hex | sed 's/^.*= /
 sed -i "s/__HASH_KODE_DAFTAR_MFA__/$hash_kode/" "$fixture_sql"
 echo "E2E_KODE_DAFTAR_MFA=$kode_daftar" >> "$pwenv"
 echo "E2E_BASE_URL=http://127.0.0.1:$port" >> "$pwenv"
+# Password seed sama untuk keenam pengguna seed (backend-cli seed pengguna, backend/README.md);
+# dipakai G1 untuk login + MFA sungguhan sekali lewat HTTP (spec Testing Decisions).
+printf 'E2E_SEED_PASSWORD=%s\n' "$(cat "$secrets/poolrouter_seed_password")" >> "$pwenv"
 
 n=$(sb_psql < "$fixture_sql" | grep -c '^1$' || true)
 [ "$n" = 7 ] || { echo "fixture SQL smoke gagal: diharapkan 7 baris RETURNING 1 (6 admin_session + 1 kode_daftar_mfa), ada $n (pengguna seed tidak ada?)" >&2; exit 4; }
@@ -158,7 +161,13 @@ catat_proc proc:backend-cli sh -c "
 echo "== playwright @smoke"
 json_out="$tmp/playwright-report.json"
 pw_rc=0
-(cd frontend && PLAYWRIGHT_JSON_OUTPUT_NAME="$json_out" npx playwright test -c playwright.smoke.config.ts --reporter=json,list) || pw_rc=$?
+(
+  cd frontend
+  set -a
+  . "$pwenv"
+  set +a
+  PLAYWRIGHT_JSON_OUTPUT_NAME="$json_out" npx playwright test -c playwright.smoke.config.ts --reporter=json,list
+) || pw_rc=$?
 
 # --- Laporan -------------------------------------------------------------------------------------
 sha=$(git -C "$repo" rev-parse HEAD 2>/dev/null || echo unknown)
