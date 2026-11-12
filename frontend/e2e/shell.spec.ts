@@ -177,13 +177,12 @@ test.describe('app shell', () => {
     // pseudo-element `::before` tak terlihat (`-inset-1`), dicek lewat computed style karena
     // `::before` tidak punya `getBoundingClientRect()` sendiri.
     const hitArea = (selector: string) =>
-      page.evaluate((sel) => {
-        const el = document.querySelector(sel) as HTMLElement;
+      page.locator(selector).evaluate((el) => {
         const box = el.getBoundingClientRect();
         const before = getComputedStyle(el, '::before');
         const inset = parseFloat(before.top || '0');
         return { width: box.width - inset * 2, height: box.height - inset * 2 };
-      }, selector);
+      });
 
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto('/');
@@ -198,5 +197,31 @@ test.describe('app shell', () => {
 
     await expectNoAxeViolations(page);
     expect(cspViolations).toEqual([]);
+  });
+
+  test('ARC-370 AC3: target sentuh komponen Button >= 44 px', async ({ page }) => {
+    // Button.tsx tetap 36 px secara visual; `.m3-state` memakai `::before` untuk state layer
+    // (deklarasi di luar @layer), jadi hit area diperluas lewat `::after` (`-inset-1`).
+    // Selain ukuran, titik 3 px di luar sisi atas/bawah harus mengenai tombol itu sendiri.
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto('/login');
+    const hasil = await page.locator('form button[type="submit"]').evaluate((el) => {
+      const box = el.getBoundingClientRect();
+      const after = getComputedStyle(el, '::after');
+      const inset = -parseFloat(after.top || '0');
+      const x = box.left + box.width / 2;
+      return {
+        visual: box.height,
+        width: box.width + inset * 2,
+        height: box.height + inset * 2,
+        atas: document.elementFromPoint(x, box.top - 3) === el,
+        bawah: document.elementFromPoint(x, box.bottom + 3) === el,
+      };
+    });
+    expect(hasil.visual, 'tinggi visual tombol tetap 36').toBe(36);
+    expect(hasil.height, 'tombol masuk tinggi target').toBeGreaterThanOrEqual(44);
+    expect(hasil.width, 'tombol masuk lebar target').toBeGreaterThanOrEqual(44);
+    expect(hasil.atas, 'klik 3 px di atas tombol mengenai tombol').toBe(true);
+    expect(hasil.bawah, 'klik 3 px di bawah tombol mengenai tombol').toBe(true);
   });
 });
