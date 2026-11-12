@@ -19,6 +19,13 @@ import {
  */
 export const COOKIE_SESI = '__Host-pr_session';
 export const ORIGIN = 'http://127.0.0.1:8080';
+/**
+ * Downstream API (`/v1/*`, grup klien G3): backend-webserver:8081, dijangkau hanya lewat
+ * network compose internal (nginx tidak memproksi `/v1/`, tidak dipublikasikan ke host; spec
+ * Testing Decisions). Playwright jalan di netns container frontend (scripts/smoke.sh), jadi nama
+ * host compose `backend-webserver` ter-resolve lewat DNS compose-internal.
+ */
+export const DOWNSTREAM_ORIGIN = 'http://backend-webserver:8081';
 
 export type Peran =
   'platform-admin' | 'penyetuju' | 'operator' | 'auditor' | 'client-owner' | 'admin-auditor';
