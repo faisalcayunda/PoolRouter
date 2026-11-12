@@ -396,6 +396,31 @@ for (const width of WIDTHS) {
       expect(baris, `NIK patah baris pada ${width}px`).toBe(1);
     });
 
+    test(`AC2 Simpan dan Nonaktifkan client berdampingan @${width}`, async ({ page }) => {
+      await stubSemua(page, ADMIN);
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto(`/client/${CLIENT_ID}?peran=${ADMIN}`);
+      await siap(page);
+      const simpan = page.getByRole('button', { name: 'Simpan' });
+      const nonaktifkan = page.getByRole('button', { name: 'Nonaktifkan client' });
+      await expect(simpan).toBeVisible();
+      await expect(nonaktifkan).toBeVisible();
+      const kotakSimpan = await simpan.boundingBox();
+      const kotakNonaktifkan = await nonaktifkan.boundingBox();
+      expect(kotakSimpan, `Simpan tidak terukur pada ${width}`).not.toBeNull();
+      expect(kotakNonaktifkan, `Nonaktifkan client tidak terukur pada ${width}`).not.toBeNull();
+      // Satu baris: y sama (toleransi 1px), Simpan lebih dulu (x berurutan).
+      expect(
+        Math.abs(kotakSimpan!.y - kotakNonaktifkan!.y),
+        `y Simpan dan Nonaktifkan client tidak sejajar pada ${width}`,
+      ).toBeLessThanOrEqual(1);
+      expect(
+        kotakSimpan!.x,
+        `Simpan harus mendahului Nonaktifkan client pada ${width}`,
+      ).toBeLessThan(kotakNonaktifkan!.x);
+      await cekOverflow(page, width);
+    });
+
     test(`login @${width}`, async ({ page }) => {
       await page.setViewportSize({ width, height: 900 });
       await page.goto('/login');

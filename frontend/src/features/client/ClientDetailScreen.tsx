@@ -33,10 +33,13 @@ function EditForm({
   client,
   data,
   onSaved,
+  actions,
 }: {
   client: ApiClient;
   data: Client;
   onSaved: () => void;
+  /** Tombol aktifkan/nonaktifkan (ARC-370 AC2): berdampingan dengan Simpan, satu baris. */
+  actions?: ReactNode;
 }) {
   const { t, i18n } = useTranslation();
   const [values, setValues] = useState(() => initialValues(data, i18n.language));
@@ -106,10 +109,11 @@ function EditForm({
           </div>
         ) : null}
       </FieldGrid>
-      <div>
+      <div className="flex flex-wrap items-center gap-3">
         <Button isDisabled={saving} onPress={() => void submit()}>
           {saving ? t('provider.form.saving') : t('common.action.save')}
         </Button>
+        {actions}
       </div>
     </form>
   );
@@ -188,15 +192,33 @@ export function ClientDetailScreen({ clientId, client = api }: ClientDetailScree
           </p>
 
           {manage ? (
-            <EditForm
-              key={`${data.nama}|${data.limiter_penolakan_burst}|${data.limiter_penolakan_isi_ulang_per_detik}`}
-              client={client}
-              data={data}
-              onSaved={() => {
-                snackbar.notify(t('clients.saved'));
-                query.reload();
-              }}
-            />
+            <>
+              {activateError !== null ? (
+                <InlineAlert tone="error">
+                  {errorMessage(t, i18n, activateError).message}
+                </InlineAlert>
+              ) : null}
+              <EditForm
+                key={`${data.nama}|${data.limiter_penolakan_burst}|${data.limiter_penolakan_isi_ulang_per_detik}`}
+                client={client}
+                data={data}
+                onSaved={() => {
+                  snackbar.notify(t('clients.saved'));
+                  query.reload();
+                }}
+                actions={
+                  data.aktif ? (
+                    <Button destructive variant="outlined" onPress={() => setDeactivating(true)}>
+                      {t('risk.client.confirm')}
+                    </Button>
+                  ) : (
+                    <Button onPress={() => void aktifkan()}>
+                      {t('clients.activate.action')}
+                    </Button>
+                  )
+                }
+              />
+            </>
           ) : (
             <dl className="grid max-w-xl grid-cols-[auto_1fr] gap-x-6 gap-y-2">
               <dt className="text-on-surface-variant">{t('client.form.name')}</dt>
@@ -213,25 +235,6 @@ export function ClientDetailScreen({ clientId, client = api }: ClientDetailScree
               </dd>
             </dl>
           )}
-
-          {manage ? (
-            <div className="flex flex-col gap-2 border-t border-outline-variant pt-4">
-              {activateError !== null ? (
-                <InlineAlert tone="error">
-                  {errorMessage(t, i18n, activateError).message}
-                </InlineAlert>
-              ) : null}
-              <div>
-                {data.aktif ? (
-                  <Button destructive variant="outlined" onPress={() => setDeactivating(true)}>
-                    {t('risk.client.confirm')}
-                  </Button>
-                ) : (
-                  <Button onPress={() => void aktifkan()}>{t('clients.activate.action')}</Button>
-                )}
-              </div>
-            </div>
-          ) : null}
         </Card>
       ) : null}
 

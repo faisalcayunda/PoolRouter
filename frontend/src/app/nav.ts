@@ -4,7 +4,7 @@ import type { icons } from '../icons';
 type IconKey = keyof typeof icons;
 
 /** Navigation model of the app shell (ADR-0003 5.1, UX v0.3 navigation). */
-export type NavGroupId = 'monitoring' | 'config' | 'client' | 'compliance' | 'account';
+export type NavGroupId = 'monitoring' | 'config' | 'client' | 'compliance';
 
 export interface NavItem {
   /** Route path of the F0 screen. */
@@ -27,10 +27,12 @@ export interface NavGroup {
 /**
  * Isi drawer berurutan. Per peran ini mengikuti frame Penpot
  * `F0 / Shell-platform-admin|operator|auditor` (`.takeover/design/shell-v2-spec.md` bagian 2):
- * - platform_admin: Kuota; Provider, Secret, Upstream pool, Downstream pool; Client dan kredensial; Pengaturan.
- * - operator: Log transaksi, Kuota; Pengaturan.
- * - auditor: Log transaksi; Audit akses, Pencarian log per NIK; Pengaturan.
- * `client_owner` tidak punya frame; ia melihat yang diizinkan layarnya (`canViewClients`) plus Pengaturan.
+ * - platform_admin: Kuota; Provider, Secret, Upstream pool, Downstream pool; Client dan kredensial.
+ * - operator: Log transaksi, Kuota.
+ * - auditor: Log transaksi; Audit akses, Pencarian log per NIK.
+ * `client_owner` tidak punya frame; ia melihat yang diizinkan layarnya (`canViewClients`).
+ * Pengaturan tidak ada di sini (ARC-370): pindah ke menu profil di dasar drawer, lihat
+ * `AppShell.tsx` (`AccountMenu`).
  */
 export const NAV_GROUPS: NavGroup[] = [
   {
@@ -107,12 +109,10 @@ export const NAV_GROUPS: NavGroup[] = [
       },
     ],
   },
-  {
-    id: 'account',
-    labelKey: 'nav.group.account',
-    items: [{ href: '/settings', labelKey: 'nav.drawer.settings', icon: 'settings' }],
-  },
 ];
+
+/** Dipakai `AccountMenu` (AppShell) untuk tautan Pengaturan; bukan bagian `NAV_GROUPS` (ARC-370). */
+export const SETTINGS_HREF = '/settings';
 
 /** The item whose `href` is the longest prefix of `pathname` is the active one. */
 export function activeHref(pathname: string): string | undefined {

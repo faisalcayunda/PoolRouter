@@ -7,7 +7,6 @@
       "not_found": "Page not found"
     },
     "group": {
-      "account": "Account",
       "config": "Configuration",
       "client": "Clients",
       "monitoring": "Monitoring",
