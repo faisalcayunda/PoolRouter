@@ -8,7 +8,7 @@ import {
   expectedIds,
   testedIdsFromPlaywrightList,
   diffCoverage,
-  diffCoverageTanpaProc,
+  testedProcIdsFromSmokeSh,
   loadRuteIds,
   PROC_IDS,
 } from './cakupan.mjs';
@@ -93,8 +93,8 @@ test('diffCoverage: test tanpa operasi di sumber kebenaran dilaporkan sebagai ex
 
 test('diffCoverage murni: proc:* tanpa anotasi Playwright selalu dilaporkan "missing"', () => {
   // proc:* diverifikasi lewat shell G0 (scripts/smoke.sh), bukan test Playwright, jadi
-  // diffCoverage murni (tanpa pengetahuan proc:*) akan selalu melaporkannya hilang --
-  // diffCoverageTanpaProc di bawah ini yang menyaringnya.
+  // diffCoverage murni (tanpa pengetahuan proc:*) akan selalu melaporkannya hilang kecuali
+  // di-gabung dengan testedProcIdsFromSmokeSh (lihat test AC4 di bawah).
   const expected = expectedIds({
     openapiTexts: [OPENAPI_LENGKAP],
     procIds: ['proc:x'],
@@ -105,24 +105,34 @@ test('diffCoverage murni: proc:* tanpa anotasi Playwright selalu dilaporkan "mis
   assert.deepEqual(missing, ['proc:x']);
 });
 
-test('diffCoverageTanpaProc: proc:* disaring dari "missing", operasi tetap dilaporkan', () => {
-  const expected = expectedIds({
-    openapiTexts: [OPENAPI_LENGKAP],
-    procIds: ['proc:x', 'proc:y'],
-    ruteIds: [],
-  });
-  const tested = testedIdsFromPlaywrightList(playwrightList(['opA']));
-  const { missing, extra } = diffCoverageTanpaProc(expected, tested, ['proc:x', 'proc:y']);
-  assert.deepEqual(missing, ['opB']);
-  assert.deepEqual(extra, []);
+test('testedProcIdsFromSmokeSh: mengambil tiap proc:x dari baris catat_proc', () => {
+  const teks = [
+    'catat_proc proc:webserver sh -c "..."',
+    'catat_proc proc:controller "$ENGINE" exec "$c" controller healthcheck',
+    'bukan_catat_proc proc:palsu lainnya',
+  ].join('\n');
+  assert.deepEqual([...testedProcIdsFromSmokeSh(teks)], ['proc:webserver', 'proc:controller']);
 });
 
-test('diffCoverageTanpaProc: proc:* yang muncul sebagai extra (seharusnya tidak pernah) tetap dilaporkan', () => {
-  const expected = expectedIds({ openapiTexts: [OPENAPI_LENGKAP], procIds: [], ruteIds: [] });
-  const tested = testedIdsFromPlaywrightList(playwrightList(['opA', 'opB', 'proc:siluman']));
-  const { missing, extra } = diffCoverageTanpaProc(expected, tested, []);
+test('AC4: proc tanpa baris catat_proc di smoke.sh tetap dilaporkan hilang', () => {
+  // Repro Klaus: proc:* harus tetap gagal (exit 1) bila baris catat_proc-nya dihapus dari
+  // smoke.sh -- "tested" untuk proc:* diambil statis dari smoke.sh, bukan disaring buta.
+  const expected = expectedIds({ openapiTexts: [''], procIds: PROC_IDS, ruteIds: [] });
+  const testedDariSmokeSh = testedProcIdsFromSmokeSh('catat_proc proc:webserver sh -c "..."');
+  const tested = new Set([...testedIdsFromPlaywrightList(playwrightList([])), ...testedDariSmokeSh]);
+  const { missing } = diffCoverage(expected, tested);
+  assert.deepEqual(missing, ['proc:controller', 'proc:worker', 'proc:backend-cli']);
+});
+
+test('AC4: proc dengan baris catat_proc di smoke.sh tidak dilaporkan hilang', () => {
+  const expected = expectedIds({ openapiTexts: [''], procIds: PROC_IDS, ruteIds: [] });
+  const teksSmokeSh = PROC_IDS.map((id) => `catat_proc ${id} sh -c "..."`).join('\n');
+  const tested = new Set([
+    ...testedIdsFromPlaywrightList(playwrightList([])),
+    ...testedProcIdsFromSmokeSh(teksSmokeSh),
+  ]);
+  const { missing } = diffCoverage(expected, tested);
   assert.deepEqual(missing, []);
-  assert.deepEqual(extra, ['proc:siluman']);
 });
 
 test('diffCoverage: cakupan lengkap tidak melaporkan apa pun', () => {

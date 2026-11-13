@@ -80,13 +80,18 @@ export function diffCoverage(expectedIdList, testedIdSet) {
 
 // proc:* diverifikasi lewat shell G0 di scripts/smoke.sh (catat_proc), bukan lewat test
 // Playwright: anotasi `{type: 'inventaris', ...}` cuma ditulis test Playwright, jadi
-// `playwright test --list` tidak pernah dan tidak akan pernah memuatnya. diffCoverage sendiri
-// tetap murni (tanpa pengetahuan proc:*); fungsi ini yang menyaring proc:* dari sisi "missing"
-// sesudahnya, supaya diff tidak selalu menyebutnya hilang. procIds tetap ikut `expected` (dan
-// hitungan jumlah id) karena tetap bagian sumber kebenaran (spec.md bagian 4).
-export function diffCoverageTanpaProc(expectedIdList, testedIdSet, procIds) {
-  const { missing, extra } = diffCoverage(expectedIdList, testedIdSet);
-  return { missing: missing.filter((id) => !procIds.includes(id)), extra };
+// `playwright test --list` tidak pernah memuatnya. "Tested" untuk proc:* diambil statis dari
+// baris `catat_proc proc:<x> ...` di scripts/smoke.sh sendiri (bukan dari output runtime --
+// cakupan.mjs jalan sebelum stack pernah dinyalakan), supaya proc yang baris catat_proc-nya
+// dihapus dari smoke.sh tetap dilaporkan hilang (AC4), bukan disaring buta.
+const CATAT_PROC_RE = /^catat_proc (proc:\S+)/gm;
+
+export function testedProcIdsFromSmokeSh(teks) {
+  const out = new Set();
+  for (const m of teks.matchAll(CATAT_PROC_RE)) {
+    out.add(m[1]);
+  }
+  return out;
 }
 
 // S2 (ARC-378): modul rute milik S3 (ARC-379) belum ada. Supaya rute tidak pernah lolos
@@ -124,6 +129,7 @@ async function main() {
     path.join(REPO_ROOT, 'backend', 'openapi', 'downstream-api.yaml'),
     'utf8',
   );
+  const smokeSh = readFileSync(path.join(REPO_ROOT, 'scripts', 'smoke.sh'), 'utf8');
 
   let ruteIds;
   try {
@@ -142,8 +148,9 @@ async function main() {
 
   const listJson = runPlaywrightList();
   const tested = testedIdsFromPlaywrightList(listJson);
+  for (const id of testedProcIdsFromSmokeSh(smokeSh)) tested.add(id);
 
-  const { missing, extra } = diffCoverageTanpaProc(expected, tested, PROC_IDS);
+  const { missing, extra } = diffCoverage(expected, tested);
   if (missing.length === 0 && extra.length === 0) {
     console.log(`cakupan lengkap: ${expected.length} id`);
     return;
