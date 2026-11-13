@@ -2,14 +2,20 @@
 // runner, tanpa dependensi.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { hasilDariLaporanPlaywright, hasilDariBarisProses, anotasi } from './laporan.mjs';
+import {
+  hasilDariLaporanPlaywright,
+  hasilDariBarisProses,
+  anotasi,
+  semuaAnotasi,
+} from './laporan.mjs';
 
 function laporanPlaywright(tests) {
   return { suites: [{ specs: [{ tests }] }] };
 }
 
 function t(id, { status = 'passed', peran, durasi = 10, pesan } = {}) {
-  const annotations = [{ type: 'inventaris', description: id }];
+  const ids = Array.isArray(id) ? id : [id];
+  const annotations = ids.map((i) => ({ type: 'inventaris', description: i }));
   if (peran) annotations.push({ type: 'peran', description: peran });
   return {
     annotations,
@@ -60,6 +66,34 @@ test('hasilDariLaporanPlaywright: anotasi peran opsional dibawa, tanpa peran -> 
   const hasil = hasilDariLaporanPlaywright(report);
   assert.equal(hasil[0].peran, 'operator');
   assert.equal(hasil[1].peran, null);
+});
+
+test('semuaAnotasi mengambil semua description dari type yang cocok', () => {
+  const annotations = [
+    { type: 'inventaris', description: 'opA' },
+    { type: 'peran', description: 'operator' },
+    { type: 'inventaris', description: 'opB' },
+  ];
+  assert.deepEqual(semuaAnotasi(annotations, 'inventaris'), ['opA', 'opB']);
+  assert.deepEqual(semuaAnotasi(annotations, 'peran'), ['operator']);
+  assert.deepEqual(semuaAnotasi(undefined, 'inventaris'), []);
+});
+
+test('hasilDariLaporanPlaywright: test dengan beberapa anotasi inventaris menghasilkan satu hasil per id', () => {
+  // frontend/smoke/fixtures.ts: inventaris(['mfaKonfirmasi', 'mfaVerifikasi'], peran) -> satu
+  // test, dua anotasi inventaris. Ketiganya harus muncul di smoke-report.json, bukan cuma yang
+  // pertama (BLOCKER review Klaus).
+  const report = laporanPlaywright([
+    t(['mfaKonfirmasi', 'mfaVerifikasi'], { status: 'passed', peran: 'penyetuju' }),
+  ]);
+  const hasil = hasilDariLaporanPlaywright(report);
+  assert.deepEqual(
+    hasil.map((h) => [h.id, h.status, h.peran]),
+    [
+      ['mfaKonfirmasi', 'lulus', 'penyetuju'],
+      ['mfaVerifikasi', 'lulus', 'penyetuju'],
+    ],
+  );
 });
 
 test('hasilDariLaporanPlaywright: suites bersarang ikut dijalani', () => {

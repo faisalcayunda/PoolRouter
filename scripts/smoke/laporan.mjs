@@ -18,6 +18,16 @@ export function anotasi(annotations, type) {
   return a ? a.description : undefined;
 }
 
+// Satu test boleh membuktikan beberapa id sekaligus (frontend/smoke/fixtures.ts: `inventaris(id,
+// peran)` dengan `id` array -> beberapa anotasi `{type: 'inventaris', ...}` pada test yang sama).
+// `anotasi()` di atas cuma mengambil yang pertama (dipakai untuk `peran`, yang tunggal);
+// fungsi ini mengambil semuanya, dipakai untuk `inventaris` supaya id ke-2 dst. tidak hilang.
+export function semuaAnotasi(annotations, type) {
+  return (annotations ?? [])
+    .filter((x) => x.type === type && typeof x.description === 'string')
+    .map((x) => x.description);
+}
+
 function jenisDariId(id) {
   if (id.startsWith('route:')) return 'rute';
   if (id.startsWith('proc:')) return 'proses';
@@ -30,8 +40,8 @@ export function hasilDariLaporanPlaywright(report) {
   const jalanSuite = (suite) => {
     for (const spec of suite.specs ?? []) {
       for (const test of spec.tests ?? []) {
-        const id = anotasi(test.annotations, 'inventaris');
-        if (!id) continue;
+        const ids = semuaAnotasi(test.annotations, 'inventaris');
+        if (ids.length === 0) continue;
         const peran = anotasi(test.annotations, 'peran') ?? null;
         const results = test.results ?? [];
         const akhir = results[results.length - 1];
@@ -40,7 +50,11 @@ export function hasilDariLaporanPlaywright(report) {
           statusMentah === 'passed' ? 'lulus' : statusMentah === 'skipped' ? 'lewat' : 'gagal';
         const detik = results.reduce((acc, r) => acc + (r.duration ?? 0), 0) / 1000;
         const pesan = status === 'gagal' ? String(akhir?.error?.message ?? '').slice(0, 500) : '';
-        hasil.push({ id, jenis: jenisDariId(id), peran, status, detik, pesan });
+        // Satu hasil per id: test yang membuktikan beberapa id (mis. mfaKonfirmasi+mfaVerifikasi
+        // di satu alur) melapor status/detik/pesan yang sama untuk tiap id-nya.
+        for (const id of ids) {
+          hasil.push({ id, jenis: jenisDariId(id), peran, status, detik, pesan });
+        }
       }
     }
     for (const sub of suite.suites ?? []) jalanSuite(sub);
