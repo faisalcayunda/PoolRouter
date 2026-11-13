@@ -71,8 +71,11 @@ help:
 # Skipped for FRONTEND_RUNNER=local, where no container is created.
 
 ifneq ($(filter podman docker,$(FRONTEND_RUNNER)),)
+# Suffix opsional (mis. -ci-<run_id>, dipakai .github/workflows/smoke.yml ARC-378 spec.md
+# bagian 5 untuk keunikan antar run workflow_dispatch) tetap diterima; label masih harus
+# berawal arctiva.issue=ARC-<n>.
 check-label:
-	@echo "$(CONTAINER_LABEL)" | grep -Eq '^arctiva\.issue=ARC-[0-9]+$$' || { echo "CONTAINER_LABEL wajib arctiva.issue=ARC-<n> untuk FRONTEND_RUNNER=$(FRONTEND_RUNNER) (contoh: make -C frontend lint CONTAINER_LABEL=arctiva.issue=ARC-197)" >&2; exit 2; }
+	@echo "$(CONTAINER_LABEL)" | grep -Eq '^arctiva\.issue=ARC-[0-9]+(-[A-Za-z0-9._-]+)?$$' || { echo "CONTAINER_LABEL wajib arctiva.issue=ARC-<n> untuk FRONTEND_RUNNER=$(FRONTEND_RUNNER) (contoh: make -C frontend lint CONTAINER_LABEL=arctiva.issue=ARC-197)" >&2; exit 2; }
 else
 check-label:
 endif
