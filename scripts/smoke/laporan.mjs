@@ -63,6 +63,24 @@ export function hasilDariLaporanPlaywright(report) {
   return hasil;
 }
 
+// Urutan keburukan status, dipakai dedupId: gagal > lewat > lulus. Dua test berbeda yang
+// masing-masing membuktikan id yang sama (bukan satu test multi-id) tidak boleh menghasilkan
+// dua baris untuk satu id yang sama di smoke-report.json (BLOCKER review Klaus: login/getClient
+// 2x, 80 baris untuk 78 id).
+const URUTAN_BURUK = { gagal: 2, lewat: 1, lulus: 0 };
+
+/** Satu baris per id: id yang sama dari test berbeda digabung, status terburuk menang. */
+export function dedupId(hasil) {
+  const perId = new Map();
+  for (const h of hasil) {
+    const ada = perId.get(h.id);
+    if (!ada || URUTAN_BURUK[h.status] > URUTAN_BURUK[ada.status]) {
+      perId.set(h.id, h);
+    }
+  }
+  return [...perId.values()];
+}
+
 /** Baris `id=... status=... detik=... pesan=...` dari G0 (scripts/smoke.sh). */
 export function hasilDariBarisProses(teks) {
   const hasil = [];
@@ -90,7 +108,7 @@ function main() {
   }
   const report = JSON.parse(readFileSync(laporanPath, 'utf8'));
   const teksProses = readFileSync(procPath, 'utf8');
-  const hasil = [...hasilDariLaporanPlaywright(report), ...hasilDariBarisProses(teksProses)];
+  const hasil = dedupId([...hasilDariLaporanPlaywright(report), ...hasilDariBarisProses(teksProses)]);
   writeFileSync(outPath, JSON.stringify({ sha, hasil }, null, 2) + '\n');
   const lulus = hasil.filter((h) => h.status === 'lulus').length;
   console.log(`LULUS ${lulus}/${hasil.length}`);

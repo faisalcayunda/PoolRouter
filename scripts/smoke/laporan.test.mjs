@@ -7,6 +7,7 @@ import {
   hasilDariBarisProses,
   anotasi,
   semuaAnotasi,
+  dedupId,
 } from './laporan.mjs';
 
 function laporanPlaywright(tests) {
@@ -128,4 +129,29 @@ test('hasilDariBarisProses: parse baris id/status/detik/pesan, baris kosong dile
 
 test('hasilDariBarisProses: baris tanpa id diabaikan', () => {
   assert.deepEqual(hasilDariBarisProses('status=lulus detik=1\n'), []);
+});
+
+test('dedupId: id yang sama dari dua test berbeda digabung jadi satu baris (MAJOR review Klaus)', () => {
+  // frontend/smoke/api/01-auth.spec.ts: id `login` dibuktikan dua test berbeda (peran
+  // berbeda), bukan satu test multi-id -- smoke-report.json tidak boleh punya dua baris untuk
+  // satu id yang sama.
+  const hasil = [
+    { id: 'login', status: 'lulus', detik: 1, pesan: '' },
+    { id: 'login', status: 'lulus', detik: 2, pesan: '' },
+    { id: 'getClient', status: 'lulus', detik: 1, pesan: '' },
+  ];
+  const deduped = dedupId(hasil);
+  assert.deepEqual(
+    deduped.map((h) => h.id),
+    ['login', 'getClient'],
+  );
+});
+
+test('dedupId: status terburuk menang (gagal > lewat > lulus)', () => {
+  const hasil = [
+    { id: 'opA', status: 'lulus', detik: 1, pesan: '' },
+    { id: 'opA', status: 'gagal', detik: 2, pesan: 'boom' },
+  ];
+  const deduped = dedupId(hasil);
+  assert.deepEqual(deduped, [{ id: 'opA', status: 'gagal', detik: 2, pesan: 'boom' }]);
 });
