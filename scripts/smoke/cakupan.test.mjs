@@ -8,6 +8,7 @@ import {
   expectedIds,
   testedIdsFromPlaywrightList,
   diffCoverage,
+  diffCoverageTanpaProc,
   loadRuteIds,
   PROC_IDS,
 } from './cakupan.mjs';
@@ -88,6 +89,40 @@ test('diffCoverage: test tanpa operasi di sumber kebenaran dilaporkan sebagai ex
   const { missing, extra } = diffCoverage(expected, tested);
   assert.deepEqual(missing, []);
   assert.deepEqual(extra, ['opSiluman']);
+});
+
+test('diffCoverage murni: proc:* tanpa anotasi Playwright selalu dilaporkan "missing"', () => {
+  // proc:* diverifikasi lewat shell G0 (scripts/smoke.sh), bukan test Playwright, jadi
+  // diffCoverage murni (tanpa pengetahuan proc:*) akan selalu melaporkannya hilang --
+  // diffCoverageTanpaProc di bawah ini yang menyaringnya.
+  const expected = expectedIds({
+    openapiTexts: [OPENAPI_LENGKAP],
+    procIds: ['proc:x'],
+    ruteIds: [],
+  });
+  const tested = testedIdsFromPlaywrightList(playwrightList(['opA', 'opB']));
+  const { missing } = diffCoverage(expected, tested);
+  assert.deepEqual(missing, ['proc:x']);
+});
+
+test('diffCoverageTanpaProc: proc:* disaring dari "missing", operasi tetap dilaporkan', () => {
+  const expected = expectedIds({
+    openapiTexts: [OPENAPI_LENGKAP],
+    procIds: ['proc:x', 'proc:y'],
+    ruteIds: [],
+  });
+  const tested = testedIdsFromPlaywrightList(playwrightList(['opA']));
+  const { missing, extra } = diffCoverageTanpaProc(expected, tested, ['proc:x', 'proc:y']);
+  assert.deepEqual(missing, ['opB']);
+  assert.deepEqual(extra, []);
+});
+
+test('diffCoverageTanpaProc: proc:* yang muncul sebagai extra (seharusnya tidak pernah) tetap dilaporkan', () => {
+  const expected = expectedIds({ openapiTexts: [OPENAPI_LENGKAP], procIds: [], ruteIds: [] });
+  const tested = testedIdsFromPlaywrightList(playwrightList(['opA', 'opB', 'proc:siluman']));
+  const { missing, extra } = diffCoverageTanpaProc(expected, tested, []);
+  assert.deepEqual(missing, []);
+  assert.deepEqual(extra, ['proc:siluman']);
 });
 
 test('diffCoverage: cakupan lengkap tidak melaporkan apa pun', () => {

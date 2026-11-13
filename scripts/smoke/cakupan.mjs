@@ -78,6 +78,17 @@ export function diffCoverage(expectedIdList, testedIdSet) {
   return { missing, extra };
 }
 
+// proc:* diverifikasi lewat shell G0 di scripts/smoke.sh (catat_proc), bukan lewat test
+// Playwright: anotasi `{type: 'inventaris', ...}` cuma ditulis test Playwright, jadi
+// `playwright test --list` tidak pernah dan tidak akan pernah memuatnya. diffCoverage sendiri
+// tetap murni (tanpa pengetahuan proc:*); fungsi ini yang menyaring proc:* dari sisi "missing"
+// sesudahnya, supaya diff tidak selalu menyebutnya hilang. procIds tetap ikut `expected` (dan
+// hitungan jumlah id) karena tetap bagian sumber kebenaran (spec.md bagian 4).
+export function diffCoverageTanpaProc(expectedIdList, testedIdSet, procIds) {
+  const { missing, extra } = diffCoverage(expectedIdList, testedIdSet);
+  return { missing: missing.filter((id) => !procIds.includes(id)), extra };
+}
+
 // S2 (ARC-378): modul rute milik S3 (ARC-379) belum ada. Supaya rute tidak pernah lolos
 // cakupan secara diam-diam sebelum S3 merge (spec.md bagian 4), modul yang tidak ada
 // adalah galat yang jelas, bukan daftar rute kosong.
@@ -132,7 +143,7 @@ async function main() {
   const listJson = runPlaywrightList();
   const tested = testedIdsFromPlaywrightList(listJson);
 
-  const { missing, extra } = diffCoverage(expected, tested);
+  const { missing, extra } = diffCoverageTanpaProc(expected, tested, PROC_IDS);
   if (missing.length === 0 && extra.length === 0) {
     console.log(`cakupan lengkap: ${expected.length} id`);
     return;
