@@ -63,8 +63,14 @@ chmod 444 "$tls"/*.pem
 # --- Overlay label + mock-tls: semua service, volume, dan network ------------------------------
 sb_build_overlay postgres redis rabbitmq migrate backend-worker backend-cli frontend mock-dukcapil mock-tls -- backend-controller backend-webserver
 smoke_overlay="$tmp/smoke.yaml"
+# Validasi terhadap set lengkap (compose.yaml + compose.dev.yaml + overlay label + overlay
+# mock-tls), bukan compose.smoke.yaml sendirian: `depends_on: mock-dukcapil` di overlay itu
+# cuma terdefinisi lewat compose.dev.yaml, jadi validasi berdiri sendiri tidak menangkap
+# ketergantungan yang hilang.
 POOLROUTER_SMOKE_TLS_CERT_DIR=$tls POOLROUTER_SMOKE_TLS_SCRIPT_DIR="$repo/scripts/smoke" \
-  $ENGINE compose -f "$repo/scripts/smoke/compose.smoke.yaml" config >/dev/null # validasi awal, gagal cepat
+  $ENGINE compose -f "$repo/deploy/compose/compose.yaml" -f "$repo/deploy/compose/compose.dev.yaml" \
+    -f "$overlay" -f "$repo/scripts/smoke/compose.smoke.yaml" --env-file "$envf" \
+    --profile bundled-infra --profile mock config >/dev/null # validasi awal, gagal cepat
 cp "$repo/scripts/smoke/compose.smoke.yaml" "$smoke_overlay"
 
 # sb_mk/sb_infra_up dkk memakai $overlay tunggal (stack-berlabel.sh); gabung overlay label dan
@@ -115,12 +121,14 @@ for var_placeholder in \
   hash=$(printf %s "$token" | openssl dgst -sha256 -hex | sed 's/^.*= //')
   sed -i "s/$placeholder/$hash/" "$fixture_sql"
   echo "E2E_${var}=$token" >> "$pwenv"
+  echo "::add-mask::$token"
 done
 # kode_daftar_mfa (Q4): kode acak 128-bit hex, hash SHA-256 ke fixture, kode mentah ke env.
 kode_daftar=$(openssl rand -hex 16)
 hash_kode=$(printf %s "$kode_daftar" | openssl dgst -sha256 -hex | sed 's/^.*= //')
 sed -i "s/__HASH_KODE_DAFTAR_MFA__/$hash_kode/" "$fixture_sql"
 echo "E2E_KODE_DAFTAR_MFA=$kode_daftar" >> "$pwenv"
+echo "::add-mask::$kode_daftar"
 # Playwright jalan di netns container frontend (lihat blok "Playwright @smoke" di bawah): origin
 # nginx internal 8080, bukan $port (port host yang dipublikasikan, beda nomor).
 echo "E2E_BASE_URL=http://127.0.0.1:8080" >> "$pwenv"
@@ -151,7 +159,9 @@ webserver_c=$(cid backend-webserver); controller_c=$(cid backend-controller); wo
 frontend_c=$(cid frontend)
 [ -n "$frontend_c" ] || { echo "container frontend tidak ditemukan" >&2; exit 4; }
 
-catat_proc proc:webserver sh -c "$ENGINE exec '$webserver_c' webserver healthcheck && $ENGINE exec '$webserver_c' sh -c 'exec 3<>/dev/tcp/127.0.0.1/9090; printf \"GET /metrics HTTP/1.0\r\n\r\n\" >&3; read -r l <&3; case \"\$l\" in *\" 200 \"*) ;; *) exit 1;; esac'"
+# bash, bukan sh (dash): /dev/tcp adalah fitur bash, sama seperti probe /dev/tcp
+# sb_build_overlay di stack-berlabel.sh yang sudah jalan terhadap image yang sama.
+catat_proc proc:webserver sh -c "$ENGINE exec '$webserver_c' webserver healthcheck && $ENGINE exec '$webserver_c' bash -c 'exec 3<>/dev/tcp/127.0.0.1/9090; printf \"GET /metrics HTTP/1.0\r\n\r\n\" >&3; read -r l <&3; case \"\$l\" in *\" 200 \"*) ;; *) exit 1;; esac'"
 catat_proc proc:controller "$ENGINE" exec "$controller_c" controller healthcheck
 catat_proc proc:worker "$ENGINE" exec "$worker_c" worker liveness
 catat_proc proc:backend-cli sh -c "
