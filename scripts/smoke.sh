@@ -34,7 +34,7 @@ sb_init_tmp poolrouter-smoke poolrouter-smoke
 trap sb_cleanup_trap EXIT INT TERM
 
 # --- Image -------------------------------------------------------------------------------------
-have_image() { $ENGINE image exists "$1"; }
+have_image() { $ENGINE image inspect "$1" >/dev/null 2>&1; }
 be_img="localhost/poolrouter-backend:$tag"
 fe_img="localhost/poolrouter-frontend:$tag"
 mock_img="localhost/poolrouter-mock-dukcapil:$tag"
