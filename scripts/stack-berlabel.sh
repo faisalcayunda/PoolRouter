@@ -79,8 +79,10 @@ sb_cleanup_trap() {
 
 # sb_gen_secrets: bangkitkan secret acak (openssl) di $secrets (chmod 700/444). Nilainya tidak
 # dicetak ke stdout/stderr biasa; `::add-mask::` (sama pola dengan .github/workflows/
-# compose-portability.yml) hanya menyensor nilai itu di log GitHub Actions bila kebetulan
-# tercetak oleh tool di bawahnya -- di luar GHA baris itu diabaikan runner lain, tanpa efek.
+# compose-portability.yml) hanya dicetak di dalam GitHub Actions (GITHUB_ACTIONS=true), supaya
+# runner menyensornya di log -- di luar GHA baris itu TIDAK dicetak sama sekali (bukan cuma
+# diabaikan runner lain), karena di luar GHA `::add-mask::` tidak berarti apa pun dan nilai
+# mentah di belakangnya akan tercetak verbatim ke stdout.
 sb_gen_secrets() {
   mkdir -p "$secrets"; chmod 700 "$secrets"
   rnd() { openssl rand -hex 24; }
@@ -88,10 +90,10 @@ sb_gen_secrets() {
            pr_webhook pr_worker pr_job_balikan pr_job_arsip pr_restore pr_blend \
            poolrouter_nik_hmac_key poolrouter_idempotency_hmac_key poolrouter_seed_password; do
     rnd > "$secrets/$f"
-    echo "::add-mask::$(cat "$secrets/$f")"
+    [ "${GITHUB_ACTIONS:-}" = "true" ] && echo "::add-mask::$(cat "$secrets/$f")" || true
   done
   openssl rand -hex 32 > "$secrets/poolrouter_kek"
-  echo "::add-mask::$(cat "$secrets/poolrouter_kek")"
+  [ "${GITHUB_ACTIONS:-}" = "true" ] && echo "::add-mask::$(cat "$secrets/poolrouter_kek")" || true
   openssl genpkey -algorithm ed25519 > "$secrets/poolrouter_jwt_signing_key"
   chmod 444 "$secrets"/*
 }

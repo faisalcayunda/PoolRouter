@@ -121,14 +121,14 @@ for var_placeholder in \
   hash=$(printf %s "$token" | openssl dgst -sha256 -hex | sed 's/^.*= //')
   sed -i "s/$placeholder/$hash/" "$fixture_sql"
   echo "E2E_${var}=$token" >> "$pwenv"
-  echo "::add-mask::$token"
+  [ "${GITHUB_ACTIONS:-}" = "true" ] && echo "::add-mask::$token" || true
 done
 # kode_daftar_mfa (Q4): kode acak 128-bit hex, hash SHA-256 ke fixture, kode mentah ke env.
 kode_daftar=$(openssl rand -hex 16)
 hash_kode=$(printf %s "$kode_daftar" | openssl dgst -sha256 -hex | sed 's/^.*= //')
 sed -i "s/__HASH_KODE_DAFTAR_MFA__/$hash_kode/" "$fixture_sql"
 echo "E2E_KODE_DAFTAR_MFA=$kode_daftar" >> "$pwenv"
-echo "::add-mask::$kode_daftar"
+[ "${GITHUB_ACTIONS:-}" = "true" ] && echo "::add-mask::$kode_daftar" || true
 # Playwright jalan di netns container frontend (lihat blok "Playwright @smoke" di bawah): origin
 # nginx internal 8080, bukan $port (port host yang dipublikasikan, beda nomor).
 echo "E2E_BASE_URL=http://127.0.0.1:8080" >> "$pwenv"
