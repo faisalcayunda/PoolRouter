@@ -63,7 +63,9 @@ sb_cleanup_trap() {
       done
     done
   fi
-  $ENGINE rm -f -v --filter "label=$label" >/dev/null 2>&1 || true
+  # `rm` (beda dari `ps`/`volume ls`/`network ls`) tidak punya `--filter`; ambil id lewat `ps -q`
+  # dulu, baru `rm` per id.
+  for c in $($ENGINE ps -a --filter "label=$label" -q); do $ENGINE rm -f -v "$c" >/dev/null 2>&1 || true; done
   for v in $($ENGINE volume ls --filter "label=$label" -q); do $ENGINE volume rm -f "$v" >/dev/null 2>&1 || true; done
   for n in $($ENGINE network ls --filter "label=$label" -q); do $ENGINE network rm -f "$n" >/dev/null 2>&1 || true; done
   rm -rf -- "$tmp"
@@ -75,7 +77,10 @@ sb_cleanup_trap() {
   exit "$rc"
 }
 
-# sb_gen_secrets: bangkitkan secret acak (openssl) di $secrets (chmod 700/444), tidak dicetak.
+# sb_gen_secrets: bangkitkan secret acak (openssl) di $secrets (chmod 700/444). Nilainya tidak
+# dicetak ke stdout/stderr biasa; `::add-mask::` (sama pola dengan .github/workflows/
+# compose-portability.yml) hanya menyensor nilai itu di log GitHub Actions bila kebetulan
+# tercetak oleh tool di bawahnya -- di luar GHA baris itu diabaikan runner lain, tanpa efek.
 sb_gen_secrets() {
   mkdir -p "$secrets"; chmod 700 "$secrets"
   rnd() { openssl rand -hex 24; }
@@ -83,8 +88,10 @@ sb_gen_secrets() {
            pr_webhook pr_worker pr_job_balikan pr_job_arsip pr_restore pr_blend \
            poolrouter_nik_hmac_key poolrouter_idempotency_hmac_key poolrouter_seed_password; do
     rnd > "$secrets/$f"
+    echo "::add-mask::$(cat "$secrets/$f")"
   done
   openssl rand -hex 32 > "$secrets/poolrouter_kek"
+  echo "::add-mask::$(cat "$secrets/poolrouter_kek")"
   openssl genpkey -algorithm ed25519 > "$secrets/poolrouter_jwt_signing_key"
   chmod 444 "$secrets"/*
 }
