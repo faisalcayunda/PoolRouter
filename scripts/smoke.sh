@@ -63,12 +63,17 @@ chmod 444 "$tls"/*.pem
 # --- Overlay label + mock-tls: semua service, volume, dan network ------------------------------
 sb_build_overlay postgres redis rabbitmq migrate backend-worker backend-cli frontend mock-dukcapil mock-tls -- backend-controller backend-webserver
 smoke_overlay="$tmp/smoke.yaml"
+# Export (bukan cuma prefiks baris perintah): sb_db_bootstrap (stack-berlabel.sh) mengambil
+# compose_cmd mentah lewat `make -n` lalu `eval` langsung di luar make, jadi interpolasi
+# POOLROUTER_SMOKE_TLS_* di compose.smoke.yaml harus sudah ada di environment proses ini, bukan
+# cuma argumen `make`.
+export POOLROUTER_SMOKE_TLS_CERT_DIR=$tls
+export POOLROUTER_SMOKE_TLS_SCRIPT_DIR="$repo/scripts/smoke"
 # Validasi terhadap set lengkap (compose.yaml + compose.dev.yaml + overlay label + overlay
 # mock-tls), bukan compose.smoke.yaml sendirian: `depends_on: mock-dukcapil` di overlay itu
 # cuma terdefinisi lewat compose.dev.yaml, jadi validasi berdiri sendiri tidak menangkap
 # ketergantungan yang hilang.
-POOLROUTER_SMOKE_TLS_CERT_DIR=$tls POOLROUTER_SMOKE_TLS_SCRIPT_DIR="$repo/scripts/smoke" \
-  $ENGINE compose -f "$repo/deploy/compose/compose.yaml" -f "$repo/deploy/compose/compose.dev.yaml" \
+$ENGINE compose -f "$repo/deploy/compose/compose.yaml" -f "$repo/deploy/compose/compose.dev.yaml" \
     -f "$overlay" -f "$repo/scripts/smoke/compose.smoke.yaml" --env-file "$envf" \
     --profile bundled-infra --profile mock config >/dev/null # validasi awal, gagal cepat
 cp "$repo/scripts/smoke/compose.smoke.yaml" "$smoke_overlay"
