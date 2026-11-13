@@ -36,6 +36,17 @@ jobs:
         with:
           persist-credentials: false
 
+      # AC3 (ARC-378): scripts/e2e-api-asli.sh (ARC-251) pindah memakai scripts/stack-berlabel.sh
+      # bersama smoke.sh; bukti skala kecil (E2E_UPTO=bootstrap, berhenti sebelum migrate/image
+      # aplikasi) bahwa itu masih berperilaku sama (infra naik, db-bootstrap, label, pembersihan).
+      # e2e-api-asli memakai Podman (bukan Docker seperti job ini); diinstal sama seperti
+      # compose-portability.yml V3.
+      - name: Verifikasi e2e-api-asli (podman, E2E_UPTO=bootstrap)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq podman >/dev/null
+          sudo env "PATH=$PATH" make e2e-api-asli CONTAINER_LABEL="arctiva.issue=ARC-251-ci-${{ github.run_id }}" E2E_UPTO=bootstrap
+
       - name: Build image backend, frontend, mock-dukcapil
         run: |
           make image CONTAINER_ENGINE="$CONTAINER_ENGINE" JOBS=2
@@ -45,19 +56,21 @@ jobs:
       - name: Setup frontend (pnpm install, untuk playwright test --list dan e2e-smoke)
         run: make -C frontend setup FRONTEND_RUNNER=docker CONTAINER_LABEL="$CONTAINER_LABEL"
 
-      # TEMP (ARC-378, dihapus bersama step bypass di bawah): tarik image Playwright lebih awal.
-      # Ditemukan lewat run Actions sungguhan: pull+extract image ini (~1.5 GB) berbarengan dengan
-      # readiness probe stack (anggaran 2s/cek di backend-webserver/-controller) membuat probe
-      # postgres gagal berulang kali karena CPU/IO runner jenuh, bukan bug di stack itu sendiri.
-      - name: "pull image Playwright (TEMP: hindari kontensi CPU/IO saat probe readiness stack)"
+      # Pull image Playwright lebih awal (ARC-378, bukan TEMP): ditemukan lewat run Actions
+      # sungguhan bahwa pull+extract image ini (~1.5 GB) berbarengan dengan readiness probe stack
+      # (anggaran 2s/cek di backend-webserver/-controller) membuat probe postgres gagal berulang
+      # kali karena CPU/IO runner jenuh, bukan bug di stack itu sendiri.
+      - name: Pull image Playwright (hindari kontensi CPU/IO saat probe readiness stack)
         run: docker pull mcr.microsoft.com/playwright:v1.64.1-noble@sha256:2f05f8a734509a7b3f26a912639488ee08f58a7b292d14d62271bcff9038768f
 
-      # TEMP (ARC-378, dihapus sebelum code_review): panggil scripts/smoke.sh langsung, bukan
-      # `make smoke` (yang digerbangi smoke-cakupan -> "cakupan rute belum ada" sampai S3/ARC-379
-      # merge). Satu-satunya cara membuktikan AC3 (stack naik, G0-G6, smoke-report.json, CLEANUP)
-      # di runtime agen ini yang tidak punya docker/podman (kontrak ARC-378 Asumsi).
-      - name: "make smoke (TEMP: scripts/smoke.sh langsung, lewati smoke-cakupan untuk bukti AC3)"
-        run: sh scripts/smoke.sh
+      # `make smoke` (AC3, bukan TEMP): digerbangi `smoke-cakupan`, yang MERAH sampai S3/ARC-379
+      # merge (`scripts/smoke/cakupan-rute.mjs` belum ada -- lihat komentar berkas ini bagian atas
+      # dan kontrak ARC-378 Asumsi). AC3 yang sudah dibuktikan (`[ac-change]`, run 43435364050):
+      # stack naik, G0-G6 jalan, smoke-report.json 78 id, CLEANUP left_*=0, exit non-nol karena ada
+      # id gagal -- dari run TEMP sebelum ini yang melewati smoke-cakupan. Run ini sendiri (dan tiap
+      # push ke main sesudahnya) MERAH di langkah smoke-cakupan sampai S3 merge; itu diharapkan.
+      - name: make smoke
+        run: make smoke CONTAINER_ENGINE="$CONTAINER_ENGINE" CONTAINER_LABEL="$CONTAINER_LABEL"
 
       - name: Bersihkan resource berlabel (selalu)
         if: always()

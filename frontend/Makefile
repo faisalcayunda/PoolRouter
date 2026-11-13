@@ -18,13 +18,14 @@ PLAYWRIGHT_IMAGE ?= mcr.microsoft.com/playwright:v1.64.1-noble@sha256:2f05f8a734
 CONTAINER_LABEL ?=
 # Memory cap for every frontend container, same variable name as backend/Makefile.
 CONTAINER_MEMORY ?= 2g
-# CPU cap for the Playwright/Chromium container only (ARC-378): found via a real CI run on
-# ubuntu-latest (4 vCPU) -- an unconstrained Playwright container starves the backend's 2s
-# readiness budget (runtime.rs READY_BUDGET), flipping backend-webserver/-controller unhealthy
-# and causing real 502s mid-suite. A --cpus 2 cap (half the runner) still left readiness failing
-# for the whole suite (a second real CI run, ARC-378): the cap is a ceiling, not a reservation, so
-# it does not protect the other ~9 containers sharing the remaining cores. 1 leaves 3 full cores
-# free for the stack under test; the @smoke api project makes no real page loads.
+# CPU cap for the Playwright/Chromium container, e2e-smoke only (ARC-378, spec §6 Scope: this
+# tiket cannot change e2e-api-asli's resource gate): found via a real CI run on ubuntu-latest
+# (4 vCPU) -- an unconstrained Playwright container starves the backend's 2s readiness budget
+# (runtime.rs READY_BUDGET), flipping backend-webserver/-controller unhealthy and causing real
+# 502s mid-suite. A --cpus 2 cap (half the runner) still left readiness failing for the whole
+# suite (a second real CI run, ARC-378): the cap is a ceiling, not a reservation, so it does not
+# protect the other ~9 containers sharing the remaining cores. 1 leaves 3 full cores free for the
+# stack under test; the @smoke api project makes no real page loads.
 CONTAINER_CPUS_PW ?= 1
 # pnpm is activated through corepack from the packageManager field.
 PNPM_HOME_DIR := /work/frontend/.cache/corepack
@@ -50,10 +51,13 @@ RUN = $(RUN_OPTS) $(NODE_CMD)
 # with the host IPC namespace, --shm-size is rejected, so it is not set.
 # The Playwright image has no corepack and needs no package manager: the repo's
 # node_modules is bind-mounted, so the pinned binaries run directly.
-RUN_PW_OPTS = $(CONTAINER_ENGINE) run --rm --memory $(CONTAINER_MEMORY) --cpus $(CONTAINER_CPUS_PW) --ipc=host --label $(CONTAINER_LABEL) \
+RUN_PW_OPTS = $(CONTAINER_ENGINE) run --rm --memory $(CONTAINER_MEMORY) --ipc=host --label $(CONTAINER_LABEL) \
 	-e HOME=/tmp -e CI=1 \
 	-v "$(CURDIR)/..":/work -w /work/frontend
 RUN_PW = $(RUN_PW_OPTS) $(PLAYWRIGHT_IMAGE)
+# e2e-smoke only (ARC-378): see CONTAINER_CPUS_PW comment above. e2e-api-asli (ARC-251) keeps the
+# uncapped RUN_PW_OPTS untouched.
+RUN_PW_SMOKE_OPTS = $(RUN_PW_OPTS) --cpus $(CONTAINER_CPUS_PW)
 # Heavy targets take the lock: pnpm install, vite build, vitest, and the Chromium e2e run.
 # lint, fmt, i18n-check, and clean stay unlocked (podman run only, no node_modules writes).
 # On a held lock they exit 75 (EX_TEMPFAIL): do non-compile work and retry, never wait in a loop.
@@ -180,7 +184,7 @@ endif
 ifneq ($(filter podman docker,$(FRONTEND_RUNNER)),)
 e2e-smoke: check-label
 	@test -n "$(E2E_NETNS)" && test -n "$(E2E_ENV_FILE)" || { echo "e2e-smoke dipanggil lewat make smoke di akar repo (butuh E2E_NETNS dan E2E_ENV_FILE)" >&2; exit 2; }
-	$(BUILD_LOCK_SH) run -- $(RUN_PW_OPTS) --network container:$(E2E_NETNS) --env-file $(E2E_ENV_FILE) \
+	$(BUILD_LOCK_SH) run -- $(RUN_PW_SMOKE_OPTS) --network container:$(E2E_NETNS) --env-file $(E2E_ENV_FILE) \
 		-e PLAYWRIGHT_JSON_OUTPUT_NAME=$(PLAYWRIGHT_JSON_OUTPUT_NAME) \
 		$(BUILD_LOCK_OPTS) $(PLAYWRIGHT_IMAGE) ./node_modules/.bin/playwright test -c playwright.smoke.config.ts --reporter=json,list
 else
