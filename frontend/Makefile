@@ -19,11 +19,13 @@ CONTAINER_LABEL ?=
 # Memory cap for every frontend container, same variable name as backend/Makefile.
 CONTAINER_MEMORY ?= 2g
 # CPU cap for the Playwright/Chromium container only (ARC-378): found via a real CI run on
-# ubuntu-latest (4 vCPU) -- Chromium starting up on an unconstrained container starves the
-# backend's 2s readiness budget (runtime.rs READY_BUDGET) for ~25s, flipping
-# backend-webserver/-controller unhealthy and causing real 502s mid-suite. Capping Playwright
-# leaves cores free for the stack it is testing against.
-CONTAINER_CPUS_PW ?= 2
+# ubuntu-latest (4 vCPU) -- an unconstrained Playwright container starves the backend's 2s
+# readiness budget (runtime.rs READY_BUDGET), flipping backend-webserver/-controller unhealthy
+# and causing real 502s mid-suite. A --cpus 2 cap (half the runner) still left readiness failing
+# for the whole suite (a second real CI run, ARC-378): the cap is a ceiling, not a reservation, so
+# it does not protect the other ~9 containers sharing the remaining cores. 1 leaves 3 full cores
+# free for the stack under test; the @smoke api project makes no real page loads.
+CONTAINER_CPUS_PW ?= 1
 # pnpm is activated through corepack from the packageManager field.
 PNPM_HOME_DIR := /work/frontend/.cache/corepack
 # Keep the pnpm store and metadata cache in .cache/ (git- and lint-ignored) so retries are incremental.
