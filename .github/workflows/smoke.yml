@@ -45,6 +45,13 @@ jobs:
       - name: Setup frontend (pnpm install, untuk playwright test --list dan e2e-smoke)
         run: make -C frontend setup FRONTEND_RUNNER=docker CONTAINER_LABEL="$CONTAINER_LABEL"
 
+      # TEMP (ARC-378, dihapus bersama step bypass di bawah): tarik image Playwright lebih awal.
+      # Ditemukan lewat run Actions sungguhan: pull+extract image ini (~1.5 GB) berbarengan dengan
+      # readiness probe stack (anggaran 2s/cek di backend-webserver/-controller) membuat probe
+      # postgres gagal berulang kali karena CPU/IO runner jenuh, bukan bug di stack itu sendiri.
+      - name: "pull image Playwright (TEMP: hindari kontensi CPU/IO saat probe readiness stack)"
+        run: docker pull mcr.microsoft.com/playwright:v1.64.1-noble@sha256:2f05f8a734509a7b3f26a912639488ee08f58a7b292d14d62271bcff9038768f
+
       # TEMP (ARC-378, dihapus sebelum code_review): panggil scripts/smoke.sh langsung, bukan
       # `make smoke` (yang digerbangi smoke-cakupan -> "cakupan rute belum ada" sampai S3/ARC-379
       # merge). Satu-satunya cara membuktikan AC3 (stack naik, G0-G6, smoke-report.json, CLEANUP)
