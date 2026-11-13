@@ -52,9 +52,12 @@ sb_gen_secrets
 sb_render_env "$be_img" "$fe_img" "$port" \
   -e "s#^POOLROUTER_MOCK_DUKCAPIL_IMAGE=.*#POOLROUTER_MOCK_DUKCAPIL_IMAGE=$mock_img#"
 
-# --- CA dan sertifikat TLS mock per run (Q1), direktori di luar repo, chmod 700 -----------------
+# --- CA dan sertifikat TLS mock per run (Q1), direktori di luar repo --------------------------
+# chmod 755 (bukan 700): container mock-tls jalan sebagai UID non-root 10001 (image sama dengan
+# mock-dukcapil), jadi perlu hak traverse direktori untuk membaca cert.pem/key.pem yang dipasang
+# read-only; file sendiri sudah chmod 444 (bukan secret sungguhan -- CA sintetis 1 hari per run).
 tls="$tmp/tls"
-mkdir -p "$tls"; chmod 700 "$tls"
+mkdir -p "$tls"; chmod 755 "$tls"
 openssl req -x509 -newkey rsa:2048 -nodes -days 1 -keyout "$tls/key.pem" -out "$tls/cert.pem" \
   -subj "/CN=dukcapil-sintetis.example.test" \
   -addext "subjectAltName=DNS:dukcapil-sintetis.example.test" >/dev/null 2>&1
