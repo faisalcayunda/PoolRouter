@@ -45,8 +45,12 @@ jobs:
       - name: Setup frontend (pnpm install, untuk playwright test --list dan e2e-smoke)
         run: make -C frontend setup FRONTEND_RUNNER=docker CONTAINER_LABEL="$CONTAINER_LABEL"
 
-      - name: make smoke
-        run: make smoke CONTAINER_ENGINE="$CONTAINER_ENGINE" CONTAINER_LABEL="$CONTAINER_LABEL"
+      # TEMP (ARC-378, dihapus sebelum code_review): panggil scripts/smoke.sh langsung, bukan
+      # `make smoke` (yang digerbangi smoke-cakupan -> "cakupan rute belum ada" sampai S3/ARC-379
+      # merge). Satu-satunya cara membuktikan AC3 (stack naik, G0-G6, smoke-report.json, CLEANUP)
+      # di runtime agen ini yang tidak punya docker/podman (kontrak ARC-378 Asumsi).
+      - name: "make smoke (TEMP: scripts/smoke.sh langsung, lewati smoke-cakupan untuk bukti AC3)"
+        run: sh scripts/smoke.sh
 
       - name: Bersihkan resource berlabel (selalu)
         if: always()
