@@ -18,6 +18,12 @@ PLAYWRIGHT_IMAGE ?= mcr.microsoft.com/playwright:v1.64.1-noble@sha256:2f05f8a734
 CONTAINER_LABEL ?=
 # Memory cap for every frontend container, same variable name as backend/Makefile.
 CONTAINER_MEMORY ?= 2g
+# CPU cap for the Playwright/Chromium container only (ARC-378): found via a real CI run on
+# ubuntu-latest (4 vCPU) -- Chromium starting up on an unconstrained container starves the
+# backend's 2s readiness budget (runtime.rs READY_BUDGET) for ~25s, flipping
+# backend-webserver/-controller unhealthy and causing real 502s mid-suite. Capping Playwright
+# leaves cores free for the stack it is testing against.
+CONTAINER_CPUS_PW ?= 2
 # pnpm is activated through corepack from the packageManager field.
 PNPM_HOME_DIR := /work/frontend/.cache/corepack
 # Keep the pnpm store and metadata cache in .cache/ (git- and lint-ignored) so retries are incremental.
@@ -42,7 +48,7 @@ RUN = $(RUN_OPTS) $(NODE_CMD)
 # with the host IPC namespace, --shm-size is rejected, so it is not set.
 # The Playwright image has no corepack and needs no package manager: the repo's
 # node_modules is bind-mounted, so the pinned binaries run directly.
-RUN_PW_OPTS = $(CONTAINER_ENGINE) run --rm --memory $(CONTAINER_MEMORY) --ipc=host --label $(CONTAINER_LABEL) \
+RUN_PW_OPTS = $(CONTAINER_ENGINE) run --rm --memory $(CONTAINER_MEMORY) --cpus $(CONTAINER_CPUS_PW) --ipc=host --label $(CONTAINER_LABEL) \
 	-e HOME=/tmp -e CI=1 \
 	-v "$(CURDIR)/..":/work -w /work/frontend
 RUN_PW = $(RUN_PW_OPTS) $(PLAYWRIGHT_IMAGE)
