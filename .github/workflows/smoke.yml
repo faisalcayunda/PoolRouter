@@ -39,13 +39,20 @@ jobs:
       # AC3 (ARC-378): scripts/e2e-api-asli.sh (ARC-251) pindah memakai scripts/stack-berlabel.sh
       # bersama smoke.sh; bukti skala kecil (E2E_UPTO=bootstrap, berhenti sebelum migrate/image
       # aplikasi) bahwa itu masih berperilaku sama (infra naik, db-bootstrap, label, pembersihan).
-      # e2e-api-asli memakai Podman (bukan Docker seperti job ini); diinstal sama seperti
-      # compose-portability.yml V3.
+      # e2e-api-asli memakai Podman rootless (bukan Docker seperti job ini, dan bukan `sudo`
+      # seperti compose-portability.yml V3 -- itu DinD butuh --privileged, ini tidak butuh apa pun
+      # istimewa). deploy/compose/bin/compose-provider butuh API socket Podman; di VM lokal owner itu
+      # disediakan `podman machine`, di runner Linux ini dengan `podman system service` user sendiri
+      # (dua run Actions sungguhan: dengan sudo rootful, healthcheck postgres gagal terus; tanpa
+      # service dijalankan dulu, socketnya belum ada sama sekali).
       - name: Verifikasi e2e-api-asli (podman, E2E_UPTO=bootstrap)
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq podman >/dev/null
-          sudo env "PATH=$PATH" make e2e-api-asli CONTAINER_LABEL="arctiva.issue=ARC-251-ci-${{ github.run_id }}" E2E_UPTO=bootstrap
+          mkdir -p "/run/user/$(id -u)/podman"
+          podman system service --time=0 "unix:///run/user/$(id -u)/podman/podman.sock" &
+          for i in $(seq 1 30); do [ -S "/run/user/$(id -u)/podman/podman.sock" ] && break; sleep 1; done
+          make e2e-api-asli CONTAINER_LABEL="arctiva.issue=ARC-251-ci-${{ github.run_id }}" E2E_UPTO=bootstrap
 
       - name: Build image backend, frontend, mock-dukcapil
         run: |
