@@ -1,0 +1,101 @@
+# CI smoke (ARC-376/ARC-378, spec smoke-test bagian 5). `make smoke` menyalakan stack berlabel
+# lengkap (Postgres/Redis/RabbitMQ/backend-webserver/-controller/-worker/mock-dukcapil/mock-tls),
+# migrasi + seed sintetis, dan suite Playwright `@smoke` terhadap setiap operasi OpenAPI, rute, dan
+# proses (inventaris.md). Secret dibangkitkan harness per run (tidak ada secret repo).
+#
+# `make smoke` di `main` diharapkan MERAH dari S2 (ARC-378) merge sampai S3 (ARC-379) merge:
+# cakupan.mjs sengaja gagal selama scripts/smoke/cakupan-rute.mjs (milik S3) belum ada, supaya
+# rute tidak pernah lolos cakupan secara diam-diam (spec bagian 4, AC5 dibuktikan sesudah S3 merge).
+name: smoke
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: smoke-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      CONTAINER_ENGINE: docker
+      # Suffix run id (spec.md bagian 5): keunikan antar run workflow_dispatch pada ref berbeda
+      # -- `concurrency` job ini cuma menyerialkan run per ref, bukan global. frontend/Makefile
+      # check-label menerima suffix ini (lihat komentar di Makefile).
+      CONTAINER_LABEL: arctiva.issue=ARC-376-ci-${{ github.run_id }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      # AC3 (ARC-378): scripts/e2e-api-asli.sh (ARC-251) pindah memakai scripts/stack-berlabel.sh
+      # bersama smoke.sh; bukti skala kecil (E2E_UPTO=bootstrap, berhenti sebelum migrate/image
+      # aplikasi) bahwa itu masih berperilaku sama (infra naik, db-bootstrap, label, pembersihan).
+      # e2e-api-asli memakai Podman rootless (bukan Docker seperti job ini, dan bukan `sudo`
+      # seperti compose-portability.yml V3 -- itu DinD butuh --privileged, ini tidak butuh apa pun
+      # istimewa). deploy/compose/bin/compose-provider butuh API socket Podman; di VM lokal owner itu
+      # disediakan `podman machine`, di runner Linux ini dengan `podman system service` user sendiri
+      # (dua run Actions sungguhan: dengan sudo rootful, healthcheck postgres gagal terus; tanpa
+      # service dijalankan dulu, socketnya belum ada sama sekali).
+      - name: Verifikasi e2e-api-asli (podman, E2E_UPTO=bootstrap)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq podman >/dev/null
+          mkdir -p "/run/user/$(id -u)/podman"
+          podman system service --time=0 "unix:///run/user/$(id -u)/podman/podman.sock" &
+          for i in $(seq 1 30); do [ -S "/run/user/$(id -u)/podman/podman.sock" ] && break; sleep 1; done
+          make e2e-api-asli CONTAINER_LABEL="arctiva.issue=ARC-251-ci-${{ github.run_id }}" E2E_UPTO=bootstrap
+
+      - name: Build image backend, frontend, mock-dukcapil
+        run: |
+          make image CONTAINER_ENGINE="$CONTAINER_ENGINE" JOBS=2
+          make image-frontend CONTAINER_ENGINE="$CONTAINER_ENGINE"
+          docker build -f perf/mock-dukcapil/Containerfile -t localhost/poolrouter-mock-dukcapil:dev perf/mock-dukcapil
+
+      - name: Setup frontend (pnpm install, untuk playwright test --list dan e2e-smoke)
+        run: make -C frontend setup FRONTEND_RUNNER=docker CONTAINER_LABEL="$CONTAINER_LABEL"
+
+      # Pull image Playwright lebih awal (ARC-378, bukan TEMP): ditemukan lewat run Actions
+      # sungguhan bahwa pull+extract image ini (~1.5 GB) berbarengan dengan readiness probe stack
+      # (anggaran 2s/cek di backend-webserver/-controller) membuat probe postgres gagal berulang
+      # kali karena CPU/IO runner jenuh, bukan bug di stack itu sendiri.
+      - name: Pull image Playwright (hindari kontensi CPU/IO saat probe readiness stack)
+        run: docker pull mcr.microsoft.com/playwright:v1.64.1-noble@sha256:2f05f8a734509a7b3f26a912639488ee08f58a7b292d14d62271bcff9038768f
+
+      # `make smoke` (AC3, bukan TEMP): digerbangi `smoke-cakupan`, yang MERAH sampai S3/ARC-379
+      # merge (`scripts/smoke/cakupan-rute.mjs` belum ada -- lihat komentar berkas ini bagian atas
+      # dan kontrak ARC-378 Asumsi). AC3 yang sudah dibuktikan (`[ac-change]`, run 43435364050):
+      # stack naik, G0-G6 jalan, smoke-report.json 78 id, CLEANUP left_*=0, exit non-nol karena ada
+      # id gagal -- dari run TEMP sebelum ini yang melewati smoke-cakupan. Run ini sendiri (dan tiap
+      # push ke main sesudahnya) MERAH di langkah smoke-cakupan sampai S3 merge; itu diharapkan.
+      - name: make smoke
+        run: make smoke CONTAINER_ENGINE="$CONTAINER_ENGINE" CONTAINER_LABEL="$CONTAINER_LABEL"
+
+      - name: Bersihkan resource berlabel (selalu)
+        if: always()
+        run: |
+          set -eu
+          for c in $(docker ps -a --filter "label=$CONTAINER_LABEL" -q); do docker rm -f -v "$c" >/dev/null 2>&1 || true; done
+          for v in $(docker volume ls --filter "label=$CONTAINER_LABEL" -q); do docker volume rm -f "$v" >/dev/null 2>&1 || true; done
+          for n in $(docker network ls --filter "label=$CONTAINER_LABEL" -q); do docker network rm -f "$n" >/dev/null 2>&1 || true; done
+          left=$(docker ps -a --filter "label=$CONTAINER_LABEL" -q | wc -l | tr -d ' ')
+          lv=$(docker volume ls --filter "label=$CONTAINER_LABEL" -q | wc -l | tr -d ' ')
+          ln=$(docker network ls --filter "label=$CONTAINER_LABEL" -q | wc -l | tr -d ' ')
+          echo "CLEANUP left_containers=$left left_volumes=$lv left_networks=$ln"
+
+      - name: Unggah smoke-report.json (selalu)
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: smoke-report
+          path: smoke-report.json
+          if-no-files-found: ignore
+          retention-days: 14

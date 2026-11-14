@@ -1,0 +1,33 @@
+# Overlay harness smoke (ARC-378, spec smoke-test bagian 3 Q1): sidecar `mock-tls` di depan
+# mock-dukcapil (plain HTTP), supaya `createProvider` bisa memakai `base_url` berawalan
+# `https://` dengan `tls_trust=ca_kustom` tanpa mengubah kode aplikasi. CA dan sertifikat dibuat
+# per run oleh scripts/smoke.sh (openssl req -x509, 1 hari), disalin ke direktori sementara di
+# luar repo lalu di-mount read-only; path diisi lewat env POOLROUTER_SMOKE_TLS_CERT_DIR.
+#
+# Dipakai sebagai EXTRA_COMPOSE_FILES tambahan (bersama overlay label dari stack-berlabel.sh)
+# saat `make smoke` menaikkan stack. Volume tls_proxy.py memakai path absolut
+# (POOLROUTER_SMOKE_TLS_SCRIPT_DIR), bukan `./`: compose me-resolve path relatif pada direktori
+# proyek (compose.yaml dasar di deploy/compose), bukan direktori berkas overlay ini.
+services:
+  mock-tls:
+    image: ${POOLROUTER_MOCK_DUKCAPIL_IMAGE:?isi POOLROUTER_MOCK_DUKCAPIL_IMAGE di file env}
+    profiles: ["mock"]
+    entrypoint: ["python", "-I", "/smoke/tls_proxy.py"]
+    environment:
+      MOCK_TLS_PORT: "8443"
+      MOCK_TLS_CERT_FILE: /smoke-tls/cert.pem
+      MOCK_TLS_KEY_FILE: /smoke-tls/key.pem
+      MOCK_UPSTREAM: http://mock-dukcapil:8080
+    volumes:
+      - ${POOLROUTER_SMOKE_TLS_CERT_DIR:?isi POOLROUTER_SMOKE_TLS_CERT_DIR (direktori CA run)}:/smoke-tls:ro
+      - ${POOLROUTER_SMOKE_TLS_SCRIPT_DIR:?isi POOLROUTER_SMOKE_TLS_SCRIPT_DIR (direktori scripts/smoke)}/tls_proxy.py:/smoke/tls_proxy.py:ro
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    depends_on:
+      mock-dukcapil:
+        condition: service_started
+    networks:
+      default:
+        aliases: [dukcapil-sintetis.example.test]

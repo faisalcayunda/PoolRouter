@@ -18,6 +18,15 @@ PLAYWRIGHT_IMAGE ?= mcr.microsoft.com/playwright:v1.64.1-noble@sha256:2f05f8a734
 CONTAINER_LABEL ?=
 # Memory cap for every frontend container, same variable name as backend/Makefile.
 CONTAINER_MEMORY ?= 2g
+# CPU cap for the Playwright/Chromium container, e2e-smoke only (ARC-378, spec §6 Scope: this
+# tiket cannot change e2e-api-asli's resource gate): found via a real CI run on ubuntu-latest
+# (4 vCPU) -- an unconstrained Playwright container starves the backend's 2s readiness budget
+# (runtime.rs READY_BUDGET), flipping backend-webserver/-controller unhealthy and causing real
+# 502s mid-suite. A --cpus 2 cap (half the runner) still left readiness failing for the whole
+# suite (a second real CI run, ARC-378): the cap is a ceiling, not a reservation, so it does not
+# protect the other ~9 containers sharing the remaining cores. 1 leaves 3 full cores free for the
+# stack under test; the @smoke api project makes no real page loads.
+CONTAINER_CPUS_PW ?= 1
 # pnpm is activated through corepack from the packageManager field.
 PNPM_HOME_DIR := /work/frontend/.cache/corepack
 # Keep the pnpm store and metadata cache in .cache/ (git- and lint-ignored) so retries are incremental.
@@ -46,6 +55,9 @@ RUN_PW_OPTS = $(CONTAINER_ENGINE) run --rm --memory $(CONTAINER_MEMORY) --ipc=ho
 	-e HOME=/tmp -e CI=1 \
 	-v "$(CURDIR)/..":/work -w /work/frontend
 RUN_PW = $(RUN_PW_OPTS) $(PLAYWRIGHT_IMAGE)
+# e2e-smoke only (ARC-378): see CONTAINER_CPUS_PW comment above. e2e-api-asli (ARC-251) keeps the
+# uncapped RUN_PW_OPTS untouched.
+RUN_PW_SMOKE_OPTS = $(RUN_PW_OPTS) --cpus $(CONTAINER_CPUS_PW)
 # Heavy targets take the lock: pnpm install, vite build, vitest, and the Chromium e2e run.
 # lint, fmt, i18n-check, and clean stay unlocked (podman run only, no node_modules writes).
 # On a held lock they exit 75 (EX_TEMPFAIL): do non-compile work and retry, never wait in a loop.
@@ -60,10 +72,10 @@ endif
 
 PNPM = $(RUN) pnpm
 
-.PHONY: help check-label setup test lint fmt clean gen-api gen-api-check build build-e2e e2e e2e-api-asli i18n-check i18n-types build-lock-status build-lock-clean
+.PHONY: help check-label setup test lint fmt clean gen-api gen-api-check build build-e2e e2e e2e-api-asli e2e-smoke i18n-check i18n-types build-lock-status build-lock-clean
 
 help:
-	@echo "targets: setup test lint fmt clean gen-api gen-api-check build build-e2e e2e e2e-api-asli i18n-check i18n-types"
+	@echo "targets: setup test lint fmt clean gen-api gen-api-check build build-e2e e2e e2e-api-asli e2e-smoke i18n-check i18n-types"
 	@echo "gate resmi (dari akar): make setup test lint RUNNER=<podman|docker> FRONTEND_RUNNER=<podman|docker> CONTAINER_LABEL=arctiva.issue=ARC-<n>"
 	@echo "lock:    build-lock-status build-lock-clean (K-41 heavy build lock, shared with backend)"
 
@@ -71,8 +83,11 @@ help:
 # Skipped for FRONTEND_RUNNER=local, where no container is created.
 
 ifneq ($(filter podman docker,$(FRONTEND_RUNNER)),)
+# Suffix opsional (mis. -ci-<run_id>, dipakai .github/workflows/smoke.yml ARC-378 spec.md
+# bagian 5 untuk keunikan antar run workflow_dispatch) tetap diterima; label masih harus
+# berawal arctiva.issue=ARC-<n>.
 check-label:
-	@echo "$(CONTAINER_LABEL)" | grep -Eq '^arctiva\.issue=ARC-[0-9]+$$' || { echo "CONTAINER_LABEL wajib arctiva.issue=ARC-<n> untuk FRONTEND_RUNNER=$(FRONTEND_RUNNER) (contoh: make -C frontend lint CONTAINER_LABEL=arctiva.issue=ARC-197)" >&2; exit 2; }
+	@echo "$(CONTAINER_LABEL)" | grep -Eq '^arctiva\.issue=ARC-[0-9]+(-[A-Za-z0-9._-]+)?$$' || { echo "CONTAINER_LABEL wajib arctiva.issue=ARC-<n> untuk FRONTEND_RUNNER=$(FRONTEND_RUNNER) (contoh: make -C frontend lint CONTAINER_LABEL=arctiva.issue=ARC-197)" >&2; exit 2; }
 else
 check-label:
 endif
@@ -158,4 +173,21 @@ e2e-api-asli: check-label
 else
 e2e-api-asli:
 	@echo "e2e-api-asli hanya untuk FRONTEND_RUNNER=podman atau docker" >&2; exit 2
+endif
+
+# e2e-smoke (ARC-378): suite `@smoke` di netns container frontend compose, sama alasan dengan
+# e2e-api-asli: origin 127.0.0.1:8080 harus sama dengan POOLROUTER_UI_ORIGIN (cookie __Host-
+# Secure), dan backend-webserver:8081 (downstream API, grup klien G3) hanya lewat network compose
+# internal, tidak dipublikasikan ke host. Dipanggil oleh scripts/smoke.sh di akar repo, yang
+# menyalakan stack dan memberi E2E_NETNS (container frontend) dan E2E_ENV_FILE (token sesi per
+# peran, di luar repo). PLAYWRIGHT_JSON_OUTPUT_NAME opsional (reporter JSON untuk laporan.mjs).
+ifneq ($(filter podman docker,$(FRONTEND_RUNNER)),)
+e2e-smoke: check-label
+	@test -n "$(E2E_NETNS)" && test -n "$(E2E_ENV_FILE)" || { echo "e2e-smoke dipanggil lewat make smoke di akar repo (butuh E2E_NETNS dan E2E_ENV_FILE)" >&2; exit 2; }
+	$(BUILD_LOCK_SH) run -- $(RUN_PW_SMOKE_OPTS) --network container:$(E2E_NETNS) --env-file $(E2E_ENV_FILE) \
+		-e PLAYWRIGHT_JSON_OUTPUT_NAME=$(PLAYWRIGHT_JSON_OUTPUT_NAME) \
+		$(BUILD_LOCK_OPTS) $(PLAYWRIGHT_IMAGE) ./node_modules/.bin/playwright test -c playwright.smoke.config.ts --reporter=json,list
+else
+e2e-smoke:
+	@echo "e2e-smoke hanya untuk FRONTEND_RUNNER=podman atau docker" >&2; exit 2
 endif
