@@ -32,7 +32,7 @@ COMPOSE := $(COMPOSE_ENV) $(CONTAINER_ENGINE) compose -p $(PROJECT) $(COMPOSE_FI
 LINT_ENV_FILES := $(COMPOSE_DIR)/env/dev.env.example
 IMAGE_TAG ?= dev
 
-.PHONY: check-env compose-up compose-down compose-ps compose-logs compose-config compose-migrate compose-seed compose-lint compose-test-dind image image-frontend image-postgres e2e-api-asli
+.PHONY: check-env compose-up compose-down compose-ps compose-logs compose-config compose-migrate compose-seed compose-lint compose-test-dind image image-frontend image-postgres e2e-api-asli smoke smoke-cakupan
 
 check-env:
 	@case "$(ENV)" in dev|staging|prod) ;; *) echo "ENV harus dev, staging, atau prod" >&2; exit 2 ;; esac
@@ -90,6 +90,15 @@ E2E_BUILD_IMAGES ?=
 e2e-api-asli:
 	@CONTAINER_LABEL="$(CONTAINER_LABEL)" E2E_BUILD_IMAGES="$(E2E_BUILD_IMAGES)" IMAGE_TAG="$(IMAGE_TAG)" JOBS="$(JOBS)" \
 		MAKE="$(SUBMAKE)" sh scripts/e2e-api-asli.sh
+
+# smoke-cakupan: cek cakupan smoke (AC4, spec.md smoke-test bagian 4), tanpa engine kontainer.
+smoke-cakupan:
+	node scripts/smoke/cakupan.mjs
+
+# smoke: harness `make smoke` (AC3, spec.md smoke-test bagian 3). Lihat scripts/smoke.sh.
+smoke: smoke-cakupan
+	@CONTAINER_LABEL="$(CONTAINER_LABEL)" CONTAINER_ENGINE="$(CONTAINER_ENGINE)" IMAGE_TAG="$(IMAGE_TAG)" JOBS="$(JOBS)" \
+		MAKE="$(SUBMAKE)" sh scripts/smoke.sh
 
 # image: membangun image dari Containerfile dengan engine terpilih (Addendum §3.2).
 # Compose tidak dipakai untuk build di staging dan produksi.
