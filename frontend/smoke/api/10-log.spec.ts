@@ -5,10 +5,9 @@ import { state, NIK_SINTETIS } from '../state';
  * Grup Log, G4 (spec smoke-test bagian 2, inventaris.md): `searchLog`/`getLogEntry` (OP, butuh
  * transaksi T dari `09-downstream-api.spec.ts`), `getQuotaTracker` (PA, data=U).
  * `listWebhookLog`/`requestTerminal` (PA/controller, data="K W T") butuh sebuah pengiriman webhook
- * yang DITOLAK allowlist (AC-29: allowlist diperiksa saat kirim, bukan saat konfigurasi disimpan):
- * `putWebhookConfig` dialihkan sebentar ke domain yang sengaja tidak pernah masuk allowlist
- * (beda dari `state.allowlistDomain` di 07-allowlist.spec.ts/08-client.spec.ts, yang aktif), lalu
- * sebuah `enqueueAsync` baru dibuat supaya terminalnya memicu satu percobaan kirim webhook; baris
+ * yang DITOLAK allowlist (AC-29: allowlist juga diperiksa saat kirim): domain
+ * `state.allowlistDomain` dinonaktifkan lewat `putWebhookAllowlistEntry`, lalu sebuah
+ * `enqueueAsync` baru dibuat supaya terminalnya memicu satu percobaan kirim webhook; baris
  * `webhook_log` hasilnya `ditolak_allowlist` membuktikan `requestTerminal` (controller, tidak
  * punya endpoint HTTP sendiri untuk dipanggil smoke).
  */
@@ -68,19 +67,21 @@ test.describe('@smoke log', () => {
       '@smoke listWebhookLog: 200, ada baris ditolak_allowlist (buktikan requestTerminal)',
       { annotation: inventaris(['listWebhookLog', 'requestTerminal'], 'platform-admin') },
       async ({ sesiApi, playwright }) => {
-        // Alihkan webhook ke domain yang sengaja tidak di-allowlist (beda dari
-        // state.allowlistDomain, yang aktif sejak 07-allowlist.spec.ts); allowlist diperiksa saat
-        // kirim (AC-29).
-        const resWebhook = await sesiApi.put(`/admin/v1/clients/${state.clientId}/webhook`, {
-          data: { webhook_url: 'https://smoke-ditolak.example.test/webhook', aktif: true },
-        });
-        expect(resWebhook.status()).toBe(200);
+        // Nonaktifkan domain allowlist webhook client (state.allowlistDomain): putWebhookConfig
+        // ke domain di luar allowlist ditolak 422 saat simpan (admin/webhook.rs periksa_allowlist),
+        // jadi penolakan saat kirim (AC-29) dibuktikan dengan mematikan domainnya.
+        const resAllowlist = await sesiApi.put(
+          `/admin/v1/webhook-allowlist/${state.allowlistDomain}`,
+          { data: { aktif: false } },
+        );
+        expect(resAllowlist.status()).toBe(200);
 
         const ctx = await playwright.request.newContext({ baseURL: DOWNSTREAM_ORIGIN });
         const tokenRes = await ctx.post('/v1/oauth/token', {
           form: {
             grant_type: 'client_credentials',
-            client_id: state.credentialOauth2Id ?? '',
+            // client_id = id client (bukan credential_id): downstream/auth.rs client_secret.
+            client_id: state.clientId ?? '',
             client_secret: state.credentialOauth2Secret ?? '',
           },
         });

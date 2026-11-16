@@ -58,9 +58,20 @@ sb_render_env "$be_img" "$fe_img" "$port" \
 # read-only; file sendiri sudah chmod 444 (bukan secret sungguhan -- CA sintetis 1 hari per run).
 tls="$tmp/tls"
 mkdir -p "$tls"; chmod 755 "$tls"
-openssl req -x509 -newkey rsa:2048 -nodes -days 1 -keyout "$tls/key.pem" -out "$tls/cert.pem" \
-  -subj "/CN=dukcapil-sintetis.example.test" \
-  -addext "subjectAltName=DNS:dukcapil-sintetis.example.test" >/dev/null 2>&1
+# CA run (CA:TRUE) menandatangani sertifikat leaf (CA:FALSE, serverAuth): rustls menolak
+# sertifikat CA yang dipakai langsung sebagai sertifikat server (CaUsedAsEndEntity), jadi
+# self-signed tunggal tidak cukup untuk `tls_trust=ca_kustom`. Kunci CA dihapus sesudah tanda
+# tangan; ca.pem (publik) diteruskan ke Playwright untuk `createProvider.tls_ca_pem`.
+openssl req -x509 -newkey rsa:2048 -nodes -days 1 -keyout "$tls/ca-key.pem" -out "$tls/ca.pem" \
+  -subj "/CN=smoke-ca-sintetis.example.test" \
+  -addext "basicConstraints=critical,CA:TRUE" -addext "keyUsage=critical,keyCertSign,cRLSign" >/dev/null 2>&1
+openssl req -new -newkey rsa:2048 -nodes -keyout "$tls/key.pem" -out "$tls/leaf.csr" \
+  -subj "/CN=dukcapil-sintetis.example.test" >/dev/null 2>&1
+printf '%s\n' "subjectAltName=DNS:dukcapil-sintetis.example.test" "basicConstraints=critical,CA:FALSE" \
+  "keyUsage=critical,digitalSignature,keyEncipherment" "extendedKeyUsage=serverAuth" > "$tls/leaf.ext"
+openssl x509 -req -in "$tls/leaf.csr" -CA "$tls/ca.pem" -CAkey "$tls/ca-key.pem" -CAcreateserial \
+  -days 1 -extfile "$tls/leaf.ext" -out "$tls/cert.pem" >/dev/null 2>&1
+rm -f "$tls/ca-key.pem" "$tls/leaf.csr" "$tls/leaf.ext" "$tls/ca.srl"
 chmod 444 "$tls"/*.pem
 
 # --- Overlay label + mock-tls: semua service, volume, dan network ------------------------------
@@ -140,6 +151,9 @@ echo "E2E_KODE_DAFTAR_MFA=$kode_daftar" >> "$pwenv"
 # Playwright jalan di netns container frontend (lihat blok "Playwright @smoke" di bawah): origin
 # nginx internal 8080, bukan $port (port host yang dipublikasikan, beda nomor).
 echo "E2E_BASE_URL=http://127.0.0.1:8080" >> "$pwenv"
+# CA run (publik, bukan secret) untuk createProvider tls_trust=ca_kustom; base64 satu baris
+# karena --env-file tidak menerima nilai multi-baris.
+echo "E2E_SMOKE_TLS_CA_B64=$(base64 < "$tls/ca.pem" | tr -d '\n')" >> "$pwenv"
 # Password seed sama untuk keenam pengguna seed (backend-cli seed pengguna, backend/README.md);
 # dipakai G1 untuk login + MFA sungguhan sekali lewat HTTP (spec Testing Decisions).
 printf 'E2E_SEED_PASSWORD=%s\n' "$(cat "$secrets/poolrouter_seed_password")" >> "$pwenv"

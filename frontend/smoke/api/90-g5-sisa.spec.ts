@@ -7,9 +7,8 @@ import { state } from '../state';
  * cabutCredential (data=Ka, kredensial api_key - bukan oauth2, agar kredensial yang dipakai
  * `09-downstream-api.spec.ts`/`10-log.spec.ts` tidak ikut tercabut) → aktifkanCredential (409,
  * selalu ditolak untuk kredensial yang sudah dicabut - U-54b);
- * deleteWebhookAllowlistEntry (204, data=W, `state.allowlistDomain`: webhook client sudah
- * dialihkan ke domain lain di `10-log.spec.ts`, jadi domain ini aman dihapus di sini, terakhir
- * dalam urutan file).
+ * deleteWebhookAllowlistEntry (204, data=W, `state.allowlistDomain`: domainnya sudah dinonaktifkan
+ * di `10-log.spec.ts`, jadi aman dihapus di sini, terakhir dalam urutan file).
  */
 test.describe('@smoke g5-sisa', () => {
   test.use({ peran: 'platform-admin' });

@@ -25,7 +25,8 @@ test.describe('@smoke downstream-api (klien)', () => {
       const res = await ctx.post('/v1/oauth/token', {
         form: {
           grant_type: 'client_credentials',
-          client_id: state.credentialOauth2Id ?? '',
+          // client_id = id client (bukan credential_id): downstream/auth.rs client_secret.
+          client_id: state.clientId ?? '',
           client_secret: state.credentialOauth2Secret ?? '',
         },
       });

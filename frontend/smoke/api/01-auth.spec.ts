@@ -5,8 +5,8 @@ import { totp } from '../totp';
 /**
  * Gelombang G1 (spec smoke-test bagian 2, inventaris.md): satu-satunya tempat yang menguji login
  * + MFA sungguhan lewat HTTP. `seed-operator` tidak wajib MFA (ADR-0006 §9: hanya platform_admin
- * dan auditor); `seed-platform-admin` sudah terdaftar MFA (Keamanan root ARC-376 asumsi) jadi
- * dipakai untuk jalur `langkah=mfa`. `seed-penyetuju` belum terdaftar MFA tapi punya baris
+ * dan auditor); `seed-platform-admin` belum terdaftar MFA (seed tidak mendaftarkan) jadi
+ * dipakai untuk jalur `langkah=daftar_mfa` tanpa kode pendaftaran. `seed-penyetuju` belum terdaftar MFA tapi punya baris
  * `kode_daftar_mfa` dari fixture SQL (Q4) jadi dipakai untuk jalur `langkah=daftar_mfa` +
  * `mfaDaftar` + `mfaKonfirmasi`.
  *
@@ -37,16 +37,19 @@ test.describe('@smoke auth', () => {
   );
 
   test(
-    '@smoke login: 200 langkah mfa untuk peran MFA wajib yang sudah terdaftar (platform admin)',
+    '@smoke login: 200 langkah daftar_mfa untuk peran MFA wajib yang belum terdaftar (platform admin)',
     { annotation: inventaris('login', 'platform-admin') },
     async ({ playwright }) => {
+      // `backend-cli seed pengguna` tidak mendaftarkan MFA siapa pun (kelola_pengguna.rs), jadi
+      // seed-platform-admin selalu di langkah daftar_mfa. Jalur langkah=mfa (sudah terdaftar)
+      // dibuktikan di test berikut lewat login kedua seed-penyetuju sesudah mfaKonfirmasi.
       const ctx = await ctxBaru(playwright);
       const res = await ctx.post('/admin/v1/auth/login', {
         data: { username: 'seed-platform-admin', password: SEED_PASSWORD },
       });
       expect(res.status()).toBe(200);
       const body = (await res.json()) as { langkah: string };
-      expect(body.langkah).toBe('mfa');
+      expect(body.langkah).toBe('daftar_mfa');
       await ctx.dispose();
     },
   );
@@ -92,7 +95,10 @@ test.describe('@smoke auth', () => {
       expect(((await loginKeduaRes.json()) as { langkah: string }).langkah).toBe('mfa');
 
       const verifikasiRes = await ctx.post('/admin/v1/auth/mfa', {
-        data: { kode: totp(daftar.rahasia_base32), kode_pemulihan: null },
+        // Kode langkah TOTP berikutnya: kode langkah ini sudah dipakai mfaKonfirmasi dan ditolak
+        // anti-replay (core/src/admin/mfa/mod.rs, langkah_terakhir < langkah); toleransi ±1 langkah
+        // (core/src/admin/mfa/totp.rs cocok) menerima kode +30 s.
+        data: { kode: totp(daftar.rahasia_base32, Date.now() + 30_000), kode_pemulihan: null },
       });
       expect(verifikasiRes.status()).toBe(204);
       expect((verifikasiRes.headers()['set-cookie'] ?? '').toString()).toContain(COOKIE_SESI);

@@ -10,7 +10,9 @@ function konfigDasar(alasan?: string) {
   return {
     provider_id: state.providerId,
     kuota_harian: 500,
-    rate_limit_per_jam: 60,
+    // Satu token/detik: dengan 60/jam (burst 1) submitSync menghabiskan token, lalu async G3
+    // menunggu ~60 s token berikut (admin/pool.rs) dan melewati batas polling 60 s.
+    rate_limit_per_jam: 3600,
     porsi_sync: 0.1,
     margin_kuota: 0.05,
     batas_percobaan: 3,
@@ -22,7 +24,7 @@ function konfigDasar(alasan?: string) {
     reset_kuota_jam: 0,
     reset_kuota_zona: 'Asia/Jakarta',
     jeda_min: 250,
-    jeda_maks: 1500,
+    jeda_maks: 1000, // ≤ 3_600_000 / rate_limit_per_jam (api/admin.rs)
     ambang_berdampingan: 8,
     ...(alasan ? { alasan } : {}),
   };
