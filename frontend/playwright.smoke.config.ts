@@ -19,6 +19,7 @@ export default defineConfig({
   forbidOnly: !!process.env.CI,
   retries: 0,
   reporter: process.env.PLAYWRIGHT_JSON_OUTPUT_NAME ? [['json'], ['list']] : 'list',
+  globalSetup: './smoke/global-setup.ts',
   use: {
     baseURL: process.env.E2E_BASE_URL ?? 'http://127.0.0.1:8080',
     trace: 'retain-on-failure',
