@@ -78,6 +78,35 @@ async function pasangSesi(context: BrowserContext, token: string) {
   ]);
 }
 
+/**
+ * Buat APIRequestContext ke downstream API dengan retry untuk DNS transien (EAI_AGAIN, AC1b).
+ * Komponen backend-webserver:8081 hanya ter-resolve di netns frontend (DNS compose-internal),
+ * bisa ada delay singkat sebelum nama tersedia. Max 3 retry dengan 200ms delay.
+ */
+export async function newDownstreamContext(
+  playwright: typeof base.prototype.args.playwright,
+  headers?: Record<string, string>
+): Promise<APIRequestContext> {
+  let lastError: Error | undefined;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const ctx = await playwright.request.newContext({
+        baseURL: DOWNSTREAM_ORIGIN,
+        extraHTTPHeaders: headers || {},
+      });
+      // Test connection immediately to catch DNS errors now, not in actual test
+      await ctx.head('/', { timeout: 5000 });
+      return ctx;
+    } catch (err) {
+      lastError = err as Error;
+      if (attempt < 2) {
+        await new Promise((resolve) => setTimeout(resolve, 200));
+      }
+    }
+  }
+  throw lastError ?? new Error('Failed to create downstream context');
+}
+
 export const test = base.extend<{
   peran: Peran | undefined;
   sesiApi: APIRequestContext;
