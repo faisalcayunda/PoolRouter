@@ -173,10 +173,10 @@ catat_proc proc:webserver sh -c "$ENGINE exec '$webserver_c' webserver healthche
 catat_proc proc:controller "$ENGINE" exec "$controller_c" controller healthcheck
 catat_proc proc:worker "$ENGINE" exec "$worker_c" worker liveness
 catat_proc proc:backend-cli sh -c "
-  $ENGINE compose -f '$repo/deploy/compose/compose.yaml' -f '$repo/deploy/compose/compose.dev.yaml' --project-name '$project' --env-file '$envf' --profile cli run --rm backend-cli bantuan &&
-  $ENGINE compose -f '$repo/deploy/compose/compose.yaml' -f '$repo/deploy/compose/compose.dev.yaml' --project-name '$project' --env-file '$envf' --profile cli run --rm backend-cli seed pengguna &&
-  $ENGINE compose -f '$repo/deploy/compose/compose.yaml' -f '$repo/deploy/compose/compose.dev.yaml' --project-name '$project' --env-file '$envf' --profile cli run --rm backend-cli seed dukcapil &&
-  $ENGINE compose -f '$repo/deploy/compose/compose.yaml' -f '$repo/deploy/compose/compose.dev.yaml' --project-name '$project' --env-file '$envf' --profile cli run --rm backend-cli daftar | grep -c . | grep -qE '^[6-9]|^[1-9][0-9]+$'
+  $ENGINE compose -f '$repo/deploy/compose/compose.yaml' -f '$repo/deploy/compose/compose.dev.yaml' -f '$overlay' -f '$smoke_overlay' --project-name '$project' --env-file '$envf' --profile cli run --rm backend-cli bantuan &&
+  $ENGINE compose -f '$repo/deploy/compose/compose.yaml' -f '$repo/deploy/compose/compose.dev.yaml' -f '$overlay' -f '$smoke_overlay' --project-name '$project' --env-file '$envf' --profile cli run --rm backend-cli seed pengguna &&
+  $ENGINE compose -f '$repo/deploy/compose/compose.yaml' -f '$repo/deploy/compose/compose.dev.yaml' -f '$overlay' -f '$smoke_overlay' --project-name '$project' --env-file '$envf' --profile cli run --rm backend-cli seed dukcapil &&
+  $ENGINE compose -f '$repo/deploy/compose/compose.yaml' -f '$repo/deploy/compose/compose.dev.yaml' -f '$overlay' -f '$smoke_overlay' --project-name '$project' --env-file '$envf' --profile cli run --rm backend-cli daftar | grep -c . | grep -qE '^[6-9]|^[1-9][0-9]+$'
 "
 
 # --- Playwright @smoke (project api, lalu ui) -----------------------------------------------------

@@ -51,7 +51,7 @@ async function globalSetup() {
   }
 
   throw new Error(
-    `nginx/admin API tidak siap setelah ${maxAttempts} attempt (${maxAttempts * delayMs}ms total)`
+    `nginx/admin API tidak siap setelah ${maxAttempts} attempt (${maxAttempts * delayMs}ms total)`,
   );
 }
 
