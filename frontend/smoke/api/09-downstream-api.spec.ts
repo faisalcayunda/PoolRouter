@@ -1,4 +1,4 @@
-import { test, expect, inventaris, newDownstreamContext } from '../fixtures';
+import { test, expect, inventaris, DOWNSTREAM_ORIGIN } from '../fixtures';
 import { state, NIK_SINTETIS } from '../state';
 
 /**
@@ -21,7 +21,7 @@ test.describe('@smoke downstream-api (klien)', () => {
     '@smoke issueToken: 200, access_token',
     { annotation: inventaris('issueToken') },
     async ({ playwright }) => {
-      const ctx = await newDownstreamContext(playwright);
+      const ctx = await playwright.request.newContext({ baseURL: DOWNSTREAM_ORIGIN });
       const res = await ctx.post('/v1/oauth/token', {
         form: {
           grant_type: 'client_credentials',
@@ -46,8 +46,9 @@ test.describe('@smoke downstream-api (klien)', () => {
     '@smoke getEndpointKontrak: 200, endpoint_id sesuai',
     { annotation: inventaris('getEndpointKontrak') },
     async ({ playwright }) => {
-      const ctx = await newDownstreamContext(playwright, {
-        Authorization: `Bearer ${token}`,
+      const ctx = await playwright.request.newContext({
+        baseURL: DOWNSTREAM_ORIGIN,
+        extraHTTPHeaders: { Authorization: `Bearer ${token}` },
       });
       const res = await ctx.get(`/v1/endpoints/${state.endpointId}/kontrak`);
       expect(res.status()).toBe(200);
@@ -61,8 +62,9 @@ test.describe('@smoke downstream-api (klien)', () => {
     '@smoke submitSync: 200, status done',
     { annotation: inventaris('submitSync') },
     async ({ playwright }) => {
-      const ctx = await newDownstreamContext(playwright, {
-        Authorization: `Bearer ${token}`,
+      const ctx = await playwright.request.newContext({
+        baseURL: DOWNSTREAM_ORIGIN,
+        extraHTTPHeaders: { Authorization: `Bearer ${token}` },
       });
       const res = await ctx.post(`/v1/endpoints/${state.endpointId}/sync`, {
         data: {
@@ -81,8 +83,9 @@ test.describe('@smoke downstream-api (klien)', () => {
     '@smoke enqueueAsync: 202, simpan queue_id',
     { annotation: inventaris('enqueueAsync') },
     async ({ playwright }) => {
-      const ctx = await newDownstreamContext(playwright, {
-        Authorization: `Bearer ${token}`,
+      const ctx = await playwright.request.newContext({
+        baseURL: DOWNSTREAM_ORIGIN,
+        extraHTTPHeaders: { Authorization: `Bearer ${token}` },
       });
       const res = await ctx.post(`/v1/endpoints/${state.endpointId}/async`, {
         data: {
@@ -103,8 +106,9 @@ test.describe('@smoke downstream-api (klien)', () => {
     '@smoke getRequest: terminal dalam 60 detik (juga buktikan proc:worker)',
     { annotation: inventaris('getRequest') },
     async ({ playwright }) => {
-      const ctx = await newDownstreamContext(playwright, {
-        Authorization: `Bearer ${token}`,
+      const ctx = await playwright.request.newContext({
+        baseURL: DOWNSTREAM_ORIGIN,
+        extraHTTPHeaders: { Authorization: `Bearer ${token}` },
       });
       const terminal = new Set(['done', 'failed', 'expired', 'cancelled']);
       let status = '';
@@ -126,8 +130,9 @@ test.describe('@smoke downstream-api (klien)', () => {
     '@smoke cancelRequest: 200 pada request kedua yang masih queued',
     { annotation: inventaris('cancelRequest') },
     async ({ playwright }) => {
-      const ctx = await newDownstreamContext(playwright, {
-        Authorization: `Bearer ${token}`,
+      const ctx = await playwright.request.newContext({
+        baseURL: DOWNSTREAM_ORIGIN,
+        extraHTTPHeaders: { Authorization: `Bearer ${token}` },
       });
       // Request baru (bukan state.queueIdAsync, sudah terminal di tes sebelumnya): cancelRequest
       // diuji pada request yang statusnya masih bisa dibatalkan (200), bukan 409.

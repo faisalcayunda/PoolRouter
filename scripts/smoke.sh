@@ -172,12 +172,23 @@ frontend_c=$(cid frontend)
 catat_proc proc:webserver sh -c "$ENGINE exec '$webserver_c' webserver healthcheck && $ENGINE exec '$webserver_c' bash -c 'exec 3<>/dev/tcp/127.0.0.1/9090; printf \"GET /metrics HTTP/1.0\r\n\r\n\" >&3; read -r l <&3; case \"\$l\" in *\" 200 \"*) ;; *) exit 1;; esac'"
 catat_proc proc:controller "$ENGINE" exec "$controller_c" controller healthcheck
 catat_proc proc:worker "$ENGINE" exec "$worker_c" worker liveness
-catat_proc proc:backend-cli sh -c "
-  $ENGINE compose -f '$repo/deploy/compose/compose.yaml' -f '$repo/deploy/compose/compose.dev.yaml' -f '$overlay' -f '$smoke_overlay' --project-name '$project' --env-file '$envf' --profile cli run --rm backend-cli bantuan &&
-  $ENGINE compose -f '$repo/deploy/compose/compose.yaml' -f '$repo/deploy/compose/compose.dev.yaml' -f '$overlay' -f '$smoke_overlay' --project-name '$project' --env-file '$envf' --profile cli run --rm backend-cli seed pengguna &&
-  $ENGINE compose -f '$repo/deploy/compose/compose.yaml' -f '$repo/deploy/compose/compose.dev.yaml' -f '$overlay' -f '$smoke_overlay' --project-name '$project' --env-file '$envf' --profile cli run --rm backend-cli seed dukcapil &&
-  $ENGINE compose -f '$repo/deploy/compose/compose.yaml' -f '$repo/deploy/compose/compose.dev.yaml' -f '$overlay' -f '$smoke_overlay' --project-name '$project' --env-file '$envf' --profile cli run --rm backend-cli daftar | grep -c . | grep -qE '^[6-9]|^[1-9][0-9]+$'
-"
+# backend-cli wajib memakai set compose yang sama dengan stack (overlay label + overlay mock-tls,
+# satu path per -f): tanpa overlay label, compose melihat network default tanpa label
+# arctiva.issue, lalu menghapus dan membuat ulang network itu. Container webserver/frontend
+# yang sedang jalan lepas dari network, sehingga nginx 502 dan DNS netns frontend EAI_AGAIN
+# (run 43435364050).
+backend_cli() {
+  $ENGINE compose -f "$repo/deploy/compose/compose.yaml" -f "$repo/deploy/compose/compose.dev.yaml" \
+    -f "$overlay2" -f "$smoke_overlay" --project-name "$project" --env-file "$envf" \
+    --profile cli run --rm backend-cli "$@"
+}
+proc_backend_cli() {
+  backend_cli bantuan &&
+  backend_cli seed pengguna &&
+  backend_cli seed dukcapil &&
+  backend_cli daftar | grep -c . | grep -qE '^[6-9]|^[1-9][0-9]+$'
+}
+catat_proc proc:backend-cli proc_backend_cli
 
 # --- Playwright @smoke (project api, lalu ui) -----------------------------------------------------
 # Jalan di netns container frontend (seperti scripts/e2e-api-asli.sh/ARC-251): origin
