@@ -67,6 +67,8 @@ test.describe('@smoke log', () => {
       '@smoke listWebhookLog: 200, ada baris ditolak_allowlist (buktikan requestTerminal)',
       { annotation: inventaris(['listWebhookLog', 'requestTerminal'], 'platform-admin') },
       async ({ sesiApi, playwright }) => {
+        // Polling terminal (≤60 s) plus webhook log (≤30 s) melebihi timeout bawaan 30 s.
+        test.setTimeout(120_000);
         // Nonaktifkan domain allowlist webhook client (state.allowlistDomain): putWebhookConfig
         // ke domain di luar allowlist ditolak 422 saat simpan (admin/webhook.rs periksa_allowlist),
         // jadi penolakan saat kirim (AC-29) dibuktikan dengan mematikan domainnya.
