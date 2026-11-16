@@ -85,20 +85,21 @@ async function pasangSesi(context: BrowserContext, token: string) {
  */
 export async function newDownstreamContext(
   playwright: typeof base.prototype.args.playwright,
-  headers?: Record<string, string>
+  headers?: Record<string, string>,
 ): Promise<APIRequestContext> {
   let lastError: Error | undefined;
   for (let attempt = 0; attempt < 3; attempt++) {
+    const ctx = await playwright.request.newContext({
+      baseURL: DOWNSTREAM_ORIGIN,
+      extraHTTPHeaders: headers || {},
+    });
     try {
-      const ctx = await playwright.request.newContext({
-        baseURL: DOWNSTREAM_ORIGIN,
-        extraHTTPHeaders: headers || {},
-      });
       // Test connection immediately to catch DNS errors now, not in actual test
       await ctx.head('/', { timeout: 5000 });
       return ctx;
     } catch (err) {
       lastError = err as Error;
+      await ctx.dispose();
       if (attempt < 2) {
         await new Promise((resolve) => setTimeout(resolve, 200));
       }

@@ -1,4 +1,4 @@
-import { test, expect, inventaris, DOWNSTREAM_ORIGIN } from '../fixtures';
+import { test, expect, inventaris, newDownstreamContext } from '../fixtures';
 import { state, NIK_SINTETIS } from '../state';
 
 /**
@@ -76,7 +76,7 @@ test.describe('@smoke log', () => {
         });
         expect(resWebhook.status()).toBe(200);
 
-        const ctx = await playwright.request.newContext({ baseURL: DOWNSTREAM_ORIGIN });
+        const ctx = await newDownstreamContext(playwright);
         const tokenRes = await ctx.post('/v1/oauth/token', {
           form: {
             grant_type: 'client_credentials',

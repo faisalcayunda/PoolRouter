@@ -36,9 +36,7 @@ async function globalSetup() {
 
       if (headOk && apiOk) {
         clearTimeout(timeoutHandle);
-        console.log(
-          `[smoke-setup] nginx dan admin API siap (attempt ${i}/${maxAttempts})`
-        );
+        console.log(`[smoke-setup] nginx dan admin API siap (attempt ${i}/${maxAttempts})`);
         return;
       }
     } catch {
@@ -53,8 +51,7 @@ async function globalSetup() {
   }
 
   throw new Error(
-    `nginx/admin API tidak siap setelah ${maxAttempts} attempt `
-      + `(${maxAttempts * delayMs}ms total)`
+    `nginx/admin API tidak siap setelah ${maxAttempts} attempt (${maxAttempts * delayMs}ms total)`
   );
 }
 
