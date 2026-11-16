@@ -95,16 +95,6 @@ test.describe('@smoke client', () => {
     );
 
     test(
-      '@smoke getWebhookConfig: 200',
-      { annotation: inventaris('getWebhookConfig', 'platform-admin') },
-      async ({ sesiApi }) => {
-        const res = await sesiApi.get(`/admin/v1/clients/${state.clientId}/webhook`);
-        expect(res.status()).toBe(200);
-        expect((await res.json()) as { aktif: boolean }).toHaveProperty('aktif');
-      },
-    );
-
-    test(
       '@smoke putWebhookConfig: 200',
       { annotation: inventaris('putWebhookConfig', 'platform-admin') },
       async ({ sesiApi }) => {
@@ -113,6 +103,18 @@ test.describe('@smoke client', () => {
         });
         expect(res.status()).toBe(200);
         expect((await res.json()) as { aktif: boolean }).toMatchObject({ aktif: true });
+      },
+    );
+
+    // Sesudah putWebhookConfig: baris client_webhook baru ada setelah PUT pertama; GET sebelum
+    // itu 404 (admin/webhook.rs get_webhook_config).
+    test(
+      '@smoke getWebhookConfig: 200',
+      { annotation: inventaris('getWebhookConfig', 'platform-admin') },
+      async ({ sesiApi }) => {
+        const res = await sesiApi.get(`/admin/v1/clients/${state.clientId}/webhook`);
+        expect(res.status()).toBe(200);
+        expect((await res.json()) as { aktif: boolean }).toHaveProperty('aktif');
       },
     );
 

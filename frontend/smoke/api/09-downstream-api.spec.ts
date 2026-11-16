@@ -25,7 +25,8 @@ test.describe('@smoke downstream-api (klien)', () => {
       const res = await ctx.post('/v1/oauth/token', {
         form: {
           grant_type: 'client_credentials',
-          client_id: state.credentialOauth2Id ?? '',
+          // client_id = id client (bukan credential_id): downstream/auth.rs client_secret.
+          client_id: state.clientId ?? '',
           client_secret: state.credentialOauth2Secret ?? '',
         },
       });
@@ -110,6 +111,8 @@ test.describe('@smoke downstream-api (klien)', () => {
         baseURL: DOWNSTREAM_ORIGIN,
         extraHTTPHeaders: { Authorization: `Bearer ${token}` },
       });
+      // Polling sampai 60 s melebihi timeout bawaan Playwright (30 s) per test.
+      test.setTimeout(90_000);
       const terminal = new Set(['done', 'failed', 'expired', 'cancelled']);
       let status = '';
       const batas = Date.now() + 60_000;

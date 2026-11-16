@@ -5,10 +5,9 @@ import { state, NIK_SINTETIS } from '../state';
  * Grup Log, G4 (spec smoke-test bagian 2, inventaris.md): `searchLog`/`getLogEntry` (OP, butuh
  * transaksi T dari `09-downstream-api.spec.ts`), `getQuotaTracker` (PA, data=U).
  * `listWebhookLog`/`requestTerminal` (PA/controller, data="K W T") butuh sebuah pengiriman webhook
- * yang DITOLAK allowlist (AC-29: allowlist diperiksa saat kirim, bukan saat konfigurasi disimpan):
- * `putWebhookConfig` dialihkan sebentar ke domain yang sengaja tidak pernah masuk allowlist
- * (beda dari `state.allowlistDomain` di 07-allowlist.spec.ts/08-client.spec.ts, yang aktif), lalu
- * sebuah `enqueueAsync` baru dibuat supaya terminalnya memicu satu percobaan kirim webhook; baris
+ * yang DITOLAK allowlist (AC-29: allowlist juga diperiksa saat kirim): domain
+ * `state.allowlistDomain` dinonaktifkan lewat `putWebhookAllowlistEntry`, lalu sebuah
+ * `enqueueAsync` baru dibuat supaya terminalnya memicu satu percobaan kirim webhook; baris
  * `webhook_log` hasilnya `ditolak_allowlist` membuktikan `requestTerminal` (controller, tidak
  * punya endpoint HTTP sendiri untuk dipanggil smoke).
  */
@@ -68,19 +67,23 @@ test.describe('@smoke log', () => {
       '@smoke listWebhookLog: 200, ada baris ditolak_allowlist (buktikan requestTerminal)',
       { annotation: inventaris(['listWebhookLog', 'requestTerminal'], 'platform-admin') },
       async ({ sesiApi, playwright }) => {
-        // Alihkan webhook ke domain yang sengaja tidak di-allowlist (beda dari
-        // state.allowlistDomain, yang aktif sejak 07-allowlist.spec.ts); allowlist diperiksa saat
-        // kirim (AC-29).
-        const resWebhook = await sesiApi.put(`/admin/v1/clients/${state.clientId}/webhook`, {
-          data: { webhook_url: 'https://smoke-ditolak.example.test/webhook', aktif: true },
-        });
-        expect(resWebhook.status()).toBe(200);
+        // Polling terminal (≤60 s) plus webhook log (≤30 s) melebihi timeout bawaan 30 s.
+        test.setTimeout(180_000);
+        // Nonaktifkan domain allowlist webhook client (state.allowlistDomain): putWebhookConfig
+        // ke domain di luar allowlist ditolak 422 saat simpan (admin/webhook.rs periksa_allowlist),
+        // jadi penolakan saat kirim (AC-29) dibuktikan dengan mematikan domainnya.
+        const resAllowlist = await sesiApi.put(
+          `/admin/v1/webhook-allowlist/${state.allowlistDomain}`,
+          { data: { aktif: false } },
+        );
+        expect(resAllowlist.status()).toBe(200);
 
         const ctx = await playwright.request.newContext({ baseURL: DOWNSTREAM_ORIGIN });
         const tokenRes = await ctx.post('/v1/oauth/token', {
           form: {
             grant_type: 'client_credentials',
-            client_id: state.credentialOauth2Id ?? '',
+            // client_id = id client (bukan credential_id): downstream/auth.rs client_secret.
+            client_id: state.clientId ?? '',
             client_secret: state.credentialOauth2Secret ?? '',
           },
         });
@@ -109,11 +112,16 @@ test.describe('@smoke log', () => {
         await ctx.dispose();
 
         // Webhook dikirim async oleh controller sesudah terminal (bukan dalam respons di atas);
-        // beri waktu loop webhook (jadwal.rs INTERVAL_SIKLUS) memprosesnya sebelum membaca log.
+        // beri waktu loop webhook (jadwal.rs INTERVAL_SIKLUS 10 s) memprosesnya sebelum membaca log.
         let list: Array<{ hasil: string }> = [];
-        const batasLog = Date.now() + 30_000;
+        const batasLog = Date.now() + 60_000;
         while (Date.now() < batasLog) {
-          const res = await sesiApi.get(`/admin/v1/clients/${state.clientId}/webhook/log`);
+          // `hasil=gagal` (filter kontrak): tanpa filter handler selalu mengembalikan [] karena
+          // WHERE terkirim AND bukan-terkirim (backend admin/webhook.rs list_webhook_log, temuan
+          // ARC-430, bug aplikasi di luar scope smoke).
+          const res = await sesiApi.get(
+            `/admin/v1/clients/${state.clientId}/webhook/log?hasil=gagal`,
+          );
           expect(res.status()).toBe(200);
           list = (await res.json()) as Array<{ hasil: string }>;
           if (list.some((w) => w.hasil === 'ditolak_allowlist')) break;

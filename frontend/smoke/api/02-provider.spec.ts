@@ -6,6 +6,34 @@ import { state, NAMA } from '../state';
  * pratinjau→nonaktifkan→aktifkan. `tls_trust=ca_kustom` dan `base_url` memakai alias jaringan
  * sidecar `mock-tls` (Q1), bukan kode baru. Tiap operasi PA juga dicek 403 dengan sesi operator.
  */
+/**
+ * Konfigurasi provider yang lolos validasi handler (`admin/provider.rs` `periksa_body`) dan bisa
+ * dipanggil jalur sync: `{{input.NIK}}` wajib ada di `parameters`; `respons_skema` berbentuk
+ * `status_skor` (`adapter-provider/src/dokumen.rs` `baca_respons_skema`), sesuai balasan
+ * mock-dukcapil `{"content":[{"NAMA_LGKP":"Sesuai (100)"}]}`; `tls_trust=ca_kustom` dengan CA run
+ * dari `scripts/smoke.sh` (Q1), lewat sidecar `mock-tls` di port 8443.
+ */
+function konfigProvider(bodyTemplate: string) {
+  return {
+    metode: 'POST',
+    base_url: 'https://dukcapil-sintetis.example.test:8443/p/smoke',
+    body_template: bodyTemplate,
+    parameters: [{ nama: 'NIK' }],
+    respons_skema: {
+      parser: 'status_skor',
+      literal: [
+        { teks: 'Sesuai', status: 'sesuai' },
+        { teks: 'Tidak Sesuai', status: 'tidak_sesuai' },
+      ],
+      parameter_output: [{ nama: 'NAMA_LGKP' }],
+    },
+    tls_trust: 'ca_kustom',
+    tls_ca_pem: Buffer.from(process.env.E2E_SMOKE_TLS_CA_B64 ?? '', 'base64').toString('utf8'),
+    log_mode: 'metadata_only',
+    config_schema_version: 1,
+  };
+}
+
 test.describe('@smoke provider', () => {
   test.use({ peran: 'platform-admin' });
 
@@ -16,14 +44,7 @@ test.describe('@smoke provider', () => {
       const res = await sesiApi.post('/admin/v1/providers', {
         data: {
           nama: NAMA.provider,
-          metode: 'POST',
-          base_url: 'https://dukcapil-sintetis.example.test/api',
-          body_template: '{"NIK":"{{input.NIK}}"}',
-          parameters: [],
-          respons_skema: {},
-          tls_trust: 'system',
-          log_mode: 'metadata_only',
-          config_schema_version: 1,
+          ...konfigProvider('{"NIK":"{{input.NIK}}"}'),
         },
       });
       expect(res.status()).toBe(201);
@@ -71,14 +92,7 @@ test.describe('@smoke provider', () => {
       const res = await sesiApi.put(`/admin/v1/providers/${state.providerId}`, {
         data: {
           nama: NAMA.provider,
-          metode: 'POST',
-          base_url: 'https://dukcapil-sintetis.example.test/api',
-          body_template: '{"NIK":"{{input.NIK}}","V":"2"}',
-          parameters: [],
-          respons_skema: {},
-          tls_trust: 'system',
-          log_mode: 'metadata_only',
-          config_schema_version: 1,
+          ...konfigProvider('{"NIK":"{{input.NIK}}","V":"2"}'),
           alasan: 'Smoke ARC-378: update template provider sintetis.',
         },
       });

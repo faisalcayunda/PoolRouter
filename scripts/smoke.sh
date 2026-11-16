@@ -58,9 +58,20 @@ sb_render_env "$be_img" "$fe_img" "$port" \
 # read-only; file sendiri sudah chmod 444 (bukan secret sungguhan -- CA sintetis 1 hari per run).
 tls="$tmp/tls"
 mkdir -p "$tls"; chmod 755 "$tls"
-openssl req -x509 -newkey rsa:2048 -nodes -days 1 -keyout "$tls/key.pem" -out "$tls/cert.pem" \
-  -subj "/CN=dukcapil-sintetis.example.test" \
-  -addext "subjectAltName=DNS:dukcapil-sintetis.example.test" >/dev/null 2>&1
+# CA run (CA:TRUE) menandatangani sertifikat leaf (CA:FALSE, serverAuth): rustls menolak
+# sertifikat CA yang dipakai langsung sebagai sertifikat server (CaUsedAsEndEntity), jadi
+# self-signed tunggal tidak cukup untuk `tls_trust=ca_kustom`. Kunci CA dihapus sesudah tanda
+# tangan; ca.pem (publik) diteruskan ke Playwright untuk `createProvider.tls_ca_pem`.
+openssl req -x509 -newkey rsa:2048 -nodes -days 1 -keyout "$tls/ca-key.pem" -out "$tls/ca.pem" \
+  -subj "/CN=smoke-ca-sintetis.example.test" \
+  -addext "basicConstraints=critical,CA:TRUE" -addext "keyUsage=critical,keyCertSign,cRLSign" >/dev/null 2>&1
+openssl req -new -newkey rsa:2048 -nodes -keyout "$tls/key.pem" -out "$tls/leaf.csr" \
+  -subj "/CN=dukcapil-sintetis.example.test" >/dev/null 2>&1
+printf '%s\n' "subjectAltName=DNS:dukcapil-sintetis.example.test" "basicConstraints=critical,CA:FALSE" \
+  "keyUsage=critical,digitalSignature,keyEncipherment" "extendedKeyUsage=serverAuth" > "$tls/leaf.ext"
+openssl x509 -req -in "$tls/leaf.csr" -CA "$tls/ca.pem" -CAkey "$tls/ca-key.pem" -CAcreateserial \
+  -days 1 -extfile "$tls/leaf.ext" -out "$tls/cert.pem" >/dev/null 2>&1
+rm -f "$tls/ca-key.pem" "$tls/leaf.csr" "$tls/leaf.ext" "$tls/ca.srl"
 chmod 444 "$tls"/*.pem
 
 # --- Overlay label + mock-tls: semua service, volume, dan network ------------------------------
@@ -140,6 +151,9 @@ echo "E2E_KODE_DAFTAR_MFA=$kode_daftar" >> "$pwenv"
 # Playwright jalan di netns container frontend (lihat blok "Playwright @smoke" di bawah): origin
 # nginx internal 8080, bukan $port (port host yang dipublikasikan, beda nomor).
 echo "E2E_BASE_URL=http://127.0.0.1:8080" >> "$pwenv"
+# CA run (publik, bukan secret) untuk createProvider tls_trust=ca_kustom; base64 satu baris
+# karena --env-file tidak menerima nilai multi-baris.
+echo "E2E_SMOKE_TLS_CA_B64=$(base64 < "$tls/ca.pem" | tr -d '\n')" >> "$pwenv"
 # Password seed sama untuk keenam pengguna seed (backend-cli seed pengguna, backend/README.md);
 # dipakai G1 untuk login + MFA sungguhan sekali lewat HTTP (spec Testing Decisions).
 printf 'E2E_SEED_PASSWORD=%s\n' "$(cat "$secrets/poolrouter_seed_password")" >> "$pwenv"
@@ -172,12 +186,23 @@ frontend_c=$(cid frontend)
 catat_proc proc:webserver sh -c "$ENGINE exec '$webserver_c' webserver healthcheck && $ENGINE exec '$webserver_c' bash -c 'exec 3<>/dev/tcp/127.0.0.1/9090; printf \"GET /metrics HTTP/1.0\r\n\r\n\" >&3; read -r l <&3; case \"\$l\" in *\" 200 \"*) ;; *) exit 1;; esac'"
 catat_proc proc:controller "$ENGINE" exec "$controller_c" controller healthcheck
 catat_proc proc:worker "$ENGINE" exec "$worker_c" worker liveness
-catat_proc proc:backend-cli sh -c "
-  $ENGINE compose -f '$repo/deploy/compose/compose.yaml' -f '$repo/deploy/compose/compose.dev.yaml' --project-name '$project' --env-file '$envf' --profile cli run --rm backend-cli bantuan &&
-  $ENGINE compose -f '$repo/deploy/compose/compose.yaml' -f '$repo/deploy/compose/compose.dev.yaml' --project-name '$project' --env-file '$envf' --profile cli run --rm backend-cli seed pengguna &&
-  $ENGINE compose -f '$repo/deploy/compose/compose.yaml' -f '$repo/deploy/compose/compose.dev.yaml' --project-name '$project' --env-file '$envf' --profile cli run --rm backend-cli seed dukcapil &&
-  $ENGINE compose -f '$repo/deploy/compose/compose.yaml' -f '$repo/deploy/compose/compose.dev.yaml' --project-name '$project' --env-file '$envf' --profile cli run --rm backend-cli daftar | grep -c . | grep -qE '^[6-9]|^[1-9][0-9]+$'
-"
+# backend-cli wajib memakai set compose yang sama dengan stack (overlay label + overlay mock-tls,
+# satu path per -f): tanpa overlay label, compose melihat network default tanpa label
+# arctiva.issue, lalu menghapus dan membuat ulang network itu. Container webserver/frontend
+# yang sedang jalan lepas dari network, sehingga nginx 502 dan DNS netns frontend EAI_AGAIN
+# (run 43435364050).
+backend_cli() {
+  $ENGINE compose -f "$repo/deploy/compose/compose.yaml" -f "$repo/deploy/compose/compose.dev.yaml" \
+    -f "$overlay2" -f "$smoke_overlay" --project-name "$project" --env-file "$envf" \
+    --profile cli run --rm backend-cli "$@"
+}
+proc_backend_cli() {
+  backend_cli bantuan &&
+  backend_cli seed pengguna &&
+  backend_cli seed dukcapil &&
+  backend_cli daftar | grep -c . | grep -qE '^[6-9]|^[1-9][0-9]+$'
+}
+catat_proc proc:backend-cli proc_backend_cli
 
 # --- Playwright @smoke (project api, lalu ui) -----------------------------------------------------
 # Jalan di netns container frontend (seperti scripts/e2e-api-asli.sh/ARC-251): origin
