@@ -11,13 +11,17 @@ async function globalSetup() {
   const maxAttempts = 30;
   const delayMs = 1000;
 
-  console.log(`[smoke-setup] Menunggu nginx siap di ${baseURL}`);
+  console.log(`[smoke-setup] Menunggu nginx dan admin API siap di ${baseURL}`);
 
   for (let i = 1; i <= maxAttempts; i++) {
     try {
-      const res = await fetch(`${baseURL}/`, { method: 'HEAD' });
-      if (res.status !== 502) {
-        console.log(`[smoke-setup] nginx siap (attempt ${i}/${maxAttempts})`);
+      // Periksa nginx dengan HEAD (cepat)
+      const headRes = await fetch(`${baseURL}/`, { method: 'HEAD' });
+      // Periksa admin API backend dengan GET yang akan 401 jika auth gagal, tapi bukan 502
+      const apiRes = await fetch(`${baseURL}/admin/v1/auth/me`);
+
+      if (headRes.status !== 502 && apiRes.status !== 502) {
+        console.log(`[smoke-setup] nginx dan admin API siap (attempt ${i}/${maxAttempts})`);
         return;
       }
     } catch (err) {
@@ -29,7 +33,7 @@ async function globalSetup() {
     }
   }
 
-  throw new Error(`nginx tidak siap setelah ${maxAttempts} attempt (${maxAttempts * delayMs}ms)`);
+  throw new Error(`nginx/admin API tidak siap setelah ${maxAttempts} attempt (${maxAttempts * delayMs}ms)`);
 }
 
 export default globalSetup;
