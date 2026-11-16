@@ -224,8 +224,8 @@ $MAKE -C frontend e2e-smoke FRONTEND_RUNNER="$ENGINE" CONTAINER_LABEL="$label" \
 # TEMP (ARC-430): diagnostik outbox webhook bila Playwright gagal; tanpa payload atau secret.
 if [ "$pw_rc" != 0 ]; then
   echo "== DIAG outbox webhook" >&2
-  printf '%s\n' "SELECT mode, status, webhook_status, webhook_attempt_count, webhook_not_before IS NOT NULL FROM request ORDER BY received_at;" \
-    "SELECT hasil, error_class, http_status FROM webhook_log;" \
+  printf '%s\n' "SELECT mode, status, webhook_status, webhook_attempt_count, received_at, completed_at FROM request ORDER BY received_at;" \
+    "SELECT hasil, error_class, sent_at FROM webhook_log ORDER BY sent_at;" "SELECT now();" \
     "SELECT domain, aktif FROM webhook_domain_allowlist;" | sb_psql >&2 || true
   $ENGINE logs "$controller_c" 2>&1 | tail -n 80 >&2 || true
 fi
