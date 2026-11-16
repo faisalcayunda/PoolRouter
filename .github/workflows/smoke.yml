@@ -76,13 +76,7 @@ jobs:
       # stack naik, G0-G6 jalan, smoke-report.json 78 id, CLEANUP left_*=0, exit non-nol karena ada
       # id gagal -- dari run TEMP sebelum ini yang melewati smoke-cakupan. Run ini sendiri (dan tiap
       # push ke main sesudahnya) MERAH di langkah smoke-cakupan sampai S3 merge; itu diharapkan.
-      # TEMP (ARC-430): lewati smoke-cakupan (merah sampai S4) supaya bukti AC1 dari harness
-      # langsung. Dihapus di commit sesudah run bukti.
-      - name: TEMP smoke.sh langsung (ARC-430)
-        run: sh scripts/smoke.sh
-
       - name: make smoke
-        if: false
         run: make smoke CONTAINER_ENGINE="$CONTAINER_ENGINE" CONTAINER_LABEL="$CONTAINER_LABEL"
 
       - name: Bersihkan resource berlabel (selalu)
