@@ -1,6 +1,10 @@
 /**
  * Global setup untuk smoke tests (ARC-430): tunggu nginx dan backend-webserver siap
- * sebelum Playwright mulai suite (hindari 502 errors akibat race condition).
+ * sebelum Playwright mulai suite (hindari 502 errors dan EAI_AGAIN akibat race condition).
+ *
+ * Dijalankan dari host, bukan netns frontend, jadi hanya bisa check nginx. Downstream API
+ * (backend-webserver:8081) butuh diakses dari dalam container (DNS internal compose), jadi
+ * Playwright yang handle – keduanya diperiksa di bawah, tapi hanya nginx dari setup ini.
  */
 async function globalSetup() {
   const baseURL = process.env.E2E_BASE_URL ?? 'http://127.0.0.1:8080';
