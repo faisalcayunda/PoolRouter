@@ -68,7 +68,7 @@ test.describe('@smoke log', () => {
       { annotation: inventaris(['listWebhookLog', 'requestTerminal'], 'platform-admin') },
       async ({ sesiApi, playwright }) => {
         // Polling terminal (≤60 s) plus webhook log (≤30 s) melebihi timeout bawaan 30 s.
-        test.setTimeout(240_000);
+        test.setTimeout(180_000);
         // Nonaktifkan domain allowlist webhook client (state.allowlistDomain): putWebhookConfig
         // ke domain di luar allowlist ditolak 422 saat simpan (admin/webhook.rs periksa_allowlist),
         // jadi penolakan saat kirim (AC-29) dibuktikan dengan mematikan domainnya.
@@ -112,13 +112,16 @@ test.describe('@smoke log', () => {
         await ctx.dispose();
 
         // Webhook dikirim async oleh controller sesudah terminal (bukan dalam respons di atas);
-        // beri waktu loop webhook (jadwal.rs INTERVAL_SIKLUS) memprosesnya sebelum membaca log.
+        // beri waktu loop webhook (jadwal.rs INTERVAL_SIKLUS 10 s) memprosesnya sebelum membaca log.
         let list: Array<{ hasil: string }> = [];
-        // Siklus job controller (jadwal.rs INTERVAL_SIKLUS 10 s, berurutan dengan job lain) bisa
-        // memakan >30 s sebelum outbox webhook diproses (run 43837381169: baris ada, tapi telat).
-        const batasLog = Date.now() + 120_000;
+        const batasLog = Date.now() + 60_000;
         while (Date.now() < batasLog) {
-          const res = await sesiApi.get(`/admin/v1/clients/${state.clientId}/webhook/log`);
+          // `hasil=gagal` (filter kontrak): tanpa filter handler selalu mengembalikan [] karena
+          // WHERE terkirim AND bukan-terkirim (backend admin/webhook.rs list_webhook_log, temuan
+          // ARC-430, bug aplikasi di luar scope smoke).
+          const res = await sesiApi.get(
+            `/admin/v1/clients/${state.clientId}/webhook/log?hasil=gagal`,
+          );
           expect(res.status()).toBe(200);
           list = (await res.json()) as Array<{ hasil: string }>;
           if (list.some((w) => w.hasil === 'ditolak_allowlist')) break;
